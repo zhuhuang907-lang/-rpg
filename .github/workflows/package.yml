@@ -1,0 +1,67 @@
+# 打包 Windows 版：解压后双击 HistoryRPG.exe 就能玩（自带 Node 运行环境，电脑上不用装任何东西）
+# 每次推送 game/ 的改动都会重新打包，发布到 Releases 的「latest」。
+name: 打包 Windows 版
+
+on:
+  push:
+    branches: [main, claude/gallant-davinci-l8pni0]
+    paths: ['game/**', '.github/workflows/package.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 测试
+        working-directory: game
+        run: npm test
+
+      - name: 组装
+        shell: pwsh
+        run: |
+          $out = "dist\HistoryRPG"
+          New-Item -ItemType Directory -Force "$out\runtime", "$out\game" | Out-Null
+          # 游戏本体（不带测试、存档、Key、缓存）
+          foreach ($p in 'server.js','package.json','engine','public','data','tools') { Copy-Item "game\$p" "$out\game\" -Recurse }
+          Remove-Item "$out\game\data\config.json","$out\game\data\cache" -Recurse -Force -ErrorAction SilentlyContinue
+          # 自带 Node 运行环境
+          Copy-Item (Get-Command node).Source "$out\runtime\node.exe"
+          # 启动器：Windows 自带的 C# 编译器
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /codepage:65001 /target:winexe `
+            /win32icon:game\launcher\game.ico /out:"$out\HistoryRPG.exe" /r:System.Windows.Forms.dll game\launcher\GameLauncher.cs
+          if (-not (Test-Path "$out\HistoryRPG.exe")) { throw '启动器编译失败' }
+          # 说明（带 BOM，记事本里中文不乱码）
+          $txt = Get-Content game\launcher\README.txt -Raw -Encoding UTF8
+          [IO.File]::WriteAllText("$PWD\$out\README.txt", $txt, (New-Object Text.UTF8Encoding $true))
+          # 冒烟：用自带的 node 起服务，确认能响应
+          $env:PORT = '3199'; $env:SHU_NO_BROWSER = '1'
+          $p = Start-Process -FilePath "$out\runtime\node.exe" -ArgumentList 'server.js' -WorkingDirectory "$out\game" -PassThru -NoNewWindow
+          $ok = $false
+          for ($i = 0; $i -lt 30 -and -not $ok; $i++) { Start-Sleep 1; try { $ok = (Invoke-RestMethod http://127.0.0.1:3199/api/health).ok } catch {} }
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok) { throw '打包后的游戏起不来' }
+          Remove-Item "$out\game\saves" -Recurse -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path $out -DestinationPath dist\HistoryRPG-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HistoryRPG-windows
+          path: dist/HistoryRPG-windows.zip
+
+      - name: 发布到 Releases（latest）
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null
+          $notes = "下载 HistoryRPG-windows.zip，全部解压，双击 HistoryRPG.exe。`n`n分支：${{ github.ref_name }}　提交：${{ github.sha }}"
+          gh release create latest dist/HistoryRPG-windows.zip --title "历史模拟 · Windows 最新版" --notes $notes --prerelease --target ${{ github.sha }}

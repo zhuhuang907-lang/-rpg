@@ -1,10 +1,19 @@
-# 枢 · 历史模拟器（可玩版）
+# 历史模拟（可玩版）
 
-仿《历史模拟器：崇祯》的呈现方式，但简单得多，没有图画和地图。零依赖，需要 Node.js 20 以上。
+## 下载就玩（Windows）
+
+1. 打开 https://github.com/zhuhuang907-lang/-rpg/releases/tag/latest ，下载 **HistoryRPG-windows.zip**。
+2. **全部解压**（右键 →「全部解压缩」），进文件夹双击 **HistoryRPG.exe**。电脑上不用另装任何东西，Node 已经打包在里面。
+3. 第一次在首页粘贴一个 DeepSeek 的 Key，点「保存」。
+4. 输入框里写一句话，比如「万历年间苏州的绣娘」，回车；或者点「随便来一个」。
+
+关掉游戏窗口就退出游戏。每次往仓库推送 `game/` 的改动，GitHub 都会自动重新打包（`.github/workflows/package.yml`）。
+
+## 从源码运行（Mac / Linux / 开发）
 
 ```bash
 cd game
-node server.js        # 打开 http://localhost:3168
+node server.js        # 需要 Node.js 20 以上，会自动打开浏览器 http://127.0.0.1:3168
 npm test              # 测试（用假的大模型和假的博查走完整条路，不留任何文件）
 ```
 
@@ -13,7 +22,7 @@ npm test              # 测试（用假的大模型和假的博查走完整条�
 | | 作用 | 不接会怎样 |
 |---|---|---|
 | **大模型**（OpenAI 兼容接口，如 DeepSeek；或 Anthropic） | 写：世界底本、每回合的来报、问人、润色、续查、小传 | 只能玩现成剧本 |
-| **博查**（Bocha Web Search API） | 查：开局查史、自动续查、游戏里"查一下"，每条史事都带出处 | 能开局，但史事只能凭记忆，一律标"未查证"、默认不发 |
+| **博查**（Bocha Web Search API，可选） | 查：开局查史、自动续查、游戏里"查一下"，每条史事都带出处 | 自动改用免费的**维基百科**查史；博查报错或查不到时也退回维基 |
 | 现成剧本 | 离线可玩的示范局（熙宁变法：平民周三娘、皇帝赵顼） | — |
 
 Key 都在界面右上「设置」里填，存在 `data/config.json`（已加入 .gitignore，不会提交）。
@@ -53,7 +62,8 @@ Authorization: Bearer <你的 Key>
 | `engine/game.js` | 开场、回合、问人、结算 |
 | `engine/history.js` | 每回合的史事核对：史事何时、以什么形式、到不到这个身份手里 |
 | `engine/research.js` | 游戏内查史：开局检索→写底本→按出处评级；自动续查；查一下 |
-| `engine/search.js` | 博查接口 |
+| `engine/search.js` | 检索：博查，没 Key 或查不到时用维基百科（取自原 rpg-kernel） |
+| `launcher/` | Windows 启动器（沿用原 rpg-kernel 的 GameLauncher.cs）与压缩包里的说明 |
 | `engine/rules.js` | 生老病死、把握、志向、身份转变、收场 |
 | `engine/world.js` | 现成剧本与生成世界统一成同一种形状 |
 | `engine/guard.js` | 时代把关：时代错置、禁用词、正文里的考证腔 |

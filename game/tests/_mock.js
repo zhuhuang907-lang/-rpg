@@ -2,6 +2,9 @@
 /** 测试用的假大模型与假博查：返回与真实接口相同格式的数据 */
 const http = require('http');
 
+/** 仿维基百科搜索接口的返回 */
+const WIKI = { query: { search: [{ title: '葛成', pageid: 1, snippet: '<span>葛成</span>，明代苏州织工，万历二十九年……' }, { title: '万历', pageid: 2, snippet: '万历是明神宗的年号' }] } };
+
 const CARDS = [
   { name: '明史·神宗本纪', url: 'https://zh.wikisource.org/wiki/明史/卷21', siteName: '维基文库', summary: '万历二十九年六月，苏州织工葛成等以税监孙隆加税，聚众击杀税官。' },
   { name: '万历年间苏州丝织业', url: 'https://www.example.com/suzhou-silk', siteName: '某网站', summary: '万历年间苏州机户、机工雇佣关系……米价、工钱的大致量级。' },
@@ -81,6 +84,7 @@ function start(port = 0) {
       const body = JSON.parse(b || '{}');
       res.writeHead(200, { 'content-type': 'application/json' });
       if (req.url === '/v1/web-search') return res.end(JSON.stringify({ code: 200, data: { webPages: { value: CARDS.map(c => ({ ...c, snippet: c.summary })) } } }));
+      if (req.url.startsWith('/w/api.php')) return res.end(JSON.stringify(WIKI));
       const out = reply(body.messages[body.messages.length - 1].content);
       res.end(JSON.stringify({ choices: [{ message: { content: typeof out === 'string' ? out : JSON.stringify(out) } }] }));
     });
@@ -88,6 +92,6 @@ function start(port = 0) {
   return new Promise(r => server.listen(port, () => r(server)));
 }
 
-module.exports = { reply, CARDS, worldJson, docketJson, start };
+module.exports = { reply, CARDS, WIKI, worldJson, docketJson, start };
 
 if (require.main === module) start(Number(process.argv[2]) || 3199).then(s => console.log('mock on', s.address().port));

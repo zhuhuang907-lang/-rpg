@@ -41,24 +41,23 @@ async function showHome() {
   const [sc, { saves }] = await Promise.all([api('/api/scenarios'), api('/api/saves')]);
   CFG = { llm: sc.llm, search: sc.search };
   $('#cDyn').innerHTML = '<option value="">（按年份自动）</option>' + sc.dynasties.map(d => `<option value="${esc(d.name)}">${esc(d.name)}（${d.from < 0 ? '前' + -d.from : d.from}—${d.to < 0 ? '前' + -d.to : d.to}）</option>`).join('');
-  const need = $('#needCfg');
-  if (!sc.llm) { need.classList.remove('hidden'); need.innerHTML = '随机时代和自定义身份要先到右上「设置」里接上<b>大模型</b>（负责写）；再接上<b>博查</b>（负责在游戏里查史），史事才有出处。下面的现成剧本不用接也能玩。'; }
-  else if (!sc.search) { need.classList.remove('hidden'); need.innerHTML = '还没接<b>博查</b>：可以开局，但史事只能凭大模型记忆，一律标"未查证"、默认不发给你。到「设置」里填博查的 Key 就能在游戏里查史。'; }
-  else need.classList.add('hidden');
+  $('#keyBox').classList.toggle('hidden', sc.llm);
+  $('#needCfg').textContent = sc.llm ? `查史：${sc.searchName}${sc.bocha ? '' : '（想查得更全，可以在右上「设置」里填博查 Key）'}` : '';
+  $('#qGo').disabled = !sc.llm;
   $('#btnRandom').disabled = !sc.llm;
   $('#btnCustom').disabled = !sc.llm;
+  if (sc.llm) setTimeout(() => $('#qText').focus(), 50); else setTimeout(() => $('#kDs').focus(), 50);
 
-  $('#scenarios').innerHTML = '<h2 style="margin-top:28px">现成剧本（不接大模型也能玩）</h2>' + sc.scenarios.map(s => `
-    <div class="scn">
-      <h2>${esc(s.title)}</h2>
-      <div class="span">${esc(s.span)}</div>
-      <p>${esc(s.blurb)}</p>
+  $('#scenarios').innerHTML = sc.scenarios.map(s => `
+    <div>
+      <h3>${esc(s.title)} <span class="muted small">${esc(s.span)}</span></h3>
+      <p class="small">${esc(s.blurb)}</p>
       <div class="idgrid">
         ${s.identities.map(i => `
           <button class="idcard" data-scn="${esc(s.id)}" data-idn="${esc(i.id)}">
             <b>${esc(i.name)}</b><span class="tag">${esc({ emperor: '皇帝', commoner: '平民', official: '官员' }[i.idm] || i.idm)}</span><br>
             ${esc(i.title)}<br>
-            <span class="muted small">${esc(i.place)} · ${i.age}岁 · 一回合＝${esc({ xun: '一旬', month: '一月', season: '一季' }[i.unit])}</span>
+            <span class="muted small">${esc(i.place)} · ${i.age}岁</span>
           </button>`).join('')}
       </div>
     </div>`).join('');
@@ -68,37 +67,49 @@ async function showHome() {
       V = j.view; enterPlay();
     } catch (e) { alert(e.message); }
   });
-  $('#saves').innerHTML = saves.length ? saves.map(s => `
+  $('#savesBox').classList.toggle('hidden', !saves.length);
+  $('#saves').innerHTML = saves.map(s => `
     <div class="saverow">
       <span class="grow"><b>${esc(s.name)}</b> · ${esc(s.title || '')} · ${esc(s.last)} · 第${s.turn}回合${s.phase === 'ended' ? ' · 已收场' : ''}</span>
       <button data-load="${s.id}">${s.phase === 'ended' ? '看看' : '继续'}</button>
       <button data-del="${s.id}" class="ghost">删除</button>
-    </div>`).join('') : '<div class="muted">还没有存档。</div>';
+    </div>`).join('');
   $$('[data-load]').forEach(b => b.onclick = async () => { V = (await api('/api/load', { id: b.dataset.load })).view; enterPlay(); });
   $$('[data-del]').forEach(b => b.onclick = async () => { if (confirm('删除这个存档？')) { await api('/api/delete', { id: b.dataset.del }); showHome(); } });
 }
 
-function customSpec(random) {
+$('#kSave').onclick = async () => {
+  const k = $('#kDs').value.trim();
+  if (!k) return alert('先把 Key 粘贴进来');
+  $('#kSave').disabled = true;
+  try {
+    const r = await api('/api/quick-setup', { deepseekKey: k, bochaKey: $('#kBc').value.trim(), test: true });
+    if (!r.ok) alert(r.error);
+  } catch (e) { alert(e.message); }
+  $('#kSave').disabled = false;
+  showHome();
+};
+$('#kDs').addEventListener('keydown', e => { if (e.key === 'Enter') $('#kSave').click(); });
+
+function customSpec() {
   const y = $('#cYear').value.trim();
   return {
-    random, year: y === '' ? null : Number(y), dynasty: $('#cDyn').value, place: $('#cPlace').value.trim(),
+    year: y === '' ? null : Number(y), dynasty: $('#cDyn').value, place: $('#cPlace').value.trim(),
     identity: $('#cIdn').value.trim(), name: $('#cName').value.trim(), gender: $('#cGender').value,
     age: $('#cAge').value ? Number($('#cAge').value) : null, real: $('#cReal').checked,
   };
 }
-async function startCustom(random) {
-  const spec = random ? { random: true } : customSpec(false);
-  if (!random && !spec.identity && spec.year == null) return alert('至少写个年份或身份；都不想定就点「随机」。');
+async function startCustom(body) {
   let job;
-  try { job = (await api('/api/new-custom', { spec, mode: $('#cMode').value })).job; } catch (e) { return alert(e.message); }
+  try { job = (await api('/api/new-custom', { ...body, mode: $('#cMode').value })).job; } catch (e) { return alert(e.message); }
   const box = $('#job');
   box.classList.remove('hidden');
-  const STEP = { spec: '定下', search: '检索', found: '找到', note: '提示', write: '写', done: '完成', 'search-error': '检索失败', error: '出错' };
+  const STEP = { spec: '', search: '查', found: '找到', note: '', write: '', done: '好了', 'search-error': '没查到', error: '出错' };
   for (;;) {
     await new Promise(r => setTimeout(r, 1200));
     let j;
     try { j = await (await fetch('/api/job', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: job }) })).json(); } catch { continue; }
-    $('#jobBody').innerHTML = (j.progress || []).map(p => `<div class="prog ${p.step.includes('error') ? 'err' : ''}">${esc(STEP[p.step] || p.step)}：${esc(p.text || p.q || '')}${p.n != null ? `（${p.n} 条）` : ''}${p.error ? ' —— ' + esc(p.error) : ''}</div>`).join('')
+    $('#jobBody').innerHTML = '<p class="muted small">正在查这段历史，一般要半分钟到两分钟。</p>' + (j.progress || []).map(p => `<div class="prog ${p.step.includes('error') ? 'err' : ''}">${STEP[p.step] ? esc(STEP[p.step]) + '：' : ''}${esc(p.text || p.q || '')}${p.n != null ? `（${p.n} 条）` : ''}${p.error ? ' —— ' + esc(p.error) : ''}</div>`).join('')
       + (j.status === 'running' ? '<div class="prog muted">……</div>' : '');
     if (j.status === 'done') { box.classList.add('hidden'); V = j.view; enterPlay(); return; }
     if (j.status === 'error' || j.error) {
@@ -108,8 +119,14 @@ async function startCustom(random) {
     }
   }
 }
-$('#btnRandom').onclick = () => startCustom(true);
-$('#btnCustom').onclick = () => startCustom(false);
+$('#qGo').onclick = () => { const t = $('#qText').value.trim(); startCustom({ text: t || '随便' }); };
+$('#qText').addEventListener('keydown', e => { if (e.key === 'Enter') $('#qGo').click(); });
+$('#btnRandom').onclick = () => startCustom({ text: '随便' });
+$('#btnCustom').onclick = () => {
+  const spec = customSpec();
+  if (!spec.identity && spec.year == null) return alert('至少写个年份或身份');
+  startCustom({ spec });
+};
 
 function enterPlay() {
   document.body.classList.remove('at-home');
@@ -381,18 +398,19 @@ async function openSettings() {
     <div class="field"><label>接口地址</label><input id="cBase" placeholder="https://api.deepseek.com" value="${esc(c.llm?.baseUrl || '')}"></div>
     <div class="field"><label>模型</label><input id="cModel" placeholder="deepseek-chat" value="${esc(c.llm?.model || '')}"></div>
     <div class="field"><label>Key ${c.llm?.hasKey ? '（已保存，留空不改）' : ''}</label><input id="cKey" type="password"></div>
-    <h3>博查（负责在游戏里查史）</h3>
-    <p class="muted small">开局查年号、大事、地方、身份制度；离已查范围不足一年时自动往后续查；史事面板里可以随时「查一下」。查到的每条史事都带出处网址，没出处的不发给你。</p>
+    <h3>查史（博查，可选）</h3>
+    <p class="muted small">不填博查 Key 就用免费的维基百科查史；填了用博查，中文资料更全，博查出错时也会自动退回维基。查到的每条史事都带出处网址，没出处的不发给你。</p>
     <div class="field"><label>博查 API Key ${c.search?.hasKey ? '（已保存，留空不改）' : ''}</label><input id="sKey" type="password" placeholder="sk-…"></div>
     <div class="field"><label>接口地址</label><input id="sEnd" value="${esc(c.search?.endpoint || 'https://api.bochaai.com/v1/web-search')}"></div>
     <div class="field"><label>每局最多检索次数（防止花钱太多）</label><input id="sBudget" type="number" value="${esc(c.search?.budget || 300)}"></div>
+    <div class="field"><label><input type="checkbox" id="sOff" ${c.search?.off ? 'checked' : ''}> 关掉联网查史</label></div>
     <div class="field"><label><input type="checkbox" id="rUnv" ${c.research?.allowUnverified ? 'checked' : ''}> 没有出处的史事（未查证）也发给我</label></div>
     <div class="composer-row"><button id="cClear" class="ghost">清除大模型</button><button id="sClear" class="ghost">清除博查</button><span class="grow"></span><button id="cSave" class="primary">保存</button></div>`);
   if (c.llm?.provider) $('#cProv').value = c.llm.provider;
   $('#cSave').onclick = async () => {
     await api('/api/config', {
       llm: { provider: $('#cProv').value, baseUrl: $('#cBase').value.trim(), model: $('#cModel').value.trim(), apiKey: $('#cKey').value.trim() },
-      search: { apiKey: $('#sKey').value.trim(), endpoint: $('#sEnd').value.trim(), budget: Number($('#sBudget').value) || 300 },
+      search: { apiKey: $('#sKey').value.trim(), endpoint: $('#sEnd').value.trim(), budget: Number($('#sBudget').value) || 300, off: $('#sOff').checked },
       research: { allowUnverified: $('#rUnv').checked },
     });
     $('#modal').classList.add('hidden');

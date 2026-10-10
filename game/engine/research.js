@@ -316,16 +316,70 @@ function normalize(raw, spec, cards) {
   return { world, issues };
 }
 
+/**
+ * 一句话开局："万历年间苏州的绣娘""1068年的宋神宗""随便"……
+ * 先用规则抽出明确的年份和朝代，其余交给大模型理解；大模型不可用时只用规则。
+ */
+const RANDOM_WORDS = /^(随便|随机|都行|无所谓|你定|来一个|随便来一个)?[。！!.\s]*$/;
+async function parseText(text) {
+  text = String(text || '').trim().slice(0, 200);
+  if (!text || RANDOM_WORDS.test(text)) return { random: true };
+  const spec = { identity: text };
+  const bc = text.match(/(公元前|前)\s*(\d{1,3})\s*年/);
+  const ad = text.match(/(?:公元)?(\d{3,4})\s*年/);
+  if (bc) spec.year = -Number(bc[2]);
+  else if (ad) spec.year = Number(ad[1]);
+  const t2 = text.replace(/公元前?/g, '');
+  const dyn = DYNASTIES.map(d => d.name).sort((a, b) => b.length - a.length).find(n => {
+    if (n.length > 1 && t2.includes(n)) return true;
+    const one = n.length === 1 ? n : null;
+    return one && new RegExp(`(^|[^公])${one}(朝|代|末|初|年间|时|人)`).test(t2);
+  });
+  if (dyn) spec.dynasty = dyn;
+  else if (/汉朝|汉代|汉末/.test(t2)) spec.dynasty = /汉末|东汉/.test(t2) ? '东汉' : '西汉';
+  else if (/宋朝|宋代|宋末|宋初/.test(t2)) spec.dynasty = /宋末/.test(t2) ? '南宋' : '北宋';
+  else if (/晋朝|晋代/.test(t2)) spec.dynasty = '西晋';
+  if (/[女娘妇婢姬妃嫔]|小姐|姑/.test(text)) spec.gender = '女';
+  if (!llm.enabled()) return spec;
+  try {
+    const out = await llm.chat('你是历史顾问，只输出 JSON。',
+      `玩家用一句话说想在中国古代当谁："${text}"
+请拆成开局设定。年份用公元年整数（公元前用负数），只写到你有把握的程度：说了年号就换算成公元年，说了"某某年间"就取这个年号中间的一年，只说朝代就留 null。地点写当时的地名。如果说的是真实历史人物，real 为 true、name 写真名。
+范围：公元前221年到1912年。超出范围就把 outOfRange 设为 true。
+输出：{"year":null,"dynasty":"","place":"","identity":"一句话身份","name":"","gender":"","age":null,"real":false,"outOfRange":false}`, { json: true, maxTokens: 400, timeoutMs: 30000 });
+    if (out.outOfRange) throw new Error('只能玩公元前221年到1912年之间');
+    const y = Number(out.year);
+    return {
+      ...spec,
+      year: spec.year != null ? spec.year : (Number.isFinite(y) && out.year !== null ? y : null),
+      dynasty: spec.dynasty || String(out.dynasty || ''), place: String(out.place || ''),
+      identity: String(out.identity || text), name: String(out.name || ''), gender: spec.gender || String(out.gender || ''),
+      age: Number(out.age) || null, real: !!out.real,
+    };
+  } catch (e) {
+    if (/只能玩/.test(e.message)) throw e;
+    return spec;
+  }
+}
+
 /** 开局：检索 → 写底本 → 核对 → 不过关重写一次 */
 async function createWorld(spec, progress, budget) {
-  if (!llm.enabled()) throw new Error('自定义身份和随机时代需要先在「设置」里接上大模型（博查负责查，大模型负责写）。');
+  if (!llm.enabled()) throw new Error('要先填大模型的 Key（比如 DeepSeek），它负责写故事。');
+  if (spec && spec.text != null) {
+    progress && progress({ step: 'spec', text: '读懂你的意思……' });
+    spec = { ...(await parseText(spec.text)) };
+  }
   spec = { ...spec };
+  if (spec.year != null && spec.year !== '' && !spec.dynasty) spec.dynasty = dynastyOf(toAstro(spec.year));
   const givenYear = spec.year !== '' && spec.year != null && Number.isFinite(Number(spec.year));
   spec.year = givenYear ? toAstro(spec.year) : null;
   if (!givenYear || spec.random || !spec.identity) {
     const r = randomSpec();
     const userSet = Object.fromEntries(Object.entries(spec).filter(([, v]) => v !== '' && v != null && v !== false));
-    spec = { ...r, ...userSet, year: givenYear ? spec.year : r.year };
+    let year = givenYear ? spec.year : r.year;
+    const d = !givenYear && userSet.dynasty && DYNASTIES.find(x => x.name === userSet.dynasty);
+    if (d) year = d.from + Math.floor(Math.random() * (d.to - d.from + 1)); // 只说了朝代：在这个朝代里挑一年
+    spec = { ...r, ...userSet, year };
     if (givenYear && !userSet.dynasty) spec.dynasty = dynastyOf(spec.year);
     if (userSet.identity && !userSet.idm) delete spec.idm;
   }
@@ -335,10 +389,12 @@ async function createWorld(spec, progress, budget) {
 
   let cards = [];
   if (search.enabled()) {
+    progress && progress({ step: 'note', text: `用${search.providerName()}查史` });
     const qs = await planQueries(spec);
     cards = await gather(qs, progress, budget);
+    if (!cards.length) progress && progress({ step: 'note', text: '没查到资料（可能是网络不通）：只能凭大模型的记忆写，史事一律标"未查证"。' });
   } else {
-    progress && progress({ step: 'note', text: '没有接博查：只能凭大模型的记忆写，史事一律标"未查证"。' });
+    progress && progress({ step: 'note', text: '检索已关闭：只能凭大模型的记忆写，史事一律标"未查证"。' });
   }
 
   let issues = [];
@@ -454,4 +510,4 @@ async function lookup(s, w, question, budget) {
   return rec;
 }
 
-module.exports = { createWorld, extend, lookup, randomSpec, dynastyOf, DYNASTIES, ARCHETYPES, toAstro, fromAstro, yearWords, normalize };
+module.exports = { createWorld, parseText, extend, lookup, randomSpec, dynastyOf, DYNASTIES, ARCHETYPES, toAstro, fromAstro, yearWords, normalize };

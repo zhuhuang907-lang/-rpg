@@ -9,27 +9,15 @@ const test = require('node:test');
 const assert = require('node:assert');
 const http = require('http');
 
-const { reply, CARDS } = require('./_mock');
-let server, calls = { llm: 0, search: 0 };
+let server, base;
+const calls = { search: 0 };
 test.before(async () => {
-  server = http.createServer((req, res) => {
-    let b = ''; req.on('data', c => b += c); req.on('end', () => {
-      const body = JSON.parse(b || '{}');
-      res.writeHead(200, { 'content-type': 'application/json' });
-      if (req.url === '/v1/web-search') {
-        calls.search++;
-        assert.ok(req.headers.authorization === 'Bearer test-bocha');
-        return res.end(JSON.stringify({ code: 200, data: { webPages: { value: CARDS.map(c => ({ ...c, snippet: c.summary })) } } }));
-      }
-      calls.llm++;
-      const prompt = body.messages[body.messages.length - 1].content;
-      const out = reply(prompt);
-      res.end(JSON.stringify({ choices: [{ message: { content: typeof out === 'string' ? out : JSON.stringify(out) } }] }));
-    });
-  });
-  await new Promise(r => server.listen(0, r));
-  const base = `http://127.0.0.1:${server.address().port}`;
-  env.config({ llm: { provider: 'openai', baseUrl: base, apiKey: 'x', model: 'm' }, search: { apiKey: 'test-bocha', endpoint: base + '/v1/web-search', budget: 100 } });
+  server = await require('./_mock').start(0);
+  base = `http://127.0.0.1:${server.address().port}`;
+  const orig = server.listeners('request')[0];
+  server.removeAllListeners('request');
+  server.on('request', (req, res) => { if (req.url === '/v1/web-search') { calls.search++; assert.ok(req.headers.authorization === 'Bearer test-bocha'); } orig(req, res); });
+  env.config({ llm: { provider: 'openai', baseUrl: base, apiKey: 'x', model: 'm' }, search: { apiKey: 'test-bocha', endpoint: base + '/v1/web-search', wikiEndpoint: base + '/w/api.php', budget: 100 } });
 });
 test.after(() => server.close());
 
@@ -95,11 +83,27 @@ test('自定义身份整局：醒来、来报、伏笔、续查、查一下、�
   assert.ok(cal.ord(s.date) > cal.ord({ y: 1603, m: 1, d: 1 }));
 });
 
-test('没接博查：史事一律"未查证"，默认不发', async () => {
+test('没填博查 Key：自动用免费的维基百科查，带出处', async () => {
   const llm = require('../engine/llm');
   const c = llm.config();
   const saved = c.search;
-  delete c.search; llm.saveConfig(c);
+  c.search = { ...saved, apiKey: '' }; llm.saveConfig(c);
+  try {
+    const search = require('../engine/search');
+    assert.strictEqual(search.providerName(), '维基百科（免费）');
+    const before = calls.search;
+    const list = await search.web('葛成 万历 苏州');
+    assert.strictEqual(calls.search, before, '不该去调博查');
+    assert.ok(list.length && list[0].url.includes('wikipedia.org'));
+    assert.strictEqual(search.trust(list[0].url), '可信站点');
+  } finally { c.search = saved; llm.saveConfig(c); }
+});
+
+test('检索关掉：史事一律"未查证"，默认不发', async () => {
+  const llm = require('../engine/llm');
+  const c = llm.config();
+  const saved = c.search;
+  c.search = { ...saved, provider: 'off' }; llm.saveConfig(c);
   try {
     const research = require('../engine/research');
     const game = require('../engine/game');
@@ -123,4 +127,47 @@ test('服务端：新开局走后台任务，进度可查，存档落在临时�
   const saves = (await routes['GET /api/saves']()).saves;
   assert.ok(saves.length >= 1);
   assert.ok(process.env.SHU_SAVES.startsWith(env.root));
+});
+
+test('一句话开局：规则能抽出年份、朝代；"随便"就随机；单字朝代不误认', async () => {
+  const research = require('../engine/research');
+  const llm = require('../engine/llm');
+  const c = llm.config(); const saved = c.llm; delete c.llm; llm.saveConfig(c);
+  try {
+    assert.deepStrictEqual(await research.parseText('随便'), { random: true });
+    assert.strictEqual((await research.parseText('1600年苏州的绣娘')).year, 1600);
+    assert.strictEqual((await research.parseText('公元前200年长安的商人')).year, -200);
+    assert.strictEqual((await research.parseText('公元前200年长安的商人')).dynasty, undefined, '"公元"里的"元"不算元朝');
+    assert.strictEqual((await research.parseText('唐朝的书生')).dynasty, '唐');
+    assert.strictEqual((await research.parseText('清晨卖早点的')).dynasty, undefined, '"清晨"不是清朝');
+    assert.strictEqual((await research.parseText('汉朝的戍卒')).dynasty, '西汉');
+  } finally { c.llm = saved; llm.saveConfig(c); }
+});
+
+test('服务端：一句话开局、首页一步填 Key（不冲掉已有的博查 Key）、健康检查', async () => {
+  const { routes } = require('../server');
+  assert.deepStrictEqual(await routes['GET /api/health'](), { ok: true });
+  const llm = require('../engine/llm');
+  const before = llm.config();
+  await routes['POST /api/quick-setup']({ deepseekKey: '', bochaKey: '' });
+  assert.strictEqual(llm.config().search.apiKey, before.search.apiKey, '空 Key 不冲掉已有 Key');
+  const { job } = await routes['POST /api/new-custom']({ text: '1600年苏州的绣娘' });
+  let j;
+  for (let i = 0; i < 100; i++) { j = await routes['POST /api/job']({ id: job }); if (j.status !== 'running') break; await new Promise(r => setTimeout(r, 50)); }
+  assert.strictEqual(j.status, 'done', j.error);
+  assert.strictEqual(j.view.phase, 'opening');
+});
+
+test('配置文件坏了（带 BOM 或乱码）：能读的照读，读不懂的先备份、不覆盖', () => {
+  const fs = require('fs');
+  const llm = require('../engine/llm');
+  const good = llm.config();
+  fs.writeFileSync(llm.CONFIG, '\uFEFF' + JSON.stringify(good));
+  assert.deepStrictEqual(llm.config().llm, good.llm, '带 BOM 也能读');
+  fs.writeFileSync(llm.CONFIG, '{坏了');
+  assert.deepStrictEqual(llm.config(), {});
+  assert.throws(() => llm.saveConfig({}), /读不懂/);
+  assert.ok(fs.readdirSync(require('path').dirname(llm.CONFIG)).some(f => f.includes('.unreadable-')));
+  fs.writeFileSync(llm.CONFIG, JSON.stringify(good));
+  llm.config();
 });
