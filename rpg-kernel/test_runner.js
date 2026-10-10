@@ -15,7 +15,8 @@ const engine = require('./core/engine');
 const cleanup = require('./selftest_cleanup');
 
 const TEST_DIR = __dirname;
-const TIMEOUT_MS = 60000;
+// 真人档案测试会联网查维基；CI 机器网络慢时用 TEST_TIMEOUT_MS 放宽
+const TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS) || 60000;
 // 真正依赖联网（API Key / Wikidata）的测试：环境无有效 Key 或网络时会卡住/失败，单独跳过
 const NETWORK_TESTS = new Set(['selftest_regress_maxisheng.js', 'selftest_history_plot.js']);
 // 已知损坏（缺测试夹具，与本次改动无关）：selftest_stress_100turns.js 依赖底座存档 custom-muxbhizl，该档在当前环境不存在
