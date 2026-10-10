@@ -1,14 +1,38 @@
 # 枢 · 历史模拟器（可玩版）
 
-仿《历史模拟器：崇祯》的呈现方式，但简单得多、没有图画和地图。零依赖，Node.js 20 以上。
+仿《历史模拟器：崇祯》的呈现方式，但简单得多，没有图画和地图。零依赖，需要 Node.js 20 以上。
 
 ```bash
 cd game
 node server.js        # 打开 http://localhost:3168
-npm test              # 内容与史实把关测试
+npm test              # 测试（用假的大模型和假的博查走完整条路，不留任何文件）
 ```
 
-不接大模型也能玩：全部用本局写好的内容。到界面右上「设置」里填 OpenAI 兼容接口（DeepSeek 等）或 Anthropic 的 Key，问人、润色、开场自由行动和额外来报会由大模型来写；**所有生成的文字都要先过时代把关，不过关就重写一次，仍不过关就用本地内容。**
+## 三样东西，分工不同
+
+| | 作用 | 不接会怎样 |
+|---|---|---|
+| **大模型**（OpenAI 兼容接口，如 DeepSeek；或 Anthropic） | 写：世界底本、每回合的来报、问人、润色、续查、小传 | 只能玩现成剧本 |
+| **博查**（Bocha Web Search API） | 查：开局查史、自动续查、游戏里"查一下"，每条史事都带出处 | 能开局，但史事只能凭记忆，一律标"未查证"、默认不发 |
+| 现成剧本 | 离线可玩的示范局（熙宁变法：平民周三娘、皇帝赵顼） | — |
+
+Key 都在界面右上「设置」里填，存在 `data/config.json`（已加入 .gitignore，不会提交）。
+
+### 博查接口
+
+本项目调用的是：
+
+```
+POST https://api.bochaai.com/v1/web-search
+Authorization: Bearer <你的 Key>
+{ "query": "...", "freshness": "noLimit", "summary": true, "count": 8 }
+→ data.webPages.value[]：name / url / snippet / summary / siteName / datePublished
+```
+
+实现在 `engine/search.js`。接口地址可以在设置里改；每局最多检索次数默认 300；结果按查询词缓存在 `data/cache/search/`，同一个词不重复计费。
+**注意**：这个请求格式是照第三方文档写的，测试只用了仿造的博查服务。第一次填上真 Key 后，请开一局，看「史事」面板里有没有资料卡；如果报错，把错误信息发我。
+
+完整规则见仓库根目录 `设计/07_游戏规则.md`。
 
 ## 一局怎么玩
 
@@ -27,15 +51,19 @@ npm test              # 内容与史实把关测试
 |---|---|
 | `server.js` | 路由与静态服务 |
 | `engine/game.js` | 开场、回合、问人、结算 |
-| `engine/history.js` | 每回合的史事核对：史事何时、以什么形式、到不到这个身份手里；可选联网检索（只进面板，标"待核"） |
+| `engine/history.js` | 每回合的史事核对：史事何时、以什么形式、到不到这个身份手里 |
+| `engine/research.js` | 游戏内查史：开局检索→写底本→按出处评级；自动续查；查一下 |
+| `engine/search.js` | 博查接口 |
+| `engine/rules.js` | 生老病死、把握、志向、身份转变、收场 |
+| `engine/world.js` | 现成剧本与生成世界统一成同一种形状 |
 | `engine/guard.js` | 时代把关：时代错置、禁用词、正文里的考证腔 |
-| `engine/calendar.js` | 农历（`tools/calc_calendar.py` 天文推算，定朔、平气置闰） |
+| `engine/calendar.js` | 农历：秦到清（`tools/calc_calendar.py` 天文推算）；年号由剧本或检索给出，查不到用干支 |
 | `engine/llm.js` `engine/prompts.js` | 可选的大模型接入与提示词 |
 | `data/scenarios/xining/mainline.js` | 主线史事表（熙宁变法，1067–1076） |
 | `data/scenarios/xining/guard.js` | 本剧本的时代把关词表 |
 | `data/scenarios/xining/identities/` | 身份：`zhou.js`（平民周三娘）、`shenzong.js`（皇帝赵顼） |
 | `data/scenarios/xining/daily.js` `weather.js` `deps.js` | 节令与家常、小尺度天时、史事因果 |
-| `tests/` | 把关测试 |
+| `tests/` | 测试：历法、时代把关、现成剧本整局、自定义身份整局（假大模型＋假博查）、服务端任务 |
 
 ## 主线怎么保证不出错
 

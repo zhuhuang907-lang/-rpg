@@ -1,72 +1,85 @@
-# 用天文朔望与中气推算北宋农历月表（东八区）。宋历为平气/定朔历法，个别月份可能相差一日；
-# 输出供游戏换算公历，界面上标"推算"。用法：python3 calc_calendar.py 1067 1086 > ../data/calendar.json
+# 天文推算中国农历年表（东八区）。
+#   1644 年以前：定朔、平气置闰（与历代历法的置闰规则一致，但历代行用历法各有误差，个别月份可能差一日）
+#   1645 年起：定朔、定气（时宪历）
+# 年份用天文纪年：0 = 公元前1年，-220 = 公元前221年。
+# 输出紧凑格式：每个农历年一行 [年, 正月初一的儒略日数, 各月大小串("1"=30天,"0"=29天), 闰月在序列中的位置(-1=无)]
+# 用法：python3 calc_calendar.py -220 1912 > ../data/calendar.json   （参数为天文纪年）
 import ephem, json, sys, math
-y0, y1 = int(sys.argv[1]), int(sys.argv[2])
+
+Y0, Y1 = int(sys.argv[1]), int(sys.argv[2])
 TZ = 8 * ephem.hour
-def day(d):  # 东八区日序（儒略日整数）
+
+def jdn(d):
     return int(ephem.julian_date(ephem.Date(d + TZ)) + 0.5)
-# 新月
-moons = []
-d = ephem.Date(f'{y0-1}/11/1')
-while d < ephem.Date(f'{y1+1}/3/1'):
-    nm = ephem.next_new_moon(d); moons.append(day(nm)); d = ephem.Date(nm + 1)
-# 中气：太阳黄经为 30 的倍数（冬至 270）
+
 def sun_lon(t):
     s = ephem.Sun(); s.compute(ephem.Date(t), epoch=ephem.Date(t))
     return math.degrees(ephem.Ecliptic(s, epoch=ephem.Date(t)).lon)
+
+def true_term(approx, target):
+    lo, hi = ephem.Date(approx - 4), ephem.Date(approx + 4)
+    for _ in range(40):
+        mid = ephem.Date((lo + hi) / 2)
+        if ((sun_lon(mid) - target + 180) % 360) - 180 >= 0: hi = mid
+        else: lo = mid
+    return hi
+
+# 冬至
+ws = []
+d = ephem.Date(f'{Y0-2}/6/1')
+while d < ephem.Date(f'{Y1+2}/6/1'):
+    w = ephem.next_winter_solstice(d); ws.append(w); d = ephem.Date(w + 30)
+# 中气
 zq = []
-t = ephem.Date(f'{y0-1}/11/1'); end = ephem.Date(f'{y1+1}/3/1')
-prev = sun_lon(t)
-while t < end:
-    t2 = ephem.Date(t + 1); cur = sun_lon(t2)
-    if math.floor(cur / 30) != math.floor(prev / 30) or (prev > 350 and cur < 10):
-        lo, hi = t, t2
-        target = (math.floor(cur / 30) * 30) % 360
-        for _ in range(40):
-            mid = ephem.Date((lo + hi) / 2); v = sun_lon(mid)
-            if ((v - target + 180) % 360) - 180 >= 0: hi = mid
-            else: lo = mid
-        zq.append((hi, int(target)))
-    prev = cur; t = t2
-# 宋历置闰用平气：以实测冬至为起点，每 1/12 回归年一个中气
-ws_times = [tt for (tt, lon) in zq if lon == 270]
-zq = []
-for i in range(len(ws_times) - 1):
-    a, b = ws_times[i], ws_times[i + 1]
+for i in range(len(ws) - 1):
+    a, b = ws[i], ws[i + 1]
+    y = ephem.Date(a).triple()[0]
     for k in range(12):
-        zq.append((day(a + (b - a) * k / 12), (270 + 30 * k) % 360))
-# 月：每个新月到下个新月；含冬至(270)者为十一月；岁间无中气月为闰（取第一个）
-months = []
-for i in range(len(moons) - 1):
-    a, b = moons[i], moons[i + 1]
-    qs = [lon for (dd, lon) in zq if a <= dd < b]
-    months.append({'start': a, 'len': b - a, 'zq': qs})
-# 以冬至月为锚编号
-out = []
-ws = [i for i, m in enumerate(months) if 270 in m['zq']]
-for k in range(len(ws) - 1):
-    s, e = ws[k], ws[k + 1]
-    seg = months[s:e]
-    leap_needed = (len(seg) == 13)
-    num, leap_done = 11, False
-    for j, m in enumerate(seg):
+        lon = (270 + 30 * k) % 360
+        t = a + (b - a) * k / 12
+        if y >= 1645 and k: t = true_term(t, lon)
+        zq.append(jdn(t))
+zq.sort()
+# 朔
+moons = []
+d = ephem.Date(f'{Y0-2}/6/1')
+while d < ephem.Date(f'{Y1+2}/6/1'):
+    nm = ephem.next_new_moon(d); moons.append(jdn(nm)); d = ephem.Date(nm + 1)
+wsd = [jdn(w) for w in ws]
+
+# 以冬至所在月为十一月，冬至到冬至之间有 13 个月则置闰：第一个无中气之月为闰月
+import bisect
+def has_zq(a, b):
+    i = bisect.bisect_left(zq, a); return i < len(zq) and zq[i] < b
+months = []  # (start, len, num, leap)
+for k in range(len(wsd) - 1):
+    s_i = max(i for i in range(len(moons) - 1) if moons[i] <= wsd[k])
+    e_i = max(i for i in range(len(moons) - 1) if moons[i] <= wsd[k + 1])
+    seg = list(range(s_i, e_i))
+    leap_needed = len(seg) == 13
+    num, done = 11, False
+    for j, mi in enumerate(seg):
+        a, b = moons[mi], moons[mi + 1]
+        leap = False
         if j > 0:
-            if leap_needed and not leap_done and not m['zq']:
-                m['leap'] = True; leap_done = True; m['num'] = num; out.append(m); continue
-            num = num % 12 + 1
-        m['num'] = num; m['leap'] = False; out.append(m)
-def jd2date(jd):
-    d = ephem.Date(jd - 2415020)  # ephem 纪元 1899-12-31 12:00
-    y, mo, dd = d.triple(); return f'{y:04d}-{mo:02d}-{int(dd):02d}'
-res = []
-for m in out:
-    # 农历年：正月起算
-    res.append({'jd': m['start'], 'julian': jd2date(m['start'] + 0.0), 'month': m['num'], 'leap': m['leap'], 'days': m['len']})
-# 归年：正月所在的公历年
-cur = None; table = []
-for m in res:
-    if m['month'] == 1 and not m['leap']:
-        cur = int(m['julian'][:4])
-    if cur and y0 <= cur <= y1:
-        table.append({**m, 'year': cur})
-json.dump({'note': '天文推算（东八区定朔、平气置闰），宋代行用历法与此可能相差一日或闰月位置不同；仅作公历换算参考', 'months': table}, sys.stdout, ensure_ascii=False, indent=0)
+            if leap_needed and not done and not has_zq(a, b):
+                leap = True; done = True
+            else:
+                num = num % 12 + 1
+        months.append((a, b - a, num, leap))
+# 去重（相邻两段的边界月不会重复，因为 seg 是左闭右开）
+# 按正月切年
+years = []
+cur = None
+for (a, ln, num, leap) in months:
+    if num == 1 and not leap:
+        y = ephem.Date(ephem.Date(a - 2415020.0)).triple()[0]
+        # ephem 的负年份是历史纪年（-1＝公元前1年），换成天文纪年
+        if y < 0: y += 1
+        cur = [y, a, '', -1]
+        years.append(cur)
+    if cur is None: continue
+    if leap: cur[3] = len(cur[2])
+    cur[2] += '1' if ln == 30 else '0'
+out = [y for y in years if Y0 <= y[0] <= Y1]
+json.dump({'note': '天文推算：1644年前定朔平气，1645年起定朔定气；与历代行用历法可能差一日或闰月位置不同。年份为天文纪年（0＝公元前1年）。', 'years': out}, sys.stdout, ensure_ascii=False, separators=(',', ':'))

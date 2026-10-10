@@ -15,9 +15,11 @@ module.exports = {
   place: '东京开封府 · 禁中',
   region: '京师',
   start: { y: 1068, m: 9, leap: false, d: 1 },
+  death: { y: 1085, m: 3 }, // 元丰八年三月崩于福宁殿（澎湃新闻、maigoo 词条，二手）
   unit: 'season',
   executorDefault: '中书',
   executors: ['中书', '枢密院', '三司', '翰林学士院', '内侍省'],
+  goals: ['富国：使国用宽裕', '强兵：整顿边备，经略西北', '安民：使河北灾民得所'],
 
   stats: [
     { key: 'treasury', label: '国用', value: 35, scale: ['匮乏', '拮据', '勉强', '宽裕'], why: '治平以来入不敷出（二手），只用词不给数' },
@@ -26,6 +28,7 @@ module.exports = {
     { key: 'admin', label: '吏治', value: 45, scale: ['败坏', '因循', '尚可', '整肃'] },
     { key: 'prestige', label: '威望', value: 40, scale: ['轻', '未立', '渐立', '重'] },
     { key: 'border', label: '边备', value: 45, scale: ['废弛', '空虚', '尚可', '严整'] },
+    { key: 'health', label: '圣躬', value: 80, scale: ['危', '违和', '安', '康健'] },
   ],
   groups: [
     { key: 'council', label: '两府宰执', value: 60 },
@@ -126,14 +129,14 @@ module.exports = {
         {
           id: 'neizang', label: '出内藏钱帛赈济河北', kw: ['内藏', '赈济', '拨钱', '钱帛', '赈'],
           by: { sima: '"内藏之财，本为水旱非常之备。今河朔流民塞道，此正当用之时。"' },
-          eff: { neizang: -15, people: 6, 'g.hebei': 20, prestige: 4 },
+          eff: { neizang: -15, people: 6, 'g.hebei': 20, prestige: 4 }, goal: { g3: 25 },
           report: '中书回奏：内藏钱帛已发往河北，诸州依次赈给。', region: { 河北: { 近况: '内藏钱帛已发，诸州赈给' } },
           rumor: '有人说，钱到了州里，先被扣去一成作"脚钱"。',
         },
         {
           id: 'tax', label: '宽减灾伤州县今岁秋税', kw: ['减税', '宽减', '秋税', '蠲'],
           by: { sima: '"宽一分税，民受一分之赐。"', wen: '"宽税可也，但上供之额须另筹。"' },
-          eff: { treasury: -8, people: 5, 'g.hebei': 12 },
+          eff: { treasury: -8, people: 5, 'g.hebei': 12 }, goal: { g3: 15 },
           report: '三司奏：已依旨放免灾伤州县秋税若干分。', region: { 河北: { 近况: '灾伤州县秋税已放免' } },
           rumor: '转运司私下抱怨：税免了，上供的数目却没人敢减。',
         },
@@ -214,7 +217,7 @@ module.exports = {
         {
           id: 'hold', label: '坚守绥德，增兵屯田', kw: ['守', '屯田', '增兵'],
           by: { wen: '"绥州既取，弃之示弱。可令边臣屯田自给。"' },
-          eff: { border: 5, treasury: -5, 'g.army': 3 },
+          eff: { border: 5, treasury: -5, 'g.army': 3 }, goal: { g2: 15 },
           report: '诏陕西边臣于绥德城募兵屯田。', rumor: '', region: { 陕西: { 近况: '绥德城募兵屯田' } },
         },
         {
@@ -235,14 +238,14 @@ module.exports = {
         {
           id: 'save', label: '令三司裁减冗费，条具以闻', kw: ['裁减', '冗费', '节省', '条具'],
           by: { sima: '"国用不足，在于用度太奢、赏赐不节、宗室繁多、官职冗滥、军旅不精。"' },
-          eff: { treasury: 5, 'g.council': -2, admin: 2 },
+          eff: { treasury: 5, 'g.council': -2, admin: 2 }, goal: { g1: 8 },
           report: '三司回奏：已条具可减之费若干项。',
           rumor: '各司都说自己那一项减不得。',
         },
         {
           id: 'person', label: '另择善理财之人', kw: ['理财', '择人', '换人'],
           by: { wang: '"今所以未治者，以未得善理财之人耳。"' },
-          eff: { 'g.council': -3 }, flags: { trustWang: 1, wantLicai: 1 },
+          eff: { 'g.council': -3 }, flags: { trustWang: 1, wantLicai: 1 }, goal: { g1: 10 },
           report: '诏中书举可任财计之臣。', rumor: '',
         },
       ],
