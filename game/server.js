@@ -47,8 +47,23 @@ async function withLock(id, fn) {
 }
 
 const routes = {
+  'GET /api/health': async () => ({ ok: true }),
+  // 首页一步填 Key：只填 DeepSeek 的 Key（博查可选），其余按默认
+  'POST /api/quick-setup': async b => {
+    const c = llm.config();
+    const k = String(b.deepseekKey || '').trim();
+    if (k) c.llm = { provider: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', apiKey: k };
+    const bk = String(b.bochaKey || '').trim();
+    if (bk) c.search = { ...(c.search || {}), provider: 'bocha', apiKey: bk };
+    llm.saveConfig(c);
+    if (k && b.test) {
+      try { await llm.chat('只回答两个字。', '说"可以"。', { maxTokens: 10, timeoutMs: 20000 }); }
+      catch (e) { return { ok: false, llm: llm.enabled(), error: 'Key 已保存，但试连失败：' + e.message }; }
+    }
+    return { ok: true, llm: llm.enabled(), search: search.providerName() };
+  },
   'GET /api/scenarios': async () => ({
-    scenarios: scenario.list(), llm: llm.enabled(), search: search.enabled(),
+    scenarios: scenario.list(), llm: llm.enabled(), search: search.enabled(), searchName: search.providerName(), bocha: search.conf().provider === 'bocha',
     dynasties: research.DYNASTIES.map(d => ({ name: d.name, from: research.fromAstro(d.from), to: research.fromAstro(d.to) })),
   }),
   'GET /api/saves': async () => ({ saves: store.list() }),
@@ -59,7 +74,7 @@ const routes = {
   },
   // 自定义 / 随机时代：开局检索 → 写底本 → 开局
   'POST /api/new-custom': async b => {
-    const spec = b.spec || {};
+    const spec = b.text != null ? { text: String(b.text) } : (b.spec || {});
     const mode = b.mode === 'free' ? 'free' : 'history';
     const job = startJob(async progress => {
       const budget = { used: 0, max: search.conf().budget };
@@ -88,7 +103,7 @@ const routes = {
     const c = llm.config();
     return {
       llm: c.llm ? { provider: c.llm.provider, baseUrl: c.llm.baseUrl, model: c.llm.model, hasKey: !!c.llm.apiKey } : null,
-      search: { provider: 'bocha', endpoint: search.conf().endpoint, budget: search.conf().budget, hasKey: !!search.conf().apiKey },
+      search: { provider: search.conf().provider, endpoint: search.conf().endpoint, budget: search.conf().budget, hasKey: !!search.conf().apiKey, off: (c.search || {}).provider === 'off' },
       research: c.research || { allowUnverified: false },
     };
   },
@@ -105,10 +120,10 @@ const routes = {
       if (b.search.clear) delete c.search;
       else {
         const old = c.search || {};
-        c.search = { provider: 'bocha', apiKey: b.search.apiKey || old.apiKey || '', endpoint: b.search.endpoint || old.endpoint || '', budget: Number(b.search.budget) || old.budget || 300 };
+        c.search = { ...old, provider: b.search.off ? 'off' : 'auto', apiKey: b.search.apiKey || old.apiKey || '', endpoint: b.search.endpoint || old.endpoint || '', budget: Number(b.search.budget) || old.budget || 300 };
       }
     }
-    if (b.research) c.research = { allowUnverified: !!b.research.allowUnverified };
+    if (b.research) c.research = { ...(c.research || {}), allowUnverified: !!b.research.allowUnverified };
     llm.saveConfig(c);
     return { ok: true, llm: llm.enabled(), search: search.enabled() };
   },
@@ -139,7 +154,17 @@ const server = http.createServer(async (req, res) => {
 
 if (require.main === module) {
   const port = Number(process.env.PORT) || 3168;
-  server.listen(port, () => console.log(`枢 · 历史模拟器：http://localhost:${port}`));
+  server.listen(port, '127.0.0.1', () => {
+    const url = `http://127.0.0.1:${port}`;
+    console.log(`历史模拟：${url}   （关掉这个窗口就退出游戏）`);
+    if (process.env.SHU_NO_BROWSER) return;
+    const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
+    require('child_process').exec(cmd, () => {});
+  });
+  server.on('error', e => {
+    if (e.code === 'EADDRINUSE') console.log(`端口 ${port} 已被占用：游戏可能已经开着了，直接打开 http://127.0.0.1:${port} 即可。`);
+    else console.error(e);
+  });
 }
 
 module.exports = { server, routes };

@@ -1,5 +1,7 @@
 # -rpg
 
+**下载就玩（Windows）**：https://github.com/zhuhuang907-lang/-rpg/releases/tag/latest → 下载 HistoryRPG-windows.zip → 全部解压 → 双击 HistoryRPG.exe。
+
 历史政治 RPG 引擎（rpg-kernel）的剧本、设计与史实核查。以后所有文件都放在这个仓库。
 
 ## 目录
