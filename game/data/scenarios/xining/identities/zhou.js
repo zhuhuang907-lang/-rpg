@@ -21,6 +21,7 @@ module.exports = {
   unit: 'xun',
   executorDefault: '自己',
   executors: ['自己', '阿桂', '母亲'],
+  goals: ['保住父亲留下的三十亩奁田', '嫁一户稳妥的人家', '护住母亲，不让伯父欺压'],
 
   stats: [
     { key: 'money', label: '手头的钱', value: 1200, unit: '文', fmt: 'qian', why: '三娘的私房（设定）' },
@@ -265,7 +266,7 @@ module.exports = {
         {
           id: 'sue', label: '请母亲出面，到县里递状', kw: ['县里', '递状', '告', '打官司', '诉'],
           by: { mother: '"要告，就得有原契和你爹的遗言为凭。原契……原契已经不在我手里了。"' },
-          eff: { money: -500, repute: -5 }, flags: { lawsuit: 1 },
+          eff: { money: -500, repute: -5 }, flags: { lawsuit: 1 }, goal: { g1: 15 },
           report: '状子递进去了。书手收了五百文的笔墨钱，说要等县里"勘会"。', region: { 县里: { 近况: '周家的状子等着勘会' } },
           rumor: '有人说吕家在县衙里有熟人。',
         },
@@ -288,7 +289,7 @@ module.exports = {
         {
           id: 'face', label: '马上去前厅，当面说清楚', kw: ['去前厅', '当面', '说清楚', '对质'],
           by: { mother: '"我陪你去。有我在，她不敢乱说。"' },
-          eff: { repute: -3, uncle: 10, mother: 5 }, flags: { exposedYan: 1 },
+          eff: { repute: -3, uncle: 10, mother: 5 }, flags: { exposedYan: 1 }, goal: { g3: 15 },
           report: '你把那页抄件摊在桌上。严七娘看见它，话就说不下去了。伯父挥手叫她走，自己却没看你。',
           rumor: '邻里有人在传：周家三娘子跟牙婆有来往。',
         },
@@ -310,14 +311,14 @@ module.exports = {
         {
           id: 'keep', label: '请母亲收好，谁也不说', kw: ['收好', '藏', '不说', '保管'],
           by: { mother: '"我收着。你伯父问起，就说找不到了。"' },
-          eff: { mother: 5 }, flags: { deedSafe: 1 },
+          eff: { mother: 5 }, flags: { deedSafe: 1 }, goal: { g1: 30 },
           report: '油纸包回到了妆奁最底下。',
           rumor: '',
         },
         {
           id: 'copy', label: '照着赤契抄一份，和那页抄件对一对', kw: ['对', '比', '抄', '比对'],
           by: { agui: '"我去拿灯和纸来。"' },
-          eff: {}, flags: { compared: 1, suspectForgery: 1 },
+          eff: {}, flags: { compared: 1, suspectForgery: 1 }, goal: { g1: 10 },
           report: '两张一对：赤契上你爹的押，最后一笔往上挑；抄件上那个押，最后一笔是平的。',
           rumor: '',
         },
@@ -354,7 +355,7 @@ module.exports = {
         {
           id: 'agree', label: '说凭母亲做主', kw: ['做主', '听娘的', '好', '答应'],
           by: { mother: '"你肯就好。只是这事，得先把地的事理清楚。"' },
-          eff: { mother: 5 }, flags: { marriageTalk: 1 }, then: [['E12', 3]],
+          eff: { mother: 5 }, flags: { marriageTalk: 1 }, then: [['E12', 3]], goal: { g2: 25 },
           report: '你娘松了口气，说过了年再请媒人上门。',
           rumor: '',
         },
@@ -405,7 +406,7 @@ module.exports = {
         {
           id: 'deal', label: '提条件：典可以，但要立字据写明将来赎回、仍归三娘', kw: ['字据', '赎回', '条件', '写明', '立'],
           by: { mother: '"要典也行，你立个字据，写明赎回来仍是三娘的奁田。"' },
-          eff: { uncle: -10, mother: 5 }, flags: { deal: 1 },
+          eff: { uncle: -10, mother: 5 }, flags: { deal: 1 }, goal: { g1: 40, g3: 10 },
           report: '伯父沉吟半晌，说："字据可以立，但得等过了年。"', region: { 周家: { 近况: '伯父答应过了年立字据' } },
           rumor: '阿桂说，伯父出门前把算盘拨了好久。',
         },
@@ -427,7 +428,7 @@ module.exports = {
         {
           id: 'honest', label: '让母亲照实说：地还有些纠葛', kw: ['照实', '实说', '纠葛'],
           by: { mother: '"照实说吧，瞒着嫁过去，往后更难。"' },
-          eff: { mother: 3, repute: 2 },
+          eff: { mother: 3, repute: 2 }, goal: { g2: 15 },
           report: '媒人笑着说"不妨事"，茶却没喝完就走了。',
           rumor: '',
         },

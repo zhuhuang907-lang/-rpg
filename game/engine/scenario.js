@@ -10,6 +10,12 @@ const META = {
     title: '熙宁变法',
     span: '熙宁元年（1068）秋 — 熙宁九年（1076）',
     blurb: '新君即位第二年，朝廷缺钱，河北遭灾。一个姓王的翰林学士刚刚越次入对。',
+    dynasty: '北宋',
+    eras: [
+      { name: '治平', start: 1064, end: 1067 }, { name: '熙宁', start: 1068, end: 1077 },
+      { name: '元丰', start: 1078, end: 1085 }, { name: '元祐', start: 1086, end: 1094 },
+    ],
+    horizon: { y: 1076, m: 12 },
   },
 };
 

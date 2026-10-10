@@ -1,28 +1,32 @@
 'use strict';
 /**
- * 每回合的历史检索与核对。
- *
- * 一、主线：从史事表里找出"本回合该到"的条目（史事日期 + 按身份的传递延迟），
- *     判断它对这个身份是否可见、因果前提是否成立、是否存疑，然后决定上不上案头。
- * 二、核对记录：本回合时间窗里的每一条史事都列出处理结果，写进史事面板，玩家可以随时查。
- * 三、联网检索（可选）：按"年号＋地点"查维基百科，结果一律标"联网·待核"，只进面板、
- *     不进正文；若与史事表的日期冲突，标红提示。
+ * 每回合的史事核对。
+ * 一、从主线史事表里找出"本回合该到"的条目（发生日期＋按身份的传递延迟），判断对这个身份是否可见、
+ *     因果前提是否成立、评级够不够，决定上不上案头。
+ * 二、本回合时间窗里每一条史事的处理结果都写进核对记录（史事面板可查）。
+ * 发给玩家的评级：已核、二手；"未查证"（没接博查时大模型凭记忆写的）默认不发，设置里可放开；"存疑"永远不发。
  */
 const cal = require('./calendar');
 const llm = require('./llm');
 
 function monthsAfter(date, n) {
-  // 史事日期加 n 个月（按月表）
-  let d = { y: date.y, m: date.m, leap: false, d: date.d || 1 };
-  for (let i = 0; i < n; i++) d = cal.advance({ ...d, d: 1 }, 'month');
+  let d = { y: date.y, m: date.m, leap: false, d: 1 };
+  if (!cal.inRange(d)) return d;
+  for (let i = 0; i < n; i++) d = cal.advance(d, 'month');
   return d;
 }
 
-function depState(s, scn, id) {
-  if (s.deliverClass !== 'court') return 'ok'; // 非皇帝身份：朝廷依史行事
+function deliverable(m) {
+  if (m.confidence === '存疑') return false;
+  if (m.confidence === '未查证') return !!(llm.config().research || {}).allowUnverified;
+  return true;
+}
+
+function depState(s, w, id) {
+  if (s.deliverClass !== 'court') return 'ok';
   let st = 'ok';
-  for (const dep of scn.deps[id] || []) {
-    const ml = scn.mainline.find(x => x.id === dep);
+  for (const dep of w.deps[id] || []) {
+    const ml = w.mainline.find(x => x.id === dep);
     const v = s.mainline[dep];
     if (ml && ml.kind === 'fixed') { if (v === 'blocked') return 'fail'; continue; }
     if (v === 'followed') continue;
@@ -32,41 +36,33 @@ function depState(s, scn, id) {
   return st;
 }
 
-/**
- * 返回本回合应上案头的主线条目 + 核对记录。
- * 已经发生、消息已到、前提成立的条目上案头；前提还在待决（比如你把前一道札子"下两府详议"了）的，
- * 等前提定了再说；前提被你否决的，历史在这里分岔，记为"不发生"。
- */
-function step(s, scn, prevDate, curDate) {
+function step(s, w, prevDate, curDate) {
   const cls = s.deliverClass;
   const lo = prevDate ? cal.ord(prevDate) : -Infinity;
   const hi = cal.ord(curDate);
   const due = [];
   const log = [];
-  const authored = new Set(scn.identities[s.identity].events.filter(e => e.mainline).map(e => e.mainline));
+  const authored = new Set((w.identity.events || []).filter(e => e.mainline).map(e => e.mainline));
 
-  for (const m of scn.mainline) {
+  for (const m of w.mainline) {
     if (s.mainline[m.id]) continue;
     const happened = cal.ord({ y: m.date.y, m: m.date.m, leap: false, d: 1 });
     if (happened > hi) continue;
     const inWindow = happened > lo;
     const d = m.deliver && m.deliver[cls];
     if (m.background && !d) { s.mainline[m.id] = 'background'; continue; }
-    const entry = { id: m.id, title: m.title, when: label(m), confidence: m.confidence, status: '' };
-    if (m.confidence === '存疑') {
+    const entry = { id: m.id, title: m.title, when: label(m, w.eras), confidence: m.confidence, status: '' };
+    if (!deliverable(m)) {
       s.mainline[m.id] = 'doubt';
-      entry.status = '存疑，不发（只记在这里）';
+      entry.status = m.confidence === '未查证' ? '未查证，不发（接上博查可查实）' : '存疑，不发';
       log.push(entry);
       continue;
     }
-    const ds = depState(s, scn, m.id);
-    if (ds === 'fail') {
-      s.mainline[m.id] = 'blocked';
-      entry.status = '前提已被你否决，历史在此分岔：不发生';
-      log.push(entry);
-      continue;
-    }
+    const ds = depState(s, w, m.id);
+    if (ds === 'fail') { s.mainline[m.id] = 'blocked'; entry.status = '前提已被你否决，历史在此分岔：不发生'; log.push(entry); continue; }
     if (ds === 'pending') continue;
+    // 开局前很久的事，只当背景
+    if (!prevDate && happened < cal.ord(s.startDate || curDate) - 400) { s.mainline[m.id] = 'background'; continue; }
     if (!d) {
       s.mainline[m.id] = 'offstage';
       if (inWindow) { entry.status = '本回合发生，但你这个身份听不到'; log.push(entry); }
@@ -79,52 +75,28 @@ function step(s, scn, prevDate, curDate) {
     }
     if (authored.has(m.id)) entry.status = '已写成本局专门的来报';
     else { entry.status = '已上案头'; due.push(m); }
-    if (!(cls === 'court' && m.choice)) s.mainline[m.id] = 'delivered';
-    else s.mainline[m.id] = 'asked';
+    s.mainline[m.id] = cls === 'court' && m.choice ? 'asked' : 'delivered';
     log.push(entry);
   }
   return { due, log };
 }
 
-function label(m) {
-  const e = cal.era(m.date.y).label;
+function label(m, eras) {
+  const e = cal.era(m.date.y, eras).label;
   if (m.precision === 'year') return e;
   if (m.precision === 'season') return e + cal.SEASON(m.date.m);
   return e + cal.monthLabel({ m: m.date.m, leap: false });
 }
 
-/** 联网检索（可选，失败不影响游戏） */
-async function online(s, scn, curDate) {
-  const conf = llm.config().history || {};
-  if (!conf.online) return [];
-  const q = `${cal.era(curDate.y).label} ${scn.identities[s.identity].place.split(' ')[0]}`;
-  const url = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=5&srsearch=' + encodeURIComponent(q);
-  try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 8000);
-    const r = await fetch(url, { signal: ctl.signal, headers: { 'user-agent': 'shu-sim/0.1 (history game)' } });
-    clearTimeout(t);
-    if (!r.ok) return [{ query: q, error: 'HTTP ' + r.status }];
-    const j = await r.json();
-    return (j.query?.search || []).map(x => ({
-      query: q, title: x.title,
-      snippet: String(x.snippet || '').replace(/<[^>]+>/g, ''),
-      url: 'https://zh.wikipedia.org/wiki/' + encodeURIComponent(x.title),
-      grade: '联网·待核',
-    }));
-  } catch (e) {
-    return [{ query: q, error: e.name === 'AbortError' ? '超时' : e.message }];
-  }
-}
-
-/** 给生成用的"已知史事"摘要：只给已发生的、未存疑的，并按 precision 写日期 */
-function knownFacts(s, scn, curDate) {
+/** 给生成用的"已知史事"：已发生、可发的，日期按精度写 */
+function knownFacts(s, w, curDate) {
   const now = cal.ord(curDate);
-  return scn.mainline
-    .filter(m => m.confidence !== '存疑')
+  return w.mainline
+    .filter(deliverable)
     .filter(m => cal.ord({ y: m.date.y, m: m.date.m, leap: false, d: 1 }) <= now)
     .filter(m => !['blocked', 'rejected', 'shelved'].includes(s.mainline[m.id]))
-    .map(m => `- ${label(m)}：${m.fact}`);
+    .slice(-30)
+    .map(m => `- ${label(m, w.eras)}：${m.fact}${s.mainline[m.id] === 'offstage' ? '（主角这个身份不知道）' : ''}`);
 }
 
-module.exports = { step, online, knownFacts, label };
+module.exports = { step, knownFacts, label, deliverable };

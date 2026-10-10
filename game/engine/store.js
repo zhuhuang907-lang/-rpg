@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DIR = path.join(__dirname, '..', 'saves');
+const DIR = process.env.SHU_SAVES || path.join(__dirname, '..', 'saves');
 fs.mkdirSync(DIR, { recursive: true });
 
 function safeId(id) {
@@ -22,7 +22,9 @@ function list() {
   return fs.readdirSync(DIR).filter(f => f.endsWith('.json')).map(f => {
     try {
       const s = JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8'));
-      return { id: s.id, scenario: s.scenario, identity: s.identity, turn: s.turn, updated: s.updated, last: (s.story[s.story.length - 1] || {}).date || '' };
+      const name = (s.persona && s.persona.name) || (s.world ? s.world.identity.name : { zhou: '周三娘', shenzong: '赵顼' }[s.identity] || s.identity);
+      const title = s.world ? s.world.title : s.scenario;
+      return { id: s.id, name, title, turn: s.turn, updated: s.updated, phase: s.phase, last: (s.story[s.story.length - 1] || {}).date || '' };
     } catch { return null; }
   }).filter(Boolean).sort((a, b) => b.updated - a.updated);
 }
