@@ -20,8 +20,10 @@ const NULL_EL = new Proxy({}, {
   set() { return true; },
 });
 const $ = s => { try { return document.querySelector(s) || NULL_EL; } catch { return NULL_EL; } };
-const post = async (u, b) => (await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) })).json();
-const get = async u => (await fetch(u)).json();
+// 服务端出错统一回 {ok:false, why}；界面里很多地方只认 r.error，这里补齐，免得失败被当成成功
+const normResp = r => (r && r.ok === false && r.why && !r.error ? { ...r, error: r.why } : r);
+const post = async (u, b) => normResp(await (await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) })).json());
+const get = async u => normResp(await (await fetch(u)).json());
 const escapeHtml = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 let STATE = null, ADAPTERS = [], CONFIGS = {}, LAST = null, SEARCH = null, VERIFY_LOG = [], PACK = null, SEL = 'deepseek';
@@ -1669,6 +1671,12 @@ $('#btnTerm').onclick = async () => {
 };
 
 /* ================= 设置（AI + 检索 + 档案卡） ================= */
+// 读设置里 AI 那一栏填的字段（勾选框按 on/off 记）
+function readAdapterFields() {
+  const cfg = {};
+  document.querySelectorAll('#sAdapterFields input').forEach(i => { cfg[i.dataset.k] = i.type === 'checkbox' ? (i.checked ? 'on' : 'off') : i.value.trim(); });
+  return cfg;
+}
 $('#btnSettings').onclick = () => {
   const a = ADAPTERS.find(x => x.id === 'deepseek') || ADAPTERS[0];
   openModal('设置', `
@@ -1688,11 +1696,13 @@ $('#btnSettings').onclick = () => {
     <pre class="raw" id="sCardOut"></pre>`,
     async () => {
       const aid = $('#sAdapter').value;
-      const cfg = {};
-      document.querySelectorAll('#sAdapterFields input').forEach(i => { cfg[i.dataset.k] = i.value; });
+      const cfg = readAdapterFields();
       CONFIGS[aid] = { ...(CONFIGS[aid] || {}), ...cfg };
       SEL = aid;
-      await saveCfgs(aid);
+      $('#modalOk').disabled = true; $('#modalOk').textContent = '保存中…';
+      try {
+      const r1 = await post('/api/adapter-config', { selected: aid, configs: { [aid]: cfg } });
+      if (r1 && r1.error) throw new Error(r1.error);
       // 关键修复：只保存「当前选中的那个检索源」的字段，且**显式保留其它源已存的 key**
       const sid = $('#sSearch').value;
       const scfg = {};
@@ -1700,8 +1710,13 @@ $('#btnSettings').onclick = () => {
       const cur = await get('/api/search/config');
       const merged = { ...(cur.providers || {}) };
       merged[sid] = { ...(merged[sid] || {}), ...scfg };
-      await post('/api/search/config', { config: { provider: sid, providers: merged } });
-      closeModal(); await reloadSearch();
+      const r2 = await post('/api/search/config', { config: { provider: sid, providers: merged } });
+      if (r2 && r2.error) throw new Error(r2.error);
+      await loadCfgs();
+      closeModal(); await reloadSearch(); await refreshQuick();
+      } catch (e) {
+        alert('设置没有保存成功：' + (e.message || e));
+      } finally { $('#modalOk').disabled = false; $('#modalOk').textContent = '确定'; }
     });
 
   const cur = get('/api/adapter-config');
@@ -1709,8 +1724,19 @@ $('#btnSettings').onclick = () => {
   const fillA = async () => {
     const c = (await cur).configs?.[$('#sAdapter').value] || {};
     const a2 = ADAPTERS.find(x => x.id === $('#sAdapter').value);
-    $('#sAdapterFields').innerHTML = (a2?.fields || []).map(f =>
-      `<div class="field"><label>${escapeHtml(f.label)}</label><input data-k="${f.key}" type="${f.secret ? 'password' : 'text'}" value="${escapeHtml(c[f.key] ?? f.def ?? '')}"></div>`).join('');
+    const isLlm = a2 && ['deepseek', 'openai-compatible'].includes(a2.id);
+    $('#sAdapterFields').innerHTML = (a2?.fields || []).map(f => f.key === 'model' && isLlm
+      ? `<div class="field"><label>${escapeHtml(f.label)}</label><input data-k="model" list="sModelList" value="${escapeHtml(/^deepseek-(chat|reasoner)$/.test(c.model || '') ? 'deepseek-v4-pro' : (c.model ?? f.def ?? ''))}"><datalist id="sModelList"><option value="deepseek-v4-pro"></option><option value="deepseek-v4.1-pro"></option><option value="deepseek-flash"></option></datalist> <button type="button" id="sModels">获取型号</button></div>`
+      : `<div class="field"><label>${escapeHtml(f.label)}</label><input data-k="${f.key}" type="${f.secret ? 'password' : 'text'}" value="${escapeHtml(c[f.key] ?? f.def ?? '')}"></div>`).join('')
+      + (isLlm ? `<div class="field"><label>思考模式</label><label><input data-k="thinking" type="checkbox" ${c.thinking === 'on' || c.thinking === true ? 'checked' : ''}> 打开（更慢、更贵，推理更细；默认关）</label></div>` : '');
+    const mb = document.getElementById('sModels');
+    if (mb) mb.onclick = async () => {
+      $('#sTestOut').textContent = '查询型号中…'; $('#sTestOut').className = 'muted';
+      const r = await post('/api/models', { adapterId: $('#sAdapter').value, config: readAdapterFields() });
+      if (r.error) { $('#sTestOut').textContent = '查不到型号：' + String(r.error).slice(0, 160); $('#sTestOut').className = 'errline'; return; }
+      document.getElementById('sModelList').innerHTML = r.models.map(m => `<option value="${escapeHtml(m)}"></option>`).join('');
+      $('#sTestOut').textContent = '可用型号：' + r.models.join('、') + '（点型号框选择）'; $('#sTestOut').className = 'okline';
+    };
   };
   const fillS = async () => {
     const sc = await get('/api/search/config');
@@ -1735,10 +1761,9 @@ $('#btnSettings').onclick = () => {
   $('#sSearch').onchange = fillS;
   $('#sTest').onclick = async () => {
     $('#sTestOut').textContent = '测试中…'; $('#sTestOut').className = 'muted';
-    const cfg = {}; document.querySelectorAll('#sAdapterFields input').forEach(i => { cfg[i.dataset.k] = i.value; });
-    const r = await post('/api/adapter-test', { adapterId: $('#sAdapter').value, config: cfg });
-    if (r.error) { $('#sTestOut').textContent = '失败：' + String(r.error).slice(0, 140); $('#sTestOut').className = 'errline'; }
-    else { $('#sTestOut').textContent = `成功 ${r.ms}ms`; $('#sTestOut').className = 'okline'; }
+    const r = await post('/api/adapter-test', { adapterId: $('#sAdapter').value, config: readAdapterFields() });
+    if (r.error) { $('#sTestOut').textContent = '失败：' + String(r.error).slice(0, 220); $('#sTestOut').className = 'errline'; }
+    else { $('#sTestOut').textContent = `成功 ${r.ms}ms${r.model ? '，型号 ' + r.model : ''}${r.switched ? '（' + r.switched + '）' : ''}（记得点「确定」保存）`; $('#sTestOut').className = 'okline'; }
   };
   // 检索测试：填完 key 直接打一次真实请求，看能不能出结果
   $('#sSearchTest').onclick = async () => {
@@ -1916,21 +1941,67 @@ async function renderStarterCards() {
 
 /* ================= 一句话开局 ================= */
 async function refreshQuick() {
-  const st = await get('/api/quick-status');
-  $('#qKey').classList.toggle('hidden', !!st.hasKey);
+  let st = {};
+  try { st = await get('/api/quick-status'); } catch (_) { st = {}; }
+  const box = $('#qStatus');
+  if (st.hasKey) {
+    box.classList.remove('hidden');
+    box.innerHTML = `<span>AI：DeepSeek · <b>${escapeHtml(st.modelName || '')}</b> · Key 尾号 ${escapeHtml(st.keyTail || '')}</span>`
+      + `<span>查史：${st.search === 'bocha' && st.hasBocha ? '博查' : '维基百科（免费）'}</span>`
+      + `<a id="qChange">更换 Key / 型号 / 博查</a>`;
+    $('#qChange').onclick = () => { $('#qKey').classList.toggle('hidden'); fillQuickKey(st); };
+    if (!$('#qKey').classList.contains('hidden')) fillQuickKey(st);
+  } else {
+    box.classList.add('hidden');
+    $('#qKey').classList.remove('hidden');
+    fillQuickKey(st);
+  }
+  $('#qKeyTitle').innerHTML = st.hasKey
+    ? '<b>更换设置</b>（Key 留空 = 不改原来的 Key）'
+    : '<b>第一次玩，先粘贴一个 DeepSeek 的 Key</b>（只填一次，存在你自己电脑上）';
   $('#qGo').disabled = !st.hasKey; $('#qRandom').disabled = !st.hasKey;
-  if (st.hasKey) setTimeout(() => $('#qText') && $('#qText').focus(), 50);
+  if (st.hasKey && $('#qKey').classList.contains('hidden')) setTimeout(() => $('#qText') && $('#qText').focus(), 50);
 }
+function fillQuickKey(st) {
+  if (!$('#qModel').value) $('#qModel').value = (st && st.modelName) || 'deepseek-v4-pro';
+}
+$('#qModelFetch').onclick = async () => {
+  const out = $('#qKeyOut');
+  out.innerHTML = '正在向 DeepSeek 查询你能用的型号……';
+  const r = await post('/api/models', { adapterId: 'deepseek', config: { apiKey: $('#qKeyIn').value.trim() } });
+  if (r.error) { out.innerHTML = `<span class="bad">查不到型号：${escapeHtml(r.error)}</span>`; return; }
+  $('#qModelList').innerHTML = r.models.map(m => `<option value="${escapeHtml(m)}"></option>`).join('');
+  out.innerHTML = `<span class="ok">你的 Key 能用的型号：${r.models.map(escapeHtml).join('、')}</span>（在「型号」框里点一下就能选）`;
+};
 $('#qKeySave').onclick = async () => {
   const k = $('#qKeyIn').value.trim();
-  if (!k) return alert('先把 Key 粘贴进来');
-  $('#qKeySave').disabled = true; $('#qKeySave').textContent = '试连中…';
+  const bk = $('#qBocha').value.trim();
+  const model = $('#qModel').value.trim();
+  const out = $('#qKeyOut');
+  let st0 = {}; try { st0 = await get('/api/quick-status'); } catch (_) { /* 忽略 */ }
+  if (!k && !st0.hasKey) { out.innerHTML = '<span class="bad">先把 DeepSeek 的 Key 粘贴进来</span>'; return; }
+  if (k && !/^sk-/.test(k) && !confirm('DeepSeek 的 Key 一般以 sk- 开头，你粘贴的不像。仍然保存吗？')) return;
+  $('#qKeySave').disabled = true; $('#qKeySave').textContent = '保存并试连中…';
+  out.innerHTML = '保存中……';
   try {
-    const r = await post('/api/quick-key', { apiKey: k, bochaKey: $('#qBocha').value.trim() });
-    if (r && r.ok === false) alert(r.why);
+    const r = await post('/api/quick-key', { apiKey: k, bochaKey: bk, model: model && model !== st0.modelName ? model : '' });
+    if (r.error) { out.innerHTML = `<span class="bad">没有保存：${escapeHtml(r.error)}</span>`; return; }
+    const lines = [];
+    if (r.saved.deepseek) lines.push('<span class="ok">✓ DeepSeek Key 已保存</span>');
+    if (r.saved.bocha) lines.push('<span class="ok">✓ 博查 Key 已保存，查史改用博查</span>');
+    if (r.test) lines.push(r.test.ok
+      ? `<span class="ok">✓ 连接成功（型号 ${escapeHtml(r.test.model || r.saved.model)}，${r.test.ms}ms）</span>`
+      : `<span class="bad">✗ 连接没通：${escapeHtml(r.test.why)}</span>\nKey 已经存好了；按上面的原因处理后再点一次「保存」即可（Key 框可留空）。`);
+    if (r.bocha) lines.push(r.bocha.ok ? `<span class="ok">✓ 博查可用（试查返回 ${r.bocha.count} 条）</span>` : `<span class="bad">✗ 博查没通：${escapeHtml(r.bocha.why)}</span>`);
+    out.innerHTML = lines.join('\n');
+    $('#qKeyIn').value = ''; $('#qBocha').value = '';
     try { await loadCfgs(); } catch (_) { /* 忽略 */ }
+    const allOk = (!r.test || r.test.ok) && (!r.bocha || r.bocha.ok);
+    await refreshQuick();
+    if (allOk) setTimeout(() => { $('#qKey').classList.add('hidden'); }, 2500);
+  } catch (e) {
+    out.innerHTML = `<span class="bad">保存失败：${escapeHtml(e.message || e)}（游戏服务可能没在运行，请重新双击启动游戏）</span>`;
   } finally { $('#qKeySave').disabled = false; $('#qKeySave').textContent = '保存'; }
-  await refreshQuick();
 };
 $('#qKeyIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('#qKeySave').click(); });
 async function quickStart(text) {
