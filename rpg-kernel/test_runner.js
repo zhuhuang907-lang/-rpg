@@ -31,7 +31,7 @@ function listTests() {
 
 function runOne(file) {
   return new Promise(resolve => {
-    execFile(process.execPath, [path.join(TEST_DIR, file)], { timeout: TIMEOUT_MS },
+    execFile(process.execPath, [...(process.env.RPG_OFFLINE ? ['-r', path.join(TEST_DIR, 'tools', 'offline_fetch.js')] : []), path.join(TEST_DIR, file)], { timeout: TIMEOUT_MS },
       (err, stdout, stderr) => {
         const out = (stdout || '') + (stderr || '');
         let result = 'PASS';
