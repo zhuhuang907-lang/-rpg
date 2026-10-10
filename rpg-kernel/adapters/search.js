@@ -57,7 +57,7 @@ function mergeConfig(base, over) {
       const o = (over && over.providers && over.providers[k]) || {};
       const m = { ...v, ...b };
       // 空串/空白不覆盖已有值（防止「什么都没填就点确定」把 Key 冲掉）；要清除 Key 须显式传 clearKey:true
-      for (const [kk, vv] of Object.entries(o)) if (vv !== '' && vv != null) m[kk] = vv;
+      for (const [kk, vv] of Object.entries(o)) if (vv !== '' && vv != null) m[kk] = typeof vv === 'string' ? vv.trim() : vv;
       if (o.clearKey) m.apiKey = '';
       delete m.clearKey;
       return [k, m];

@@ -107,22 +107,56 @@ const routes = {
   },
   /* ---- 首页一步填 Key：DeepSeek（必填）+ 博查（可选），合并保存，不会冲掉已有的 Key ---- */
   async 'POST /api/quick-key'(body) {
-    const k = String((body || {}).apiKey || '').trim();
-    const bk = String((body || {}).bochaKey || '').trim();
-    if (k) await adapters.saveAdapterConfig({ selected: 'deepseek', configs: { deepseek: { apiKey: k, model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' } } });
+    const b = body || {};
+    const k = String(b.apiKey || '').trim();
+    const bk = String(b.bochaKey || '').trim();
+    if (!k && !bk && !b.model) return { ok: false, why: '没有填任何 Key' };
+    const saved = (await adapters.loadAdapterConfig()).configs?.deepseek || {};
+    // 型号：玩家选了就用；没选沿用已存的；已下线的 deepseek-chat / deepseek-reasoner 换成 V4 Pro
+    let model = String(b.model || saved.model || '').trim();
+    if (!model || /^deepseek-(chat|reasoner)$/.test(model)) model = 'deepseek-v4-pro';
+    const patch = { model, baseUrl: saved.baseUrl || 'https://api.deepseek.com' };
+    if (k) patch.apiKey = k;
+    if (k || b.model) await adapters.saveAdapterConfig({ selected: 'deepseek', configs: { deepseek: patch } });
     if (bk) await search.saveConfig({ provider: 'bocha', providers: { bocha: { apiKey: bk } } });
-    if (k) {
-      try { await adapters.testAdapter('deepseek', (await adapters.loadAdapterConfig()).configs.deepseek); }
-      catch (e) { return { ok: false, why: 'Key 已保存，但试连失败：' + String(e.message || e).slice(0, 200) }; }
+    const out = { ok: true, saved: { deepseek: !!k, model, bocha: !!bk } };
+    // 试连与保存分开：试连失败也不影响已保存的 Key，只如实告诉玩家原因
+    if (k || b.model) {
+      const cfg = (await adapters.loadAdapterConfig()).configs.deepseek;
+      try {
+        const t = await adapters.testAdapter('deepseek', cfg);
+        out.test = { ok: true, ms: t.ms, model: ((await adapters.loadAdapterConfig()).configs.deepseek || {}).model };
+      } catch (e) { out.test = { ok: false, why: String(e.message || e).slice(0, 300) }; }
     }
-    return { ok: true };
+    if (bk) {
+      const r = await search.search('苏轼', { provider: 'bocha', noCache: true });
+      out.bocha = r.error ? { ok: false, why: String(r.error).slice(0, 200) } : { ok: true, count: (r.results || []).length };
+    }
+    return out;
+  },
+  /* 列出这个 Key 能用的模型型号（DeepSeek /models） */
+  async 'POST /api/models'(body) {
+    const b = body || {};
+    const aid = b.adapterId || 'deepseek';
+    const saved = (await adapters.loadAdapterConfig()).configs?.[aid] || {};
+    const cfg = { baseUrl: aid === 'deepseek' ? 'https://api.deepseek.com' : undefined, ...saved };
+    for (const [kk, vv] of Object.entries(b.config || {})) if (vv !== '' && vv != null) cfg[kk] = vv;
+    if (!cfg.apiKey) return { ok: false, why: '先填 Key 才能列出型号' };
+    const models = await adapters.listModels(cfg);
+    return { ok: true, models, current: cfg.model || '' };
   },
   async 'GET /api/quick-status'() {
     const saved = await adapters.loadAdapterConfig();
     const aid = saved.selected || 'deepseek';
     const c = (saved.configs || {})[aid] || {};
     const scfg = await search.loadConfig();
-    return { ok: true, model: aid, hasKey: !!c.apiKey || ['ollama', 'skeleton', 'mock'].includes(aid), search: scfg.provider };
+    const bochaKey = (scfg.providers && scfg.providers.bocha && scfg.providers.bocha.apiKey) || '';
+    return {
+      ok: true, model: aid, modelName: c.model || (aid === 'deepseek' ? 'deepseek-v4-pro' : ''),
+      hasKey: !!c.apiKey || ['ollama', 'skeleton', 'mock'].includes(aid),
+      keyTail: c.apiKey ? String(c.apiKey).slice(-4) : '',
+      search: scfg.provider, hasBocha: !!bochaKey,
+    };
   },
   'GET /api/health': async () => ({ ok: true, node: process.version }),
   'GET /api/rulepacks': async () => engine.listRulepacks(),

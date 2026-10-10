@@ -40,7 +40,7 @@ async function saveAdapterConfig({ selected, configs }) {
   const merged = { ...(cur.configs || {}) };
   for (const [id, c] of Object.entries(configs || {})) {
     const m = { ...(merged[id] || {}) };
-    for (const [k, v] of Object.entries(c || {})) if (v !== '' && v != null) m[k] = v;
+    for (const [k, v] of Object.entries(c || {})) if (v !== '' && v != null) m[k] = typeof v === 'string' ? v.trim() : v;
     merged[id] = m;
   }
   const next = {
@@ -134,25 +134,86 @@ const mockText = {
 };
 
 // OpenAI 兼容层：覆盖 OpenAI / DeepSeek / Qwen / Moonshot / vLLM / LM Studio / Ollama(兼容端点)
-// 注意：DeepSeek-R1（deepseek-reasoner）不接受 temperature/top_p 一类的采样参数，传了会被拒，所以按模型名跳过。
+// 2026-10 适配 DeepSeek V4：
+//   · deepseek-chat / deepseek-reasoner 已于 2026-07-24 下线 → 型号不存在时自动拉 /models 换一个能用的，并记进配置；
+//   · 推理（思考）模型的思考也算在 max_tokens 里 → 小额度调用会只剩思考、正文为空。
+//     做法：默认关思考（thinking:{type:'disabled'}），服务端不认这个参数就去掉重试；
+//     正文仍为空且是被截断的，就放大额度重试一次；
+//   · 思考模型不接受 temperature 一类采样参数，按模型名跳过。
+const MODEL_CACHE = new Map();
+async function listModels(cfg) {
+  const base = trimSlash(cfg.baseUrl || 'https://api.openai.com/v1');
+  const { json } = await httpJson(`${base}/models`, {
+    method: 'GET', headers: cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}, timeoutMs: 20000,
+  });
+  return ((json && json.data) || []).map(m => m.id).filter(Boolean);
+}
+/** 从可用型号里挑一个：优先 v4 pro，其次 pro，再次 flash / chat，最后第一个 */
+function pickModel(ids, want) {
+  const w = String(want || '').toLowerCase().replace(/[\s_]+/g, '-');
+  const exact = ids.find(i => i.toLowerCase() === w);
+  if (exact) return exact;
+  const norm = x => x.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const near = w && ids.find(i => norm(i).includes(norm(w).replace(/^deepseek/, '')) && norm(w).replace(/^deepseek/, ''));
+  if (near) return near;
+  return ids.find(i => /v4.*pro/i.test(i)) || ids.find(i => /pro/i.test(i)) || ids.find(i => /flash|chat/i.test(i)) || ids[0];
+}
+const isThinkingModel = m => /reasoner|r1\b|-r1|think/i.test(m);
 async function openaiChat({ system, prompt, temperature, maxTokens }, cfg) {
   const base = trimSlash(cfg.baseUrl || 'https://api.openai.com/v1');
   if (!cfg.apiKey && !/127\.0\.0\.1|localhost/.test(base)) throw new Error('还没填模型的 Key：请在首页或「设置」里粘贴 DeepSeek 的 Key');
-  const model = cfg.model || 'gpt-4o-mini';
-  const body = {
-    model,
-    messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-    max_tokens: maxTokens ?? 3000,
-    stream: false,
-  };
-  if (!/reasoner|r1/i.test(model)) body.temperature = temperature ?? 0.9;
-  const { json } = await httpJson(`${base}/chat/completions`, {
-    headers: cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
-    body,
-    timeoutMs: cfg.timeoutMs || 180000,
-  });
-  const text = json?.choices?.[0]?.message?.content ?? '';
-  return { text, raw: JSON.stringify(json), meta: { adapter: 'openai-compatible', model, usage: json?.usage } };
+  let model = MODEL_CACHE.get(base + '|' + cfg.model) || cfg.model || 'gpt-4o-mini';
+  const isDeepseek = /deepseek/i.test(base) || /deepseek/i.test(model);
+  const thinking = cfg.thinking === true || cfg.thinking === 'on';
+  let sendThinkingFlag = isDeepseek && !isThinkingModel(model);
+  let budget = maxTokens ?? 3000;
+  if (thinking) budget = Math.max(budget * 4, 4000);
+  let switched = '';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const body = {
+      model,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+      max_tokens: budget,
+      stream: false,
+    };
+    if (sendThinkingFlag) body.thinking = { type: thinking ? 'enabled' : 'disabled' };
+    if (!thinking && !isThinkingModel(model)) body.temperature = temperature ?? 0.9;
+    let json;
+    try {
+      ({ json } = await httpJson(`${base}/chat/completions`, {
+        headers: cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
+        body,
+        timeoutMs: cfg.timeoutMs || (thinking ? 600000 : 300000),
+      }));
+    } catch (e) {
+      const msg = String(e.message || e);
+      // 服务端不认 thinking 参数：去掉再试
+      if (sendThinkingFlag && /HTTP 4\d\d/.test(msg) && /thinking|unrecognized|unknown|extra/i.test(msg)) { sendThinkingFlag = false; continue; }
+      // 型号不存在（比如已下线的 deepseek-chat）：拉型号列表换一个
+      if (/HTTP (400|404)/.test(msg) && /model/i.test(msg) && !switched) {
+        let ids = [];
+        try { ids = await listModels(cfg); } catch (_) { /* 列不出来就照原样报错 */ }
+        const alt = ids.length ? pickModel(ids, cfg.model) : '';
+        if (alt && alt !== model) {
+          switched = `型号「${model}」不可用，已自动改用「${alt}」`;
+          MODEL_CACHE.set(base + '|' + cfg.model, alt);
+          model = alt; sendThinkingFlag = (isDeepseek || /deepseek/i.test(model)) && !isThinkingModel(model);
+          continue;
+        }
+        throw new Error(`模型型号「${model}」不可用${ids.length ? '，可用的有：' + ids.join('、') : ''}。请到「设置」里换一个型号。`);
+      }
+      throw e;
+    }
+    const choice = json?.choices?.[0] || {};
+    const text = choice.message?.content ?? '';
+    // 正文为空但被截断（额度全被思考吃掉）：放大额度再试一次
+    if (!String(text).trim() && (choice.finish_reason === 'length' || choice.message?.reasoning_content) && budget < 32000) {
+      budget = Math.min(32000, Math.max(budget * 4, 4000));
+      continue;
+    }
+    return { text, raw: JSON.stringify(json), meta: { adapter: 'openai-compatible', model, usage: json?.usage, switched: switched || undefined } };
+  }
+  throw new Error('模型连续几次没给出正文（可能思考过长被截断），请稍后再试，或在「设置」里关掉思考模式。');
 }
 
 const openaiCompatible = {
@@ -172,18 +233,23 @@ const openaiCompatible = {
 
 const deepseek = {
   id: 'deepseek',
-  displayName: 'DeepSeek（deepseek-chat / deepseek-reasoner）',
+  displayName: 'DeepSeek（V4 Pro / Flash）',
   kind: 'llm',
   builtin: true,
   needsKey: true,
   fields: [
     { key: 'apiKey', label: 'API Key', placeholder: 'sk-...', secret: true },
-    { key: 'model', label: 'Model', placeholder: 'deepseek-chat', def: 'deepseek-chat' },
+    { key: 'model', label: '型号', placeholder: 'deepseek-v4-pro', def: 'deepseek-v4-pro' },
     { key: 'baseUrl', label: 'Base URL', placeholder: 'https://api.deepseek.com', def: 'https://api.deepseek.com' },
   ],
-  describe: () => '调用 DeepSeek 官方 endpoint（https://api.deepseek.com/chat/completions）。填 deepseek-chat（V3，快，适合正文）或 deepseek-reasoner（R1，慢但推理强，适合当第二个核查模型）。R1 不接受 temperature，引擎会自动跳过该参数。',
+  describe: () => '调用 DeepSeek 官方接口（https://api.deepseek.com/chat/completions）。默认 deepseek-v4-pro；点「获取型号」可列出你的 Key 能用的全部型号（如 V4.1 的新型号）。填的型号不存在时会自动换成可用的 Pro 型号。思考模式默认关闭（更快更省），需要时在设置里打开。',
   async call(params, cfg) {
-    return openaiChat(params, { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', ...cfg });
+    // 已下线的旧型号（deepseek-chat / deepseek-reasoner，2026-07-24 停用）直接换成 V4 Pro
+    const retired = !cfg.model || /^deepseek-(chat|reasoner)$/.test(cfg.model);
+    const r = await openaiChat(params, { baseUrl: 'https://api.deepseek.com', ...cfg, model: retired ? 'deepseek-v4-pro' : cfg.model });
+    // 型号被自动换了：记进配置，下次直接用对的，设置页也能看到
+    if (r.meta && (r.meta.switched || (retired && cfg.model))) { try { await saveAdapterConfig({ configs: { deepseek: { model: r.meta.model } } }); } catch (_) { /* 记不上不影响本次 */ } }
+    return r;
   },
 };
 
@@ -432,7 +498,8 @@ async function testAdapter(id, runtimeConfig) {
   const { adapter, config } = await resolveAdapter(id, runtimeConfig);
   const t0 = Date.now();
   const res = await adapter.call({ system: '你是一个连通性测试。', prompt: '只回复两个字：正常' }, config);
-  return { ok: true, ms: Date.now() - t0, adapter: adapter.id, preview: String(res.text).slice(0, 200) };
+  if (!String(res.text || '').trim()) throw new Error('模型连上了，但返回的正文是空的');
+  return { ok: true, ms: Date.now() - t0, adapter: adapter.id, model: res.meta && res.meta.model, switched: res.meta && res.meta.switched, preview: String(res.text).slice(0, 200) };
 }
 
-module.exports = { listAdapters, resolveAdapter, testAdapter, loadAdapterConfig, saveAdapterConfig, ADAPTER_DIR };
+module.exports = { listModels, pickModel, listAdapters, resolveAdapter, testAdapter, loadAdapterConfig, saveAdapterConfig, ADAPTER_DIR };
