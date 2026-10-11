@@ -112,7 +112,10 @@ function ruleParse(text, presets) {
 function randomSpec(pack, r = Math.random) {
   const preset = pick(pack.eraPresets, r);
   const [idm, role] = pick(RANDOM_ROLES, r);
-  return toSpec(pack, { preset, identityModule: idm, role: role || ROLE_DEFAULT[idm](preset), mode: 'fictional' });
+  // 皇帝视角用预设里的真君主（引擎按年代核定），其余随机起一个虚构的名字
+  const gender = /女|妇|娘/.test(role) ? '女' : '男';
+  return toSpec(pack, { preset, identityModule: idm, role: role || ROLE_DEFAULT[idm](preset), mode: idm === 'emperor' ? 'real' : 'fictional',
+    name: idm === 'emperor' ? '' : fakeName(gender, r), gender, age: idm === 'emperor' ? null : 18 + Math.floor(r() * 25) });
 }
 
 function toSpec(pack, p) {
@@ -165,7 +168,7 @@ async function parse(pack, text, callModel) {
       const raw = String(await callModel('你是历史顾问，只输出 JSON。', ask) || '');
       const js = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
       m = JSON.parse(js) || {};
-    } catch { m = {}; }
+    } catch (e) { m = {}; console.warn('[quick-start] 模型没给出可用的开局设定，改用规则拆句：', String(e && e.message || e).slice(0, 200)); }
   }
   // 年份：规则抽到的公元年 / 句中年号最可信；其次模型给的年号（用 reign 复核）；再次模型的公元年；最后同朝代预设
   let gy = rp.gregorianYear;

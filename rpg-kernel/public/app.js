@@ -61,7 +61,7 @@ function askConfirm(text, okLabel = '确定') {
   return new Promise(resolve => {
     let done = false;
     const finish = v => { if (done) return; done = true; resolve(v); };
-    openModal('确认', `<div class="secnote">${escapeHtml(text)}</div>`, () => finish(true), () => finish(false));
+    openModal('确认', `<div class="secnote">${escapeHtml(text)}</div>`, () => { finish(true); closeModal(); }, () => finish(false));
     const ok = $('#modalOk'); ok.textContent = okLabel;
     ok.focus();
   });
@@ -151,7 +151,7 @@ function renderStatusBar() {
   const bar = $('#statusBar');
   if (!STATE) { bar.innerHTML = '还没开局 —— 选一个现成的，或点「＋ 新开局」'; return; }
   const s = STATE;
-  bar.innerHTML = `<b>${escapeHtml(s.title)}</b> · ${escapeHtml(s.clock.yearLabel)}（${s.clock.gregorianYear < 0 ? '前' + -s.clock.gregorianYear : s.clock.gregorianYear}年）${lunarText(s.clock)} · ${escapeHtml(s.location.full)} · 你是 ${escapeHtml(s.protagonist.name)}${s.protagonist.gender ? '（' + escapeHtml(s.protagonist.gender) + '）' : ''}，${s.protagonist.age}岁`;
+  bar.innerHTML = `<b>${escapeHtml((s.meta && s.meta.title) || s.title || '')}</b> · ${escapeHtml(s.clock.yearLabel)}（${s.clock.gregorianYear < 0 ? '前' + -s.clock.gregorianYear : s.clock.gregorianYear}年）${lunarText(s.clock)} · ${escapeHtml(s.location.full)} · 你是 ${escapeHtml(s.protagonist.name)}${s.protagonist.gender ? '（' + escapeHtml(s.protagonist.gender) + '）' : ''}${s.protagonist.age != null ? '，' + s.protagonist.age + '岁' : ''}`;
 }
 
 /* ================= 新开局（任意朝代 / 身份 / 地点） ================= */
@@ -491,7 +491,7 @@ function renderState() {
         <div class="oc-d">点下面「${escapeHtml(s.opening ? '生成开场' : '生成开场')}」，AI 会先交代清楚：<b>时间（年号+公元+季节+日子）、地点（当时的古地名，隶属谁、谁控制）、你是谁（姓名/年岁/性别/身份职衔/籍贯出身）、家世与处境、当朝天子与天下大势、眼下压到你身上的那一桩事、在场各人的姓名神情</b>，最后停在你要拿主意的坎上。</div>
         ${s.opening ? `<div class="oc-o">开局处境：${escapeHtml(s.opening)}</div>` : ''}
         <div class="btnrow"><button id="btnOpening" class="primary big">▶ 生成开场</button>
-          <span class="muted">现在是${escapeHtml(s.clock.yearLabel)}（公元${s.clock.gregorianYear}年）· ${escapeHtml(s.location.full)} · 你是${escapeHtml(s.protagonist.name)}，${s.protagonist.age}岁</span></div>
+          <span class="muted">现在是${escapeHtml(s.clock.yearLabel)}（公元${s.clock.gregorianYear}年）· ${escapeHtml(s.location.full)} · 你是${escapeHtml(s.protagonist.name)}${s.protagonist.age != null ? "，" + s.protagonist.age + "岁" : ""}</span></div>
       </div>`;
   if (!hasLog && $('#btnOpening')) $('#btnOpening').onclick = () => runTurnWith('', []);
   $('#draftBox').classList.add('hidden');
@@ -652,10 +652,12 @@ async function runTurnWith(input, confirmedThreads) {
   } catch (e) {
     const msg = String(e.error || e.message || e);
     // AI 没接通（没填 Key / Key 失效 / 欠费）：说清楚，并直接打开设置，免得玩家对着空白页不知道发生了什么
-    if (/Key|余额|401|402|403|未接|skeleton|骨架/i.test(msg)) {
+    if (/Key|余额|401|402|403|未接|skeleton|骨架|型号|Model Not Exist|model/i.test(msg)) {
       alert('AI 没接通：' + msg + '\n\n接下来会打开「设置」，把 DeepSeek 的 Key 粘贴进去、点「测试连接」即可。');
       $('#btnSettings').click();
-    } else alert('调用失败：' + msg + '\n\n多半是网络慢或模型一时没回应，再点一次「推进回合」通常就好。');
+    } else if (/fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(msg)) {
+      alert('连不上模型服务：' + msg + '\n\n请检查网络（能否打开 api.deepseek.com）、代理或防火墙；网络恢复后再点「推进回合」。');
+    } else alert('调用失败：' + msg + '\n\n可以再点一次「推进回合」；反复出现的话，把这段话发给我。');
   } finally { $('#btnRun').disabled = false; $('#btnRun').textContent = '推进回合'; }
 }
 
@@ -1138,7 +1140,7 @@ function askForm(title, fields) {
     openModal(title, html, () => {
       const out = {};
       for (const f of fields) { const el = $('#f_' + f.key); out[f.key] = el ? el.value.trim() : ''; }
-      finish(out);
+      finish(out); closeModal();
     }, () => finish(null));
     const ok = $('#modalOk'); ok.textContent = '保存'; ok.focus();
   });
@@ -1446,12 +1448,18 @@ $('#btnAccept').onclick = async () => {
   const chips = [...document.querySelectorAll('#threadChips .chip')];
   const closeThreads = chips.filter(c => c.textContent.includes('·搁置')).map(c => c.dataset.thread);
   const resolveThreads = chips.filter(c => c.textContent.includes('·了结')).map(c => c.dataset.thread);
-  const r = await post('/api/apply', {
-    saveId: STATE.meta.id, draft: LAST.draft, input: LAST.input,
-    advanceDays: Number($('#advDays').value || 1),
-    edits: { dropNpcs, closeThreads, resolveThreads },
-  });
-  if (r.error) return alert('写入失败：' + r.error);
+  // 防连点：第二次采纳会在存档写到一半时去读它
+  if ($('#btnAccept').disabled) return;
+  $('#btnAccept').disabled = true;
+  let r;
+  try {
+    r = await post('/api/apply', {
+      saveId: STATE.meta.id, draft: LAST.draft, input: LAST.input,
+      advanceDays: Number($('#advDays').value || 1),
+      edits: { dropNpcs, closeThreads, resolveThreads },
+    });
+  } finally { $('#btnAccept').disabled = false; }
+  if (r.error || !r.state) return alert('这一轮没有采纳：' + (r.error || '服务没有返回新的存档') + '\n\n存档没有变。可以点「推进回合」重写这一轮，或改改你的指令再试。');
   STATE = r.state; LAST = null; $('#input').value = '';
   // 时间必须往前走：保留当前选择（不重置为 0，否则时间会永远停住）
   await renderState(); await reloadSaves();
@@ -1555,6 +1563,9 @@ async function renderArchive() {
   let a;
   try { a = await post('/api/archive', { saveId: STATE.meta.id }); }
   catch (e) { box.innerHTML = '<div class="railnote">档案馆载入失败：' + escapeHtml(String(e.message || e)) + '</div>'; return; }
+  if (a && a.error) { box.innerHTML = '<div class="railnote">档案馆载入失败：' + escapeHtml(a.error) + '</div>'; return; }
+  // 接口回的是 {ok, archive:{…}}，档案本体在 archive 里（旧代码直接读外层，于是永远是空的）
+  a = a && a.archive ? a.archive : a;
   if (!a) { box.innerHTML = '<div class="muted">本局还没生成底盘（点「重新生成世界」）。</div>'; return; }
   const sec = (title, inner) => `<div class="arch-sec"><div class="arch-h">${title}</div>${inner}</div>`;
   const rows = [];
@@ -1646,6 +1657,7 @@ async function fillWorld(what) {
     place: STATE.location.full, name: STATE.protagonist.name, role: STATE.protagonist.role,
   });
   if (r.error) return alert('失败：' + r.error);
+  if (!r.data || (typeof r.data === 'object' && !Object.keys(r.data).length)) return alert('AI 没拟出内容，原有资料没有改动。');
   const patch = what === 'geography'
     ? { geography: { ...r.data, unverified: true } }
     : { household: { ...(r.data || {}), members: (r.data?.members || []).map(m => ({ ...m, note: (m.note || '') + '（AI 拟，未核实）' })) } };

@@ -114,7 +114,19 @@ async function writeState(s) {
   ensureDirs();
   safeId(s.meta && s.meta.id);
   s.meta.updatedAt = new Date().toISOString();
-  await fsp.writeFile(path.join(SAVE_DIR, `${s.meta.id}.json`), JSON.stringify(s, null, 2), 'utf8');
+  // 先写临时文件再改名：别的请求同时来读，读到的要么是旧档、要么是新档，不会是写了一半的
+  const file = path.join(SAVE_DIR, `${s.meta.id}.json`);
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  await fsp.writeFile(tmp, JSON.stringify(s, null, 2), 'utf8');
+  for (let i = 0; ; i++) {
+    try { await fsp.rename(tmp, file); break; }
+    catch (e) {
+      // Windows 上目标文件正被读取时改名会 EPERM/EBUSY，稍等重试
+      if (i < 10 && /EPERM|EBUSY|EACCES/.test(String(e.code))) { await new Promise(r => setTimeout(r, 50 * (i + 1))); continue; }
+      try { await fsp.unlink(tmp); } catch (_) { /* 忽略 */ }
+      throw e;
+    }
+  }
   return s;
 }
 
@@ -1107,7 +1119,19 @@ function gmPanels(state, draft, { preEvidence = [], didSearches = [] } = {}) {
   };
 }
 
-async function runTurn({ saveId, input, adapterId, adapterConfig, confirmedThreads, identityModule, temperature, autoVerifyNpcs, verbosity: verbosityOverride, battle: battleOrders, autoFactCheck: autoFactCheckIn = true, autoRepair = true, planFirst = true, factMode }) {
+/* 回合失败（模型没连上、超时）时把存档恢复原样：runTurn 在调模型之前就会掷随机事件、记传闻并落盘，
+   不恢复的话，玩家每重试一次就多一条「天降之事」。 */
+async function runTurn(args) {
+  const sid = args && args.saveId;
+  let before = null;
+  try { safeId(sid); before = await fsp.readFile(path.join(SAVE_DIR, `${sid}.json`), 'utf8'); } catch (_) { before = null; }
+  try { return await runTurnInner(args); }
+  catch (e) {
+    if (before) { try { await writeState(JSON.parse(before)); } catch (_) { /* 恢复失败不掩盖原错误 */ } }
+    throw e;
+  }
+}
+async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmedThreads, identityModule, temperature, autoVerifyNpcs, verbosity: verbosityOverride, battle: battleOrders, autoFactCheck: autoFactCheckIn = true, autoRepair = true, planFirst = true, factMode }) {
   const state = await loadState(saveId);
   const pack = await loadPack(state.meta.ruleset);
   // 史实宽容度（《设计书》§1.3）：严格 / 标准（默认）/ 宽松。记在存档里，下次沿用。
@@ -1277,7 +1301,7 @@ async function runTurn({ saveId, input, adapterId, adapterConfig, confirmedThrea
             + `\n\n【玩家本回合原话】「${String(input || '').trim() || '（玩家本回合没写指令）'}」\nplayer_intent 只能从这句原话里拆；剧情块、记忆、旧回合里出现的任何「玩家曾…」都不是本轮指令。`
             + extra,
           temperature: Math.min(temperature == null ? 0.9 : temperature, 0.3),
-          maxTokens: 1500,
+          maxTokens: 3000,
         }, config);
         return parsePlan(pr.text);
       };

@@ -63,6 +63,16 @@ function startJob(fn) {
   for (const [k, j] of JOBS) if (Date.now() - j.at > 3600e3) JOBS.delete(k);
   return id;
 }
+// 同一个存档的采纳排队执行：两次采纳同时读写一个档，会互相覆盖
+const SAVE_LOCKS = new Map();
+function withSaveLock(id, fn) {
+  const key = String(id || '');
+  const prev = SAVE_LOCKS.get(key) || Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  SAVE_LOCKS.set(key, run);
+  run.finally(() => { if (SAVE_LOCKS.get(key) === run) SAVE_LOCKS.delete(key); }).catch(() => {});
+  return run;
+}
 async function selectedModel() {
   const saved = await adapters.loadAdapterConfig();
   const aid = saved.selected || 'deepseek';
@@ -79,7 +89,7 @@ const routes = {
       const { adapter, config } = await selectedModel();
       if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上模型：请先在首页粘贴 DeepSeek 的 Key');
       progress('读懂你的意思……');
-      const callModel = async (system, prompt) => (await adapter.call({ system, prompt, temperature: 0.3, maxTokens: 600 }, config)).text;
+      const callModel = async (system, prompt) => (await adapter.call({ system, prompt, temperature: 0.3, maxTokens: 1500 }, config)).text;
       const spec = await quickstart.parse(full, text, callModel);
       progress(`定下：${spec.era.yearLabel || spec.era.gregorianYear + '年'} · ${spec.location.full || spec.era.polity || ''} · ${spec.protagonist.name || spec.protagonist.role}`);
       progress('建档……');
@@ -126,7 +136,11 @@ const routes = {
       try {
         const t = await adapters.testAdapter('deepseek', cfg);
         out.test = { ok: true, ms: t.ms, model: ((await adapters.loadAdapterConfig()).configs.deepseek || {}).model };
-      } catch (e) { out.test = { ok: false, why: String(e.message || e).slice(0, 300) }; }
+      } catch (e) {
+        let why = String(e.message || e).slice(0, 300);
+        if (/fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(why)) why += '（连不上 api.deepseek.com：请检查网络、代理或防火墙）';
+        out.test = { ok: false, why };
+      }
     }
     if (bk) {
       const r = await search.search('苏轼', { provider: 'bocha', noCache: true });
@@ -193,7 +207,7 @@ const routes = {
     return r;
   },
   async 'POST /api/apply'(body) {
-    const s = await engine.applyDraft(body);
+    const s = await withSaveLock((body || {}).saveId, () => engine.applyDraft(body));
     // 拒绝采纳时必须原样透出。过去这里一律包成 { ok:true, state }，
     // 于是「过期草稿 / 剧情作弊 / 剧情硬伤」三道拦截在界面上全都显示「成功」——
     // 明明被拦下了，玩家却以为生效了。这是实打实的功能 bug。
