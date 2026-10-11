@@ -1449,6 +1449,8 @@ async function seed(state, opts = {}) {
    这是用户诉求「我可以自定义年龄，要求你估计」的落地——虚构人物不再被强行填 20/28。 */
 async function ensureProtagonistAge(state, year, adapter, adapterCfg) {
   if (state.protagonist.age != null) return;
+  // 史载真人而生年史无明载：不估、不编，年龄就写「史无明载」（玩家：查不到的别瞎给）
+  if (state.mode === 'real') { try { if (figure.dossierAt(state.protagonist.name, year)) { state.protagonist.ageUnknown = true; return; } } catch (_) { /* 无档案照常估 */ } }
   const idm = state.identityModule || 'official';
   const role = state.protagonist.role || '';
   if (adapter) {
