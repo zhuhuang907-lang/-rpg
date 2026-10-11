@@ -29,6 +29,7 @@ function meterSpec(state) {
   return METER_SPEC[idm] || METER_SPEC.commoner;
 }
 
+const CLOSED = /了结|办妥|办砸|作罢|告终|结案|失败|完结/;
 const WORDS = v => (v >= 80 ? '感戴' : v >= 60 ? '安' : v >= 40 ? '平常' : v >= 25 ? '不满' : '怨');
 
 /** 采纳时：数值、人群、案头、暗线记账 */
@@ -57,11 +58,40 @@ function applyDesk(state, draft) {
     const old = G[k];
     G[k] = { value: v, word: WORDS(v), delta: old ? v - old.value : 0, why: String((g.因 || g.why) || '').slice(0, 60) || (old && old.why) || '', turn };
   }
-  // 案头：新的一批来报替换上一批（上一批没处理的，模型会在新来报里或暗线里交代）
+  // 事务账：来报进账后一直挂着，直到了结；每回合由模型申报每件的进展与结局
+  const MT = state.matters = arr(state.matters);
+  const findM = t => MT.find(m => m.title === t || (t && m.title && (m.title.includes(t) || t.includes(m.title))));
+  for (const u of arr(d.matters)) {
+    const m = findM(cut(u && u.title, 16));
+    if (!m) continue;
+    const st = cut(u.status, 4);
+    if (st) m.status = st;
+    if (u.progress) m.progress = cut(u.progress, 120);
+    if (u.outcome) m.outcome = cut(u.outcome, 200);
+    if (CLOSED.test(m.status) && !m.closed) m.closed = turn;
+    m.updated = turn;
+  }
   const reps = arr(d.reports).filter(r => r && (r.title || r.text)).slice(0, 4)
     .map(r => ({ title: cut(r.title, 16), from: cut(r.from, 30), form: cut(r.form, 6), text: cut(r.text, 320), deadline: cut(r.deadline, 40), turn,
       options: arr(r.options).filter(o => o && o.text).slice(0, 4).map(o => ({ text: cut(o.text, 80), who: cut(o.who, 20), risk: cut(o.risk, 4), cost: cut(o.cost, 60) })) }));
-  if (reps.length) state.desk = reps;
+  for (const r of reps) {
+    const old = findM(r.title);
+    if (old && !CLOSED.test(old.status)) Object.assign(old, { ...r, status: old.status, opened: old.opened });
+    else MT.push({ ...r, status: '未办', opened: turn });
+  }
+  // 只留没了结的和最近了结的 12 件
+  const open = MT.filter(m => !CLOSED.test(m.status));
+  const closed = MT.filter(m => CLOSED.test(m.status)).slice(-12);
+  state.matters = MT.filter(m => open.includes(m) || closed.includes(m));
+  state.desk = open;   // 旧字段：案头＝没了结的事
+  // 人物卡：身份、对你的态度、眼下想要什么、近况
+  const P = state.people = state.people && typeof state.people === 'object' ? state.people : {};
+  for (const n of [...arr(d.newNpcs), ...arr(d.presentNpcs)]) {
+    if (!n || !n.name) continue;
+    const k = cut(n.name, 12);
+    const o = P[k] || {};
+    P[k] = { ...o, role: cut(n.role || o.role, 40), tie: cut(n.tie || o.tie, 30), attitude: cut(n.attitude || o.attitude, 8), want: cut(n.want || o.want, 60), status: cut(n.status || o.status, 60), seen: turn };
+  }
   // 暗线：只有 GM 知道
   const notes = arr(d.gmNotes).map(x => cut(typeof x === 'string' ? x : JSON.stringify(x), 140)).filter(Boolean).slice(0, 5);
   if (notes.length) state.gmNotes = arr(state.gmNotes).concat(notes.map(t => ({ turn, text: t }))).slice(-15);
@@ -87,10 +117,16 @@ function metersBlock(state, isOpening) {
 }
 
 function deskBlock(state) {
-  const d = arr(state.desk);
+  const d = arr(state.matters).filter(m => !CLOSED.test(m.status));
   if (!d.length) return '';
-  return '【案头上的来报（上一回合末摆上来的；玩家这一步可能就是在处理其中某件，没处理的到期按「未处理」推演）】\n'
-    + d.map(r => `· 「${r.title}」来自${r.from}（${r.form}）：${cut(r.text, 140)}${r.deadline ? '　期限：' + r.deadline : ''}`).join('\n');
+  return '【事务账：还没了结的事（每一件都要在 matters 里申报本回合的进展；了结时写清结局——谁得了什么、谁丢了什么、牵涉的人各落得什么下场）】\n'
+    + d.map(r => `· 「${r.title}」第${r.opened || r.turn}轮来自${r.from}（${r.form}）：${cut(r.text, 120)}${r.deadline ? '　期限：' + r.deadline : ''}　现状：${r.status}${r.progress ? '，' + r.progress : ''}`).join('\n');
+}
+function peopleCardBlock(state) {
+  const P = Object.entries(state.people || {}).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 12);
+  if (!P.length) return '';
+  return '【人物近况（态度与处境以此为准，有变化的在 presentNpcs 里更新 attitude / want / status）】\n'
+    + P.map(([k, v]) => `· ${k}：${v.role || ''}${v.attitude ? '，对主角' + v.attitude : ''}${v.want ? '，想要' + v.want : ''}${v.status ? '，近况：' + v.status : ''}`).join('\n');
 }
 
 function hiddenBlock(state) {
@@ -165,9 +201,11 @@ function deskView(state) {
     meters: Object.entries(state.meters || {}).map(([k, v]) => ({ k, ...v })),
     groups: Object.entries(state.groups || {}).map(([k, v]) => ({ k, ...v })),
     desk: arr(state.desk),
+    matters: arr(state.matters),
+    people: state.people || {},
     consults: arr(state.consults).slice(-12),
     advice: arr(state.adviceBook),
   };
 }
 
-module.exports = { meterSpec, applyDesk, metersBlock, deskBlock, hiddenBlock, consultBlock, askPrompt, polishPrompt, polishForm, deskView, personCard };
+module.exports = { CLOSED, peopleCardBlock, meterSpec, applyDesk, metersBlock, deskBlock, hiddenBlock, consultBlock, askPrompt, polishPrompt, polishForm, deskView, personCard };

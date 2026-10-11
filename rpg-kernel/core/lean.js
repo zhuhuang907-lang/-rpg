@@ -37,6 +37,8 @@ function gmRules(verbosity) {
 5. 结算分三层：回报＝执行人的说法，用当时的文书或口吻，可以失真；账目＝数值的真实变化（meters / groups），与正文对得上；风声＝一到三条街谈巷议或同僚私语，透露回报里没说的东西。不弹对错提示，让玩家从三者的出入里自己看。
 6. 后果可以延迟：一到三回合后借来报或上门的人回来。没写到的真相与暗线写进 gmNotes（玩家看不到）。
 7. 【主角交代下去、还没办完的事】时间到了必须交代结果，不许遗忘；在 orders 里申报本轮新交代的差事和旧差事的进展。
+7a. 【事务账】里每一件没了结的事，本回合都要在 matters 里报进展（未办 / 在办 / 恶化 / 了结 / 作罢）。一件事不能无限拖：最迟三四回合要有个结局。了结时把结局写明白：事情最后怎样、钱粮落到谁手里、牵涉的每个人落得什么下场（升、贬、罚、抓、走、死、得利、记恨），正文里也要写到，不许含糊带过。
+7b. 出场的人物要让玩家看得清：头一次出场交代他是谁、和主角什么关系、为什么在这里；presentNpcs 里写他此刻对主角的态度（一个词）、眼下想要什么、近况。
 
 三、案头（每回合结尾）
 8. reports 给出一到三份新来报：待主角处理的具体事务，来自具体的人，以当时的形式（奏折、公文、书信、口信、账单、传闻……），用来人的口吻，有人、有数、有期限。来报可以夸大、说谎、瞒报（真相写进 gmNotes）。若此前有决定，至少一份是它的回响。
@@ -66,7 +68,8 @@ function gmRules(verbosity) {
 "groups":[{"人群":"","值":50,"因":""}],
 "reports":[{"title":"四到八字","from":"谁（身份）","form":"奏折/公文/书信/口信/账单/传闻","text":"来人口吻的正文，80到200字","deadline":"期限及对方声称的后果","options":[{"text":"可以直接下的令","who":"建议交给谁办","risk":"稳/有把握/五五/难","cost":"代价与隐患，一句"}]}],
 "actions":["随手能做的事"],
-"presentNpcs":[{"name":"","role":""}],"newNpcs":[{"name":"","gender":"","age":0,"role":"","tie":"与主角的关系"}],
+"matters":[{"title":"事务账里那件事的标题","status":"未办/在办/恶化/了结/作罢","progress":"本回合的进展","outcome":"了结时的结局：事情怎样、谁得谁失、牵涉之人的下场"}],
+"presentNpcs":[{"name":"","role":"","attitude":"对主角的态度一词","want":"他眼下想要什么","status":"近况一句"}],"newNpcs":[{"name":"","gender":"","age":0,"role":"","tie":"与主角的关系"}],
 "statusChanges":[{"项":"职官/爵位/健康/名望等","后":"变化后的值","原因":"正文里的哪件事"}],
 "historyChanges":[{"event":"史书原载的事","now":"本局实际变成了什么","cause":"玩家哪一步导致","person":"命运被改的真人（可空）","alive":true}],
 "orders":[{"who":"办事的人","what":"主角交代的事","status":"在办/办妥/办砸/搁下","result":"结果"}],
@@ -184,7 +187,7 @@ function buildLeanPrompt(state, input, { verbosity = 'normal', isOpening = false
   try {
     const dk = require('./desk');
     parts.push(dk.metersBlock(state, isOpening));
-    for (const b of [dk.deskBlock(state), dk.consultBlock(state), dk.hiddenBlock(state)]) if (b) parts.push(b);
+    for (const b of [dk.deskBlock(state), dk.peopleCardBlock(state), dk.consultBlock(state), dk.hiddenBlock(state)]) if (b) parts.push(b);
   } catch (_) { /* 无 */ }
   parts.push(`【本身份的常法（出办法时可参照，代价与见效时间要真实；玩家也可以不按常法来）】${POLICY_HINT[state.identityModule] || POLICY_HINT.commoner}`);
   // 上一段写完后，时钟又往前走了几天而正文没写到：这几天里的事要先交代
