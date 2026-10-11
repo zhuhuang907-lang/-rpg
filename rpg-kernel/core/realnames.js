@@ -90,12 +90,18 @@ async function fixDraftCollisions(state, draft, { online = true } = {}) {
   if (!draft || !Array.isArray(draft.newNpcs) || !draft.newNpcs.length) return fixes;
   const real = realNamesOf(state);
   const taken = new Set([...real, ...((state.npcs || []).map(n => n && n.name).filter(Boolean))]);
-  let checked = 0;
-  for (const n of draft.newNpcs) {
-    if (!n || !n.name || /historical|real|真实/.test(String(n.source || ''))) continue;
+  const cands = draft.newNpcs.filter(n => n && n.name && !/historical|real|真实/.test(String(n.source || '')));
+  // 维基查重并行做（最多 3 个，各 6 秒封顶），不串行拖慢回合
+  const wikiHit = new Map();
+  if (online) {
+    const toCheck = cands.filter(n => !real.has(n.name) && n.name.length >= 2).slice(0, 3);
+    const hits = await Promise.all(toCheck.map(n => onWiki(n.name)));
+    toCheck.forEach((n, i) => wikiHit.set(n.name, hits[i]));
+  }
+  for (const n of cands) {
     let why = '';
     if (real.has(n.name)) why = '与史载真人同名';
-    else if (online && checked < 3 && n.name.length >= 2) { checked++; if (await onWiki(n.name)) why = '与维基上的历史人物同名'; }
+    else if (wikiHit.get(n.name)) why = '与维基上的历史人物同名';
     if (!why) continue;
     const to = renameAvoiding(n.name, n.gender, taken);
     taken.add(to);

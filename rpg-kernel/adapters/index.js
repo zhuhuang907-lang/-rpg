@@ -159,7 +159,45 @@ function pickModel(ids, want) {
   return ids.find(i => /v4.*pro/i.test(i)) || ids.find(i => /pro/i.test(i)) || ids.find(i => /flash|chat/i.test(i)) || ids[0];
 }
 const isThinkingModel = m => /reasoner|r1\b|-r1|think/i.test(m);
-async function openaiChat({ system, prompt, temperature, maxTokens }, cfg) {
+/* 流式请求（SSE）：边收边把累计的正文交给 onDelta，界面就能边写边显示，不必干等一整段。
+   返回与非流式相同形状的 json（choices[0].message.content / finish_reason），供后面的逻辑照常处理。 */
+async function streamChat(url, headers, body, timeoutMs, onDelta) {
+  const res = await require('../core/net').fetchX(url, {
+    method: 'POST', headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify({ ...body, stream: true }), signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    const raw = await res.text();
+    const hint = { 401: 'Key 不对或已失效，请到「设置」重新填', 402: '账户余额不足，请到模型官网充值', 403: '没有权限（Key 不对或被封）', 429: '请求太频繁或额度用完，稍等再试', 500: '模型服务出错，稍后再试', 502: '模型服务暂时不可用', 503: '模型服务繁忙，稍后再试' }[res.status];
+    throw new Error(`${hint ? hint + '（' : ''}HTTP ${res.status}${hint ? '）' : ''} ${res.statusText} :: ${raw.slice(0, 300)}`);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', content = '', reasoning = '', finish = null, usage = null;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (data === '[DONE]') continue;
+      let j; try { j = JSON.parse(data); } catch (_) { continue; }
+      const ch = j.choices && j.choices[0];
+      if (j.usage) usage = j.usage;
+      if (!ch) continue;
+      const d = ch.delta || {};
+      if (d.content) { content += d.content; try { onDelta(content); } catch (_) { /* 界面回调出错不影响收稿 */ } }
+      if (d.reasoning_content) reasoning += d.reasoning_content;
+      if (ch.finish_reason) finish = ch.finish_reason;
+    }
+  }
+  return { choices: [{ message: { content, reasoning_content: reasoning || undefined }, finish_reason: finish }], usage };
+}
+
+async function openaiChat({ system, prompt, temperature, maxTokens, onDelta }, cfg) {
   const base = trimSlash(cfg.baseUrl || 'https://api.openai.com/v1');
   if (!cfg.apiKey && !/127\.0\.0\.1|localhost/.test(base)) throw new Error('还没填模型的 Key：请在首页或「设置」里粘贴 DeepSeek 的 Key');
   let model = MODEL_CACHE.get(base + '|' + cfg.model) || cfg.model || 'gpt-4o-mini';
@@ -180,11 +218,18 @@ async function openaiChat({ system, prompt, temperature, maxTokens }, cfg) {
     if (!thinking && !isThinkingModel(model)) body.temperature = temperature ?? 0.9;
     let json;
     try {
-      ({ json } = await httpJson(`${base}/chat/completions`, {
-        headers: cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
-        body,
-        timeoutMs: cfg.timeoutMs || (thinking ? 600000 : 300000),
-      }));
+      const headers = cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {};
+      const timeoutMs = cfg.timeoutMs || (thinking ? 600000 : 300000);
+      if (typeof onDelta === 'function' && !cfg.noStream) {
+        try { json = await streamChat(`${base}/chat/completions`, headers, body, timeoutMs, onDelta); }
+        catch (e) {
+          // 服务端不支持流式（少数兼容接口）：退回一次性请求；其他错误照常往外抛，交给下面的重试逻辑
+          if (/HTTP 4\d\d/.test(String(e.message)) && /stream/i.test(String(e.message))) ({ json } = await httpJson(`${base}/chat/completions`, { headers, body, timeoutMs }));
+          else throw e;
+        }
+      } else {
+        ({ json } = await httpJson(`${base}/chat/completions`, { headers, body, timeoutMs }));
+      }
     } catch (e) {
       const msg = String(e.message || e);
       // 服务端不认 thinking 参数：去掉再试
