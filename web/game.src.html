@@ -144,8 +144,8 @@ textarea{resize:vertical}
 .tblwrap{overflow-x:auto}
 .overview{font-family:var(--f-read);font-size:14px;line-height:1.85;white-space:pre-wrap}
 .mine{color:var(--zhu)}
-.banner{background:var(--ochre-soft);border:1px solid var(--ochre);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:14px}
-.err{background:var(--zhu-soft);border:1px solid var(--zhu);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:14px}
+.banner{white-space:pre-wrap;background:var(--ochre-soft);border:1px solid var(--ochre);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:14px}
+.err{white-space:pre-wrap;background:var(--zhu-soft);border:1px solid var(--zhu);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:14px}
 .confirm{display:inline-flex;gap:6px;align-items:center;font-size:13px}
 
 @media (max-width: 960px){
@@ -288,6 +288,36 @@ function rules() {
 
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
+/* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
+let MODE = 'none', KEY = { has: false, tail: '', model: '' };
+const api = async (url, body) => {
+  const r = await fetch(url, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return r.json();
+};
+/** 桌面版：把对话交给本机的游戏服务，由它带着 DeepSeek Key 去问，边写边取回 */
+function localSample(input, opts = {}) {
+  return new Promise(async (resolve, reject) => {
+    const messages = Array.isArray(input) ? input : [{ role: 'user', content: String(input) }];
+    let job = null, stopped = false;
+    const onAbort = () => { stopped = true; if (job) api('/api/llm-stop', { job }).catch(() => {}); reject({ code: 'cancelled' }); };
+    if (opts.signal) { if (opts.signal.aborted) return onAbort(); opts.signal.addEventListener('abort', onAbort, { once: true }); }
+    try {
+      const r = await api('/api/llm-start', { messages, maxTokens: 8000 });
+      if (!r.ok) return reject({ code: 'local', message: r.why || '没发出去' });
+      job = r.job;
+      let last = '';
+      for (;;) {
+        await new Promise(res => setTimeout(res, 700));
+        if (stopped) return;
+        let j; try { j = await api('/api/llm-job', { job }); } catch (_) { return reject({ code: 'local', message: '游戏服务没有回应：启动游戏的小窗口是不是被关掉了？' }); }
+        if (j.text && j.text !== last) { last = j.text; opts.onText && opts.onText({ text: last, delta: '' }); }
+        if (j.status === 'done') return resolve({ text: j.text, truncated: false });
+        if (j.status === 'error' || !j.ok) return reject({ code: 'local', message: j.error || j.why || '没写成' });
+        if (j.status === 'cancelled') return;
+      }
+    } catch (e) { if (!stopped) reject({ code: 'local', message: '游戏服务没有回应：' + (e.message || e) }); }
+  });
+}
 const LOCAL_INDEX = 'hrpg:index';
 const readIdx = () => { try { return JSON.parse(lsGet(LOCAL_INDEX) || '[]'); } catch (_) { return []; } };
 let SAVED = '', SAVED_BAD = false;
@@ -295,10 +325,12 @@ const store = {
   async list() {
     const m = new Map();
     for (const x of readIdx()) m.set(x.id, { ...x });
-    if (DB && UID) {
+    const add = v => { const o = m.get(v.id); if (!o || (v.updatedAt || 0) >= (o.updatedAt || 0)) m.set(v.id, { id: v.id, title: v.title, sub: v.sub, updatedAt: v.updatedAt }); };
+    if (MODE === 'local') { try { const r = await api('/api/wsaves'); for (const v of arr(r.saves)) add(v); } catch (_) { /* 只列浏览器里的 */ } }
+    else if (DB && UID) {
       try {
         const q = await DB.collection('data/users/' + UID).get();
-        for (const d of q.docs) if (d.exists) { const v = d.data(); const o = m.get(d.id); if (!o || (v.updatedAt || 0) >= (o.updatedAt || 0)) m.set(d.id, { id: d.id, title: v.title, sub: v.sub, updatedAt: v.updatedAt }); }
+        for (const d of q.docs) if (d.exists) add({ id: d.id, ...d.data() });
       } catch (_) { /* 读不到账号里的就只列本机的 */ }
     }
     return [...m.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -306,7 +338,8 @@ const store = {
   async load(id) {
     let local = null, remote = null;
     try { local = JSON.parse(lsGet('hrpg:save:' + id) || 'null'); } catch (_) { local = null; }
-    if (DB && UID) { try { const d = await DB.collection('data/users/' + UID).doc(id).get(); remote = d.exists ? clone(d.data()) : null; } catch (_) { remote = null; } }
+    if (MODE === 'local') { try { const r = await api('/api/wload', { id }); remote = r.ok ? r.save : null; } catch (_) { remote = null; } }
+    else if (DB && UID) { try { const d = await DB.collection('data/users/' + UID).doc(id).get(); remote = d.exists ? clone(d.data()) : null; } catch (_) { remote = null; } }
     const s = local && remote ? ((local.updatedAt || 0) > (remote.updatedAt || 0) ? local : remote) : (remote || local);
     return s ? migrate(s) : null;
   },
@@ -320,20 +353,23 @@ const store = {
       const idx = readIdx().filter(x => x.id !== s.id); idx.push({ id: s.id, title: s.title, sub: s.sub, updatedAt: s.updatedAt });
       localStorage.setItem(LOCAL_INDEX, JSON.stringify(idx)); local = true;
     } catch (_) { local = false; }
-    if (DB && UID) {
+    if (MODE === 'local') { try { remote = !!(await api('/api/wsave', { save: s })).ok; } catch (_) { remote = false; } }
+    else if (DB && UID) {
       for (let i = 0; i < 2 && !remote; i++) {
         try { await DB.collection('data/users/' + UID).doc(s.id).set(clone(s)); remote = true; }
         catch (e) { if (i === 0 && e && e.code === 'unavailable') await new Promise(r => setTimeout(r, 800 + Math.random() * 800)); else break; }
       }
     }
     const t = new Date().toTimeString().slice(0, 5);
-    SAVED = remote ? `已存到你的账号 · ${t}` : local ? `已存在本浏览器 · ${t}${DB && UID ? '（账号这次没存上，下回会再试）' : ''}` : '这回没存上：浏览器和账号都写不进去。别关页面，下回会再试。';
+    const where = MODE === 'local' ? '游戏存档文件夹' : '你的账号';
+    SAVED = remote ? `已存到${where} · ${t}` : local ? `已存在本浏览器 · ${t}${MODE === 'local' || (DB && UID) ? `（${where}这次没存上，下回会再试）` : ''}` : '这回没存上。别关页面，下回会再试。';
     SAVED_BAD = !remote && !local;
     lsSet('hrpg:last', s.id);
     return remote || local;
   },
   async del(id) {
-    if (DB && UID) { try { await DB.collection('data/users/' + UID).doc(id).delete(); } catch (_) { /* 无 */ } }
+    if (MODE === 'local') { try { await api('/api/wdel', { id }); } catch (_) { /* 无 */ } }
+    else if (DB && UID) { try { await DB.collection('data/users/' + UID).doc(id).delete(); } catch (_) { /* 无 */ } }
     lsSet('hrpg:save:' + id, null);
     lsSet(LOCAL_INDEX, JSON.stringify(readIdx().filter(x => x.id !== id)));
     if ((lsGet('hrpg:last') || '').startsWith(id)) lsSet('hrpg:last', null);
@@ -374,7 +410,7 @@ const ERR = {
   upstream_error: '连接中断了，点「再试一次」。',
   bad_json: 'AI 返回的格式不对，没读出内容，点「再试一次」。',
 };
-const errText = e => ERR[e && e.code] || ('出错了：' + ((e && (e.message || e.code)) || e) + '。点「再试一次」。');
+const errText = e => (e && (e.code === 'local' || e.code === 'no_key' || e.code === 'no_sample') ? e.message + (e.code === 'local' ? '。点「再试一次」；反复出现就在首页点「检查网络」。' : '') : '') || ERR[e && e.code] || ('出错了：' + ((e && (e.message || e.code)) || e) + '。点「再试一次」。');
 function parseJSON(text) {
   const t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
@@ -400,10 +436,11 @@ function partial(text) {
   return out;
 }
 async function callClaude(input, onReply) {
-  if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开才能调 AI' };
+  if (MODE === 'local' && !KEY.has) throw { code: 'no_key', message: '还没填 DeepSeek 的 Key：在首页把 Key 粘贴进去点「保存」' };
+  if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
   CTL = new AbortController();
   const opts = { signal: CTL.signal, cache: false, modelTier: SETTINGS.tier };
-  if (SETTINGS.tier !== 'complex') opts.effort = 'low';
+  if (SETTINGS.tier !== 'complex' && MODE === 'claude') opts.effort = 'low';
   return SAMPLE(input, { ...opts, onText: onReply ? ({ text }) => onReply(partial(text)) : undefined });
 }
 
@@ -585,23 +622,38 @@ setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = 
 function render() {
   $('#bHome').hidden = VIEW !== 'game';
   $('#statusLine').innerHTML = VIEW === 'game' && S ? `<b>${esc(S.protagonist.name)}</b> · ${esc(timeText(S.clock))} · ${esc(S.place.full)}${S.estate && S.estate.cash ? ' · 现钱 ' + esc(S.estate.cash) : ''}` : '';
-  $('#notice').innerHTML = READY && !SAMPLE ? '<div class="err">这个页面要在 claude.ai 里打开才能玩（它用你自己的 Claude 账号来写剧情）。</div>' : '';
+  $('#notice').innerHTML = !READY ? '' : MODE === 'none' ? (location.protocol === 'file:' ? '<div class="err"><b>这样打开用不了。</b>你双击的是游戏里的网页文件。请关掉它，双击桌面上的「历史模拟RPG」图标。</div>' : '<div class="err">游戏服务没有在运行：启动游戏的小窗口是不是被关掉了？重新双击桌面上的「历史模拟RPG」。</div>') : '';
   if (VIEW === 'start') return renderStart();
   renderGame();
 }
 
 const EXAMPLES = ['万历年间苏州的绣娘', '熙宁二年杭州的知县', '乾隆年间扬州的盐商', '天宝十四载范阳的一个小校', '元丰年间汴京的太学生', '崇祯元年的崇祯皇帝'];
+let KEYMSG = '', KEY_OPEN = false;
+function keyBox() {
+  const open = !KEY.has || KEY_OPEN;
+  return `<div class="h"><span class="seal">钥</span>DeepSeek Key<span class="note">只存在你自己电脑上；剧情用你自己的 DeepSeek 额度来写</span></div>
+    ${KEY.has && !KEY_OPEN ? `<div class="row" style="margin-top:0"><span class="savest">✓ 已接上 DeepSeek（Key 尾号 ${esc(KEY.tail)}，型号 ${esc(KEY.model)}）</span><button class="link" id="bKeyOpen">换 Key</button><button class="link" id="bNet">检查网络</button></div>` : ''}
+    ${open ? `<div class="howto" style="grid-template-columns:1fr"><div>
+      <b>${KEY.has ? '换一个 Key' : '第一次玩：先粘贴 DeepSeek 的 Key'}</b>
+      <div class="row"><input id="kIn" type="password" autocomplete="off" placeholder="sk-……" class="grow"><input id="kModel" placeholder="型号，留空用 deepseek-v4-pro" style="width:16em"><button class="main" id="bKeySave">保存</button></div>
+      <div class="muted" style="margin-top:6px">没有 Key？去 platform.deepseek.com 注册，在「API keys」里生成一个，充几块钱就能玩很久。</div>
+      <div class="row"><button id="bNet">检查网络</button>${KEY.has ? '<button class="link" id="bKeyClose">不换了</button>' : ''}</div>
+    </div></div>` : ''}
+    ${KEYMSG ? `<div class="${/✓/.test(KEYMSG) ? 'banner' : 'err'}">${esc(KEYMSG)}</div>` : ''}`;
+}
+async function refreshKey() { try { const q = await api('/api/quick-status'); KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '' }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
 async function renderStart() {
   $('#app').innerHTML = `<section class="start">
     <div class="hero"><h1>你想当谁？</h1>
-      <p>一句话就行：哪个年代、什么地方、什么人。之后就像跟我聊天一样往下玩：戏里你说做什么，世界照真实的样子回应；戏外你随时可以问历史、问地理、问局面、请它帮你分析。</p>
-      <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off"><button class="main" id="bStart" ${BUSY || !SAMPLE ? 'disabled' : ''}>开始</button></form>
+      <p>一句话就行：哪个年代、什么地方、什么人。之后就像聊天一样往下玩：戏里你说做什么，世界照真实的样子回应；戏外你随时可以问历史、问地理、问局面、请它帮你分析。</p>
+      <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off"><button class="main" id="bStart" ${BUSY || !SAMPLE || (MODE === 'local' && !KEY.has) ? 'disabled' : ''}>开始</button></form>
       <div class="examples">${EXAMPLES.map(x => `<button class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
     </div>
     ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>正在把你落到历史里、立账册、写开场……已 <span id="secs">0</span> 秒（一般一两分钟）<button class="link" id="bStop">停下</button></div>
       ${STREAM ? `<div class="msg gm"><div class="text caret">${esc(STREAM)}</div></div>` : ''}` : ''}
     ${ERRMSG ? `<div class="err">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''}</div>` : ''}
-    <div class="h"><span class="seal">档</span>接着玩<span class="note">存在你的 claude.ai 账号里，本浏览器也留一份</span></div>
+    ${MODE === 'local' ? keyBox() : ''}
+    <div class="h"><span class="seal">档</span>接着玩<span class="note">${MODE === 'local' ? '存在游戏文件夹里（app\\data\\websaves），本浏览器也留一份' : '存在你的 claude.ai 账号里，本浏览器也留一份'}</span></div>
     <div class="saves" id="saves"><div class="muted">载入中…</div></div>
     <div class="h"><span class="seal">规</span>怎么玩</div>
     <div class="howto">
@@ -734,9 +786,10 @@ function pane(tab) {
   return `<div class="h" style="margin-top:6px"><span class="seal">设</span>设置</div>
     <label class="muted" for="sLen">戏里每回正文多长</label>
     <select id="sLen">${[['short', '短（三四百字）'], ['normal', '标准（六百到一千字）'], ['long', '长（一千到一千六百字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    ${MODE === 'local' ? `<p class="muted" style="font-size:13px">剧情用你自己的 DeepSeek Key（尾号 ${esc(KEY.tail)}）来写。换 Key：点右上「换一局」回到首页。<br>想用以前的界面：<a href="/classic.html" style="color:var(--qing)">旧版界面</a></p>` : `
     <label class="muted" for="sTier" style="display:block;margin-top:10px">用哪档 AI</label>
     <select id="sTier">${[['default', '标准（快一些）'], ['complex', '最强（更细更准，但更慢、更费额度）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.tier === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
-    <p class="muted" style="font-size:13px">剧情用你自己的 Claude 账号来写，会占用你的 Claude 使用额度。存档存在你的账号里，只有你看得到。</p>`;
+    <p class="muted" style="font-size:13px">剧情用你自己的 Claude 账号来写，会占用你的 Claude 使用额度。存档存在你的账号里，只有你看得到。</p>`}`;
 }
 
 /* ========== 动作 ========== */
@@ -789,6 +842,30 @@ document.addEventListener('click', async e => {
   const ds = t.dataset;
   if (ds.ex) { $('#qText').value = ds.ex; return; }
   if (t.id === 'bStop') { CTL && CTL.abort(); return; }
+  if (t.id === 'bKeyOpen') { KEY_OPEN = true; render(); return; }
+  if (t.id === 'bKeyClose') { KEY_OPEN = false; KEYMSG = ''; render(); return; }
+  if (t.id === 'bKeySave') {
+    const k = $('#kIn').value.trim(), m = $('#kModel').value.trim();
+    if (!k) { $('#kIn').focus(); return; }
+    t.disabled = true; t.textContent = '保存中…'; KEYMSG = '';
+    try {
+      const r = await api('/api/quick-key', { apiKey: k, model: m || undefined });
+      await refreshKey();
+      if (!r.ok) KEYMSG = '没保存上：' + (r.why || '未知原因');
+      else if (r.test && r.test.ok) { KEYMSG = `✓ 已保存，试连成功（${r.test.model || ''}）`; KEY_OPEN = false; }
+      else KEYMSG = '已保存，但试连没通：' + ((r.test && r.test.why) || '') + '。点「检查网络」看看卡在哪。';
+    } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
+    render(); return;
+  }
+  if (t.id === 'bNet') {
+    t.disabled = true; t.textContent = '检查中…';
+    try {
+      const r = await api('/api/netcheck');
+      KEYMSG = arr(r.results).map(x => `${x.name}：${x.ok ? '✓ 连得上' : '✗ ' + x.why}`).join('\n') + (r.proxy ? `\n代理：${r.proxy}` : '');
+      if (arr(r.results).every(x => x.ok)) KEYMSG = '✓ ' + KEYMSG;
+    } catch (e) { KEYMSG = '游戏服务没有回应：' + (e.message || e); }
+    render(); return;
+  }
   if (t.id === 'bRetry') { const f = LAST_ACTION; ERRMSG = ''; f && f(); return; }
   if (t.id === 'bHome') { if (BUSY) return; VIEW = 'start'; S = null; ERRMSG = ''; SAVED = ''; render(); return; }
   if (ds.load) { const s = await store.load(ds.load); if (!s) { ERRMSG = '这个存档读不出来了。'; render(); return; } S = s; VIEW = 'game'; ERRMSG = ''; EDITING = false; SAVED = ''; lsSet('hrpg:last', s.id); render(); return; }
@@ -828,9 +905,12 @@ render();
 (async () => {
   const c = window.claude;
   if (c && c.use) {
+    MODE = 'claude';
     const [sm, db, user] = await Promise.all([c.use('sample'), c.use('db'), c.use('user')]);
     SAMPLE = sm; DB = db;
     try { UID = user ? await user.id() : null; } catch (_) { UID = null; }
+  } else if (location.protocol.startsWith('http')) {
+    try { const h = await api('/api/health'); if (h && h.ok) { MODE = 'local'; SAMPLE = localSample; await refreshKey(); } } catch (_) { MODE = 'none'; }
   }
   READY = true;
   const last = lsGet('hrpg:last');
