@@ -45,6 +45,7 @@
 
 <div class="wrap">
   <main>
+    <div id="meterBar" class="meterbar hidden"></div>
     <div id="turnDelta" class="deltabox hidden"></div>
     <div id="logBox" class="log"></div>
 
@@ -52,6 +53,7 @@
       <div class="draft-head">这一段 · 满意就直接在下面写你下一步；不满意可以重新生成或自己改<span id="draftMeta" class="adv"></span></div>
       <div id="draftEcho" class="echo"></div>
       <div id="draftScene" class="scene"></div>
+      <div id="settleBox" class="settle hidden"></div>
       <div class="apply">
         <div class="row">
           <button id="btnRetry">重新生成</button>
@@ -75,6 +77,8 @@
         <div id="threadChips" class="chips adv"></div>
       </div>
     </div>
+
+    <div id="deskBox" class="desk hidden"></div>
 
     <div id="starterCards" class="cards">
       <div id="quickBox" class="quick">
@@ -103,7 +107,14 @@
     </div>
 
     <div class="compose">
-      <textarea id="input" rows="3" placeholder="写你要做的事。比如：传押司来问账、去城门口看看、把那封信托人送出去。留空就先看看眼前正在发生什么。"></textarea>
+      <div id="tray" class="tray hidden"></div>
+      <textarea id="input" rows="2" placeholder="点上面来报里的办法、右边问人得来的主意，就会收进「这一回合的决定」；也可以在这里自己写。什么都不选直接点「过这一回合」＝这段日子不下令，看看会怎样。"></textarea>
+      <div class="row tools">
+        <label class="chk">交给
+          <select id="assignee" title="这件事交给谁去办"><option value="">（按身份默认）</option></select>
+        </label>
+        <button id="btnPolish" title="把你写的大白话改成合乎身份的文书：诏书、批札、手书、口头吩咐">润色成文书</button>
+      </div>
       <div class="row">
         <span class="lbl adv">本轮要碰的线索（不选＝不替你推进）：</span>
         <select id="threadSel" class="adv" multiple size="3"></select>
@@ -125,7 +136,7 @@
         <label class="chk adv"><input type="checkbox" id="autoVerify"> 自动核查新人物是否撞真人名</label>
         <label class="chk adv"><input type="checkbox" id="autoFactCheck" checked> 自动核查史实（引擎主动检索并纠错）</label>
         <label class="chk adv" title="先出一版构思（世界推进、NPC动机、状态变化、信息传播），再照构思写正文。更稳，但多一次调用"><input type="checkbox" id="planFirst" checked> 先想后写（稳定生成）</label>
-        <button id="btnRun" class="primary big">推进回合</button>
+        <button id="btnRun" class="primary big">过这一回合</button>
       </div>
       <div id="flagRow" class="row" style="gap:6px;align-items:center">
         <span class="lbl">这一段：</span>
@@ -144,15 +155,25 @@
 
   <aside>
     <div class="tabs">
+      <button data-rail="ask" class="railtab active">问人</button>
       <button data-rail="me" class="railtab">我的状态</button>
       <button data-rail="check" class="railtab adv">检查</button>
       <button data-rail="nano" class="railtab adv">纳米审计</button>
-      <button data-rail="world" class="railtab active">局势</button>
+      <button data-rail="world" class="railtab adv">局势</button>
       <button data-rail="file" class="railtab">人物与线索</button>
       <button data-rail="map" class="railtab">地图</button>
       <button data-rail="snap" class="railtab adv">回滚</button>
       <button data-rail="find" class="railtab adv">核查</button>
       <button data-rail="archive" class="railtab">档案馆</button>
+    </div>
+    <div id="railAsk" class="rail">
+      <div class="railnote">找身边的人商量：每人有自己的立场和私心，同一件事问不同的人，主意不同。问人不花时间。他们记得你听没听。</div>
+      <div class="row"><select id="askWho"><option value="">— 问谁 —</option></select></div>
+      <textarea id="askQ" rows="2" placeholder="问什么？留空就问「眼下这件事你怎么看、该怎么办」"></textarea>
+      <div class="row"><button id="btnAsk" class="primary">问</button><span id="askMsg" class="muted"></span></div>
+      <div id="askBox" class="asklist"></div>
+      <h3>建议簿</h3>
+      <div id="adviceBox" class="asklist"><div class="muted">问人得来的主意，点「收进建议簿」就记在这里。</div></div>
     </div>
     <div id="railMe" class="rail hidden">
       <div class="row"><button id="btnMeRefresh" class="minibtn">刷新</button><span class="muted">名位、职权、钱财、家人与人际。数字随剧情记账，有变化会写在「近来变化」里。</span></div>
@@ -176,7 +197,7 @@
       <div id="worldScanBox" class="list"><div class="muted">还没跑过回合。</div></div>
       <div id="worldScanIssueBox" class="list"><div class="muted">没有问题。</div></div>
     </div>
-    <div id="railWorld" class="rail">
+    <div id="railWorld" class="rail hidden">
       <div class="railnote adv">世界不是一个背景板。24 项状态每轮自行推进；玩家不动，NPC 也在动。</div>
       <div class="row"><button id="btnWorldRefresh" class="minibtn">刷新</button>
         <span class="muted" id="worldUpdated"></span></div>

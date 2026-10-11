@@ -386,6 +386,7 @@ function renderState() {
   // 记住正在玩的那一局：刷新页面、重开浏览器后直接回到这里（连同还没接上的那一段）
   try { if (STATE && STATE.meta) localStorage.setItem('lastSave', STATE.meta.id); else localStorage.removeItem('lastSave'); } catch (_) { /* 无存储就算了 */ }
   renderStatusBar();
+  try { renderMeters(); renderAskPanel(); if (!STATE) renderDesk(null); } catch (_) { /* 新面板出错不挡主流程 */ }
   if (!STATE) {
     $('#starterCards').classList.remove('hidden');
     $('#logBox').innerHTML = '';
@@ -541,7 +542,7 @@ function renderState() {
     if (!LAST || LAST.draft !== pd.draft) { LAST = { ...pd }; renderLast(); }
   } else {
     if (LAST && LAST.draft && LAST.draft.baseTurn != null && Number(LAST.draft.baseTurn) !== Number(s.turn || 0)) LAST = null;
-    if (!LAST) resumeRunningTurn(s.meta.id);
+    if (!LAST) { resumeRunningTurn(s.meta.id); renderDesk(null); const sb = document.getElementById('settleBox'); if (sb) sb.classList.add('hidden'); }
   }
 }
 
@@ -698,7 +699,8 @@ async function streamTurn(body) {
 async function pollTurnJob(job) {
   const sc = $('#draftScene');
   let shown = false, misses = 0;
-  // 旧的一段先收起，免得以为新的一段已经写好了
+  // 旧的一段先收起，免得以为新的一段已经写好了；上一回合的案头与结算也先收起
+  for (const id of ['deskBox', 'settleBox']) { const el = document.getElementById(id); if (el) el.classList.add('hidden'); }
   if (!$('#draftBox').classList.contains('hidden')) { sc.textContent = 'AI 正在写这一段……'; for (const id of ['gmHead', 'gmTail', 'gmOrders']) { const el = document.getElementById(id); if (el) el.textContent = ''; } }
   for (;;) {
     await new Promise(res => setTimeout(res, 800));
@@ -731,7 +733,7 @@ async function resumeRunningTurn(saveId) {
       LAST = { ...r, confirmedThreads: q.threads || [], input: q.input || '' };
       renderLast();
     }
-  } catch (e) { alert('刚才那一段没写成：' + String(e.message || e) + '\n\n可以再点一次「推进回合」。'); }
+  } catch (e) { alert('刚才那一段没写成：' + String(e.message || e) + '\n\n可以再点一次「过这一回合」。'); }
   finally { setTurnBusy(false); const sc = document.getElementById('draftScene'); if (sc) sc.classList.remove('streaming'); }
 }
 async function runTurnWith(input, confirmedThreads, opts) {
@@ -741,7 +743,7 @@ async function runTurnWith(input, confirmedThreads, opts) {
   if (LAST && !(opts && opts.regenerate)) {
     $('#btnRun').disabled = true; $('#btnRun').textContent = '接上上一段…';
     const ok = await acceptLast(true);
-    $('#btnRun').disabled = false; $('#btnRun').textContent = '推进回合';
+    $('#btnRun').disabled = false; $('#btnRun').textContent = '过这一回合';
     if (!ok) return;
   }
   setTurnBusy(true, opts && opts.regenerate ? 'AI 正在重写这一段，请稍等……' : (LAST ? 'AI 正在写，请稍等……' : 'AI 正在写这一段，一般半分钟到一两分钟……'));
@@ -765,6 +767,8 @@ async function runTurnWith(input, confirmedThreads, opts) {
     if (r.error) throw new Error(r.error);
     if (r.ok === false) throw new Error(r.why || '未知错误');
     LAST = { ...r, confirmedThreads, input };
+    // 这一回合的决定已经送出去了：清空决定栏与输入框
+    if (opts && opts.fromTray) { trayList().length = 0; renderTray(); $('#input').value = ''; }
     // 战阵用完即清（一场仗一次布阵），避免误带到下一轮
     if (window.__BATTLE && r.battle) { window.__BATTLE = null; renderBattleHint(); }
     renderLast();
@@ -778,14 +782,15 @@ async function runTurnWith(input, confirmedThreads, opts) {
       alert('AI 没接通：' + msg + '\n\n接下来会打开「设置」，把 DeepSeek 的 Key 粘贴进去、点「测试连接」即可。');
       $('#btnSettings').click();
     } else if (/连不上|fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(msg)) {
-      alert(msg + '\n\n可以在首页点「检查网络」看看卡在哪；网络恢复后再点「推进回合」。');
-    } else alert('调用失败：' + msg + '\n\n可以再点一次「推进回合」；反复出现的话，把这段话发给我。');
-  } finally { setTurnBusy(false); $('#btnRun').textContent = '推进回合'; const sc = document.getElementById('draftScene'); if (sc) sc.classList.remove('streaming'); }
+      alert(msg + '\n\n可以在首页点「检查网络」看看卡在哪；网络恢复后再点「过这一回合」。');
+    } else alert('调用失败：' + msg + '\n\n可以再点一次「过这一回合」；反复出现的话，把这段话发给我。');
+  } finally { setTurnBusy(false); $('#btnRun').textContent = '过这一回合'; const sc = document.getElementById('draftScene'); if (sc) sc.classList.remove('streaming'); }
 }
 
 $('#btnRun').onclick = () => runTurnWith(
-  $('#input').value,
+  composeDecisions(),
   [...$('#threadSel').selectedOptions].map(o => decodeURIComponent(o.value)),
+  { fromTray: true },
 );
 
 // Ctrl/Cmd + Enter 直接推进，省得去点按钮
@@ -921,6 +926,11 @@ function renderLast() {
   $('#draftBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   renderNano();
   updateAdvPreview(); // 「按剧情自动」要跟着这一段的天数走
+  renderSettle(d);
+  renderDesk(d.reports, d.actions);
+  renderMeters(); fillPeople();
+  // 开场已经写出来了：「还没有开场」的提示卡收起
+  document.querySelectorAll('.openingCard').forEach(el => el.classList.add('hidden'));
 }
 
 /* ================= 纳米级剧情审计（P0–P9 十遍扫描） ================= */
@@ -1702,7 +1712,7 @@ function showTurnDelta() {
 }
 
 /* ================= 右栏切换 ================= */
-const RAILS = ['me', 'check', 'nano', 'world', 'snap', 'map', 'file', 'find', 'archive'];
+const RAILS = ['ask', 'me', 'check', 'nano', 'world', 'snap', 'map', 'file', 'find', 'archive'];
 function switchRail(which) {
   document.querySelectorAll('.railtab').forEach(b => b.classList.toggle('active', b.dataset.rail === which));
   RAILS.forEach(w => {
@@ -1713,6 +1723,7 @@ function switchRail(which) {
   if (which === 'snap' && STATE) renderSnapshots();
   if (which === 'archive' && STATE) renderArchive();
   if (which === 'me') renderMe();
+  if (which === 'ask') renderAskPanel();
 }
 /* 个人面板：我是谁、有什么、能做什么 */
 async function renderMe() {
@@ -2178,7 +2189,7 @@ async function renderStarterCards() {
   await step('bindWorldUi', async () => bindWorldUi());
   await step('starterCards', renderStarterCards);
   await step('renderState', async () => renderState());
-  await step('switchRail', async () => switchRail(document.body.classList.contains('simple') ? 'world' : 'check'));
+  await step('switchRail', async () => switchRail(document.body.classList.contains('simple') ? 'ask' : 'check'));
   // 没填 Key 时不再弹三步向导，首页的一句话开局框里直接粘 Key（向导仍可从「设置」打开）
   await step('quick', refreshQuick);
 })();
@@ -2312,7 +2323,7 @@ $('#qRandom').onclick = () => quickStart('随便');
     const b = document.getElementById('btnAdvanced');
     if (b) b.textContent = simple ? '高级面板' : '收起高级';
     const act = document.querySelector('.railtab.active');
-    if (simple && (!act || act.classList.contains('adv'))) switchRail('world');
+    if (simple && (!act || act.classList.contains('adv'))) switchRail('ask');
   };
   const btn = document.getElementById('btnAdvanced');
   if (btn) btn.onclick = () => {
@@ -2377,3 +2388,175 @@ document.querySelectorAll('.flagbtn').forEach(b => b.onclick = async () => {
     } catch (e) { alert('统计失败：' + (e && e.message || e)); }
   };
 })();
+
+
+/* ================= 崇祯式回合：数值条 · 案头来报 · 决定栏 · 问人 · 建议簿 · 润色 ================= */
+function trayList() { return (window.__TRAY = window.__TRAY || []); }
+function addToTray(text, who) {
+  const t = String(text || '').trim();
+  if (!t) return;
+  if (!trayList().some(x => x.text === t)) trayList().push({ text: t, who: String(who || '').trim() });
+  renderTray();
+}
+function renderTray() {
+  const box = document.getElementById('tray');
+  if (!box) return;
+  const L = trayList();
+  box.classList.toggle('hidden', !L.length);
+  box.innerHTML = L.length ? '<div class="tray-h">这一回合的决定（点 × 去掉；也可以在下面再补几句）</div>'
+    + L.map((x, i) => `<div class="tray-i"><span>${escapeHtml(x.text)}${x.who ? `<span class="muted">（交${escapeHtml(x.who)}去办）</span>` : ''}</span><button class="minibtn" data-untray="${i}">×</button></div>`).join('') : '';
+}
+document.addEventListener('click', ev => {
+  const t = ev.target;
+  if (!t || !t.dataset) return;
+  if (t.dataset.untray != null) { trayList().splice(Number(t.dataset.untray), 1); renderTray(); }
+  if (t.dataset.opt) { try { const o = JSON.parse(decodeURIComponent(t.dataset.opt)); addToTray(o.text, o.who); t.classList.add('picked'); } catch (_) { /* 无 */ } }
+  if (t.dataset.act) addToTray(decodeURIComponent(t.dataset.act), '');
+  if (t.dataset.askwho) { switchRail('ask'); const sel = $('#askWho'); fillPeople(); sel.value = decodeURIComponent(t.dataset.askwho); $('#askQ').value = t.dataset.askq ? decodeURIComponent(t.dataset.askq) : ''; $('#askQ').focus(); }
+  if (t.dataset.adopt) { try { const o = JSON.parse(decodeURIComponent(t.dataset.adopt)); addToTray(o.text, o.who ? '' : ''); t.textContent = '已加入'; } catch (_) { /* 无 */ } }
+  if (t.dataset.keep) { try { const o = JSON.parse(decodeURIComponent(t.dataset.keep)); saveAdvice(o); t.textContent = '已收进'; t.disabled = true; } catch (_) { /* 无 */ } }
+  if (t.dataset.unadvice != null) saveAdvice(null, Number(t.dataset.unadvice));
+});
+/** 决定栏 + 自己写的话 + 交给谁 → 送给 AI 的一段话 */
+function composeDecisions() {
+  const L = trayList().map(x => `· ${x.text}${x.who ? `（交${x.who}去办）` : ''}`);
+  const free = String($('#input').value || '').trim();
+  const who = $('#assignee') && $('#assignee').value;
+  if (free) L.push((L.length ? '· ' : '') + free + (who ? `（交${who}去办）` : ''));
+  else if (who && L.length) L.push(`（以上未写明的，交${who}去办）`);
+  return L.join('\n');
+}
+
+/* 数值条：本身份最关心的五六项 + 人群满意度 */
+function renderMeters() {
+  const bar = document.getElementById('meterBar');
+  if (!bar) return;
+  let M = (STATE && STATE.meters) || {};
+  let G = (STATE && STATE.groups) || {};
+  // 开场还没接进世界：先显示 AI 给的初值
+  const dd = LAST && LAST.draft;
+  if (!Object.keys(M).length && dd && (dd.meters || []).length) M = Object.fromEntries(dd.meters.filter(m => m && (m.项 || m.name)).map(m => [m.项 || m.name, { value: m.值 || m.value || '', why: m.因 || '' }]));
+  if (!Object.keys(G).length && dd && (dd.groups || []).length) G = Object.fromEntries(dd.groups.filter(g => g && (g.人群 || g.name)).map(g => { const v = Number(g.值 ?? g.value) || 0; return [g.人群 || g.name, { value: v, word: v >= 80 ? '感戴' : v >= 60 ? '安' : v >= 40 ? '平常' : v >= 25 ? '不满' : '怨', why: g.因 || '' }]; }));
+  const ms = Object.entries(M), gs = Object.entries(G);
+  bar.classList.toggle('hidden', !STATE || (!ms.length && !gs.length));
+  if (!ms.length && !gs.length) { bar.innerHTML = ''; return; }
+  const arrow = d => (/↑|升|增|\+/.test(d || '') ? '<i class="up">↑</i>' : /↓|降|减|-/.test(d || '') ? '<i class="down">↓</i>' : '');
+  bar.innerHTML = '<div class="mt-row">' + ms.map(([k, v]) => `<span class="mt" title="${escapeHtml(v.why || '')}"><b>${escapeHtml(k)}</b>${escapeHtml(v.value)}${arrow(v.delta)}</span>`).join('') + '</div>'
+    + (gs.length ? '<div class="mt-row grp">' + gs.map(([k, v]) => `<span class="gp" title="${escapeHtml(v.why || '')}"><b>${escapeHtml(k)}</b><span class="gbar"><span style="width:${Math.max(3, Math.min(100, v.value))}%" class="${v.value < 25 ? 'bad' : v.value < 40 ? 'warn' : ''}"></span></span>${escapeHtml(v.word || '')}${v.delta ? (v.delta > 0 ? '<i class="up">↑</i>' : '<i class="down">↓</i>') : ''}</span>`).join('') + '</div>' : '');
+}
+
+/* 结算三层：回报（可能失真）· 账目（真实）· 风声 */
+function renderSettle(d) {
+  const box = document.getElementById('settleBox');
+  if (!box) return;
+  const st = (d && d.settlement) || {};
+  const rep = (st.回报 || []).filter(x => x && x.text);
+  const acc = (d && d.meters || []).filter(m => { const k = m && (m.项 || m.name); const old = k && STATE && (STATE.meters || {})[k]; return old && String(old.value) !== String(m.值 || m.value || ''); });
+  const rum = (st.风声 || []).filter(Boolean);
+  const html = [];
+  if (rep.length) html.push('<div class="st-sec"><div class="st-h">回报</div>' + rep.map(x => `<div class="st-rep">${x.who ? `<b>${escapeHtml(x.who)}</b>：` : ''}${escapeHtml(x.text)}</div>`).join('') + '</div>');
+  if (acc.length) html.push('<div class="st-sec"><div class="st-h">账目</div><table class="st-acc">' + acc.map(m => `<tr><td>${escapeHtml(m.项 || m.name)}</td><td>${escapeHtml((STATE.meters[m.项 || m.name] || {}).value || '')} → <b>${escapeHtml(m.值 || m.value || '')}</b></td><td class="muted">${escapeHtml(m.因 || m.why || '')}</td></tr>`).join('') + '</table></div>');
+  if (rum.length) html.push('<div class="st-sec"><div class="st-h">风声</div>' + rum.map(x => `<div class="st-rum">· ${escapeHtml(x)}</div>`).join('') + '</div>');
+  box.innerHTML = html.join('');
+  box.classList.toggle('hidden', !html.length);
+}
+
+/* 案头：来报卡片，每份带可点的办法；另有随手能做的事 */
+const nameOf = from => String(from || '').split(/[（(，,·\s]/)[0].replace(/^(县衙|府衙|州衙)/, '').trim();
+function renderDesk(reports, actions) {
+  const box = document.getElementById('deskBox');
+  if (!box) return;
+  const reps = (reports && reports.length ? reports : (STATE && STATE.desk) || []).filter(r => r && (r.title || r.text));
+  const acts = (actions || []).filter(Boolean);
+  if (!STATE || (!reps.length && !acts.length)) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.classList.remove('hidden');
+  const enc = o => encodeURIComponent(JSON.stringify(o));
+  box.innerHTML = '<div class="desk-h">案头</div>'
+    + reps.map(r => `<div class="rep">
+        <div class="rep-t"><span class="rep-form">${escapeHtml(r.form || '来报')}</span><b>${escapeHtml(r.title || '')}</b><span class="muted">　来自 ${escapeHtml(r.from || '')}</span></div>
+        <div class="rep-x">${escapeHtml(r.text || '')}</div>
+        ${r.deadline ? `<div class="rep-d">期限：${escapeHtml(r.deadline)}</div>` : ''}
+        <div class="rep-o">${(r.options || []).map(o => `<button class="optbtn" data-opt="${enc({ text: o.text, who: o.who || '' })}" title="${escapeHtml(o.cost || '')}">${escapeHtml(o.text)}${o.risk ? `<span class="risk">${escapeHtml(o.risk)}</span>` : ''}${o.who ? `<span class="muted">·交${escapeHtml(o.who)}</span>` : ''}</button>`).join('')}
+          ${nameOf(r.from) ? `<button class="minibtn" data-askwho="${encodeURIComponent(nameOf(r.from))}" data-askq="${encodeURIComponent('「' + (r.title || '') + '」这件事，到底是怎么回事？')}">问问来人</button>` : ''}
+          <button class="minibtn" data-act="${encodeURIComponent('「' + (r.title || '') + '」先放着不管')}">先不管</button></div>
+      </div>`).join('')
+    + (acts.length ? '<div class="desk-acts"><span class="muted">随手能做：</span>' + acts.map(a => `<button class="minibtn" data-act="${encodeURIComponent(a)}">${escapeHtml(a)}</button>`).join('') + '</div>' : '');
+}
+
+/* 问人：身边的人 + 来报的来人 */
+function peopleList() {
+  const s = STATE || {};
+  const out = [];
+  const add = n => { n = String(n || '').trim(); if (n && n !== (s.protagonist || {}).name && !out.includes(n)) out.push(n); };
+  ((s.household && s.household.members) || []).filter(m => !m.status || m.status === '在世').forEach(m => add(m.name));
+  (s.npcs || []).filter(n => n && !/已故|死/.test(String(n.status || ''))).slice(-30).forEach(n => add(n.name));
+  ((LAST && LAST.draft && LAST.draft.reports) || s.desk || []).forEach(r => add(nameOf(r.from)));
+  return out;
+}
+function fillPeople() {
+  const ppl = peopleList();
+  for (const id of ['askWho', 'assignee']) {
+    const sel = document.getElementById(id);
+    if (!sel) continue;
+    const cur = sel.value;
+    const first = id === 'askWho' ? '<option value="">— 问谁 —</option>' : '<option value="">（按身份默认）</option>';
+    sel.innerHTML = first + ppl.map(n => `<option>${escapeHtml(n)}</option>`).join('');
+    if (cur && ppl.includes(cur)) sel.value = cur;
+    else if (cur && id === 'askWho') { sel.insertAdjacentHTML('beforeend', `<option>${escapeHtml(cur)}</option>`); sel.value = cur; }
+  }
+}
+function renderConsult(c, prepend) {
+  const box = document.getElementById('askBox');
+  if (!box || !c) return;
+  const enc = o => encodeURIComponent(JSON.stringify(o));
+  const html = `<div class="ask-i"><div class="ask-q">问 <b>${escapeHtml(c.who)}</b>：${escapeHtml(c.q)}</div><div class="ask-a">${escapeHtml(c.reply)}</div>`
+    + (c.suggestions || []).map(x => `<div class="ask-s"><span>${escapeHtml(x.text)}${x.risk ? `<span class="risk">${escapeHtml(x.risk)}</span>` : ''}</span>
+        <button class="minibtn" data-adopt="${enc({ text: x.text })}">加入决定</button><button class="minibtn" data-keep="${enc({ who: c.who, text: x.text, risk: x.risk })}">收进建议簿</button></div>`).join('') + '</div>';
+  box.insertAdjacentHTML(prepend ? 'afterbegin' : 'beforeend', html);
+}
+function renderAskPanel() {
+  fillPeople();
+  const box = document.getElementById('askBox');
+  if (box) { box.innerHTML = ''; ((STATE && STATE.consults) || []).slice(-6).reverse().forEach(c => renderConsult(c, false)); }
+  renderAdvice((STATE && STATE.adviceBook) || []);
+}
+function renderAdvice(book) {
+  const box = document.getElementById('adviceBox');
+  if (!box) return;
+  const enc = o => encodeURIComponent(JSON.stringify(o));
+  box.innerHTML = book.length ? book.map((x, i) => `<div class="ask-s"><span>${x.who ? `<b>${escapeHtml(x.who)}</b>：` : ''}${escapeHtml(x.text)}${x.risk ? `<span class="risk">${escapeHtml(x.risk)}</span>` : ''}</span>
+      <button class="minibtn" data-adopt="${enc({ text: x.text })}">加入决定</button><button class="minibtn" data-unadvice="${i}">删</button></div>`).join('')
+    : '<div class="muted">问人得来的主意，点「收进建议簿」就记在这里。</div>';
+}
+async function saveAdvice(item, removeIdx) {
+  if (!STATE) return;
+  const r = await post('/api/advice', removeIdx != null ? { saveId: STATE.meta.id, remove: removeIdx } : { saveId: STATE.meta.id, ...item });
+  if (r.ok) { STATE.adviceBook = r.advice; renderAdvice(r.advice); }
+}
+document.getElementById('btnAsk') && (document.getElementById('btnAsk').onclick = async () => {
+  if (!STATE) return alert('先开一个局');
+  const who = $('#askWho').value;
+  if (!who) return alert('先选要问的人');
+  const b = $('#btnAsk'); b.disabled = true; $('#askMsg').textContent = `${who}在想……`;
+  try {
+    const r = await post('/api/ask', { saveId: STATE.meta.id, who, question: $('#askQ').value });
+    if (r.error || !r.ok) throw new Error(r.error || r.why || '没问成');
+    STATE.consults = (STATE.consults || []).concat([r.consult]);
+    renderConsult(r.consult, true);
+    $('#askQ').value = ''; $('#askMsg').textContent = '';
+  } catch (e) { $('#askMsg').textContent = '没问成：' + (e.message || e); }
+  finally { b.disabled = false; }
+});
+document.getElementById('btnPolish') && (document.getElementById('btnPolish').onclick = async () => {
+  if (!STATE) return alert('先开一个局');
+  const raw = composeDecisions();
+  if (!raw.trim()) return alert('先点几个办法，或在框里写下你的打算');
+  const b = $('#btnPolish'); b.disabled = true; b.textContent = '润色中…';
+  try {
+    const r = await post('/api/polish', { saveId: STATE.meta.id, text: raw });
+    if (r.error || !r.ok) throw new Error(r.error || r.why);
+    trayList().length = 0; renderTray();
+    $('#input').value = r.text; $('#input').rows = 5;
+  } catch (e) { alert('没润色成：' + (e.message || e)); }
+  finally { b.disabled = false; b.textContent = '润色成文书'; }
+});

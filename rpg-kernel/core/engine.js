@@ -1813,7 +1813,7 @@ async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOv
   const system = built.system;
   let prompt = built.prompt;
   if (regenNote && String(regenNote).trim()) prompt += `\n\n【玩家对上一版的意见：这次重写照此改】${String(regenNote).trim().slice(0, 200)}`;
-  const maxTokens = verbosity === 'long' ? 5000 : verbosity === 'short' ? 2000 : 3500;
+  const maxTokens = verbosity === 'long' ? 7000 : verbosity === 'short' ? 4000 : 6000;   // 正文之外还有来报、回报、账目
   let res = await adapter.call({ system, prompt, temperature: 0.8, maxTokens, onDelta }, config);
   let draft = extractJson(res.text);
   if (draft.parseFailed || !String(draft.scene || '').trim()) {
@@ -1830,6 +1830,16 @@ async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOv
   draft.statusChanges = arr(draft.statusChanges);
   draft.historyChanges = arr(draft.historyChanges);
   draft.orders = arr(draft.orders).filter(o => o && o.who && o.what);
+  // 崇祯式回合：结算三层、数值、案头来报（带可点的办法）、随手可做的事、暗线
+  draft.meters = arr(draft.meters).filter(m => m && (m.项 || m.name));
+  draft.groups = arr(draft.groups).filter(g => g && (g.人群 || g.name));
+  draft.reports = arr(draft.reports).filter(r => r && (r.title || r.text)).slice(0, 4)
+    .map(r => ({ ...r, options: arr(r.options).filter(o => o && o.text).slice(0, 4) }));
+  draft.actions = arr(draft.actions).map(a => (typeof a === 'string' ? a : (a && (a.text || a.label)) || '')).filter(Boolean).slice(0, 6);
+  const st0 = draft.settlement && typeof draft.settlement === 'object' ? draft.settlement : {};
+  draft.settlement = { 回报: arr(st0.回报 || st0.reports).filter(x => x && (x.text || typeof x === 'string')).map(x => (typeof x === 'string' ? { who: '', text: x } : x)), 风声: arr(st0.风声 || st0.rumors).map(String).filter(Boolean).slice(0, 4) };
+  draft.gmNotes = arr(draft.gmNotes);
+  draft.gmNotesDone = arr(draft.gmNotesDone);
   draft.doubts = arr(draft.doubts).map(d => (typeof d === 'string' ? d : JSON.stringify(d)));
   draft.turnSummary = String(draft.turnSummary || '').slice(0, 200);
   draft.pendingDecision = String(draft.pendingDecision || '').replace(/[「『]?用户决定[」』]?/g, '').trim() || '等你决断';
@@ -1944,6 +1954,7 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
     try { div.recordHistoryChanges(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
     try { require('./profile').applyStatusChanges(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
     try { require('./orders').record(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
+    try { require('./desk').applyDesk(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
     const ev = ll.advanceWorld(state, input, draft || {});
     state.longlineLast = { turn: state.turn, rejected: pr.rejected, events: ev };
   } catch (_) { /* 长线落账失败不阻断采纳 */ }
@@ -2476,7 +2487,18 @@ async function getDossier({ saveId } = {}) {
   };
 }
 
+/** 问人、润色这类小调用：用当前选定的 AI，返回文本 */
+async function quickCall({ system, prompt, temperature = 0.7, maxTokens = 1500 }) {
+  const saved = await loadAdapterConfig();
+  const aid = saved.selected || 'deepseek';
+  const { adapter, config } = await resolveAdapter(aid, saved.configs?.[aid] || {});
+  if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请在「设置」里填好 DeepSeek 的 Key');
+  const res = await adapter.call({ system, prompt, temperature, maxTokens }, config);
+  return String((res && res.text) || '');
+}
+
 module.exports = {
+  quickCall,
   generateFigure, getGmCards, flagTurn, getStats,
   ensureDirs, listSaves, loadState, writeState, listRulepacks, loadPack, createSave, createCustomSave, deleteSave, rebuildProtagonistDossier, findBadSaves, cleanupBadSaves, sweepArchives,
   listLore, loadLore, saveLore, runTurn, applyDraft, updateThread, updateNpc, archiveCard, seedWorld, parseSearch,
