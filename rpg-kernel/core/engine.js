@@ -390,6 +390,9 @@ async function findBadSaves() {
     const logText = JSON.stringify(s.log || []);
     if (/骨架输出|此处本应由外部框架生成正文|假文，仅供审计自检/.test(logText)) reasons.push('剧情是 AI 没接通时的占位文字');
     if (!s.turn && !String(s.opening || '').trim() && !(s.threads || []).length) reasons.push('开局没有生成成功');
+    // 建了档、却一段正文都没写成（多半是当时 AI 没接通），而且已经放了半小时以上
+    else if (!s.turn && !(s.log || []).some(l => l.speaker === 'GM') && !s.pendingDraft
+      && Date.now() - Date.parse((s.meta && s.meta.updatedAt) || 0) > 30 * 60 * 1000) reasons.push('还没写出开场（多半是当时 AI 没接通）');
     if (/未命名/.test(String(s.protagonist.name || '')) && s.mode !== 'real') reasons.push('主角没有名字（旧版一句话开局的错误）');
     if (s.yearUnknown || !s.clock.gregorianYear) reasons.push('年代没有定下来');
     if (reasons.length) out.push({ id, title: s.meta.title || id, turn: s.turn, reasons });

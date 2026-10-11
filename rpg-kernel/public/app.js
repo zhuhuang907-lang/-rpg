@@ -60,7 +60,7 @@ async function reloadSaves() {
   const list = await get('/api/saves');
   const sel = $('#saveSel');
   sel.innerHTML = '<option value="">— 已有存档 —</option>';
-  list.forEach(s => sel.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(s.id)}">${escapeHtml(s.title)}（第${s.turn}轮）</option>`));
+  list.forEach(s => sel.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(s.id)}">${escapeHtml(s.title)}（${s.turn ? '第' + s.turn + '轮' : '未开场'}）</option>`));
   if (STATE && list.some(x => x.id === STATE.meta.id)) sel.value = STATE.meta.id;
   // 存档管理列表（每条自带删除键，避免只靠顶部按钮误删/删不掉）
   const box = $('#saveListBox');
@@ -188,7 +188,8 @@ function renderStatusBar() {
   const bar = $('#statusBar');
   if (!STATE) { bar.innerHTML = '还没开局 —— 选一个现成的，或点「＋ 新开局」'; return; }
   const s = STATE;
-  bar.innerHTML = `<b>${escapeHtml((s.meta && s.meta.title) || s.title || '')}</b> · ${escapeHtml(s.clock.yearLabel)}（${s.clock.gregorianYear < 0 ? '前' + -s.clock.gregorianYear : s.clock.gregorianYear}年）${lunarText(s.clock)} · ${escapeHtml(s.location.full)} · 你是 ${escapeHtml(s.protagonist.name)}${s.protagonist.gender ? '（' + escapeHtml(s.protagonist.gender) + '）' : ''}${s.protagonist.age != null ? '，' + s.protagonist.age + '岁' : ''}`;
+  // 状态栏：你是谁 · 何时 · 何地（点一下打开「我的状态」）
+  bar.innerHTML = `你是 <b>${escapeHtml(s.protagonist.name)}</b>${s.protagonist.gender ? '（' + escapeHtml(s.protagonist.gender) + '）' : ''}${s.protagonist.age != null ? '，' + s.protagonist.age + '岁' : ''}${s.protagonist.role ? '，' + escapeHtml(s.protagonist.role) : ''} · ${escapeHtml(s.clock.yearLabel)}（${s.clock.gregorianYear < 0 ? '前' + -s.clock.gregorianYear : s.clock.gregorianYear}年）${lunarText(s.clock)} · ${escapeHtml(s.location.full)}`;
 }
 
 /* ================= 新开局（任意朝代 / 身份 / 地点） ================= */
@@ -411,8 +412,8 @@ function renderState() {
   $('#familyBox').className = 'kv';
   $('#familyBox').innerHTML = (h.clan || (h.members || []).length)
     ? `${h.clan ? `<div><b>宗族</b>${escapeHtml(h.clan)}</div>` : ''}`
-      + (h.members || []).map(m => `<div>· ${escapeHtml(m.name)}（${m.gender ? escapeHtml(m.gender) + '，' : ''}${escapeHtml(m.relation)}${m.rank ? '·' + escapeHtml(m.rank) : ''}${m.age ? '，' + m.age + '岁' : ''}，${escapeHtml(m.status || '在世')}）${m.nativePlace ? '，籍贯：' + escapeHtml(m.nativePlace) : ''}${m.background ? '，' + escapeHtml(m.background) : ''}${m.role ? '，' + escapeHtml(m.role) : ''}${m.attitude ? '，态度：' + escapeHtml(m.attitude) : ''}</div>`).join('')
-      + (h.property && Object.keys(h.property).length ? `<div><b>家产</b>${escapeHtml(Object.entries(h.property).map(([k, v]) => k + '=' + v).join('、'))}</div>` : '')
+      + (h.members || []).map(m => `<div>· ${escapeHtml(m.name)}（${m.gender ? escapeHtml(m.gender) + '，' : ''}${escapeHtml(m.relation)}${m.rank ? '·' + escapeHtml(m.rank) : ''}${m.age ? '，' + m.age + '岁' : ''}，${escapeHtml(m.status || '在世')}）${m.nativePlace ? '，籍贯：' + escapeHtml(m.nativePlace) : ''}${m.background ? '，' + escapeHtml(String(m.background).replace(/[。，]+$/, '')) : ''}${m.role ? '，' + escapeHtml(String(m.role).replace(/^（|）$/g, '')) : ''}${m.attitude ? '，态度：' + escapeHtml(m.attitude) : ''}</div>`).join('')
+      + (h.property && Object.entries(h.property).some(([, v]) => v && !/^未登记$/.test(v)) ? `<div><b>家产</b>${escapeHtml(Object.entries(h.property).filter(([, v]) => v && !/^未登记$/.test(v)).map(([k, v]) => k + '：' + v).join('，'))}</div>` : '')
       + ((h.obligations || []).length ? `<div><b>义务</b>${escapeHtml(h.obligations.join('、'))}</div>` : '')
     : '<div class="muted">还没登记 —— 点上面的「让 AI 拟一份」，或直接在设置里手填。</div>';
 
@@ -439,8 +440,8 @@ function renderState() {
 
   $('#threadBox').innerHTML = s.threads.map(t => `
     <div class="item">
-      <div class="t">${escapeHtml(t.title)}${s.turn - (t.lastTouchedTurn || 0) > 2 ? ' <span class="muted">(久未触及)</span>' : ''}</div>
-      <div class="meta">状态 ${t.status}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
+      <div class="t">${escapeHtml(t.title)}${t.lastTouchedTurn && s.turn - t.lastTouchedTurn > 5 ? ' <span class="muted">（好几轮没提到了）</span>' : ''}</div>
+      <div class="meta">${({ open: '未了', resolved: '已了结', dropped: '已搁置' })[t.status] || ''}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
       <div class="meta"><a href="#" data-th="${encodeURIComponent(t.title)}" data-act="open">恢复追查</a> ·
         <a href="#" data-th="${encodeURIComponent(t.title)}" data-act="resolved">标记已了</a> ·
         <a href="#" data-th="${encodeURIComponent(t.title)}" data-act="dropped">搁置</a></div>
@@ -456,7 +457,7 @@ function renderState() {
     };
     const tracksAttitude = ['warlord', 'emperor'].includes(s.identityModule);
     const card = (n, tag) => `<div class="item">
-      <div class="t">${escapeHtml(n.name)} <span class="meta">${n.gender ? escapeHtml(n.gender) + ' · ' : ''}${n.age ? n.age + '岁 · ' : ''}${escapeHtml(n.role || '')}</span></div>
+      <div class="t">${escapeHtml(n.name)} <span class="meta">${[n.gender, n.age ? n.age + '岁' : '', n.role].filter(Boolean).map(escapeHtml).join(' · ')}</span></div>
       <div class="meta">${tag} · 籍贯：${escapeHtml(n.nativePlace || '—')}</div>
       ${n.office ? `<div class="meta">真实职掌：${escapeHtml(n.office)}</div>` : ''}
       ${n.background ? `<div class="meta">背景：${escapeHtml(n.background)}</div>` : ''}
@@ -524,7 +525,7 @@ function renderState() {
 
   const hasLog = (s.log || []).some(l => l.speaker === 'GM');
   $('#logBox').innerHTML = s.log.map(l => `
-    <div class="entry"><div class="who">第${l.turn}轮 · ${escapeHtml(l.time)} · ${escapeHtml(l.speaker)}</div><div class="scene">${escapeHtml(l.text)}</div></div>`).join('')
+    <div class="entry"><div class="who">第${l.turn}轮${l.time ? ' · ' + escapeHtml(l.time) : ''}${l.speaker === 'GM' ? '' : ' · ' + escapeHtml(l.speaker === '玩家' ? '你' : l.speaker)}</div><div class="scene">${escapeHtml(l.text)}</div></div>`).join('')
     || `<div class="openingCard">
         <div class="oc-t">新局已就绪 · 还没有开场</div>
         <div class="oc-d">点下面「${escapeHtml(s.opening ? '生成开场' : '生成开场')}」，AI 会先交代清楚：<b>时间（年号+公元+季节+日子）、地点（当时的古地名，隶属谁、谁控制）、你是谁（姓名/年岁/性别/身份职衔/籍贯出身）、家世与处境、当朝天子与天下大势、眼下压到你身上的那一桩事、在场各人的姓名神情</b>，最后停在你要拿主意的坎上。</div>
@@ -669,8 +670,24 @@ $('#threadBox').onclick = async e => {
 };
 
 /* ================= 回合 ================= */
+// AI 正在写的时候，所有会再发一次请求的按钮都锁住（以前连点「重新生成」「生成开场」会重复扣费）
+let TURN_BUSY = false;
+function setTurnBusy(on, note) {
+  TURN_BUSY = on;
+  ['#btnRun', '#btnRetry', '#btnEdit', '#btnOpening', '#qGo', '#qRandom'].forEach(id => { const el = document.querySelector(id); if (el) el.disabled = on; });
+  const box = document.getElementById('draftBox');
+  if (box) box.classList.toggle('busy', on);
+  const ob = document.getElementById('btnOpening');
+  if (ob) ob.textContent = on ? 'AI 正在写开场…' : '▶ 生成开场';
+  let n = document.getElementById('busyNote');
+  if (on) {
+    if (!n) { n = document.createElement('div'); n.id = 'busyNote'; n.className = 'busynote'; const anchor = document.querySelector('.compose'); if (anchor) anchor.parentNode.insertBefore(n, anchor); }
+    n.textContent = note || 'AI 正在写，一般半分钟到一两分钟，请稍等……';
+  } else if (n) n.remove();
+}
 async function runTurnWith(input, confirmedThreads, opts) {
   if (!STATE) return alert('先开一个局：点上面「＋ 新开局」或选一个现成局面');
+  if (TURN_BUSY) return;
   // 有上一段没确认、而你写了下一步：先把上一段接进世界，再写新的（不再要求先点「采纳」）
   if (LAST && !(opts && opts.regenerate)) {
     $('#btnRun').disabled = true; $('#btnRun').textContent = '接上上一段…';
@@ -678,11 +695,13 @@ async function runTurnWith(input, confirmedThreads, opts) {
     $('#btnRun').disabled = false; $('#btnRun').textContent = '推进回合';
     if (!ok) return;
   }
-  $('#btnRun').disabled = true; $('#btnRun').textContent = '调用 AI 中…';
+  setTurnBusy(true, opts && opts.regenerate ? 'AI 正在重写这一段，请稍等……' : (LAST ? 'AI 正在写，请稍等……' : 'AI 正在写这一段，一般半分钟到一两分钟……'));
+  $('#btnRun').textContent = 'AI 正在写…';
   try {
     const r = await post('/api/turn', {
       saveId: STATE.meta.id,
       input,
+      regenNote: (opts && opts.regenNote) || '',
       adapterId: SEL,
       adapterConfig: {},
       confirmedThreads,
@@ -700,8 +719,8 @@ async function runTurnWith(input, confirmedThreads, opts) {
     // 战阵用完即清（一场仗一次布阵），避免误带到下一轮
     if (window.__BATTLE && r.battle) { window.__BATTLE = null; renderBattleHint(); }
     renderLast();
-    // 简洁模式下不跳到审计面板，留在「局势」
-    switchRail(document.body.classList.contains('simple') ? 'world' : 'check');
+    // 简洁模式下不跳走，侧栏停在玩家正在看的那一页
+    if (!document.body.classList.contains('simple')) switchRail('check');
   } catch (e) {
     const msg = String(e.error || e.message || e);
     // AI 没接通（没填 Key / Key 失效 / 欠费）：说清楚，并直接打开设置，免得玩家对着空白页不知道发生了什么
@@ -711,7 +730,7 @@ async function runTurnWith(input, confirmedThreads, opts) {
     } else if (/连不上|fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(msg)) {
       alert(msg + '\n\n可以在首页点「检查网络」看看卡在哪；网络恢复后再点「推进回合」。');
     } else alert('调用失败：' + msg + '\n\n可以再点一次「推进回合」；反复出现的话，把这段话发给我。');
-  } finally { $('#btnRun').disabled = false; $('#btnRun').textContent = '推进回合'; }
+  } finally { setTurnBusy(false); $('#btnRun').textContent = '推进回合'; }
 }
 
 $('#btnRun').onclick = () => runTurnWith(
@@ -749,7 +768,7 @@ function renderLast() {
   // 回显：你写的指令 / AI 说它听懂了什么 / 本轮它去检索了什么 —— 让「听岔、替你做主」一眼可见
   const echo = [];
   if (LAST.input && LAST.input.trim()) echo.push(`<div class="echo-line"><b>你的指令</b>：${escapeHtml(LAST.input)}</div>`);
-  else echo.push('<div class="echo-line muted">你本回合没写指令（世界自行演了此刻的活场景）。</div>');
+  else echo.push(`<div class="echo-line muted">${STATE && !STATE.turn && !(STATE.log || []).some(l => l.speaker === 'GM') ? '开场' : '你这一步没写行动，先看眼前正在发生的事'}。</div>`);
   if (d.understood && String(d.understood).trim()) echo.push(`<div class="echo-line"><b>AI 的理解</b>：${escapeHtml(d.understood)}</div>`);
   if ((LAST.searches || []).length) echo.push(`<div class="echo-line"><b>本轮实时检索</b>：${LAST.searches.map(s => `${escapeHtml(s.query)}（${s.count} 条）`).join('、')}</div>`);
   // 先想后写：把模型自己定的构思摊开给你看，它是不是照着写的，一眼可查
@@ -1418,14 +1437,13 @@ document.addEventListener('click', async e => {
   if (n && LAST_JUDGE[key] !== 'bad') n.textContent = LAST_JUDGE[key] === 'ok' ? '你判为通过（仅留痕）。' : '待你判断。';
 });
 
-$('#btnRetry').onclick = () => {
-  // 重新生成：同一句指令再写一次；可以顺手说一句想怎么改（比如「短一点」「别编阴谋」）
+$('#btnRetry').onclick = async () => {
+  // 重新生成：同一句指令再写一次；可以顺手说一句想怎么改（比如「短一点」「别编阴谋」）——这句要求单独发给 AI，不记成你的行动
   if (!LAST) return;
-  const note = prompt('想怎么改？可以写一句要求，比如「短一点」「多写街上的事」「别扯到江陵」。\n不写就直接重新生成。', '');
-  if (note === null) return;
-  const base = LAST.input || '';
-  const input = note.trim() ? (base ? base + '\n' : '') + '（这次重写的要求：' + note.trim() + '）' : base;
-  runTurnWith(input, LAST.confirmedThreads || [], { regenerate: true });
+  if (TURN_BUSY) return;
+  const f = await askForm('重新生成这一段', [{ key: 'note', label: '想怎么改（可不写）', ph: '比如：短一点 / 多写街上的事 / 别扯到江陵' }]);
+  if (!f) return;
+  runTurnWith(LAST.input || '', LAST.confirmedThreads || [], { regenerate: true, regenNote: (f.note || '').trim() });
 };
 // 修改这段：直接在正文上改，改完点「保存修改」，接下去就按你改过的写
 $('#btnEdit').onclick = async () => {
@@ -1571,9 +1589,9 @@ async function updateAdvPreview() {
   const c = STATE.clock;
   let r = null;
   try { r = await post('/api/calendar/add', { y: c.gregorianYear, m: c.month, d: c.day, leap: c.leap, n: d }); } catch (_) { r = null; }
-  if (!r || !r.ok) { box.innerHTML = `采纳后：时间前进 <b>${d} 天</b>`; return; }
+  if (!r || !r.ok) { box.innerHTML = `写下一步时：时间前进 <b>${d} 天</b>`; return; }
   const cross = r.y !== (c.gregorianYear || 0);
-  box.innerHTML = `采纳后：时间前进 <b>${d} 天</b> → <b>${lunarText({ month: r.m, day: r.d, leap: r.leap })}</b>${cross ? '（<b>跨年</b>，人物年龄会按史实自动重算）' : ''}`;
+  box.innerHTML = `写下一步时：时间前进 <b>${d} 天</b> → <b>${lunarText({ month: r.m, day: r.d, leap: r.leap })}</b>${cross ? '（<b>跨年</b>，人物年龄会按史实自动重算）' : ''}`;
 }
 $('#advDays').onchange = updateAdvPreview;
 
@@ -1692,7 +1710,7 @@ async function renderArchive() {
       `<div class="arch-row">· 第${x.turn}轮 ${escapeHtml(x.item)}：${escapeHtml(x.from ? x.from + ' → ' : '')}${escapeHtml(x.to)}<span class="muted">（${escapeHtml(x.why)}）</span></div>`).join('')));
     if (ch.figures.length) chron.push(sec0('史事进程（人物生死、已结算的大事）', ch.figures.slice().reverse().map(x => `<div class="arch-row">· ${escapeHtml(String(x.year || ''))} ${escapeHtml(String(x.text || x.name || ''))}</div>`).join('')));
     if (!chron.length) chron.push('<div class="muted">还没有记事：玩过几轮之后，这里会按回合记下发生过的事。</div>');
-    chron.push(`<div class="arch-row muted">本局档案只属于这个存档：存在 ${escapeHtml(ch.files.archive)} 与 ${escapeHtml(ch.files.cards)}；删除存档时一并删除，不影响别的存档。</div>`);
+    chron.push('<div class="arch-row muted">本局档案只属于这个存档（存在游戏文件夹的 data\\archive 与「历史RPG存档」里），删除存档时一并删除，不影响别的存档。</div>');
     chron.push('<div class="arch-sec"><div class="arch-h">—— 以下是本局的历史底盘 ——</div></div>');
   }
   // 接口回的是 {ok, archive:{…}}，档案本体在 archive 里（旧代码直接读外层，于是永远是空的）
@@ -1700,7 +1718,7 @@ async function renderArchive() {
   if (!a) { box.innerHTML = '<div class="muted">本局还没生成底盘（点「重新生成世界」）。</div>'; return; }
   const sec = (title, inner) => `<div class="arch-sec"><div class="arch-h">${title}</div>${inner}</div>`;
   const rows = [];
-  rows.push(`<div class="kv">身份：${escapeHtml(a.identity || '')}｜时代：${escapeHtml(a.eraLabel || '')}（公元 ${a.gregorianYear || '?'} 年）｜政权：${escapeHtml(a.polity || '')}｜地点：${escapeHtml(a.place || '')}</div>`);
+  rows.push(`<div class="kv">身份：${escapeHtml(IDM_NAME[a.identity] || a.identity || '')}｜时代：${escapeHtml(a.eraLabel || '')}（公元 ${a.gregorianYear || '?'} 年）｜政权：${escapeHtml(a.polity || '')}｜地点：${escapeHtml(a.place || '')}</div>`);
   if (a.ruler) {
     const v = a.ruler.value || {}; const age = (v.age == null) ? '' : ` ${v.age}岁`;
     rows.push(sec('当朝天子', `<div class="arch-row">${escapeHtml(v.name || '')}（${escapeHtml(v.title || '皇帝')}${age}） ${srcBadge(a.ruler)}</div>`));
@@ -1709,7 +1727,7 @@ async function renderArchive() {
     rows.push(sec('天下大势（按时代）', a.eraEvents.map(e => `<div class="arch-row">· ${escapeHtml(e.value || '')} ${srcBadge(e)}</div>`).join('')));
   }
   if (a.factions && a.factions.length) {
-    rows.push(sec('派系 / 内斗（按时代+身份）', a.factions.map(f => { const v = f.value || {}; const name = v.name || v.label || JSON.stringify(v); return `<div class="arch-row">· ${escapeHtml(name)} ${srcBadge(f)}</div>`; }).join('')));
+    rows.push(sec('派系 / 内斗（按时代+身份）', a.factions.map(f => { const v = f.value || {}; const name = v.name || v.label || v.title || (v.sideA && v.sideB ? v.sideA + ' 对 ' + v.sideB : '（未详）'); return `<div class="arch-row">· ${escapeHtml(name)} ${srcBadge(f)}</div>`; }).join('')));
   }
   if (a.numericCeiling && a.numericCeiling.value) {
     const txt = String(a.numericCeiling.value).split('\n').map(x => `<div class="arch-row muted">${escapeHtml(x)}</div>`).join('');
@@ -1782,6 +1800,9 @@ async function verifyNpc(name) {
 }
 async function fillWorld(what) {
   if (!STATE) return alert('先开一个局');
+  const nFam = ((STATE.household && STATE.household.members) || []).length;
+  if (what === 'family' && nFam && !(await askConfirm(`现有 ${nFam} 位家人。让 AI 拟一份会把新拟的人加进来（同名的以新拟为准），确定吗？`, '拟一份'))) return;
+  if (what === 'geography' && STATE.geography && !(await askConfirm('让 AI 重新拟一份地理，会覆盖现有的地理条目，确定吗？', '重新拟'))) return;
   const r = await post('/api/world/fill', {
     saveId: STATE.meta.id, what, adapterId: SEL,
     era: STATE.clock.yearLabel, gregorianYear: STATE.clock.gregorianYear,
@@ -1789,9 +1810,15 @@ async function fillWorld(what) {
   });
   if (r.error) return alert('失败：' + r.error);
   if (!r.data || (typeof r.data === 'object' && !Object.keys(r.data).length)) return alert('AI 没拟出内容，原有资料没有改动。');
+  // 家人：并入，不清空（以前会把原有的六位家人整个换成 AI 拟的一位）
+  const oldMembers = (STATE.household && STATE.household.members) || [];
+  const fresh = (r.data?.members || []).map(m => ({ ...m, note: (m.note || '') + '（AI 拟，未核实）' }));
+  const merged = [...oldMembers.filter(o => !fresh.some(n => n.name === o.name)), ...fresh];
+  const geoKeys = r.data && ['地形', '水系', '道路驿站', '邻境', '物产'].some(k => r.data[k]);
+  if (what === 'geography' && !geoKeys) return alert('AI 没拟出可用的地理内容，原有资料没有改动。');
   const patch = what === 'geography'
     ? { geography: { ...r.data, unverified: true } }
-    : { household: { ...(r.data || {}), members: (r.data?.members || []).map(m => ({ ...m, note: (m.note || '') + '（AI 拟，未核实）' })) } };
+    : { household: { ...(r.data || {}), members: merged } };
   const s = await post('/api/world/update', { saveId: STATE.meta.id, ...patch });
   STATE = s; renderState(); switchRail('file');
   alert(what === 'geography'
@@ -2045,6 +2072,7 @@ function openModal(title, html, onOk, onCancel) {
   MODAL_CANCEL = onCancel || null;
   // 没有「确定」回调的弹窗（如存档管理），把确定键变成单纯的「关闭」，免得点了没反应
   $('#modalOk').textContent = onOk ? '确定' : '关闭';
+  const mc = document.getElementById('modalClose'); if (mc) mc.style.display = onOk ? '' : 'none';   // 只读弹窗只留一个「关闭」
   $('#modalOk').disabled = false;
   $('#modal').classList.remove('hidden');
 }
@@ -2099,7 +2127,11 @@ async function refreshQuick() {
   if (st.hasKey) {
     // Key 已经存好：首页只留一行状态，Key 框收起来；要换 Key / 型号 / 博查，去「设置」
     box.classList.remove('hidden');
-    box.innerHTML = `<span class="ok">✓ AI 已接通（DeepSeek · ${escapeHtml(st.modelName || '')}）</span>`
+    const lt = st.lastTest;
+    const bad = lt && lt.ok === false;
+    box.innerHTML = (bad
+      ? `<span class="bad">✗ Key 已保存，但上次连 AI 没连上：${escapeHtml(String(lt.why || '').slice(0, 120))}</span>`
+      : `<span class="ok">✓ AI ${lt && lt.ok ? '已接通' : '已设置'}（DeepSeek · ${escapeHtml(st.modelName || '')}）</span>`)
       + `<span>查史：${st.search === 'bocha' && st.hasBocha ? '博查 ✓' : '维基百科（免费）'}</span>`
       + `<a id="qChange">设置</a><a id="qNet2">检查网络</a>`;
     $('#qChange').onclick = () => $('#btnSettings').click();
@@ -2232,7 +2264,7 @@ async function showGmCard(which) {
   if (!STATE) return alert('先开一个局');
   const r = await post('/api/gm-cards', { saveId: STATE.meta.id });
   const text = r[which] || r.error || '（生成失败）';
-  openModal(which + (r.dir ? `（已存到 ${r.dir}）` : ''), `<pre style="white-space:pre-wrap;max-height:60vh;overflow:auto;font-size:13px;line-height:1.7">${escapeHtml(text)}</pre>`, () => {});
+  openModal(which, `<pre style="white-space:pre-wrap;max-height:60vh;overflow:auto;font-size:13px;line-height:1.7">${escapeHtml(text)}</pre>`, null);
 }
 ['btnRecap:前情回顾', 'btnCard:档案卡', 'btnSheet:速查表', 'btnRoster:人物表'].forEach(x => {
   const [id, which] = x.split(':');
@@ -2243,16 +2275,20 @@ async function showGmCard(which) {
 /* ================= 《设计书》§7.6 玩家一键标记 + §1.3 史实宽容度 ================= */
 document.querySelectorAll('.flagbtn').forEach(b => b.onclick = async () => {
   if (!STATE) return alert('先开一个局');
-  if (!(STATE.turn > 0)) return alert('还没有采纳过的回合可以标记');
+  // 标记的是屏幕上正在看的这一段：有新写的一段就标它，否则标最近一段
+  const turnNo = LAST ? (STATE.turn || 0) + 1 : (STATE.turn || 0);
+  if (!turnNo) return alert('还没有可以标记的一段');
   const flag = b.dataset.flag;
   let note = '';
   if (flag === '出戏' || flag === '错史') {
-    note = prompt(`「${flag}」在哪里？写一句就行。\n若能写成「错的 → 对的」（例：萧纪在江陵 → 萧纪在成都），以后正文再写回错的会被程序自动拦下。`) || '';
+    const f = await askForm(`这一段「${flag}」在哪里？`, [{ key: 'note', label: '写一句就行', ph: '能写成「错的 → 对的」更好，例：萧纪在江陵 → 萧纪在成都' }]);
+    if (!f) return;
+    note = f.note || '';
   }
   try {
-    const r = await post('/api/flag', { saveId: STATE.meta.id, turn: STATE.turn, flag, note });
+    const r = await post('/api/flag', { saveId: STATE.meta.id, turn: turnNo, flag, note });
     const by = (r.stats && r.stats.by) || {};
-    $('#flagMsg').textContent = `已记第${STATE.turn}回合「${flag}」。累计：` + Object.entries(by).map(([k, v]) => `${k}${v}`).join(' ');
+    $('#flagMsg').textContent = `已记第${turnNo}段「${flag}」。累计：` + Object.entries(by).map(([k, v]) => `${k}${v}`).join(' ');
   } catch (e) { alert('标记失败：' + (e && e.message || e)); }
 });
 (function syncFactMode() {
@@ -2273,7 +2309,7 @@ document.querySelectorAll('.flagbtn').forEach(b => b.onclick = async () => {
       const extra = a.路线分 ? `\n\n篇章：已到第 ${a.章} 章\n路线分：${Object.entries(a.路线分).map(([k, v]) => k + v).join(' ')}` +
         ((a.账单 || []).length ? '\n\n章末账单：\n' + a.账单.map(x => `第${x.chapter}章「${x.goal}」（${x.turns}）：${[...x.态度变化, ...x.伏笔回收.map(y => '回收 ' + y), ...x.时钟, ...x.得失].join('；') || '无大变化'}`).join('\n') : '') +
         ((a.检查点 || []).length ? '\n\n主线进度评估：\n' + a.检查点.map(c => `第${c.turn}回合：${c.text}`).join('\n') : '') : '';
-      openModal('统计', `<pre style="white-space:pre-wrap;max-height:60vh;overflow:auto;font-size:13px;line-height:1.7">${escapeHtml(r.text + extra)}</pre>`, () => {});
+      openModal('统计', `<pre style="white-space:pre-wrap;max-height:60vh;overflow:auto;font-size:13px;line-height:1.7">${escapeHtml(r.text + extra)}</pre>`, null);
     } catch (e) { alert('统计失败：' + (e && e.message || e)); }
   };
 })();

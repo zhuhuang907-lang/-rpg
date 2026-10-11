@@ -75,6 +75,12 @@ function withSaveLock(id, fn) {
   run.finally(() => { if (SAVE_LOCKS.get(key) === run) SAVE_LOCKS.delete(key); }).catch(() => {});
   return run;
 }
+// 最近一次连 AI 的结果：首页据此显示「已接通」还是「连不上」（以前只要存了 Key 就显示已接通）
+const STATUS_FILE = path.join(__dirname, 'data', 'status.json');
+function readStatus() { try { return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')); } catch (_) { return {}; } }
+function recordTest(ok, why) {
+  try { fs.writeFileSync(STATUS_FILE, JSON.stringify({ ...readStatus(), lastTest: { ok: !!ok, why: ok ? '' : String(why || '').slice(0, 300), at: Date.now() } }), 'utf8'); } catch (_) { /* 忽略 */ }
+}
 async function selectedModel() {
   const saved = await adapters.loadAdapterConfig();
   const aid = saved.selected || 'deepseek';
@@ -138,10 +144,12 @@ const routes = {
       try {
         const t = await adapters.testAdapter('deepseek', cfg);
         out.test = { ok: true, ms: t.ms, model: ((await adapters.loadAdapterConfig()).configs.deepseek || {}).model };
+        recordTest(true);
       } catch (e) {
         let why = String(e.message || e).slice(0, 300);
         if (!/^连不上/.test(why) && /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(why)) why += '（连不上 api.deepseek.com：请检查网络、代理或防火墙）';
         out.test = { ok: false, why };
+        recordTest(false, why);
       }
     }
     if (bk) {
@@ -172,6 +180,7 @@ const routes = {
       hasKey: !!c.apiKey || ['ollama', 'skeleton', 'mock'].includes(aid),
       keyTail: c.apiKey ? String(c.apiKey).slice(-4) : '',
       search: scfg.provider, hasBocha: !!bochaKey,
+      lastTest: readStatus().lastTest || null,
     };
   },
   'GET /api/health': async () => ({ ok: true, node: process.version }),
@@ -202,7 +211,9 @@ const routes = {
     // 允许调用方关掉自动改写：body.autoRepair = false。
     // 「自己会改」是用户反复抱怨的一点——程序替模型改正文必须可以关闭，
     // 且改过之后必须留痕（autoRepaired / autoRepairReason / originalScene）。
-    const r = await engine.runTurn(body || {});
+    let r;
+    try { r = await engine.runTurn(body || {}); recordTest(true); }
+    catch (e) { if (/连不上|Key|HTTP 4\d\d|HTTP 5\d\d|余额|型号/.test(String(e.message || e))) recordTest(false, e.message); throw e; }
     // 把这一轮的草稿记进存档：刷新页面、关掉浏览器再开，草稿还在，不用重新生成
     try {
       if (r && r.draft && String(r.draft.scene || '').trim()) {
@@ -291,9 +302,12 @@ const routes = {
     // 未配 Key / 认证失败 / 网络不通，都要如实告诉玩家哪一步不行，
     // 不能把 HTTP 401 的原始堆栈甩到界面上
     try {
-      return await adapters.testAdapter(body.adapterId, body.config);
+      const t = await adapters.testAdapter(body.adapterId, body.config);
+      recordTest(true);
+      return t;
     } catch (e) {
       const m = String(e && e.message || e);
+      recordTest(false, m);
       let hint = '';
       if (/401|Unauthorized|Authentication/i.test(m)) hint = '（API Key 未配置或已失效，请核对后重试）';
       else if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|fetch failed/i.test(m)) hint = '（网络不通，请检查代理或网络后重试）';
