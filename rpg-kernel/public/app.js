@@ -928,7 +928,7 @@ function renderLast() {
   updateAdvPreview(); // 「按剧情自动」要跟着这一段的天数走
   renderSettle(d);
   renderDesk(d.reports, d.actions);
-  renderMeters(); fillPeople();
+  renderMeters(); renderAskPanel();
   // 开场已经写出来了：「还没有开场」的提示卡收起
   document.querySelectorAll('.openingCard').forEach(el => el.classList.add('hidden'));
 }
@@ -2427,22 +2427,27 @@ function composeDecisions() {
   return L.join('\n');
 }
 
-/* 数值条：本身份最关心的五六项 + 人群满意度 */
+/* 局面板：你是谁 + 本身份最关心的五六项数 + 各人群的态度 */
+const GWORD = v => (v >= 80 ? '感戴' : v >= 60 ? '安' : v >= 40 ? '平常' : v >= 25 ? '不满' : '怨');
 function renderMeters() {
   const bar = document.getElementById('meterBar');
   if (!bar) return;
-  let M = (STATE && STATE.meters) || {};
-  let G = (STATE && STATE.groups) || {};
+  if (!STATE) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+  let M = STATE.meters || {};
+  let G = STATE.groups || {};
   // 开场还没接进世界：先显示 AI 给的初值
   const dd = LAST && LAST.draft;
   if (!Object.keys(M).length && dd && (dd.meters || []).length) M = Object.fromEntries(dd.meters.filter(m => m && (m.项 || m.name)).map(m => [m.项 || m.name, { value: m.值 || m.value || '', why: m.因 || '' }]));
-  if (!Object.keys(G).length && dd && (dd.groups || []).length) G = Object.fromEntries(dd.groups.filter(g => g && (g.人群 || g.name)).map(g => { const v = Number(g.值 ?? g.value) || 0; return [g.人群 || g.name, { value: v, word: v >= 80 ? '感戴' : v >= 60 ? '安' : v >= 40 ? '平常' : v >= 25 ? '不满' : '怨', why: g.因 || '' }]; }));
+  if (!Object.keys(G).length && dd && (dd.groups || []).length) G = Object.fromEntries(dd.groups.filter(g => g && (g.人群 || g.name)).map(g => { const v = Number(g.值 ?? g.value) || 0; return [g.人群 || g.name, { value: v, word: GWORD(v), why: g.因 || '' }]; }));
+  const s = STATE, p = s.protagonist || {}, c = s.clock || {};
+  const arrow = d => (/↑|升|增|\+/.test(d || '') ? '<i class="up">▲</i>' : /↓|降|减|-/.test(d || '') ? '<i class="down">▼</i>' : '');
   const ms = Object.entries(M), gs = Object.entries(G);
-  bar.classList.toggle('hidden', !STATE || (!ms.length && !gs.length));
-  if (!ms.length && !gs.length) { bar.innerHTML = ''; return; }
-  const arrow = d => (/↑|升|增|\+/.test(d || '') ? '<i class="up">↑</i>' : /↓|降|减|-/.test(d || '') ? '<i class="down">↓</i>' : '');
-  bar.innerHTML = '<div class="mt-row">' + ms.map(([k, v]) => `<span class="mt" title="${escapeHtml(v.why || '')}"><b>${escapeHtml(k)}</b>${escapeHtml(v.value)}${arrow(v.delta)}</span>`).join('') + '</div>'
-    + (gs.length ? '<div class="mt-row grp">' + gs.map(([k, v]) => `<span class="gp" title="${escapeHtml(v.why || '')}"><b>${escapeHtml(k)}</b><span class="gbar"><span style="width:${Math.max(3, Math.min(100, v.value))}%" class="${v.value < 25 ? 'bad' : v.value < 40 ? 'warn' : ''}"></span></span>${escapeHtml(v.word || '')}${v.delta ? (v.delta > 0 ? '<i class="up">↑</i>' : '<i class="down">↓</i>') : ''}</span>`).join('') + '</div>' : '');
+  bar.classList.remove('hidden');
+  bar.innerHTML = `<div class="bd-who"><div class="bd-name">${escapeHtml(p.name || '')}<span>${escapeHtml(p.role || '')}</span></div>
+      <div class="bd-when">${escapeHtml(c.yearLabel || '')} · ${escapeHtml(lunarText(c))}　${escapeHtml((s.location && s.location.full) || '')}</div></div>`
+    + (ms.length ? '<div class="bd-tiles">' + ms.map(([k, v]) => `<div class="tile" title="${escapeHtml(v.why || '')}"><div class="tl-k">${escapeHtml(k)}</div><div class="tl-v">${escapeHtml(v.value)}${arrow(v.delta)}</div>${v.delta && v.why ? `<div class="tl-why">${escapeHtml(v.why)}</div>` : ''}</div>`).join('') + '</div>'
+      : '<div class="bd-empty">数值会在开场后出现</div>')
+    + (gs.length ? '<div class="bd-groups">' + gs.map(([k, v]) => `<div class="grp" title="${escapeHtml(v.why || '')}"><span class="g-k">${escapeHtml(k)}</span><span class="gbar"><span style="width:${Math.max(3, Math.min(100, v.value))}%" class="${v.value < 25 ? 'bad' : v.value < 40 ? 'warn' : v.value >= 60 ? 'good' : ''}"></span></span><span class="g-w">${escapeHtml(v.word || GWORD(v.value))}${v.delta ? (v.delta > 0 ? '<i class="up">▲</i>' : '<i class="down">▼</i>') : ''}</span></div>`).join('') + '</div>' : '');
 }
 
 /* 结算三层：回报（可能失真）· 账目（真实）· 风声 */
@@ -2453,34 +2458,59 @@ function renderSettle(d) {
   const rep = (st.回报 || []).filter(x => x && x.text);
   const acc = (d && d.meters || []).filter(m => { const k = m && (m.项 || m.name); const old = k && STATE && (STATE.meters || {})[k]; return old && String(old.value) !== String(m.值 || m.value || ''); });
   const rum = (st.风声 || []).filter(Boolean);
-  const html = [];
-  if (rep.length) html.push('<div class="st-sec"><div class="st-h">回报</div>' + rep.map(x => `<div class="st-rep">${x.who ? `<b>${escapeHtml(x.who)}</b>：` : ''}${escapeHtml(x.text)}</div>`).join('') + '</div>');
-  if (acc.length) html.push('<div class="st-sec"><div class="st-h">账目</div><table class="st-acc">' + acc.map(m => `<tr><td>${escapeHtml(m.项 || m.name)}</td><td>${escapeHtml((STATE.meters[m.项 || m.name] || {}).value || '')} → <b>${escapeHtml(m.值 || m.value || '')}</b></td><td class="muted">${escapeHtml(m.因 || m.why || '')}</td></tr>`).join('') + '</table></div>');
-  if (rum.length) html.push('<div class="st-sec"><div class="st-h">风声</div>' + rum.map(x => `<div class="st-rum">· ${escapeHtml(x)}</div>`).join('') + '</div>');
-  box.innerHTML = html.join('');
-  box.classList.toggle('hidden', !html.length);
+  if (!rep.length && !acc.length && !rum.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="sec-t">这一回合的结果</div><div class="st-grid">
+    <div class="st-col"><div class="st-h">回报<span>办事的人怎么说（未必是实话）</span></div>${rep.length ? rep.map(x => `<div class="st-rep">${x.who ? `<b>${escapeHtml(x.who)}</b>` : ''}${escapeHtml(x.text)}</div>`).join('') : '<div class="muted">没人来回话</div>'}</div>
+    <div class="st-col"><div class="st-h">账目<span>实际的数</span></div>${acc.length ? acc.map(m => `<div class="st-acc"><span>${escapeHtml(m.项 || m.name)}</span><span>${escapeHtml((STATE.meters[m.项 || m.name] || {}).value || '')} → <b>${escapeHtml(m.值 || m.value || '')}</b></span>${m.因 || m.why ? `<em>${escapeHtml(m.因 || m.why)}</em>` : ''}</div>`).join('') : '<div class="muted">数没有变</div>'}</div>
+    <div class="st-col"><div class="st-h">风声<span>街谈巷议</span></div>${rum.length ? rum.map(x => `<div class="st-rum">${escapeHtml(x)}</div>`).join('') : '<div class="muted">没听到什么</div>'}</div>
+  </div>`;
+  box.classList.remove('hidden');
 }
 
-/* 案头：来报卡片，每份带可点的办法；另有随手能做的事 */
+/* 事务：每件事挂着直到了结；没了结的带可点的办法，了结的写明结局 */
 const nameOf = from => String(from || '').split(/[（(，,·\s]/)[0].replace(/^(县衙|府衙|州衙)/, '').trim();
-function renderDesk(reports, actions) {
+const MCLOSED = /了结|办妥|办砸|作罢|告终|结案|失败|完结/;
+function currentMatters() {
+  const base = ((STATE && STATE.matters) || (STATE && STATE.desk) || []).map(m => ({ ...m, status: m.status || '未办' }));
+  const d = LAST && LAST.draft;
+  if (d) {
+    for (const u of (d.matters || [])) {
+      const m = base.find(x => x.title === u.title || (u.title && x.title && (x.title.includes(u.title) || u.title.includes(x.title))));
+      if (m) { if (u.status) m.status = u.status; if (u.progress) m.progress = u.progress; if (u.outcome) m.outcome = u.outcome; m.justNow = true; }
+    }
+    for (const r of (d.reports || [])) {
+      const m = base.find(x => x.title === r.title);
+      if (m && !MCLOSED.test(m.status)) Object.assign(m, r, { isNew: false });
+      else if (!m) base.push({ ...r, status: '未办', isNew: true });
+    }
+  }
+  return base;
+}
+function renderDesk(_reports, actions) {
   const box = document.getElementById('deskBox');
   if (!box) return;
-  const reps = (reports && reports.length ? reports : (STATE && STATE.desk) || []).filter(r => r && (r.title || r.text));
-  const acts = (actions || []).filter(Boolean);
-  if (!STATE || (!reps.length && !acts.length)) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  const all = STATE ? currentMatters() : [];
+  const open = all.filter(m => !MCLOSED.test(m.status));
+  const closed = all.filter(m => MCLOSED.test(m.status)).slice(-8).reverse();
+  const acts = (actions || (LAST && LAST.draft && LAST.draft.actions) || []).filter(Boolean);
+  if (!STATE || (!all.length && !acts.length)) { box.classList.add('hidden'); box.innerHTML = ''; return; }
   box.classList.remove('hidden');
   const enc = o => encodeURIComponent(JSON.stringify(o));
-  box.innerHTML = '<div class="desk-h">案头</div>'
-    + reps.map(r => `<div class="rep">
-        <div class="rep-t"><span class="rep-form">${escapeHtml(r.form || '来报')}</span><b>${escapeHtml(r.title || '')}</b><span class="muted">　来自 ${escapeHtml(r.from || '')}</span></div>
-        <div class="rep-x">${escapeHtml(r.text || '')}</div>
-        ${r.deadline ? `<div class="rep-d">期限：${escapeHtml(r.deadline)}</div>` : ''}
-        <div class="rep-o">${(r.options || []).map(o => `<button class="optbtn" data-opt="${enc({ text: o.text, who: o.who || '' })}" title="${escapeHtml(o.cost || '')}">${escapeHtml(o.text)}${o.risk ? `<span class="risk">${escapeHtml(o.risk)}</span>` : ''}${o.who ? `<span class="muted">·交${escapeHtml(o.who)}</span>` : ''}</button>`).join('')}
-          ${nameOf(r.from) ? `<button class="minibtn" data-askwho="${encodeURIComponent(nameOf(r.from))}" data-askq="${encodeURIComponent('「' + (r.title || '') + '」这件事，到底是怎么回事？')}">问问来人</button>` : ''}
-          <button class="minibtn" data-act="${encodeURIComponent('「' + (r.title || '') + '」先放着不管')}">先不管</button></div>
-      </div>`).join('')
-    + (acts.length ? '<div class="desk-acts"><span class="muted">随手能做：</span>' + acts.map(a => `<button class="minibtn" data-act="${encodeURIComponent(a)}">${escapeHtml(a)}</button>`).join('') + '</div>' : '');
+  const stCls = st => (/恶化/.test(st) ? 'bad' : /在办/.test(st) ? 'doing' : /办砸|失败/.test(st) ? 'bad' : MCLOSED.test(st) ? 'done' : 'todo');
+  box.innerHTML = `<div class="sec-t">要你拿主意的事<span>点办法收进「这一回合的决定」，可以选好几件</span></div>`
+    + (open.length ? open.map(r => `<div class="mt-card ${r.isNew ? 'new' : ''}">
+        <div class="mc-top"><span class="badge ${stCls(r.status)}">${escapeHtml(r.isNew ? '新到' : r.status)}</span><span class="mc-title">${escapeHtml(r.title || '')}</span><span class="mc-from">${escapeHtml(r.form || '')} · ${escapeHtml(r.from || '')}</span></div>
+        <div class="mc-text">${escapeHtml(r.text || '')}</div>
+        ${r.progress ? `<div class="mc-prog">进展：${escapeHtml(r.progress)}</div>` : ''}
+        ${r.deadline ? `<div class="mc-dl">期限　${escapeHtml(r.deadline)}</div>` : ''}
+        <div class="mc-opts">${(r.options || []).map(o => `<button class="optbtn" data-opt="${enc({ text: o.text, who: o.who || '' })}"><span class="ob-t">${escapeHtml(o.text)}</span><span class="ob-m">${o.risk ? `<span class="risk r-${escapeHtml(o.risk)}">${escapeHtml(o.risk)}</span>` : ''}${o.who ? `交${escapeHtml(o.who)}` : ''}${o.cost ? `<span class="ob-c">${escapeHtml(o.cost)}</span>` : ''}</span></button>`).join('')}</div>
+        <div class="mc-more">${nameOf(r.from) ? `<button class="linkbtn" data-askwho="${encodeURIComponent(nameOf(r.from))}" data-askq="${encodeURIComponent('「' + (r.title || '') + '」这件事，到底是怎么回事？')}">问问${escapeHtml(nameOf(r.from))}</button>` : ''}<button class="linkbtn" data-act="${encodeURIComponent('「' + (r.title || '') + '」先放着不管')}">先放着</button></div>
+      </div>`).join('') : '<div class="muted">眼下没有压着的事。</div>')
+    + (acts.length ? '<div class="desk-acts"><span class="da-h">随手能做</span>' + acts.map(a => `<button class="chipbtn" data-act="${encodeURIComponent(a)}">${escapeHtml(a)}</button>`).join('') + '</div>' : '')
+    + (closed.length ? `<details class="closed"><summary>已了结的事（${closed.length}）</summary>${closed.map(m => `<div class="cl-i"><span class="badge ${stCls(m.status)}">${escapeHtml(m.status)}</span><b>${escapeHtml(m.title)}</b>${m.justNow ? '<span class="justnow">本回合</span>' : ''}<div class="cl-o">${escapeHtml(m.outcome || m.progress || '（没写结局）')}</div></div>`).join('')}</details>` : '');
+  // 本回合刚了结的事：结局直接摊开，不藏在折叠里
+  const just = closed.filter(m => m.justNow);
+  if (just.length) box.insertAdjacentHTML('afterbegin', `<div class="justclosed">${just.map(m => `<div><span class="badge ${stCls(m.status)}">${escapeHtml(m.status)}</span><b>${escapeHtml(m.title)}</b>：${escapeHtml(m.outcome || m.progress || '')}</div>`).join('')}</div>`);
 }
 
 /* 问人：身边的人 + 来报的来人 */
@@ -2514,7 +2544,24 @@ function renderConsult(c, prepend) {
         <button class="minibtn" data-adopt="${enc({ text: x.text })}">加入决定</button><button class="minibtn" data-keep="${enc({ who: c.who, text: x.text, risk: x.risk })}">收进建议簿</button></div>`).join('') + '</div>';
   box.insertAdjacentHTML(prepend ? 'afterbegin' : 'beforeend', html);
 }
+function renderPeopleCards() {
+  const box = document.getElementById('peopleBox');
+  if (!box) return;
+  if (!STATE) { box.innerHTML = ''; return; }
+  const P = { ...(STATE.people || {}) };
+  for (const n of ((LAST && LAST.draft && [...(LAST.draft.newNpcs || []), ...(LAST.draft.presentNpcs || [])]) || [])) if (n && n.name) P[n.name] = { ...(P[n.name] || {}), ...Object.fromEntries(Object.entries(n).filter(([, v]) => v)), seen: 1e9 };
+  const fam = ((STATE.household && STATE.household.members) || []).filter(m => m && m.name);
+  for (const m of fam) if (!P[m.name]) P[m.name] = { role: m.relation || '家人', tie: m.relation, status: m.status && m.status !== '在世' ? m.status : '', seen: -1 };
+  const list = Object.entries(P).filter(([k]) => k !== (STATE.protagonist || {}).name).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 16);
+  box.innerHTML = list.length ? list.map(([k, v]) => `<div class="pc">
+      <div class="pc-top"><span class="pc-name">${escapeHtml(k)}</span>${v.attitude ? `<span class="att">${escapeHtml(v.attitude)}</span>` : ''}</div>
+      <div class="pc-role">${escapeHtml(v.role || '')}${v.tie && v.tie !== v.role ? ' · ' + escapeHtml(v.tie) : ''}</div>
+      ${v.want ? `<div class="pc-l"><span>想要</span>${escapeHtml(v.want)}</div>` : ''}
+      ${v.status ? `<div class="pc-l"><span>近况</span>${escapeHtml(v.status)}</div>` : ''}
+      <button class="linkbtn" data-askwho="${encodeURIComponent(k)}">找来问</button></div>`).join('') : '<div class="muted">开场后，出场的人会列在这里。</div>';
+}
 function renderAskPanel() {
+  renderPeopleCards();
   fillPeople();
   const box = document.getElementById('askBox');
   if (box) { box.innerHTML = ''; ((STATE && STATE.consults) || []).slice(-6).reverse().forEach(c => renderConsult(c, false)); }

@@ -1838,6 +1838,7 @@ async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOv
   draft.actions = arr(draft.actions).map(a => (typeof a === 'string' ? a : (a && (a.text || a.label)) || '')).filter(Boolean).slice(0, 6);
   const st0 = draft.settlement && typeof draft.settlement === 'object' ? draft.settlement : {};
   draft.settlement = { 回报: arr(st0.回报 || st0.reports).filter(x => x && (x.text || typeof x === 'string')).map(x => (typeof x === 'string' ? { who: '', text: x } : x)), 风声: arr(st0.风声 || st0.rumors).map(String).filter(Boolean).slice(0, 4) };
+  draft.matters = arr(draft.matters).filter(m => m && m.title);
   draft.gmNotes = arr(draft.gmNotes);
   draft.gmNotesDone = arr(draft.gmNotesDone);
   draft.doubts = arr(draft.doubts).map(d => (typeof d === 'string' ? d : JSON.stringify(d)));
