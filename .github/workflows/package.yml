@@ -53,9 +53,6 @@ jobs:
             /r:System.Windows.Forms.dll /r:System.Drawing.dll rpg-kernel\launcher\GameLauncher.cs
           if (-not (Test-Path "$out\启动游戏.exe")) { throw '启动器编译失败' }
           Copy-Item rpg-kernel\launcher\fallback.bat "$out\打不开就双击这个.bat"
-          # 版本号：游戏内「一键更新」靠它比较新旧
-          $ver = @{ run = [int]$env:GITHUB_RUN_NUMBER; sha = "$env:GITHUB_SHA".Substring(0,7); date = (Get-Date -Format 'yyyy-MM-dd HH:mm') } | ConvertTo-Json -Compress
-          [IO.File]::WriteAllText("$PWD\$app\version.json", $ver, (New-Object Text.UTF8Encoding $false))
           # 说明（带 BOM，记事本里中文不乱码）
           $txt = Get-Content rpg-kernel\launcher\README.txt -Raw -Encoding UTF8
           [IO.File]::WriteAllText("$PWD\$out\使用说明.txt", $txt, (New-Object Text.UTF8Encoding $true))
@@ -98,7 +95,7 @@ jobs:
           if (-not (Test-Path dist\HistoryRPG-Setup.exe)) { throw '安装程序没生成' }
           # 静默装一遍，确认装出来的东西能跑
           $dir = "$env:RUNNER_TEMP\rpg-install"
-          Start-Process dist\HistoryRPG-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOLAUNCH',"/DIR=$dir" -Wait
+          Start-Process dist\HistoryRPG-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir" -Wait
           if (-not (Test-Path "$dir\启动游戏.exe")) { throw '安装后没有启动程序' }
           if (-not (Test-Path "$dir\app\runtime\node.exe")) { throw '安装后没有运行环境' }
           $env:PORT = '3198'
@@ -107,13 +104,6 @@ jobs:
           for ($i = 0; $i -lt 40 -and -not $ok; $i++) { Start-Sleep 1; try { $ok = (Invoke-RestMethod http://127.0.0.1:3198/api/health).ok } catch {} }
           taskkill /T /F /PID $p.Id | Out-Null
           if (-not $ok) { throw '安装后的游戏起不来' }
-          # 发布页上的版本信息（大小与 SHA-256：游戏内更新下载后逐一核对，镜像被改过就不装）
-          $v = Get-Content "dist\HistoryRPG\app\version.json" -Raw | ConvertFrom-Json
-          $f = Get-Item dist\HistoryRPG-Setup.exe
-          $v | Add-Member setupSize $f.Length
-          $v | Add-Member setupSha256 ((Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower())
-          [IO.File]::WriteAllText("$PWD\dist\version.json", ($v | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))
-          Get-Content dist\version.json
 
       - uses: actions/upload-artifact@v4
         with:
@@ -121,7 +111,6 @@ jobs:
           path: |
             dist/HistoryRPG-Setup.exe
             dist/HistoryRPG-windows.zip
-            dist/version.json
 
       - name: 发布到 Releases（latest）
         shell: pwsh
@@ -130,17 +119,8 @@ jobs:
         run: |
           gh release delete latest --yes --cleanup-tag 2>$null
           $notes = @"
-          ## 点这里直接下载安装程序
-          **[HistoryRPG-Setup.exe（GitHub 直连）](https://github.com/zhuhuang907-lang/-rpg/releases/download/latest/HistoryRPG-Setup.exe)**
-          国内下载慢就点加速地址（任选一个）：
-          [ghfast.top](https://ghfast.top/https://github.com/zhuhuang907-lang/-rpg/releases/download/latest/HistoryRPG-Setup.exe) ·
-          [gh-proxy.com](https://gh-proxy.com/https://github.com/zhuhuang907-lang/-rpg/releases/download/latest/HistoryRPG-Setup.exe) ·
-          [ghproxy.net](https://ghproxy.net/https://github.com/zhuhuang907-lang/-rpg/releases/download/latest/HistoryRPG-Setup.exe)
-
-          **以后不用再来这里下载**：游戏里有新版本时，顶上会提示，点「一键更新」就自动下载、安装、重新打开。
-
-          ## 怎么装
-          1. 下载 **HistoryRPG-Setup.exe**，双击安装（Windows 提示「已保护你的电脑」就点「更多信息」→「仍要运行」）。
+          ## 怎么装（推荐）
+          1. 点下面的 **HistoryRPG-Setup.exe** 下载，双击安装（Windows 提示「已保护你的电脑」就点「更多信息」→「仍要运行」）。
           2. 装完双击桌面上的 **历史模拟RPG** 图标。
           3. 页面上粘贴 DeepSeek Key 点「保存」，输入一句话开局。
 
@@ -148,4 +128,4 @@ jobs:
 
           提交：${{ github.sha }}
           "@
-          gh release create latest dist/HistoryRPG-Setup.exe dist/HistoryRPG-windows.zip dist/version.json --title "历史模拟 RPG · Windows 最新版" --notes $notes --target ${{ github.sha }}
+          gh release create latest dist/HistoryRPG-Setup.exe dist/HistoryRPG-windows.zip --title "历史模拟 RPG · Windows 最新版" --notes $notes --target ${{ github.sha }}
