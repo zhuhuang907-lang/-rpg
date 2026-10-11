@@ -146,6 +146,7 @@ details.past summary{cursor:pointer;color:var(--mute);font-size:13px}
 .risk.稳{color:var(--good)}.risk.难{color:var(--zhu)}
 .mmore{display:flex;gap:10px;margin-top:6px}
 .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 0}
+.abil{margin-left:6px;font-size:11px;border:1px solid var(--rule);border-radius:3px;padding:0 4px;color:var(--ochre)}
 
 /* 决定栏 */
 .compose{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:12px 14px;margin-top:18px}
@@ -175,6 +176,7 @@ details.past summary{cursor:pointer;color:var(--mute);font-size:13px}
 .banner{background:var(--ochre-soft);border:1px solid var(--ochre);border-radius:10px;padding:10px 12px;margin:12px 0;font-size:14px}
 .err{background:var(--zhu-soft);border:1px solid var(--zhu);border-radius:10px;padding:10px 12px;margin:12px 0;font-size:14px}
 .confirm{display:inline-flex;gap:6px;align-items:center;font-size:13px}
+.savest{font-size:12px;color:var(--good);margin-top:6px;text-align:right}.savest.bad{color:var(--zhu)}
 
 @media (max-width: 900px){
   .game{grid-template-columns:minmax(0,1fr)}
@@ -264,49 +266,52 @@ const METER_SPEC = {
 };
 
 function rules(len) {
-  return `你是一部历史模拟游戏的主持人（GM），玩法仿《历史模拟器：崇祯》：每回合玩家看案头的来报、问身边的人、拿主意交给人去办，你推演结果，世界随之变化，新的事又摆上案头。你写主角身边的世界与他人，不扮演主角。
+  return `你是一部历史模拟游戏的主持人（GM）。玩家在真实的历史里过一个人的日子：他想做什么就做什么，你写他身边的世界和他人怎样回应，世界随之一步步变化。你不扮演主角。
 
 一、主角归玩家
-1. 主角只做玩家写明或选定的事；不写主角的心思、决定和玩家没写的动作，不替他说他没说的话。
+1. 主角只做玩家写明的事；不写主角的心思、决定和玩家没写的动作，不替他说他没说的话。
 2. 玩家想做什么都可以做：违法、越权、悖逆、行险，游戏都不拦，也不说教。成败与后果按真实情形推演——有没有人知道、谁知道、他们的利害与胆量、主角手里的权势与把柄、此时此地的吏治与风气。很多事做了没人追究，有的过了很久才翻出来，有的当场败露；不要让坏事必遭报应，也不要让好事必有好报。
 
-二、执行与回报
-3. 主角拿的主意，交给具体的人去办（玩家点了谁就是谁；没点的按身份默认：皇帝交有司，官员交胥吏幕友，平民自己或家人）。当场能办的写出办的经过与结果；要时日的写明谁去办、几时回话，到时一定写结果。
-4. 办事的人有本事高低、有私心：多数照办，但会打折扣、借机捞好处、揽功诿过、瞒报，也可能办得比预想好。他们当面不长篇扯皮，至多一句顾虑；走样体现在结果里。确实办不到才直说，一两句讲明。
-5. 结算分三层：回报＝执行人的说法，用当时的文书或口吻，可以失真；账目＝数值的真实变化（meters / groups），与正文对得上；风声＝一到三条街谈巷议或同僚私语，透露回报里没说的东西。不弹对错提示，让玩家从三者的出入里自己看。
-6. 后果可以延迟：一到三回合后借来报或上门的人回来。没写到的真相与暗线写进 gmNotes（玩家看不到）。
-7. 【差事】里没办完的事，时间到了必须交代结果；在 orders 里申报本轮新交代的差事和旧差事的进展。
-8. 【事务账】里每一件没了结的事，本回合都要在 matters 里报进展（未办 / 在办 / 恶化 / 了结 / 作罢）。一件事最迟三四回合要有结局。了结时把结局写明白：事情最后怎样、钱粮落到谁手里、牵涉的每个人落得什么下场（升、贬、罚、抓、走、死、得利、记恨），正文里也要写到，不许含糊带过。
-9. 出场的人物要让玩家看得清：头一次出场交代他是谁、和主角什么关系、为什么在这里；presentNpcs 里写他此刻对主角的态度（一个词）、眼下想要什么、近况。
+二、跟着玩家走（最要紧）
+3. 剧情像连续剧一样往下接：正文先接上一回合的末尾和玩家这一步，把这一步办完、写透，写出结果；新的情况从已经在场的人和事里自然长出来。不要每回合硬塞新麻烦、新来报，不要突然跳到不相干的事上。
+4. 玩家眼下在做什么，剧情就围着什么转：他在打仗，写的就是行军、军情、粮草、敌我、阵前；他在做官，就是公事与官场；他在过日子，就是家计、亲事、邻里、生意、读书。
+5. 日常生活本身就是内容：衣食住行、钱粮开销、家人的脾气与心事、婚丧嫁娶、生病抓药、节令风俗、市井见闻，写得具体真实。不是每回合都要有大事。
+6. 打仗、行军、守城时按真实军事写：兵力多少、粮草几日、行军几程、地形天候、斥候探回什么、士气军纪如何；交战按玩家的部署一步步推进，胜负看实力、地利与临阵应变，不是一句话了事，也不是玩家想赢就赢。
 
-三、案头（每回合结尾）
-10. reports 给出一到三份新来报：待主角处理的具体事务，来自具体的人，以当时的形式（奏折、公文、书信、口信、账单、传闻……），用来人的口吻，有人、有数、有期限。来报可以夸大、说谎、瞒报（真相写进 gmNotes）。若此前有决定，至少一份是它的回响。
-11. 每份来报给两到三个可选的办法（options）：写成主角可以直接下的令，各有代价与隐患，标上把握（稳 / 有把握 / 五五 / 难）和建议交给谁办。办法要彼此真不同，至少一条是常人不太会选的硬招或偏招。
-12. actions 另给三到五件此刻随手能做的事（问某人、去某处、查某账、见某人），一句话一件。
-13. 来报只写合乎本地、本身份尺度的事；朝廷大政、战事、改元、大灾只能来自真实史事，按身份与路程迟到、可能走样（皇帝当场，京官邸报，地方官一两月后看邸报或上司札子，平民几个月后听传闻）。不把无关的史事、真人硬扯到主角身边；不编史书没有的大事、密谋、离奇巧合。
+三、人物
+7. 每个人有自己的性格、本事（高 / 中 / 低）、立场与私心。他说什么、怎么办事、办成几分、出什么主意，都由这些决定：庸人会出馊主意还说得很笃定，谨小慎微的人总劝缓一缓，贪的人主意里藏着自己的好处，能人也会看走眼。他们的话不一定对，你不替玩家判断对错。
+8. 主角交代的事交给具体的人去办（玩家点了谁就是谁；没点的按身份默认）。办事的人按本事和私心办：多数照办，但会打折扣、捞好处、揽功诿过、瞒报，也可能办得比预想好。他们当面不长篇扯皮，走样体现在结果里。
+9. 出场的人要让玩家看得清：头一次出场交代他是谁、和主角什么关系、为什么在这里；presentNpcs 里写他的性格（几个字）、本事（高/中/低）、此刻对主角的态度（一个词）、眼下想要什么、近况。
 
-四、时间
+四、结果与账
+10. 有人办了事，结果分三层：回报＝办事人的说法，可以失真；账目＝数值的真实变化（meters / groups），与正文对得上；风声＝街谈巷议，透露回报里没说的东西。不弹对错提示。
+11. 后果可以延迟，一到三回合后才回来，也可能不了了之；没写到的真相与暗线写进 gmNotes（玩家看不到）。
+12. 【差事】里没办完的事，时间到了必须交代结果；在 orders 里申报本轮新交代的差事和旧差事的进展。【事务账】里没了结的事，本回合在 matters 里报进展（未办 / 在办 / 恶化 / 了结 / 作罢）；一件事最迟三四回合要有结局，了结时把结局写明白：事情最后怎样、谁得谁失、牵涉的每个人落得什么下场，正文里也写到。
+13. reports 只在确实有人带着事找上门、或有真实消息传到时才写，0 到 2 份，并且和玩家眼下在做的事、或他身边的人有关；没有就给 []，绝不凑数。来报不附办法（options 给 []）：主意由玩家自己拿，或去问人。朝廷大政、战事、改元、大灾只能来自真实史事，按身份与路程迟到、可能走样；不把无关的史事、真人硬扯到主角身边；不编史书没有的大事、密谋、离奇巧合。
+13a. actions 给三到五件此刻自然能做的事，一句话一件，日常的和眼下正事的都有（如：去看看病中的母亲、把账本拿来对一对、叫斥候再探三十里）。这只是提示，玩家可以完全不理。
+
+五、时间
 14. 这一步要多久就过多久，elapsedDays 填实际天数（当场办完填 0，最多 180）。时间过去了，先把这段时间里实际发生的事交代清楚：差事办得怎样、钱粮进出、家里与差事上的变化、传来的真实消息；不要「转眼」「数日后」一笔带过。过完这些天后的年号纪年填在 yearLabel（如「万历二十八年」）。
 
-五、史实
+六、史实
 15. 年号、官名、地名、礼制、器物、钱粮单位、物价量级一律合乎本朝本年；人物身份、年龄、亲属以下文档案为准，不改不编。拿不准的细节换成拿得准的，正文里不写「据考」「不详」。
 16. 虚构人物不与史载真人同名，不写成真人的亲属门生；小人物见不到帝王将相。不出现时代以后才有的人、事、词。
 
-六、文风
+七、文风
 17. 像好的历史正剧那样写（如《大明王朝1566》《雍正王朝》的笔法）：叙述用干净流畅的白话，有起有落，把事情的来龙去脉、人物的处境和分寸写出来；人物说话带时代与身份的腔调——官场有官腔、有潜台词，市井说市井话，家人说家常话，各不相同。
 18. 不要电报体和清单式的短句排比；不要网文腔、翻译腔和这些套话：「空气仿佛凝固」「嘴角勾起」「不禁」「一丝」「眸子」「深吸一口气」「意味深长」「心中一凛」。不写大段景物光影和心理揣测。不写空寒暄、不重复前文；对话为事服务，但要像真人说话。
 19. 正文${LEN[len] || LEN.normal}（来报与回报另算）。称主角为「你」。
 
-七、输出
+八、输出
 只输出一个 JSON 对象，不加代码块、不加任何说明。scene 放在最前面：
 {"scene":"正文","elapsedDays":0,"yearLabel":"过完这些天后的年号纪年",
 "settlement":{"回报":[{"who":"谁回报","text":"他的说法，当时口吻"}],"风声":["街谈巷议"]},
 "meters":[{"项":"数值名","值":"新值（带单位或一个词）","变":"↑或↓","因":"一句话原因"}],
 "groups":[{"人群":"","值":50,"因":""}],
 "matters":[{"title":"事务账里那件事的标题","status":"未办/在办/恶化/了结/作罢","progress":"本回合的进展","outcome":"了结时的结局"}],
-"reports":[{"title":"四到八字","from":"谁（身份）","form":"奏折/公文/书信/口信/账单/传闻","text":"来人口吻的正文，80到200字","deadline":"期限及对方声称的后果","options":[{"text":"可以直接下的令","who":"建议交给谁办","risk":"稳/有把握/五五/难","cost":"代价与隐患，一句"}]}],
+"reports":[{"title":"四到八字","from":"谁（身份）","form":"军报/奏折/公文/书信/口信/账单/传闻","text":"来人口吻的正文，80到200字","deadline":"期限（没有就空）","options":[]}],
 "actions":["随手能做的事"],
-"presentNpcs":[{"name":"","role":"","tie":"与主角的关系","attitude":"对主角的态度一词","want":"他眼下想要什么","status":"近况一句"}],
+"presentNpcs":[{"name":"","role":"","tie":"与主角的关系","personality":"性格几个字","ability":"高/中/低","attitude":"对主角的态度一词","want":"他眼下想要什么","status":"近况一句"}],
 "statusChanges":[{"项":"职官/爵位/健康/名望/田产等","后":"变化后的值","原因":"正文里的哪件事"}],
 "historyChanges":[{"event":"史书原载的事","now":"本局实际变成了什么","cause":"玩家哪一步导致"}],
 "orders":[{"who":"办事的人","what":"主角交代的事","status":"在办/办妥/办砸/搁下","result":"结果"}],
@@ -319,44 +324,58 @@ function rules(len) {
 /* ========== 存档（claude.ai 账号里；不可用时存在本浏览器） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 const LOCAL_INDEX = 'hrpg:index';
+const readIdx = () => { try { return JSON.parse(lsGet(LOCAL_INDEX) || '[]'); } catch (_) { return []; } };
 const store = {
+  /** 账号里的和本浏览器里的合在一起；同一局两边都有，取新的那份 */
   async list() {
-    const out = [];
-    let idx = []; try { idx = JSON.parse(lsGet(LOCAL_INDEX) || '[]'); } catch (_) { idx = []; }
-    for (const x of idx) out.push({ ...x, where: 'local' });
+    const m = new Map();
+    for (const x of readIdx()) m.set(x.id, { ...x, where: 'local' });
     if (DB && UID) {
       try {
         const q = await DB.collection('data/users/' + UID).get();
-        for (const d of q.docs) if (d.exists) { const v = d.data(); out.push({ id: d.id, title: v.title, sub: v.sub, updatedAt: v.updatedAt, where: 'db' }); }
-      } catch (_) { /* 读不到就只列本机的 */ }
+        for (const d of q.docs) if (d.exists) { const v = d.data(); const o = m.get(d.id); if (!o || (v.updatedAt || 0) >= (o.updatedAt || 0)) m.set(d.id, { id: d.id, title: v.title, sub: v.sub, updatedAt: v.updatedAt, where: 'db' }); }
+      } catch (_) { /* 读不到账号里的就只列本机的 */ }
     }
-    return out.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return [...m.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   },
-  async load(id, where) {
-    if (where === 'db' && DB && UID) { const s = await DB.collection('data/users/' + UID).doc(id).get(); return s.exists ? clone(s.data()) : null; }
-    try { return JSON.parse(lsGet('hrpg:save:' + id) || 'null'); } catch (_) { return null; }
+  async load(id) {
+    let local = null, remote = null;
+    try { local = JSON.parse(lsGet('hrpg:save:' + id) || 'null'); } catch (_) { local = null; }
+    if (DB && UID) { try { const d = await DB.collection('data/users/' + UID).doc(id).get(); remote = d.exists ? clone(d.data()) : null; } catch (_) { remote = null; } }
+    if (local && remote) return (local.updatedAt || 0) > (remote.updatedAt || 0) ? local : remote;
+    return remote || local;
   },
+  /** 先存本浏览器（快、一定有），再存账号；哪一步失败都不丢这一回合，只在页面上说明 */
   async save(s) {
     s.updatedAt = Date.now();
     s.sub = `${s.clock.yearLabel || ''} · ${s.place.full || ''} · 第${s.turn}回合`;
     shrink(s);
-    if (DB && UID && s.where !== 'local') {
-      try { await DB.collection('data/users/' + UID).doc(s.id).set(clone(s)); s.where = 'db'; return; }
-      catch (e) { if (e && e.code === 'invalid_argument') s.where = 'local'; else throw e; }
+    let local = false, remote = false;
+    try {
+      localStorage.setItem('hrpg:save:' + s.id, JSON.stringify(s));
+      const idx = readIdx().filter(x => x.id !== s.id); idx.push({ id: s.id, title: s.title, sub: s.sub, updatedAt: s.updatedAt });
+      localStorage.setItem(LOCAL_INDEX, JSON.stringify(idx)); local = true;
+    } catch (_) { local = false; }
+    if (DB && UID) {
+      for (let i = 0; i < 2 && !remote; i++) {
+        try { await DB.collection('data/users/' + UID).doc(s.id).set(clone(s)); remote = true; }
+        catch (e) { if (i === 0 && e && e.code === 'unavailable') await new Promise(r => setTimeout(r, 800 + Math.random() * 800)); else break; }
+      }
     }
-    s.where = 'local';
-    lsSet('hrpg:save:' + s.id, JSON.stringify(s));
-    let idx = []; try { idx = JSON.parse(lsGet(LOCAL_INDEX) || '[]'); } catch (_) { idx = []; }
-    idx = idx.filter(x => x.id !== s.id); idx.push({ id: s.id, title: s.title, sub: s.sub, updatedAt: s.updatedAt });
-    lsSet(LOCAL_INDEX, JSON.stringify(idx));
+    const t = new Date().toTimeString().slice(0, 5);
+    SAVED = remote ? `已存到你的账号 · ${t}` : local ? `已存在本浏览器 · ${t}${DB && UID ? '（账号存档这次没成功，下回合会再试）' : ''}` : '这回合没存上：浏览器和账号都写不进去。别关页面，再过一回合会再试。';
+    SAVED_BAD = !remote && !local;
+    lsSet('hrpg:last', s.id);
+    return remote || local;
   },
-  async del(id, where) {
-    if (where === 'db' && DB && UID) await DB.collection('data/users/' + UID).doc(id).delete();
+  async del(id) {
+    if (DB && UID) { try { await DB.collection('data/users/' + UID).doc(id).delete(); } catch (_) { /* 无 */ } }
     lsSet('hrpg:save:' + id, null);
-    let idx = []; try { idx = JSON.parse(lsGet(LOCAL_INDEX) || '[]'); } catch (_) { idx = []; }
-    lsSet(LOCAL_INDEX, JSON.stringify(idx.filter(x => x.id !== id)));
+    lsSet(LOCAL_INDEX, JSON.stringify(readIdx().filter(x => x.id !== id)));
+    if ((lsGet('hrpg:last') || '').startsWith(id)) lsSet('hrpg:last', null);
   },
 };
+let SAVED = '', SAVED_BAD = false;
 /** 一个存档最多 256KB：老回合只留摘要，撤销用的上一版也一样瘦身 */
 function shrink(s) {
   const slim = x => { if (!x || !x.log) return; x.log.forEach((l, i) => { if (i < x.log.length - 12) l.scene = ''; }); if (x.log.length > 300) x.log = x.log.slice(-300); };
@@ -407,7 +426,9 @@ function partialScene(text) {
 async function callClaude(prompt, onScene) {
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开才能调 AI' };
   CTL = new AbortController();
-  const r = await SAMPLE(prompt, { signal: CTL.signal, cache: false, modelTier: SETTINGS.tier, onText: onScene ? ({ text }) => onScene(partialScene(text)) : undefined });
+  const opts = { signal: CTL.signal, cache: false, modelTier: SETTINGS.tier };
+  if (SETTINGS.tier !== 'complex') opts.effort = 'low';   // 少想一会儿、早点动笔：等待从一两分钟缩到半分钟上下
+  const r = await SAMPLE(prompt, { ...opts, onText: onScene ? ({ text }) => onScene(partialScene(text)) : undefined });
   return r;
 }
 
@@ -424,7 +445,7 @@ function blocks(s) {
   const open = arr(s.matters).filter(m => !CLOSED.test(m.status));
   if (open.length) L.push('【事务账：还没了结的事（每件都要在 matters 里报进展）】\n' + open.map(m => `· 「${m.title}」第${m.opened}回合来自${m.from}（${m.form}）：${cut(m.text, 120)}${m.deadline ? '　期限：' + m.deadline : ''}　现状：${m.status}${m.progress ? '，' + m.progress : ''}`).join('\n'));
   const P = Object.entries(s.people || {}).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 14);
-  if (P.length) L.push('【人物近况】\n' + P.map(([k, v]) => `· ${k}：${v.role || ''}${v.tie ? '，' + v.tie : ''}${v.attitude ? '，对主角' + v.attitude : ''}${v.want ? '，想要' + v.want : ''}${v.status ? '，近况：' + v.status : ''}`).join('\n'));
+  if (P.length) L.push('【人物（性格、本事、态度以此为准）】\n' + P.map(([k, v]) => `· ${k}：${v.role || ''}${v.tie ? '，' + v.tie : ''}${v.personality ? '，性格' + v.personality : ''}${v.ability ? '，本事' + v.ability : ''}${v.attitude ? '，对主角' + v.attitude : ''}${v.want ? '，想要' + v.want : ''}${v.status ? '，近况：' + v.status : ''}`).join('\n'));
   const od = arr(s.orders).filter(o => /在办|待办|推迟/.test(o.status));
   if (od.length) L.push('【差事：交代下去还没办完的（到时必须写结果）】\n' + od.map(o => `· 第${o.turn}回合交代 ${o.who}：${o.what}（${o.status}${o.result ? '，' + o.result : ''}）`).join('\n'));
   const cs = arr(s.consults).filter(x => !x.used);
@@ -434,14 +455,14 @@ function blocks(s) {
   const sums = arr(s.log).filter(l => l.summary).slice(-40);
   if (sums.length) L.push('【前情提要】\n' + sums.map(l => `第${l.turn}回合（${l.time}）：${l.summary}`).join('\n'));
   const lastScenes = arr(s.log).filter(l => l.scene).slice(-2);
-  if (lastScenes.length) L.push('【前两回合原文（衔接用，不要重复）】\n' + lastScenes.map(l => `第${l.turn}回合：${cut(l.scene, 900)}`).join('\n'));
+  if (lastScenes.length) L.push('【前文原文（本回合正文从最后一段的末尾接下去，不要重复）】\n' + lastScenes.map((l, i) => `第${l.turn}回合${l.input ? '（玩家：' + cut(l.input, 120) + '）' : ''}：${cut(l.scene, i === lastScenes.length - 1 ? 2400 : 700)}`).join('\n'));
   L.push(`【本身份的常法（出办法时可参照，代价与见效时间要真实；玩家也可以不按常法来）】${POLICY[s.idm] || POLICY.commoner}`);
   return L.join('\n\n');
 }
 function turnPrompt(s, input, note) {
   const ask = String(input || '').trim()
-    ? `【本回合玩家的决定与行动】\n${input}\n照此推演：交给谁办就由谁去办，写出经过与结果（回报、账目、风声），以及由此带出的新情况；需要几天就过几天。没处理的事按「未处理」推演。最后摆上新的来报。`
-    : '【本回合】玩家没有下令（不处理也是一种决定）：按身份过一段日子（皇帝、割据者约一季，官员、军将约一月，其余约一旬，有急事就停），写这段时间里差事的进展、没处理的事怎样了、世界怎样变了，再摆上新的来报。';
+    ? `【本回合玩家的决定与行动】\n${input}\n照此推演：先接上一回合的末尾，把玩家这一步办完、写透；交给谁办就由谁按他的本事和私心去办，写出经过与结果（有人办事才有回报、账目、风声），以及由此自然带出的新情况；需要几天就过几天。没处理的事按「未处理」推演。确实有人带着事找上门才写来报，没有就不写。`
+    : '【本回合】玩家这回合没有吩咐什么：就按他的身份和处境过一段日子（一般几天到一旬；在打仗就写这几日的军中与敌情），写家里与身边的日常、差事的进展、没处理的事怎样了；有急事找上门就停在那里。';
   return rules(SETTINGS.len) + '\n\n' + blocks(s) + '\n\n' + ask + (note ? `\n\n【玩家对上一版的意见：这次重写照此改】${note}` : '');
 }
 function openingPrompt(sentence) {
@@ -449,7 +470,7 @@ function openingPrompt(sentence) {
 
 【开局】玩家想当的人：「${sentence}」
 先替玩家把这个人落到真实历史里：没说年代就挑一个这个身份最有戏、史料最清楚的年份；没说地点就挑当时真实存在、与这个身份相称的地方。真实人物就用他本人此时的真实身份、年龄、家人；虚构人物起一个合乎时代、不与史载真人同名的名字，家人也是虚构的。
-然后写开场：先三四句交代你是谁、何年何月、身在何处、眼下与你相关的真实局势，再写眼前的处境，引出案头上的事。meters 按这个身份给五六项初值（${Object.values(METER_SPEC).map(x => x[0]).join(' / ')} 里取合身份的那组），groups 给三到五个人群的初值（0–100），reports 摆上两到三份来报（各带办法），actions 给几件随手能做的事，presentNpcs 列出开场里出现的人。
+然后写开场：先三四句交代你是谁、何年何月、身在何处、眼下与你相关的真实局势，再写你此刻的日子：家里什么光景、手头在忙什么、身边有哪些人、眼下最挂心的一件事。meters 按这个身份给五六项初值（${Object.values(METER_SPEC).map(x => x[0]).join(' / ')} 里取合身份的那组），groups 给三到五个人群的初值（0–100），reports 只在开场里确实有人带着事找上门时写（0 到 2 份，不附办法），actions 给三到五件此刻自然能做的事，presentNpcs 列出开场里出现的人（含性格、本事）。
 在上面那个 JSON 的最前面再加一个 "setup" 字段：
 "setup":{"name":"姓名","gender":"男/女","age":30,"role":"一句话具体身份，如 苏州府长洲县的机户女儿、钱塘县知县","identityModule":"emperor/noble/official/warlord/commoner 五选一","nativePlace":"籍贯","real":false,"yearLabel":"万历二十八年","gregorianYear":1600,"month":3,"day":5,"place":"当时的地名，如 苏州府长洲县","polity":"明","household":[{"relation":"父","name":"","age":50,"note":"一句话"}]}
 month、day 是农历；gregorianYear 公元前写负数。`;
@@ -459,11 +480,11 @@ function askPrompt(s, who, q) {
   const mem = arr(s.log).filter(l => l.scene && l.scene.includes(who)).slice(-2).map(l => `第${l.turn}回合：` + cut(l.scene.slice(Math.max(0, l.scene.indexOf(who) - 40)), 140));
   const past = arr(s.consults).filter(c => c.who === who).slice(-3).map(c => `第${c.turn}回合问过他「${cut(c.q, 30)}」`);
   return `你扮演一个历史人物，回答主角的问话。只输出一个 JSON 对象，不加代码块：{"reply":"他的回答","suggestions":[{"text":"他出的一条主意，具体到谁去办、怎么办","risk":"稳/有把握/五五/难"}],"memo":"他心里没说出口的打算"}
-要求：用这个人的身份、性格、说话方式回答，合乎本朝本年；他只知道他这个身份能知道的事。他有立场和私心：对他自己有利的地方不明说，也可能说谎、夸大、隐瞒，但不荒唐。回答直截了当，三到六句；主意一到三条，各有隐患。主角想做的事哪怕违法越权，他也按自己的利害和胆量回应：可能帮着出主意、可能劝阻、可能借机要好处、可能转身去告发。不出现现代词语。
+要求：用这个人的身份、性格、说话方式回答，合乎本朝本年；他只知道他这个身份能知道的事。主意的好坏由他的本事和性格决定：本事低的人会出馊主意还说得很笃定，谨慎的人总劝缓，贪的人主意里藏着自己的好处，能人也会看走眼——照他这个人真实会说的来，不要替他把主意想周全。他有立场和私心：对自己有利的地方不明说，也可能说谎、夸大、隐瞒。回答直截了当，三到六句；主意零到三条（他没主意就说没主意），risk 写他自己嘴上说的把握。主角想做的事哪怕违法越权，他也按自己的利害和胆量回应：可能帮着出主意、可能劝阻、可能借机要好处、可能转身去告发。不出现现代词语。
 
 【此刻】${timeText(s.clock)}，${s.place.full}。
 【主角】${s.protagonist.name}，${s.protagonist.role}。
-【被问的人】${who}：${v.role || ''}${v.tie ? '，' + v.tie : ''}${v.attitude ? '，对主角' + v.attitude : ''}${v.want ? '，想要' + v.want : ''}
+【被问的人】${who}：${v.role || ''}${v.tie ? '，' + v.tie : ''}${v.personality ? '，性格' + v.personality : ''}${v.ability ? '，本事' + v.ability : ''}${v.attitude ? '，对主角' + v.attitude : ''}${v.want ? '，想要' + v.want : ''}
 ${mem.length || past.length ? '【他与主角打过的交道】\n' + mem.concat(past).join('\n') : ''}
 【眼下的事】${arr(s.matters).filter(m => !CLOSED.test(m.status)).map(m => `「${m.title}」${cut(m.text, 80)}`).join('；') || '无'}
 【上一回合】${cut((arr(s.log).filter(l => l.scene).slice(-1)[0] || {}).scene, 500)}
@@ -523,7 +544,7 @@ function applyTurn(s, d, input) {
   for (const n of [...arr(d.newNpcs), ...arr(d.presentNpcs)]) {
     if (!n || !n.name || n.name === s.protagonist.name) continue;
     const k = cut(n.name, 12), o = s.people[k] || {};
-    s.people[k] = { role: cut(n.role || o.role, 40), tie: cut(n.tie || o.tie, 30), attitude: cut(n.attitude || o.attitude, 8), want: cut(n.want || o.want, 60), status: cut(n.status || o.status, 60), seen: turn };
+    s.people[k] = { personality: cut(n.personality || o.personality, 12), ability: cut(n.ability || o.ability, 2), role: cut(n.role || o.role, 40), tie: cut(n.tie || o.tie, 30), attitude: cut(n.attitude || o.attitude, 8), want: cut(n.want || o.want, 60), status: cut(n.status || o.status, 60), seen: turn };
   }
   // 差事
   for (const o of arr(d.orders)) {
@@ -593,7 +614,7 @@ async function renderStart() {
   const app = $('#app');
   app.innerHTML = `<section class="start">
     <div class="hero"><h1>你想当谁？</h1>
-      <p>一句话就行：哪个年代、什么地方、什么人。AI 会把你落到真实的历史里，然后每回合给你摆上要拿主意的事。</p>
+      <p>一句话就行：哪个年代、什么地方、什么人。AI 会把你落到真实的历史里。之后你想做什么就写什么：过日子、做生意、做官、打仗都行，世界照真实的样子回应你。</p>
       <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：万历年间苏州的绣娘" autocomplete="off"><button class="main" id="bStart" ${BUSY || !SAMPLE ? 'disabled' : ''}>开始</button></form>
       <div class="examples">${EXAMPLES.map(x => `<button class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
     </div>
@@ -604,9 +625,9 @@ async function renderStart() {
     <div class="saves" id="saves"><div class="muted">载入中…</div></div>
     <div class="h"><span class="seal">规</span>怎么玩</div>
     <div class="howto">
+      <div><b>自己做主</b>在下面的框里写你这一步做什么、说什么；不写就照常过几天日子。</div>
+      <div><b>问人</b>拿不准就去右边找人商量。各人性格、本事、私心不同，主意未必对。问人不花时间。</div>
       <div><b>看局面</b>顶上是你这个身份最在意的几个数，和各类人对你的态度。</div>
-      <div><b>拿主意</b>每件事下面有几个办法，点了就收进「这一回合的决定」，也可以自己写。</div>
-      <div><b>问人</b>右边找身边的人商量，各有立场私心；问人不花时间。</div>
       <div><b>看结果</b>回报（办事人说的，未必真）、账目（真实的数）、风声（街谈巷议），对照着看。</div>
     </div>
   </section>`;
@@ -664,20 +685,20 @@ function renderGame() {
     <div><div class="rh">风声<span>街谈巷议</span></div>${arr(L.rums).length ? L.rums.map(x => `<div class="rum">${esc(x)}</div>`).join('') : '<div class="muted">没听到什么</div>'}</div>
   </section>${closedNow.length ? `<div class="closed">${closedNow.map(m => `<div><span class="badge b-done">${esc(m.status)}</span> <b>${esc(m.title)}</b>：${esc(m.outcome || m.progress || '')}</div>`).join('')}</div>` : ''}` : '';
 
-  const matters = `<div class="h"><span class="seal">事</span>要你拿主意的事<span class="note">点办法收进下面的「这一回合的决定」，可以选好几件</span></div>
+  const matters = `<div class="h"><span class="seal">事</span>手头的事<span class="note">怎么办你自己定；拿不准就去右边问人</span></div>
   ${open.length ? open.map(m => `<article class="matter ${(L.newTitles || []).includes(m.title) ? 'new' : ''}">
       <div class="mtop"><span class="badge ${(L.newTitles || []).includes(m.title) ? 'b-todo' : badgeCls(m.status)}">${(L.newTitles || []).includes(m.title) ? '新到' : esc(m.status)}</span><span class="mt">${esc(m.title)}</span><span class="mf">${esc(m.form)} · ${esc(m.from)}</span></div>
       <div class="mtext">${esc(m.text)}</div>
       ${m.progress ? `<div class="mprog">进展：${esc(m.progress)}</div>` : ''}${m.deadline ? `<div class="mdl">期限：${esc(m.deadline)}</div>` : ''}
-      <div class="opts">${arr(m.options).map(o => `<button class="opt ${TRAY.some(t => t.text === o.text) ? 'picked' : ''}" data-opt="${enc({ text: o.text, who: o.who })}" ${BUSY ? 'disabled' : ''}><span class="ot">${esc(o.text)}</span><span class="om">${o.risk ? `<span class="risk ${esc(o.risk)}">${esc(o.risk)}</span>` : ''}${o.who ? '交' + esc(o.who) : ''}${o.cost ? ' · ' + esc(o.cost) : ''}</span></button>`).join('')}</div>
-      <div class="mmore">${nameOf(m.from) ? `<button class="link" data-askwho="${esc(nameOf(m.from))}" data-askq="${esc('「' + m.title + '」这件事，到底是怎么回事？')}">问问${esc(nameOf(m.from))}</button>` : ''}<button class="link" data-act="${esc('「' + m.title + '」先放着不管')}">先放着</button></div>
+      ${arr(m.options).length ? `<div class="opts">${arr(m.options).map(o => `<button class="opt ${TRAY.some(t => t.text === o.text) ? 'picked' : ''}" data-opt="${enc({ text: o.text, who: o.who })}" ${BUSY ? 'disabled' : ''}><span class="ot">${esc(o.text)}</span><span class="om">${o.risk ? `<span class="risk ${esc(o.risk)}">${esc(o.risk)}</span>` : ''}${o.who ? '交' + esc(o.who) : ''}${o.cost ? ' · ' + esc(o.cost) : ''}</span></button>`).join('')}</div>` : ''}
+      <div class="mmore"><button class="link" data-handle="${esc(m.title)}">处理这件事</button>${nameOf(m.from) ? `<button class="link" data-askwho="${esc(nameOf(m.from))}" data-askq="${esc('「' + m.title + '」这件事，到底是怎么回事？')}">问问${esc(nameOf(m.from))}</button>` : ''}<button class="link" data-act="${esc('「' + m.title + '」先放着不管')}">先放着</button></div>
     </article>`).join('') : '<div class="muted">眼下没有压着的事。</div>'}
-  ${arr(L.actions).length ? `<div class="acts"><span class="muted">随手能做：</span>${L.actions.map(a => `<button class="chip" data-act="${esc(a)}" ${BUSY ? 'disabled' : ''}>${esc(a)}</button>`).join('')}</div>` : ''}`;
+  ${arr(L.actions).length ? `<div class="acts"><span class="muted">也可以：</span>${L.actions.map(a => `<button class="chip" data-write="${esc(a)}" ${BUSY ? 'disabled' : ''}>${esc(a)}</button>`).join('')}<span class="muted" style="font-size:12px">（点一下写进下面的框，可以改）</span></div>` : ''}`;
 
   const compose = `<section class="compose" id="compose">
-    <div class="h" style="margin-top:0"><span class="seal">决</span>这一回合的决定</div>
-    <div class="tray">${TRAY.length ? TRAY.map((t, i) => `<div class="ti"><span>${esc(t.text)}${t.who ? `<span class="muted">（交${esc(t.who)}去办）</span>` : ''}</span><button class="link" data-untray="${i}" aria-label="去掉">去掉</button></div>`).join('') : '<div class="muted">还没选。点上面的办法，或在下面自己写；什么都不选直接过＝这段日子不下令。</div>'}</div>
-    <textarea id="freeText" rows="2" placeholder="自己写几句：要做什么、找谁、怎么办。违法越权的也行。"></textarea>
+    <div class="h" style="margin-top:0"><span class="seal">行</span>你这一步做什么</div>
+    ${TRAY.length ? `<div class="tray">${TRAY.map((t, i) => `<div class="ti"><span>${esc(t.text)}${t.who ? `<span class="muted">（交${esc(t.who)}去办）</span>` : ''}</span><button class="link" data-untray="${i}" aria-label="去掉">去掉</button></div>`).join('')}</div>` : ''}
+    <textarea id="freeText" rows="3" placeholder="写你要做的事、要说的话：去哪、见谁、吩咐谁办什么、怎么打这一仗，或者只是在家过日子。违法越权的也行。什么都不写直接点「过这一回合」＝这几天照常过。"></textarea>
     <div class="row">
       <label class="muted" for="assignee">交给</label>
       <select id="assignee"><option value="">（按身份默认）</option>${ppl.map(n => `<option>${esc(n)}</option>`).join('')}</select>
@@ -685,6 +706,7 @@ function renderGame() {
       <span class="grow"></span>
       <button class="main" id="bTurn" ${BUSY || !SAMPLE ? 'disabled' : ''}>过这一回合</button>
     </div>
+    ${SAVED ? `<div class="savest ${SAVED_BAD ? 'bad' : ''}">${esc(SAVED)}</div>` : ''}
   </section>`;
 
   const side = `<aside class="side">
@@ -704,17 +726,17 @@ function sidePeople(ppl) {
   const P = S.people;
   const fam = S.household.filter(m => !P[m.name]);
   const cards = Object.entries(P).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).map(([k, v]) => `<div class="pc"><div class="pn"><b>${esc(k)}</b>${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
-      <div class="pr">${esc(v.role)}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}</div>${v.want ? `<div class="pl"><span>想要</span>${esc(v.want)}</div>` : ''}${v.status ? `<div class="pl"><span>近况</span>${esc(v.status)}</div>` : ''}
+      <div class="pr">${esc(v.role)}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}</div>${v.personality || v.ability ? `<div class="pl"><span>为人</span>${esc(v.personality || '')}${v.ability ? `<span class="abil">本事${esc(v.ability)}</span>` : ''}</div>` : ''}${v.want ? `<div class="pl"><span>想要</span>${esc(v.want)}</div>` : ''}${v.status ? `<div class="pl"><span>近况</span>${esc(v.status)}</div>` : ''}
       <button class="link" data-askwho="${esc(k)}">找来问</button></div>`)
     .concat(fam.map(m => `<div class="pc"><div class="pn"><b>${esc(m.name)}</b></div><div class="pr">${esc(m.relation)}${m.age != null ? ' · ' + m.age + '岁' : ''}</div>${m.note ? `<div class="pl">${esc(m.note)}</div>` : ''}<button class="link" data-askwho="${esc(m.name)}">找来问</button></div>`));
   const cs = arr(S.consults).slice(-6).reverse();
-  return `<div class="h" style="margin-top:4px"><span class="seal">人</span>身边的人<span class="note">问人不花时间</span></div>
+  return `<div class="h" style="margin-top:4px"><span class="seal">人</span>身边的人<span class="note">各人性格本事不同，主意未必对；问人不花时间</span></div>
     <div class="pcs">${cards.join('') || '<div class="muted">开场后，出场的人会列在这里。</div>'}</div>
     <div class="h"><span class="seal">问</span>问人</div>
     <select id="askWho"><option value="">— 问谁 —</option>${ppl.map(n => `<option>${esc(n)}</option>`).join('')}</select>
     <textarea id="askQ" rows="2" style="margin-top:6px" placeholder="问什么？留空就问「眼下这件事你怎么看、该怎么办」"></textarea>
     <div class="row"><button class="main" id="bAsk" ${ASKING || BUSY || !SAMPLE ? 'disabled' : ''}>${ASKING ? '他在想……' : '问'}</button></div>
-    ${cs.map(x => `<div class="ans"><div class="q">问 ${esc(x.who)}：${esc(x.q)}</div><div class="a">${esc(x.reply)}</div>${arr(x.suggestions).map(g => `<div class="sug"><span>${esc(g.text)}${g.risk ? ` <span class="risk ${esc(g.risk)}">${esc(g.risk)}</span>` : ''}</span><span><button class="link" data-opt="${encodeURIComponent(JSON.stringify({ text: g.text, who: '' }))}">加入决定</button><button class="link" data-keep="${encodeURIComponent(JSON.stringify({ who: x.who, text: g.text, risk: g.risk }))}">收进建议簿</button></span></div>`).join('')}</div>`).join('')}
+    ${cs.map(x => `<div class="ans"><div class="q">问 ${esc(x.who)}：${esc(x.q)}</div><div class="a">${esc(x.reply)}</div>${arr(x.suggestions).map(g => `<div class="sug"><span>${esc(g.text)}${g.risk ? ` <span class="muted" style="font-size:12px">（他说：${esc(g.risk)}）</span>` : ''}</span><span><button class="link" data-opt="${encodeURIComponent(JSON.stringify({ text: g.text, who: '' }))}">加入决定</button><button class="link" data-keep="${encodeURIComponent(JSON.stringify({ who: x.who, text: g.text, risk: g.risk }))}">收进建议簿</button></span></div>`).join('')}</div>`).join('')}
     <div class="h"><span class="seal">簿</span>建议簿</div>
     ${arr(S.advice).length ? S.advice.map((a, i) => `<div class="sug"><span><b>${esc(a.who)}</b>：${esc(a.text)}</span><span><button class="link" data-opt="${encodeURIComponent(JSON.stringify({ text: a.text, who: '' }))}">加入决定</button><button class="link" data-unadvice="${i}">删</button></span></div>`).join('') : '<div class="muted">问人得来的好主意，点「收进建议簿」记在这里。</div>'}`;
 }
@@ -759,7 +781,7 @@ async function startGame(sentence) {
     const s = newSave(d.setup);
     applyTurn(s, d, '');
     s.turn = 1; s.log[0].turn = 1;
-    S = s; await store.save(S); lsSet('hrpg:last', S.id + '|' + S.where);
+    S = s; await store.save(S);
     VIEW = 'game'; LAST_ACTION = null; TRAY = [];
   } catch (e) { if (!(e && e.code === 'cancelled')) ERRMSG = errText(e); }
   finally { STREAM = ''; setBusy(false); }
@@ -775,8 +797,8 @@ async function runTurn(input, note) {
     if (!d || !d.scene) throw { code: 'bad_json' };
     applyTurn(S, d, input);
     S.prev = before;
-    await store.save(S);
     TRAY = []; LAST_ACTION = null;
+    try { await store.save(S); } catch (_) { SAVED = '这回合没存上，再过一回合会再试。'; SAVED_BAD = true; }
     if ($('#freeText')) $('#freeText').value = '';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (e) { if (!(e && e.code === 'cancelled')) ERRMSG = errText(e); const keepPrev = S.prev; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, before, { prev: keepPrev }); }
@@ -800,15 +822,20 @@ document.addEventListener('click', async e => {
   if (t.id === 'bRetry') { const f = LAST_ACTION; ERRMSG = ''; f && f(); return; }
   if (t.id === 'bHome') { if (BUSY) return; VIEW = 'start'; S = null; ERRMSG = ''; render(); return; }
   if (ds.load) {
-    const w = ds.where; const s = await store.load(ds.load, w);
+    const s = await store.load(ds.load);
     if (!s) { ERRMSG = '这个存档读不出来了。'; render(); return; }
-    s.where = w; S = s; VIEW = 'game'; TRAY = []; ERRMSG = ''; EDITING = false; lsSet('hrpg:last', s.id + '|' + w); render(); return;
+    S = s; VIEW = 'game'; TRAY = []; ERRMSG = ''; EDITING = false; SAVED = ''; lsSet('hrpg:last', s.id); render(); return;
   }
   if (ds.askdel) { const sp = document.getElementById('del-' + ds.askdel); sp.innerHTML = `确定删掉？<button data-del="${esc(ds.askdel)}">删掉</button><button data-nodel="${esc(ds.askdel)}">不删</button>`; return; }
   if (ds.nodel) { renderStart(); return; }
-  if (ds.del) { const where = JSON.parse($('#saves').dataset.where || '{}')[ds.del]; await store.del(ds.del, where); renderStart(); return; }
+  if (ds.del) { await store.del(ds.del); renderStart(); return; }
   if (ds.tab) { TAB = ds.tab; render(); return; }
   if (ds.opt) { try { const o = JSON.parse(decodeURIComponent(ds.opt)); const i = TRAY.findIndex(x => x.text === o.text); if (i >= 0) TRAY.splice(i, 1); else TRAY.push(o); } catch (_) { /* 无 */ } render(); return; }
+  if (ds.write || ds.handle) {
+    const ta = $('#freeText'); const add = ds.write ? ds.write : `就「${ds.handle}」这件事：`;
+    ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + add; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    ta.scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
+  }
   if (ds.act) { if (!TRAY.some(x => x.text === ds.act)) TRAY.push({ text: ds.act, who: '' }); render(); return; }
   if (ds.untray != null) { TRAY.splice(Number(ds.untray), 1); render(); return; }
   if (ds.askwho) { TAB = 'people'; render(); $('#askWho').value = ds.askwho; if (![...$('#askWho').options].some(o => o.value === ds.askwho)) { $('#askWho').insertAdjacentHTML('beforeend', `<option>${esc(ds.askwho)}</option>`); $('#askWho').value = ds.askwho; } $('#askQ').value = ds.askq || ''; $('#askQ').focus(); $('.side').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
@@ -871,8 +898,8 @@ render();
   // 回到上次在玩的那一局
   const last = lsGet('hrpg:last');
   if (last && VIEW === 'start' && !BUSY) {
-    const [id, where] = last.split('|');
-    try { const s = await store.load(id, where); if (s) { s.where = where; S = s; VIEW = 'game'; } } catch (_) { /* 读不到就留在首页 */ }
+    const id = last.split('|')[0];
+    try { const s = await store.load(id); if (s) { S = s; VIEW = 'game'; } } catch (_) { /* 读不到就留在首页 */ }
   }
   render();
 })();

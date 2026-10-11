@@ -2412,6 +2412,7 @@ document.addEventListener('click', ev => {
   if (t.dataset.untray != null) { trayList().splice(Number(t.dataset.untray), 1); renderTray(); }
   if (t.dataset.opt) { try { const o = JSON.parse(decodeURIComponent(t.dataset.opt)); addToTray(o.text, o.who); t.classList.add('picked'); } catch (_) { /* 无 */ } }
   if (t.dataset.act) addToTray(decodeURIComponent(t.dataset.act), '');
+  if (t.dataset.handle) { const ta = $('#input'); ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + `就「${t.dataset.handle}」这件事：`; ta.focus(); ta.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   if (t.dataset.askwho) { switchRail('ask'); const sel = $('#askWho'); fillPeople(); sel.value = decodeURIComponent(t.dataset.askwho); $('#askQ').value = t.dataset.askq ? decodeURIComponent(t.dataset.askq) : ''; $('#askQ').focus(); }
   if (t.dataset.adopt) { try { const o = JSON.parse(decodeURIComponent(t.dataset.adopt)); addToTray(o.text, o.who ? '' : ''); t.textContent = '已加入'; } catch (_) { /* 无 */ } }
   if (t.dataset.keep) { try { const o = JSON.parse(decodeURIComponent(t.dataset.keep)); saveAdvice(o); t.textContent = '已收进'; t.disabled = true; } catch (_) { /* 无 */ } }
@@ -2497,12 +2498,13 @@ function renderDesk(_reports, actions) {
   box.classList.remove('hidden');
   const enc = o => encodeURIComponent(JSON.stringify(o));
   const stCls = st => (/恶化/.test(st) ? 'bad' : /在办/.test(st) ? 'doing' : /办砸|失败/.test(st) ? 'bad' : MCLOSED.test(st) ? 'done' : 'todo');
-  box.innerHTML = `<div class="sec-t">要你拿主意的事<span>点办法收进「这一回合的决定」，可以选好几件</span></div>`
+  box.innerHTML = `<div class="sec-t">手头的事<span>怎么办你自己定；拿不准就去右边问人</span></div>`
     + (open.length ? open.map(r => `<div class="mt-card ${r.isNew ? 'new' : ''}">
         <div class="mc-top"><span class="badge ${stCls(r.status)}">${escapeHtml(r.isNew ? '新到' : r.status)}</span><span class="mc-title">${escapeHtml(r.title || '')}</span><span class="mc-from">${escapeHtml(r.form || '')} · ${escapeHtml(r.from || '')}</span></div>
         <div class="mc-text">${escapeHtml(r.text || '')}</div>
         ${r.progress ? `<div class="mc-prog">进展：${escapeHtml(r.progress)}</div>` : ''}
         ${r.deadline ? `<div class="mc-dl">期限　${escapeHtml(r.deadline)}</div>` : ''}
+        ${(r.options || []).length ? '' : `<div class="mc-more"><button class="linkbtn" data-handle="${escapeHtml(r.title || '')}">处理这件事</button></div>`}
         <div class="mc-opts">${(r.options || []).map(o => `<button class="optbtn" data-opt="${enc({ text: o.text, who: o.who || '' })}"><span class="ob-t">${escapeHtml(o.text)}</span><span class="ob-m">${o.risk ? `<span class="risk r-${escapeHtml(o.risk)}">${escapeHtml(o.risk)}</span>` : ''}${o.who ? `交${escapeHtml(o.who)}` : ''}${o.cost ? `<span class="ob-c">${escapeHtml(o.cost)}</span>` : ''}</span></button>`).join('')}</div>
         <div class="mc-more">${nameOf(r.from) ? `<button class="linkbtn" data-askwho="${encodeURIComponent(nameOf(r.from))}" data-askq="${encodeURIComponent('「' + (r.title || '') + '」这件事，到底是怎么回事？')}">问问${escapeHtml(nameOf(r.from))}</button>` : ''}<button class="linkbtn" data-act="${encodeURIComponent('「' + (r.title || '') + '」先放着不管')}">先放着</button></div>
       </div>`).join('') : '<div class="muted">眼下没有压着的事。</div>')
@@ -2556,6 +2558,7 @@ function renderPeopleCards() {
   box.innerHTML = list.length ? list.map(([k, v]) => `<div class="pc">
       <div class="pc-top"><span class="pc-name">${escapeHtml(k)}</span>${v.attitude ? `<span class="att">${escapeHtml(v.attitude)}</span>` : ''}</div>
       <div class="pc-role">${escapeHtml(v.role || '')}${v.tie && v.tie !== v.role ? ' · ' + escapeHtml(v.tie) : ''}</div>
+      ${v.personality || v.ability ? `<div class="pc-l"><span>为人</span>${escapeHtml(v.personality || '')}${v.ability ? '　本事' + escapeHtml(v.ability) : ''}</div>` : ''}
       ${v.want ? `<div class="pc-l"><span>想要</span>${escapeHtml(v.want)}</div>` : ''}
       ${v.status ? `<div class="pc-l"><span>近况</span>${escapeHtml(v.status)}</div>` : ''}
       <button class="linkbtn" data-askwho="${encodeURIComponent(k)}">找来问</button></div>`).join('') : '<div class="muted">开场后，出场的人会列在这里。</div>';
