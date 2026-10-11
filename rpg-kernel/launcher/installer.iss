@@ -44,15 +44,3 @@ Name: "{autoprograms}\{#AppName} 使用说明"; Filename: "{app}\使用说明.tx
 
 [Run]
 Filename: "{app}\启动游戏.exe"; Description: "现在就开始玩"; Flags: postinstall nowait skipifsilent
-; 游戏里点「一键更新」时是静默安装：装完自动把游戏重新打开
-Filename: "{app}\启动游戏.exe"; Flags: nowait; Check: RelaunchAfterSilent
-
-[Code]
-// 静默安装（游戏内一键更新）装完重新打开游戏；打包机上测试安装时传 /NOLAUNCH，不打开
-function RelaunchAfterSilent(): Boolean;
-var i: Integer;
-begin
-  Result := WizardSilent();
-  for i := 1 to ParamCount do
-    if CompareText(ParamStr(i), '/NOLAUNCH') = 0 then Result := False;
-end;

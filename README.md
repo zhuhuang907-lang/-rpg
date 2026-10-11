@@ -2,18 +2,10 @@
 
 ## 下载就玩（Windows）
 
-**点这个链接直接下载安装程序：[HistoryRPG-Setup.exe](https://github.com/zhuhuang907-lang/-rpg/releases/download/latest/HistoryRPG-Setup.exe)**
-
-国内下载慢就用加速地址（任选一个能下的）：
-[ghfast.top](https://ghfast.top/https://github.com/zhuhuang907-lang/-rpg/releases/download/latest/HistoryRPG-Setup.exe) ·
-[gh-proxy.com](https://gh-proxy.com/https://github.com/zhuhuang907-lang/-rpg/releases/download/latest/HistoryRPG-Setup.exe) ·
-[ghproxy.net](https://ghproxy.net/https://github.com/zhuhuang907-lang/-rpg/releases/download/latest/HistoryRPG-Setup.exe)
-
-**装过一次以后就不用再来下载了**：有新版本时游戏顶上会提示，点「一键更新」自动下载、安装、重新打开，存档和 Key 不会丢。也可以点右上角「检查更新」。
-
-1. 双击下载好的 **HistoryRPG-Setup.exe** 安装（Windows 提示「已保护你的电脑」就点「更多信息」→「仍要运行」）。
-2. 装完双击桌面上的 **历史模拟RPG** 图标。
-3. 页面上粘贴 DeepSeek 的 Key 点「保存」（博查 Key 可选），然后用一句话开局，比如「万历年间苏州的绣娘」。
+1. 打开 https://github.com/zhuhuang907-lang/-rpg/releases/tag/latest
+2. 点 **HistoryRPG-Setup.exe** 下载，双击安装（Windows 提示「已保护你的电脑」就点「更多信息」→「仍要运行」）。
+3. 装完双击桌面上的 **历史模拟RPG** 图标。
+4. 页面上粘贴 DeepSeek 的 Key 点「保存」（博查 Key 可选），然后用一句话开局，比如「万历年间苏州的绣娘」。
 
 ## 怎么玩（仿《历史模拟器：崇祯》）
 

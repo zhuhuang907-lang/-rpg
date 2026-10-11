@@ -283,11 +283,6 @@ const routes = {
     return { ok: true, status: 'running', partial: j.partial };
   },
   /* 玩家在界面上改了草稿正文：存回记着的草稿 */
-  /* 一键更新：查版本 / 开始下载安装 / 进度 / 手动下载地址 */
-  'GET /api/update/check': async () => require('./core/update').check(),
-  'POST /api/update/start': async () => require('./core/update').start(),
-  'GET /api/update/status': async () => require('./core/update').status(),
-  'GET /api/update/links': async () => ({ ok: true, links: require('./core/update').links(), version: require('./core/update').localVersion() }),
   /* 问人：问一个身边的人，他按立场私心回答并出主意（不过时间） */
   async 'POST /api/ask'(body) {
     const b = body || {};
