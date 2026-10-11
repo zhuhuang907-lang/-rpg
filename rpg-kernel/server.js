@@ -90,6 +90,7 @@ async function selectedModel() {
 
 // 正在写的回合：页面轮询取已写出的部分
 const TURN_JOBS = new Map();
+const LLM_JOBS = new Map();
 /** 从还没写完的 JSON 里取出 scene 字段已写出的部分（处理转义） */
 function partialScene(text) {
   const t = String(text || '');
@@ -283,6 +284,54 @@ const routes = {
     return { ok: true, status: 'running', partial: j.partial };
   },
   /* 玩家在界面上改了草稿正文：存回记着的草稿 */
+  /* ===== 聊天式玩法（public/index.html）：调 AI 与存档 ===== */
+  async 'POST /api/llm-start'(body) {
+    const b = body || {};
+    const msgs = (Array.isArray(b.messages) ? b.messages : [{ role: 'user', content: String(b.prompt || '') }])
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content).map(m => ({ role: m.role, content: String(m.content).slice(0, 200000) }));
+    if (!msgs.length) return { ok: false, why: '没有要发的内容' };
+    const id = 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const job = { status: 'running', text: '', error: null, at: Date.now() };
+    LLM_JOBS.set(id, job);
+    engine.chatCall({ messages: msgs, maxTokens: Math.min(16000, Number(b.maxTokens) || 8000), onDelta: t => { if (job.status === 'running') job.text = String(t || ''); } })
+      .then(t => { if (job.status === 'running') { job.status = 'done'; job.text = t; recordTest(true); } })
+      .catch(e => { if (job.status === 'running') { job.status = 'error'; job.error = String(e && e.message || e).slice(0, 400); recordTest(false, job.error); } });
+    for (const [k, j] of LLM_JOBS) if (Date.now() - j.at > 3600e3) LLM_JOBS.delete(k);
+    return { ok: true, job: id };
+  },
+  async 'POST /api/llm-job'(body) {
+    const j = LLM_JOBS.get((body || {}).job);
+    if (!j) return { ok: false, why: '任务不存在或已过期' };
+    if (j.status !== 'running') LLM_JOBS.delete(body.job);
+    return { ok: true, status: j.status, text: j.text, error: j.error };
+  },
+  async 'POST /api/llm-stop'(body) { const j = LLM_JOBS.get((body || {}).job); if (j) j.status = 'cancelled'; return { ok: true }; },
+  'GET /api/wsaves': async () => {
+    const dir = path.join(ROOT, 'data', 'websaves');
+    let files = []; try { files = fs.readdirSync(dir).filter(f => /^[a-z0-9]+\.json$/i.test(f)); } catch (_) { files = []; }
+    const list = [];
+    for (const f of files) { try { const v = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); list.push({ id: v.id, title: v.title, sub: v.sub, updatedAt: v.updatedAt }); } catch (_) { /* 坏文件跳过 */ } }
+    return { ok: true, saves: list };
+  },
+  async 'POST /api/wsave'(body) {
+    const s = (body || {}).save;
+    if (!s || !/^[a-z0-9]+$/i.test(String(s.id || ''))) return { ok: false, why: '存档格式不对' };
+    const dir = path.join(ROOT, 'data', 'websaves'); fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, s.id + '.json');
+    fs.writeFileSync(file + '.tmp', JSON.stringify(s)); fs.renameSync(file + '.tmp', file);   // 先写临时文件再改名：写到一半断电也不会坏档
+    return { ok: true };
+  },
+  async 'POST /api/wload'(body) {
+    const id = String((body || {}).id || '');
+    if (!/^[a-z0-9]+$/i.test(id)) return { ok: false, why: '没有这个存档' };
+    try { return { ok: true, save: JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'websaves', id + '.json'), 'utf8')) }; } catch (_) { return { ok: false, why: '没有这个存档' }; }
+  },
+  async 'POST /api/wdel'(body) {
+    const id = String((body || {}).id || '');
+    if (!/^[a-z0-9]+$/i.test(id)) return { ok: false, why: '没有这个存档' };
+    try { fs.unlinkSync(path.join(ROOT, 'data', 'websaves', id + '.json')); } catch (_) { /* 已经没了 */ }
+    return { ok: true };
+  },
   /* 问人：问一个身边的人，他按立场私心回答并出主意（不过时间） */
   async 'POST /api/ask'(body) {
     const b = body || {};

@@ -2498,8 +2498,18 @@ async function quickCall({ system, prompt, temperature = 0.7, maxTokens = 1500 }
   return String((res && res.text) || '');
 }
 
+/** 聊天式玩法：整段对话交给当前选定的 AI，流式回传 */
+async function chatCall({ messages, maxTokens = 8000, temperature = 0.8, onDelta }) {
+  const saved = await loadAdapterConfig();
+  const aid = saved.selected || 'deepseek';
+  const { adapter, config } = await resolveAdapter(aid, saved.configs?.[aid] || {});
+  if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请先在首页填好 DeepSeek 的 Key');
+  const res = await adapter.call({ system: '', messages, prompt: messages.length ? messages[messages.length - 1].content : '', temperature, maxTokens, onDelta }, config);
+  return String((res && res.text) || '');
+}
+
 module.exports = {
-  quickCall,
+  quickCall, chatCall,
   generateFigure, getGmCards, flagTurn, getStats,
   ensureDirs, listSaves, loadState, writeState, listRulepacks, loadPack, createSave, createCustomSave, deleteSave, rebuildProtagonistDossier, findBadSaves, cleanupBadSaves, sweepArchives,
   listLore, loadLore, saveLore, runTurn, applyDraft, updateThread, updateNpc, archiveCard, seedWorld, parseSearch,

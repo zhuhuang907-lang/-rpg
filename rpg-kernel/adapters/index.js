@@ -197,7 +197,7 @@ async function streamChat(url, headers, body, timeoutMs, onDelta) {
   return { choices: [{ message: { content, reasoning_content: reasoning || undefined }, finish_reason: finish }], usage };
 }
 
-async function openaiChat({ system, prompt, temperature, maxTokens, onDelta }, cfg) {
+async function openaiChat({ system, prompt, messages, temperature, maxTokens, onDelta }, cfg) {
   const base = trimSlash(cfg.baseUrl || 'https://api.openai.com/v1');
   if (!cfg.apiKey && !/127\.0\.0\.1|localhost/.test(base)) throw new Error('还没填模型的 Key：请在首页或「设置」里粘贴 DeepSeek 的 Key');
   let model = MODEL_CACHE.get(base + '|' + cfg.model) || cfg.model || 'gpt-4o-mini';
@@ -210,7 +210,8 @@ async function openaiChat({ system, prompt, temperature, maxTokens, onDelta }, c
   for (let attempt = 0; attempt < 4; attempt++) {
     const body = {
       model,
-      messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+      // 给了整段对话（聊天式玩法）就照原样送；否则是一问一答
+      messages: Array.isArray(messages) && messages.length ? [...(system ? [{ role: 'system', content: system }] : []), ...messages] : [{ role: 'system', content: system }, { role: 'user', content: prompt }],
       max_tokens: budget,
       stream: false,
     };
