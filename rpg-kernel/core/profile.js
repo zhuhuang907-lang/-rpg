@@ -12,7 +12,7 @@ const TITLE_KEYS = ['职官', '差遣', '本官', '散官', '阶', '品级', '�
 const WEALTH_KEYS = ['钱', '粮', '田', '宅', '仆从', '奴婢', '马', '俸禄', '债务', '其他产业'];
 
 function kvList(obj) {
-  return Object.entries(obj || {}).filter(([, v]) => v != null && String(v).trim() !== '' && typeof v !== 'object')
+  return Object.entries(obj || {}).filter(([, v]) => v != null && String(v).trim() !== '' && typeof v !== 'object' && !/^(未登记|请依史实补录)$/.test(String(v).trim()))
     .map(([k, v]) => ({ k, v: String(v) }));
 }
 
@@ -186,7 +186,7 @@ function renderProfileBlock(state) {
   const pf = buildProfile(state);
   const pick = t => (pf.sections.find(x => x.title.startsWith(t)) || { rows: [] }).rows;
   const names = pick('名位').map(r => `${r.k}：${r.v}`).join('；');
-  const money = pick('钱财').map(r => `${r.k}：${r.v}`).join('；');
+  const money = pick('钱财').map(r => (r.k === '钱财' ? r.v : `${r.k}：${r.v}`)).join('；');
   const pw = pick('职权').map(r => r.v).slice(0, 6).join('；');
   return `=== 主角名位与家底（以此为准；有变化在 statusChanges 里申报） ===\n名位：${names || '无'}\n职权：${pw || '无'}\n钱财：${money || '未登记'}`;
 }

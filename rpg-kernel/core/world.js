@@ -133,7 +133,8 @@ function tickWorld(state, days) {
   const rnd3 = seeded((c.gregorianYear || 0) * 13 + (c.month || 1), `${state.meta && state.meta.id}|${state.turn}|macro`);
   const MACRO_EVENTS = ['朝廷例行磨勘', '转运使巡行', '邻郡移文催征', '边报迟滞', '漕运受阻', '朝中人事调整', '无大事'];
   const mv = MACRO_EVENTS[Math.floor(rnd3() * MACRO_EVENTS.length) % MACRO_EVENTS.length];
-  if (mv !== '无大事') { state.macro.朝廷 = mv; changes.push('宏观：' + mv); }
+  // 随机的「朝廷人事调整」「漕运受阻」只在玩家打开随机事件时才掷（默认剧情只按真实史事走）
+  if (mv !== '无大事' && state.meta && state.meta.randomBeats) { state.macro.朝廷 = mv; changes.push('宏观：' + mv); }
 
   // 社会秩序随粮价与灾情浮动
   const price = e.market.grainWenPerShi;
