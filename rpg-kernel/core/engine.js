@@ -257,6 +257,7 @@ async function createCustomSave(spec) {
       background: proto.background || '',
       nativePlace: proto.nativePlace || '',
       disposition: proto.disposition || '',
+      ...(proto.titles ? { titles: proto.titles } : {}),
     },
     clock: {
       yearLabel: era.yearLabel || '（年号待定）',
@@ -1284,6 +1285,9 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
     + '1. 剧情只来自：玩家指令的直接后果；上面列出的、此时此地已发生并已传到的真实史事及其对本地的实际影响；在场人物按真实身份处境的正常反应。'
     + '上面「人物各自在做什么」「篇章」「对手」之类只是背景参考，不得据此新编密探、刺探、阴谋、巧合或无史可据的冲突，不得把无关史事硬扯到一起。\n'
     + '2. 文字平实紧凑：句子短，每段都推进；比喻全文不超过 3 处，景物光影声响全文不超过 3 句，不写微表情与心理揣测；写具体的事务与生活。\n'
+    + require('./offices').eraOfficeBlock(state.clock.gregorianYear) + '\n'
+    + require('./profile').renderProfileBlock(state) + '\n'
+    + require('./realnames').renderRealNameRule(state) + '\n'
     + (isOpening ? '3. 这是开场：先用三四句平实交代主角是谁、何年何月、在何处、眼下真实局势，然后进事。\n' : '3. 第一句就接上玩家这一步的直接结果。\n');
   // 界面没带配置过来时，用落盘保存的那份（双击启动后不必重新填 Key）
   // 注意：resolveAdapter 在 id 为空时会静默掉到 skeleton（本地骨架），
@@ -1621,6 +1625,22 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
   }
   await writeState(state);
 
+  // 虚构人物撞真人名：改名并替换正文（玩家：「虚构的人物别跟其他真人撞上」）
+  try { await require('./realnames').fixDraftCollisions(state, draft, { online: true }); } catch (_) { /* 查不了就算了 */ }
+  // 官名合时代：人物的官职字段全改；正文里只改「那时还没有」的官名（唐朝写出「知县」之类）
+  try {
+    const off = require('./offices');
+    const Y = state.clock.gregorianYear || 0;
+    for (const n of [...(draft.newNpcs || []), ...(draft.presentNpcs || [])]) {
+      if (n && n.role) n.role = off.fixTitle(n.role, Y).text;
+      if (n && n.background) n.background = off.fixTitle(n.background, Y).text;
+    }
+    const fx = off.fixTitle(draft.scene || '', Y, { futureOnly: true });
+    if (fx.changed.length) {
+      draft.scene = fx.text;
+      draft.doubts = (Array.isArray(draft.doubts) ? draft.doubts : []).concat([`正文里的官名不合本朝，已改：${[...new Set(fx.changed.map(([a, b]) => a + '→' + b))].join('、')}`]);
+    }
+  } catch (_) { /* 忽略 */ }
   // 可选：对新增虚构人物自动走重名检索。结果并入审查面板，不做任何"自动改名"动作。
   let verifications = [];
   if (autoVerifyNpcs && (draft.newNpcs || []).length) {
@@ -1781,6 +1801,7 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
   try {
     const ll = require('./longline');
     const pr = ll.applyPatch(state, draft || {});
+    try { require('./profile').applyStatusChanges(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
     const ev = ll.advanceWorld(state, input, draft || {});
     state.longlineLast = { turn: state.turn, rejected: pr.rejected, events: ev };
   } catch (_) { /* 长线落账失败不阻断采纳 */ }
