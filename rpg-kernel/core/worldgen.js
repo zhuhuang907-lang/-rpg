@@ -30,6 +30,9 @@ const OFFICE_WORDS = ['节度使', '观察使', '安抚使', '转运使', '布�
   '都督', '刺史', '将军', '校尉', '都尉', '中郎将', '总兵', '副将', '参将', '游击', '守备', '千户', '万户', '达鲁花赤',
   '坞主', '寨主', '堡主', '戍主', '关主', '里正', '保正', '甲首', '社长', '啬夫', '三老', '亭长', '游徼',
   '令', '守', '牧', '尹', '相', '掾', '丞'];
+// 「新到任的知县」「州里的通判」：官职前面不是地名，别把「任的」「州里」当地点
+const JUNK_PLACE = /[的任里这那该某]/;
+const GENERIC_PLACE = /^(边镇|边关|本县|本州|本府|县城|州城|府城|京城|乡里|城里|县里|州里|军镇)$/;
 function inferPlaceFromText(...texts) {
   for (const t of texts) {
     const s = String(t || '').trim();
@@ -38,20 +41,23 @@ function inferPlaceFromText(...texts) {
     for (const o of OFFICE_WORDS) {
       const i = s.indexOf(o);
       if (i <= 0) continue;
-      let head = s.slice(Math.max(0, i - 5), i).replace(/^[为任做在到据守知刺领镇屯驻的\s]+/, '');
-      const m = head.match(/([\u4e00-\u9fa5]{1,4}[县州府郡道坞寨堡关城镇])$/);
-      if (m) return m[1];
-      if (head.length >= 2) return head.slice(-3);
+      let head = s.slice(Math.max(0, i - 8), i).replace(/^[为任做在到据守知刺领镇屯驻的\s]+/, '');
+      // 「新到任的知县」「州里的通判」「边镇的裨将」：官职前面不是地名，别把「到任的」当地点
+      const m = head.match(/((?:[\u4e00-\u9fa5]{1,3}[府州路])?[\u4e00-\u9fa5]{1,3}[县州府郡道坞寨堡关城镇])$/);
+      if (m && !JUNK_PLACE.test(m[1]) && !GENERIC_PLACE.test(m[1])) return m[1];
+      const tail = head.slice(-3);
+      if (head.length >= 2 && !JUNK_PLACE.test(tail) && !GENERIC_PLACE.test(tail)) return tail;
     }
     // ② 没有官职词，就看有没有「知/守/刺/领/镇/据/屯/驻 + 地名」的写法
-    const m2 = s.match(/(?:知|守|刺|领|镇|据|屯|驻|在)\s*([\u4e00-\u9fa5]{2,4})/);
+    const m2 = s.match(/(?:知|守|刺|领|镇|据|屯|驻|在)+\s*([\u4e00-\u9fa5]{2,4})/);
     if (m2) {
       const mm = m2[1].match(/([\u4e00-\u9fa5]{1,4}[县州府郡道坞寨堡关城镇])/);
-      return mm ? mm[1] : m2[1];
+      const got = mm ? mm[1] : m2[1];
+      if (!JUNK_PLACE.test(got) && !GENERIC_PLACE.test(got)) return got;
     }
     // ③ 退而求其次：句中出现「X县/X州/X府/X郡/X坞」这类地名，直接取
     const m3 = s.match(/([\u4e00-\u9fa5]{1,3}[县州府郡坞寨堡关])/);
-    if (m3 && m3[1].length >= 3) return m3[1];
+    if (m3 && m3[1].length >= 3 && !JUNK_PLACE.test(m3[1]) && !GENERIC_PLACE.test(m3[1])) return m3[1];
   }
   return '';
 }
@@ -174,8 +180,59 @@ function isSouthPolity(polity, gYear) {
   if (/蜀汉|季汉|^蜀$/.test(p)) return true;
   return false;
 }
+/* 唐以后的地名按时代、按大区给：旧池全是汉魏六朝地名（邺城、姑臧、颍川），
+   放到明代苏州，绣娘的家人就成了「邺城人」。这里用各代实际行用的州府名，并优先取主角所在大区。 */
+const ERA_REGIONS = [
+  { from: 618, to: 906, regions: [
+    ['长安', '同州', '华州', '岐州', '凤翔'], ['洛阳', '汴州', '郑州', '许州', '陈州', '宋州'],
+    ['扬州', '润州', '苏州', '常州', '杭州', '越州', '湖州', '宣州'], ['魏州', '幽州', '恒州', '定州', '太原', '潞州'],
+    ['益州', '成都', '梓州', '荆州', '襄州', '鄂州', '洪州', '潭州'], ['广州', '桂州', '福州', '泉州'],
+  ] },
+  { from: 960, to: 1126, regions: [
+    ['开封', '应天府', '郑州', '陈州', '许州', '颍州'], ['河南府', '西京', '京兆府', '凤翔府'],
+    ['杭州', '苏州', '常州', '润州', '湖州', '秀州', '越州', '明州', '江宁府', '扬州', '真州'],
+    ['大名府', '真定府', '太原府', '青州', '郓州', '徐州'], ['成都府', '梓州', '江陵府', '鄂州', '洪州', '潭州'], ['福州', '泉州', '广州', '桂州'],
+  ] },
+  { from: 1127, to: 1278, regions: [
+    ['临安府', '平江府', '镇江府', '常州', '湖州', '嘉兴府', '绍兴府', '庆元府', '建康府', '扬州'],
+    ['福州', '泉州', '建宁府', '广州', '潮州'], ['隆兴府', '吉州', '饶州', '江州', '鄂州', '潭州', '江陵府', '襄阳府'], ['成都府', '重庆府', '兴元府'],
+  ] },
+  { from: 1279, to: 1367, regions: [
+    ['大都', '保定', '真定', '大名', '济南', '益都', '大同', '冀宁'], ['汴梁', '河南府', '奉元', '襄阳'],
+    ['杭州', '平江', '集庆', '镇江', '常州', '嘉兴', '湖州', '绍兴', '庆元', '扬州', '松江'],
+    ['福州', '泉州', '建宁', '广州'], ['龙兴', '吉安', '武昌', '天临', '江陵', '成都', '重庆'],
+  ] },
+  { from: 1368, to: 1643, regions: [
+    ['苏州', '松江', '常州', '镇江', '应天', '扬州', '徽州', '杭州', '嘉兴', '湖州', '绍兴', '宁波', '无锡', '昆山', '常熟', '吴江'],
+    ['顺天', '保定', '河间', '真定', '大名', '济南', '东昌', '兖州', '青州', '开封', '彰德', '太原', '平阳', '大同'],
+    ['武昌', '汉阳', '荆州', '长沙', '衡州', '岳州', '襄阳', '南昌', '吉安', '饶州', '九江', '赣州'],
+    ['福州', '泉州', '漳州', '兴化', '广州', '潮州', '肇庆'], ['西安', '凤翔', '成都', '重庆', '云南府', '贵阳'], ['辽阳', '广宁', '宣府', '蓟州'],
+  ] },
+  { from: 1644, to: 1911, regions: [
+    ['苏州', '松江', '常州', '镇江', '江宁', '扬州', '徽州', '杭州', '嘉兴', '湖州', '绍兴', '宁波', '无锡', '昆山', '常熟', '吴江'],
+    ['顺天', '保定', '天津', '河间', '正定', '大名', '济南', '东昌', '兖州', '青州', '开封', '彰德', '太原', '平阳', '大同'],
+    ['武昌', '汉阳', '荆州', '长沙', '衡州', '岳州', '襄阳', '南昌', '吉安', '饶州', '九江', '赣州'],
+    ['福州', '泉州', '漳州', '广州', '潮州', '肇庆', '台湾府'], ['西安', '凤翔', '成都', '重庆', '云南府', '贵阳'], ['盛京', '锦州', '吉林'],
+  ] },
+];
+/* 本乡：籍贯池里被所在地名包含的那个州府（「苏州府长洲县」→「苏州」），宗族成员默认是本乡人 */
+function localHomeOf(loc, pool) {
+  const L = String(loc || '');
+  if (!L) return '';
+  return (pool || []).find(n => n !== L && n.length >= 2 && L.includes(n.replace(/府$/, ''))) || '';
+}
 /* 本地缘籍贯池：本政权地界内的真实地名；本地（主角所治）恒定在池内并优先。 */
 function nativePlacePool(polity, loc, gYear) {
+  const Y = Number(gYear) || 0;
+  const era = ERA_REGIONS.find(e => Y >= e.from && Y <= e.to);
+  if (era) {
+    const seat0 = loc && loc !== '本城' ? loc : '';
+    const all = era.regions.flat();
+    const near = era.regions.find(rg => rg.some(n => seat0.includes(n.replace(/府$/, '')))) || null;
+    // 七成取同一大区（本乡本土与邻近州府），三成取别处，模拟「多数本地人、少数外来」
+    const pool = near ? [...near, ...near, ...near, ...all.filter(n => !near.includes(n))] : all;
+    return seat0 ? [seat0, ...pool.filter(x => x !== seat0)] : pool;
+  }
   const base = isSouthPolity(polity, gYear) ? SOUTH_PLACES : NORTH_PLACES;
   const seat = loc && loc !== '本城' ? loc : '';
   // 本地若不在池里（如「益州」「荆州」这类大区名），也要能作为籍贯出现
@@ -503,6 +560,21 @@ function historyThreads(state, r) {
   //    旧版直接取 eraEvents 末两条，于是 548 年 10 月的成都开局就「知道」了建康十月二十四日的合围。
   const place = (state.location && state.location.full) || '';
   const hasTimeline = timeline.EVENTS.some(e => e.polity === polity);
+  const isCommoner = idm === 'commoner';
+  // 平民：朝堂上的大事只是街头传闻，不是他要处置的线索；他的线索是自己的营生与家计
+  if (isCommoner) {
+    if (hasTimeline && Y) {
+      const kk = timeline.knownAt(polity, place, Y, M, D);
+      const last = kk.known.filter(e => !e.foreign).slice(-1)[0];
+      if (last) events.push(last.text);
+    }
+    const role = (state.protagonist && state.protagonist.role) || '平民';
+    push(`${loc && loc !== '本城' ? loc + '的' : ''}${role}：这个月的营生、家计与官府的差役赋税`, 'livelihood', role,
+      { label: '营生与家计', stance: '日子要过下去：活计、柴米、债与差役，件件都落在你身上' });
+    if (events.length) push('市井传闻：' + String(events[events.length - 1]), 'rumor', String(events[events.length - 1]),
+      { hearsay: true, label: '市井传闻', stance: '朝廷里的事，传到街头已走了样；与你相干的，是它会不会摊派到你头上' });
+    return out.slice(0, 4);
+  }
   if (hasTimeline && Y) {
     const k = timeline.knownAt(polity, place, Y, M, D);
     for (const ev of k.known.filter(e => !e.foreign).slice(-2)) push(ev.text, 'eraEvents', ev.text, { eventId: ev.id });
@@ -578,6 +650,16 @@ function historyOpening(state, r, threads) {
   // 既不合身份，也把开场挤成一篇大势梗概。未成年/无职衔者改走日常切面。
   let cap = null;
   try { cap = require('./capability').capabilityOf(state); } catch { /* 闸门失效则退回旧行为 */ }
+  // 成年、无官职的平民（绣娘、货郎、佃农……）：不能套「随府中主事者、师傅的功课」那套少年模板
+  if (cap && !cap.isMinor && !cap.hasOffice && !cap.isEmperor && (state.identityModule || '') === 'commoner') {
+    const place = (state.location && state.location.full) || '';
+    const role = (state.protagonist && state.protagonist.role) || '平民';
+    const age = cap.age != null ? `${cap.age} 岁` : '';
+    const roleShort = String(role).replace(/^.{1,8}?(?:的|里的)(?=.)/, m => (place && place.includes(m.replace(/(里)?的$/, '')) ? '' : m));
+    return head + (place ? place + '。' : '') + `你${age ? '今年' + age + '，' : ''}是这里的${roleShort}。`
+      + '每天打交道的是手上的营生、家里的柴米、街坊邻里，和官府派下来的差役赋税；'
+      + '朝廷里的事，只在市井传闻里听到一星半点。';
+  }
   if (cap && (cap.isMinor || (!cap.hasOffice && !cap.isEmperor))) {
     const place = (state.location && state.location.full) || '';
     const who = cap.guardian ? `${cap.guardian.name}（${cap.guardian.relation}）` : '府中主事者';
@@ -929,7 +1011,7 @@ function generateHousehold(identity, protagonist, r, pname, loc, polity, gYear) 
   const clan = clanSurnameOf(protagonist.name);
   // 籍贯只在本政权地界内取（南朝人不会生在渔阳）
   const pool = nativePlacePool(polity, loc, gYear);
-  const localNative = (upperSeg(loc) && upperSeg(loc) !== '州治') ? upperSeg(loc) : pick(r, pool);
+  const localNative = localHomeOf(loc, pool) || ((upperSeg(loc) && upperSeg(loc) !== '州治') ? upperSeg(loc) : pick(r, pool));
   const age = Number(protagonist.age) || 30;
   const isFemale = (protagonist.gender || '') === '女';
   // 妾媵与内宅只对男性且在位者（君/贵/官）成立，符合古代家庭结构；平民不设
@@ -1034,7 +1116,7 @@ function generateLocalCast(identity, r, pname, loc, bucket, polity, gYear) {
   // 本地人物：多数籍贯为本乡（本地），少数来自外地（任职/行商/流寓）——
   // 但「外地」也必须是本政权地界内的外地，不能是敌国（旧实现取到渔阳，即北朝幽州）。
   const pool = nativePlacePool(polity, loc, gYear);
-  const localNative = (upperSeg(loc) && upperSeg(loc) !== '州治') ? upperSeg(loc) : pick(r, pool);
+  const localNative = localHomeOf(loc, pool) || ((upperSeg(loc) && upperSeg(loc) !== '州治') ? upperSeg(loc) : pick(r, pool));
   const out = [];
   const k = 3 + Math.floor(r() * 3);
   for (let i = 0; i < k; i++) {
@@ -1364,9 +1446,9 @@ async function ensureProtagonistAge(state, year, adapter, adapterCfg) {
       const est = await adapter.call({
         system: '你是历史角色设定助手。只输出一个整数（该角色此时的合情年龄，中国古代用虚岁），不要任何解释或标点。',
         prompt: `时代：${state.clock.yearLabel || ''}（公元${year || '?'}年），政权：${state.location.polity || ''}。身份模块：${idm}。职衔：${role}。姓名：${state.protagonist.name || ''}。请给出这个角色此时合理的年龄（15-75 之间的整数；帝王/贵族/高官多在 30-55，平民多在 20-45，老臣可更高）。只回数字。`,
-        temperature: 0.2, maxTokens: 8,
+        temperature: 0.2, maxTokens: 200,
       }, adapterCfg);
-      const n = parseInt(String(est.text || '').replace(/[^\d]/g, ''), 10);
+      const n = parseInt((String(est.text || '').match(/\d{1,3}/) || [''])[0], 10);
       if (Number.isFinite(n) && n >= 15 && n <= 80) {
         state.protagonist.age = n;
         if (year) state.protagonist.birthYear = year - n + 1;
