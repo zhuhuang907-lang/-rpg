@@ -1548,6 +1548,7 @@ async function acceptLast(silent) {
   await renderState(); await reloadSaves();
   if (!silent) $('#input').focus();
   showTurnDelta();   // 明确告诉你「本轮变了什么」
+  if (document.querySelector('.railtab.active')?.dataset.rail === 'me') renderMe();
   return true;
 }
 $('#btnAccept').onclick = () => acceptLast(false);
@@ -1619,7 +1620,7 @@ function showTurnDelta() {
 }
 
 /* ================= 右栏切换 ================= */
-const RAILS = ['check', 'nano', 'world', 'snap', 'map', 'file', 'find', 'archive'];
+const RAILS = ['me', 'check', 'nano', 'world', 'snap', 'map', 'file', 'find', 'archive'];
 function switchRail(which) {
   document.querySelectorAll('.railtab').forEach(b => b.classList.toggle('active', b.dataset.rail === which));
   RAILS.forEach(w => {
@@ -1629,7 +1630,23 @@ function switchRail(which) {
   if (which === 'world' && STATE) renderWorldPanel();
   if (which === 'snap' && STATE) renderSnapshots();
   if (which === 'archive' && STATE) renderArchive();
+  if (which === 'me') renderMe();
 }
+/* 个人面板：我是谁、有什么、能做什么 */
+async function renderMe() {
+  const box = document.getElementById('meBox');
+  if (!box) return;
+  if (!STATE) { box.innerHTML = '<div class="muted">先开一个局。</div>'; return; }
+  box.innerHTML = '<div class="muted">载入中…</div>';
+  const r = await post('/api/profile', { saveId: STATE.meta.id });
+  if (r.error) { box.innerHTML = '<div class="railnote">载入失败：' + escapeHtml(r.error) + '</div>'; return; }
+  box.innerHTML = r.sections.map(sec => `<div class="me-sec"><div class="me-h">${escapeHtml(sec.title)}</div>`
+    + sec.rows.map(x => `<div class="me-row"><span class="me-k">${escapeHtml(x.k)}</span><span class="me-v">${escapeHtml(x.v)}${x.src ? ` <span class="muted">〔${escapeHtml(x.src)}〕</span>` : ''}</span></div>`).join('')
+    + '</div>').join('');
+}
+document.getElementById('btnMeRefresh') && (document.getElementById('btnMeRefresh').onclick = () => renderMe());
+// 状态栏点一下就打开个人面板
+document.getElementById('statusBar') && document.getElementById('statusBar').addEventListener('click', () => { if (STATE) switchRail('me'); });
 document.querySelectorAll('.railtab').forEach(b => b.onclick = () => switchRail(b.dataset.rail));
 
 /* ================= 档案馆（差异化底盘 + 来源/可信度） ================= */

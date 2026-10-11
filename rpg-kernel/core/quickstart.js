@@ -17,11 +17,12 @@ const ROLE_DEFAULT = {
   commoner: () => '平民',
 };
 // 随机开局时的身份：视角 + 一句具体身份（地点留空，由引擎按时代真实行政中心补）
+// {县官}{州官}{副贰} 按年代换成当朝官名（唐称县令、宋称知县……）；带 * 的是县里的差事，要落到一个真实的县
 const RANDOM_ROLES = [
   ['commoner', '佃农'], ['commoner', '城里小铺的掌柜'], ['commoner', '农家女'], ['commoner', '走街串巷的货郎'],
-  ['commoner', '寺里的小沙弥'], ['commoner', '码头的脚夫'], ['official', '县衙里的书吏'], ['official', '新到任的知县'],
-  ['official', '州里的通判'], ['official', '京中的中下级官员'], ['noble', '没落宗室子弟'], ['noble', '世家的庶子'],
-  ['warlord', '边镇的裨将'], ['warlord', '一方军阀'], ['emperor', ''],
+  ['commoner', '寺里的小沙弥'], ['commoner', '码头的脚夫'], ['official', '*县衙里的书吏'], ['official', '*新到任的{县官}'],
+  ['official', '*{副贰}'], ['official', '京中的中下级官员'], ['noble', '没落宗室子弟'], ['noble', '世家的庶子'],
+  ['warlord', '边镇的裨将'], ['emperor', ''],
 ];
 // 天文纪年不用：这里的公元前写负数（-200 = 公元前200年），与规则包一致
 const DYN = [
@@ -44,7 +45,12 @@ const MALE = '安伯昌诚大德鼎方福刚广贵汉和宏怀继嘉金敬钧克
 const FEMALE = '爱宝翠春黛凤桂寒荷蕙娟兰丽莲玲梅妙巧琴秋蓉蕊素婉霞香秀雪燕瑶怡英莹玉月云芸珍贞'.split('');
 function fakeName(gender, r = Math.random) {
   const g = gender === '女' ? FEMALE : MALE;
-  return pick(SURNAMES, r) + pick(g, r) + (r() < 0.6 ? pick(g, r) : '');
+  let famous = null; try { famous = new Set(require('./realnames').FAMOUS); } catch (_) { famous = new Set(); }
+  for (let i = 0; i < 20; i++) {
+    const n = pick(SURNAMES, r) + pick(g, r) + (r() < 0.6 ? pick(g, r) : '');
+    if (!famous.has(n)) return n;
+  }
+  return pick(SURNAMES, r) + pick(g, r) + pick(g, r);
 }
 /** 把句子里的时间去掉，剩下「苏州的绣娘」→ 地点「苏州」、身份「绣娘」 */
 function splitRolePlace(text) {
@@ -111,14 +117,40 @@ function ruleParse(text, presets) {
 /** 随机一局 */
 function randomSpec(pack, r = Math.random) {
   const preset = pick(pack.eraPresets, r);
-  const [idm, role] = pick(RANDOM_ROLES, r);
+  const offices = require('./offices');
+  const Y = preset.gregorianYear || 0;
+  // 地方官要落到一个本朝确实统辖、又不是京城的州府（京城的县、府另有其制；分裂时期地盘年年在变，查不准就不派地方官）
+  let pool = [];
+  try { pool = require('./worldgen').nativePlacePool(preset.polity || '', '', Y); } catch (_) { pool = []; }
+  const seats = Y >= 618 && !(Y >= 907 && Y < 960) ? pool.filter(n => offices.SEAT_COUNTY[n] && !offices.CAPITALS.test(n)) : [];
+  let idm, role;
+  for (let i = 0; i < 20; i++) {
+    [idm, role] = pick(RANDOM_ROLES, r);
+    if (!role.startsWith('*') || seats.length) break;
+  }
+  let place = '';
+  if (role.startsWith('*')) {
+    role = role.slice(1);
+    const pf = pick(seats, r);
+    if (/\{副贰\}/.test(role)) { place = pf.replace(/府$/, ''); role = place + role; }   // 「洪州通判」
+    else place = pf.replace(/府$/, '') + offices.SEAT_COUNTY[pf];                     // 「苏州吴县」
+  }
+  role = role.replace('{县官}', offices.countyHead(Y)).replace('{州官}', offices.prefHead(Y)).replace('{副贰}', offices.prefDeputy(Y));
   // 皇帝视角用预设里的真君主（引擎按年代核定），其余随机起一个虚构的名字
   const gender = /女|妇|娘/.test(role) ? '女' : '男';
-  return toSpec(pack, { preset, identityModule: idm, role: role || ROLE_DEFAULT[idm](preset), mode: idm === 'emperor' ? 'real' : 'fictional',
+  return toSpec(pack, { preset, identityModule: idm, role: role || ROLE_DEFAULT[idm](preset), mode: idm === 'emperor' ? 'real' : 'fictional', place,
     name: idm === 'emperor' ? '' : fakeName(gender, r), gender, age: idm === 'emperor' ? null : 18 + Math.floor(r() * 25) });
 }
 
-function toSpec(pack, p) {
+/** 去掉空字段；可选对每个值做一次处理（如官名纠正） */
+function cleanObj(o, fn) {
+  if (!o || typeof o !== 'object') return null;
+  const out = {};
+  for (const [k, v] of Object.entries(o)) { const t = String(v == null ? '' : v).trim(); if (t && !/^(无|空|未知|不详|null)$/.test(t)) out[k] = fn ? fn(t) : t; }
+  return Object.keys(out).length ? out : null;
+}
+function toSpec(pack, p0) {
+  let p = p0;
   const preset = p.preset || {};
   const era = {
     id: preset.id || null,
@@ -130,6 +162,9 @@ function toSpec(pack, p) {
     season: preset.season || '',
   };
   const idm = IDMS.includes(p.identityModule) ? p.identityModule : 'commoner';
+  // 官名按年代纠正（「唐朝的知县」→「县令」）
+  const fx = require('./offices').fixTitle(p.role || '', era.gregorianYear);
+  if (fx.changed.length) p = { ...p, role: fx.text };
   return {
     ruleset: pack.id,
     title: `${era.yearLabel || (era.gregorianYear < 0 ? '公元前' + -era.gregorianYear : era.gregorianYear) + '年'} · ${p.name || p.role || '无名'}`,
@@ -138,9 +173,10 @@ function toSpec(pack, p) {
     protagonist: {
       name: p.name || '', age: p.age || null, gender: p.gender || (idm === 'emperor' ? '男' : ''),
       role: p.role || ROLE_DEFAULT[idm](era), disposition: '',
+      titles: cleanObj(p.titles, v => require('./offices').fixTitle(v, era.gregorianYear).text),
     },
     location: { full: p.place || '', polity: era.polity, controller: '未核实' },
-    situation: '', threads: [], npcs: [], resources: {},
+    situation: '', threads: [], npcs: [], resources: cleanObj(p.wealth) || {},
     mode: p.real && p.name ? 'real' : 'fictional',
     anchors: null,
     household: { clan: '', members: [], property: {}, obligations: [] },
@@ -162,8 +198,10 @@ async function parse(pack, text, callModel) {
     const ask = `玩家用一句话说想在中国古代当谁："${text}"
 请拆成开局设定，只输出 JSON：
 {"yearLabel":"年号纪年，如 万历十五年；不知道就空","gregorianYear":公元年整数（公元前用负数）或 null,"polity":"政权名，如 明、北宋、梁","month":农历月 1-12 或 null,
- "identityModule":"emperor|noble|official|warlord|commoner 五选一（皇帝/宗室贵族/官员/军阀武将/百姓）","role":"一句话具体身份，如 苏州的绣娘、钱塘县知县","name":"真实人物写真名；虚构的就按时代、身份起一个像样的姓名","gender":"男|女|空","age":年龄或 null,"place":"当时的地名，如 苏州府长洲县；没说就空","real":是否真实历史人物 true/false}
-规则：说了年号就换算成公元年；只说"某某年间"取这个年号中间的一年；只说朝代就挑这个朝代里一个有事可做的年份；范围公元前221年到1911年。地名、官名用当时的叫法。`;
+ "identityModule":"emperor|noble|official|warlord|commoner 五选一（皇帝/宗室贵族/官员/军阀武将/百姓）","role":"一句话具体身份，如 苏州的绣娘、钱塘县知县","name":"真实人物写真名；虚构的就按时代、身份起一个像样的姓名","gender":"男|女|空","age":年龄或 null,"place":"当时的地名，如 苏州府长洲县；没说就空","real":是否真实历史人物 true/false,
+ "titles":{"职官":"实际职位，没有就空","差遣":"宋代等有差遣的写差遣","品级":"如 正七品，拿不准就空","散官":"文散官/武散官或本官阶，拿不准就空","爵位":"有爵才写","封号":"有封号才写"},
+ "wealth":{"钱":"手头大约多少钱（用当时的单位：贯、两、文）","粮":"存粮","田":"田产","宅":"住处","仆从":"仆婢随从"}}
+规则：官名、品级、钱的单位必须合乎那个朝代的制度（唐无知县、明无刺史；唐宋用贯、明清用两）；家底按这个身份在当时的寻常水平给，不要夸大；拿不准的字段留空。说了年号就换算成公元年；只说"某某年间"取这个年号中间的一年；只说朝代就挑这个朝代里一个有事可做的年份；范围公元前221年到1911年。地名、官名用当时的叫法。`;
     try {
       const raw = String(await callModel('你是历史顾问，只输出 JSON。', ask) || '');
       const js = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
@@ -206,6 +244,8 @@ async function parse(pack, text, callModel) {
     identityModule: m.identityModule || (/皇帝|天子|君主|^.{0,6}帝$/.test(text) ? 'emperor' : /知县|知府|知州|官|吏|通判|御史|尚书|侍郎/.test(text) ? 'official' : /将|帅|军/.test(text) ? 'warlord' : /宗室|王爷|郡主|公主|世家/.test(text) ? 'noble' : 'commoner'),
     role: m.role || sp.role || text, name, gender, age: Number(m.age) || (m.real ? null : 16 + Math.floor(Math.random() * 20)),
     place: m.place || sp.place, real: !!m.real,
+    titles: m.titles && typeof m.titles === 'object' ? m.titles : null,
+    wealth: m.wealth && typeof m.wealth === 'object' ? m.wealth : null,
   });
 }
 

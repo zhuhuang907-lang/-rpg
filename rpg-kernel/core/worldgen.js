@@ -149,7 +149,16 @@ const GIVEN = '文昭明德修远承宗永安景行维世仁义礼智信忠孝�
 const pick = (r, a) => a[Math.floor(r() * a.length)];
 // 明显非本朝的域外君主 / 方外宗教领袖：不进「本朝臣工」池，也不参与本朝党争
 const OUTSIDER = /可汗|汗國|汗国|蘇丹|苏丹|哈里發|哈里发|埃米爾|埃米尔|沙阿|法王|教皇|喇嘛|噶瑪巴|噶玛巴|班禪|班禅|達賴|达赖|活佛|汗$/;
-const makeName = r => pick(r, SURNAMES) + pick(r, GIVEN) + (r() < 0.5 ? pick(r, GIVEN) : '');
+// 起名避开历代名人（虚构人物不得与真人同名）
+let FAMOUS_SET = null;
+const makeName = r => {
+  if (!FAMOUS_SET) { try { FAMOUS_SET = new Set(require('./realnames').FAMOUS); } catch (_) { FAMOUS_SET = new Set(); } }
+  for (let i = 0; i < 20; i++) {
+    const n = pick(r, SURNAMES) + pick(r, GIVEN) + (r() < 0.5 ? pick(r, GIVEN) : '');
+    if (!FAMOUS_SET.has(n)) return n;
+  }
+  return pick(r, SURNAMES) + pick(r, GIVEN) + pick(r, GIVEN);
+};
 const makeGiven = r => pick(r, GIVEN) + (r() < 0.5 ? pick(r, GIVEN) : '');
 // 宗姓：取主角姓氏（名字首字，须为中文字），否则回落到随机姓。父、子、兄弟同宗，随此姓。
 function clanSurnameOf(name) {
