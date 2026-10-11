@@ -1,5 +1,7 @@
 'use strict';
 /** 零依赖 HTTP 服务：静态托管 + JSON API。Node 22+。 */
+// 先自检联网环境（系统证书、系统代理），需要的话带上开关重启自己
+if (require.main === module && require('./core/boot').relaunchIfNeeded()) return;
 const http = require('http');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -138,7 +140,7 @@ const routes = {
         out.test = { ok: true, ms: t.ms, model: ((await adapters.loadAdapterConfig()).configs.deepseek || {}).model };
       } catch (e) {
         let why = String(e.message || e).slice(0, 300);
-        if (/fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(why)) why += '（连不上 api.deepseek.com：请检查网络、代理或防火墙）';
+        if (!/^连不上/.test(why) && /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(why)) why += '（连不上 api.deepseek.com：请检查网络、代理或防火墙）';
         out.test = { ok: false, why };
       }
     }
@@ -173,8 +175,12 @@ const routes = {
     };
   },
   'GET /api/health': async () => ({ ok: true, node: process.version }),
+  /* 网络诊断：逐个试连 DeepSeek / 博查 / 维基，告诉玩家卡在哪 */
+  'GET /api/netcheck': async () => require('./core/net').check(),
   'GET /api/rulepacks': async () => engine.listRulepacks(),
   'GET /api/saves': async () => engine.listSaves(),
+  'GET /api/saves/bad': async () => ({ ok: true, bad: await engine.findBadSaves() }),
+  async 'POST /api/saves/cleanup'(body) { return engine.cleanupBadSaves((body || {}).ids); },
   'GET /api/adapters': async () => adapters.listAdapters(),
 
   async 'POST /api/save'(body) {

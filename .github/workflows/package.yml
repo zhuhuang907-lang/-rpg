@@ -1,4 +1,6 @@
-# 打包 Windows 版：解压后双击「启动游戏.exe」就能玩（自带 Node 运行环境，电脑上不用装任何东西）
+# 打包 Windows 版：
+#   · HistoryRPG-Setup.exe：安装程序，双击安装，桌面出现「历史模拟RPG」图标（推荐）
+#   · HistoryRPG-windows.zip：免安装版，解压后双击「启动游戏.exe」
 # 每次推送 rpg-kernel/ 的改动都会重新测试、打包，发布到 Releases 的「latest」。
 name: 打包 Windows 版
 
@@ -33,44 +35,82 @@ jobs:
         shell: pwsh
         run: |
           $out = "dist\HistoryRPG"
-          New-Item -ItemType Directory -Force "$out\runtime" | Out-Null
-          # 游戏本体（不带测试、存档、Key、缓存、日志）
-          foreach ($p in 'server.js','adapters','core','public','rulepacks','prompts','wordlists','data','一键启动.bat') {
-            Copy-Item "rpg-kernel\$p" "$out\" -Recurse
+          $app = "$out\app"
+          New-Item -ItemType Directory -Force "$app\runtime" | Out-Null
+          # 游戏本体放进 app 文件夹（玩家只看到启动程序、说明和一个备用 bat）
+          foreach ($p in 'server.js','adapters','core','public','rulepacks','prompts','wordlists','data') {
+            Copy-Item "rpg-kernel\$p" "$app\" -Recurse
           }
-          foreach ($p in 'adapter-config.json','search.json','saves','cache','archive','logs','app-window','server.log','launcher.log') {
-            Remove-Item "$out\data\$p" -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item "rpg-kernel\一键启动.bat" "$app\start.bat"
+          foreach ($p in 'adapter-config.json','search.json','saves','cache','archive','logs','app-window','server.log','launcher.log','saves-deleted') {
+            Remove-Item "$app\data\$p" -Recurse -Force -ErrorAction SilentlyContinue
           }
           # 自带 Node 运行环境
-          Copy-Item (Get-Command node).Source "$out\runtime\node.exe"
+          Copy-Item (Get-Command node).Source "$app\runtime\node.exe"
           # 启动器：Windows 自带的 C# 编译器
           & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /codepage:65001 /target:winexe `
             /win32icon:rpg-kernel\launcher\game.ico /out:"$out\启动游戏.exe" `
             /r:System.Windows.Forms.dll /r:System.Drawing.dll rpg-kernel\launcher\GameLauncher.cs
           if (-not (Test-Path "$out\启动游戏.exe")) { throw '启动器编译失败' }
+          Copy-Item rpg-kernel\launcher\fallback.bat "$out\打不开就双击这个.bat"
           # 说明（带 BOM，记事本里中文不乱码）
           $txt = Get-Content rpg-kernel\launcher\README.txt -Raw -Encoding UTF8
           [IO.File]::WriteAllText("$PWD\$out\使用说明.txt", $txt, (New-Object Text.UTF8Encoding $true))
-          # 冒烟：用自带的 node 起服务，确认首页和一句话开局的接口都在
+
+      - name: 冒烟（免安装版）
+        shell: pwsh
+        run: |
+          $app = "dist\HistoryRPG\app"
           $env:PORT = '3199'; $env:SHU_NO_BROWSER = '1'
-          $p = Start-Process -FilePath "$out\runtime\node.exe" -ArgumentList 'server.js' -WorkingDirectory "$out" -PassThru -NoNewWindow
+          $p = Start-Process -FilePath "$app\runtime\node.exe" -ArgumentList 'server.js' -WorkingDirectory "$app" -PassThru -NoNewWindow
           $ok = $false
-          for ($i = 0; $i -lt 30 -and -not $ok; $i++) { Start-Sleep 1; try { $ok = (Invoke-RestMethod http://127.0.0.1:3199/api/health).ok } catch {} }
+          for ($i = 0; $i -lt 40 -and -not $ok; $i++) { Start-Sleep 1; try { $ok = (Invoke-RestMethod http://127.0.0.1:3199/api/health).ok } catch {} }
           $qs = $null; try { $qs = Invoke-RestMethod http://127.0.0.1:3199/api/quick-status } catch {}
           $page = $null; try { $page = (Invoke-WebRequest http://127.0.0.1:3199/ -UseBasicParsing).Content } catch {}
-          Stop-Process -Id $p.Id -Force
+          $net = $null; try { $net = Invoke-RestMethod http://127.0.0.1:3199/api/netcheck -TimeoutSec 40 } catch {}
+          # 保存 Key 能落盘（用假 Key，只看保存，不看试连结果）
+          $save = $null; try { $save = Invoke-RestMethod -Method Post -ContentType 'application/json' -Body '{"apiKey":"sk-smoketest","bochaKey":"bocha-smoketest"}' http://127.0.0.1:3199/api/quick-key -TimeoutSec 120 } catch {}
+          $qs2 = $null; try { $qs2 = Invoke-RestMethod http://127.0.0.1:3199/api/quick-status } catch {}
+          taskkill /T /F /PID $p.Id | Out-Null
           if (-not $ok) { throw '打包后的游戏起不来' }
           if (-not $qs.ok) { throw '一句话开局接口不通' }
           if ($page -notmatch 'qText') { throw '首页没有一句话开局输入框' }
-          foreach ($p in 'saves','cache','logs','server.log','adapter-config.json','search.json') {
-            Remove-Item "$out\data\$p" -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host ('网络诊断：' + ($net | ConvertTo-Json -Depth 4 -Compress))
+          Write-Host ('保存 Key：' + ($save | ConvertTo-Json -Depth 4 -Compress))
+          if (-not $qs2.hasKey) { throw '保存 Key 后没有记住' }
+          if (-not $qs2.hasBocha) { throw '保存博查 Key 后没有记住' }
+          foreach ($x in 'saves','cache','logs','server.log','adapter-config.json','search.json','launcher.log') {
+            Remove-Item "$app\data\$x" -Recurse -Force -ErrorAction SilentlyContinue
           }
-          Compress-Archive -Path $out -DestinationPath dist\HistoryRPG-windows.zip
+          if (Test-Path "$app\data\adapter-config.json") { throw '测试 Key 没清掉' }
+          Compress-Archive -Path dist\HistoryRPG -DestinationPath dist\HistoryRPG-windows.zip
+
+      - name: 安装程序
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          if (-not (Test-Path $iscc)) { throw '没装上 Inno Setup' }
+          & $iscc "/DSrcDir=$PWD\dist\HistoryRPG" "/DOutDir=$PWD\dist" rpg-kernel\launcher\installer.iss
+          if (-not (Test-Path dist\HistoryRPG-Setup.exe)) { throw '安装程序没生成' }
+          # 静默装一遍，确认装出来的东西能跑
+          $dir = "$env:RUNNER_TEMP\rpg-install"
+          Start-Process dist\HistoryRPG-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir" -Wait
+          if (-not (Test-Path "$dir\启动游戏.exe")) { throw '安装后没有启动程序' }
+          if (-not (Test-Path "$dir\app\runtime\node.exe")) { throw '安装后没有运行环境' }
+          $env:PORT = '3198'
+          $p = Start-Process -FilePath "$dir\app\runtime\node.exe" -ArgumentList 'server.js' -WorkingDirectory "$dir\app" -PassThru -NoNewWindow
+          $ok = $false
+          for ($i = 0; $i -lt 40 -and -not $ok; $i++) { Start-Sleep 1; try { $ok = (Invoke-RestMethod http://127.0.0.1:3198/api/health).ok } catch {} }
+          taskkill /T /F /PID $p.Id | Out-Null
+          if (-not $ok) { throw '安装后的游戏起不来' }
 
       - uses: actions/upload-artifact@v4
         with:
           name: HistoryRPG-windows
-          path: dist/HistoryRPG-windows.zip
+          path: |
+            dist/HistoryRPG-Setup.exe
+            dist/HistoryRPG-windows.zip
 
       - name: 发布到 Releases（latest）
         shell: pwsh
@@ -78,5 +118,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag 2>$null
-          $notes = "下载 HistoryRPG-windows.zip → 右键「全部解压缩」→ 双击「启动游戏.exe」。打不开就双击「一键启动.bat」。`n`n分支：${{ github.ref_name }}　提交：${{ github.sha }}"
-          gh release create latest dist/HistoryRPG-windows.zip --title "历史模拟 · Windows 最新版" --notes $notes --prerelease --target ${{ github.sha }}
+          $notes = @"
+          ## 怎么装（推荐）
+          1. 点下面的 **HistoryRPG-Setup.exe** 下载，双击安装（Windows 提示「已保护你的电脑」就点「更多信息」→「仍要运行」）。
+          2. 装完双击桌面上的 **历史模拟RPG** 图标。
+          3. 页面上粘贴 DeepSeek Key 点「保存」，输入一句话开局。
+
+          免安装版：下载 HistoryRPG-windows.zip → 右键「全部解压缩」→ 双击「启动游戏.exe」。
+
+          提交：${{ github.sha }}
+          "@
+          gh release create latest dist/HistoryRPG-Setup.exe dist/HistoryRPG-windows.zip --title "历史模拟 RPG · Windows 最新版" --notes $notes --target ${{ github.sha }}
