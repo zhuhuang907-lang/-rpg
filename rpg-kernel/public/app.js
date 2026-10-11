@@ -699,7 +699,7 @@ async function pollTurnJob(job) {
   const sc = $('#draftScene');
   let shown = false, misses = 0;
   // 旧的一段先收起，免得以为新的一段已经写好了
-  if (!$('#draftBox').classList.contains('hidden')) { sc.textContent = 'AI 正在写这一段……'; for (const id of ['gmHead', 'gmTail']) { const el = document.getElementById(id); if (el) el.textContent = ''; } }
+  if (!$('#draftBox').classList.contains('hidden')) { sc.textContent = 'AI 正在写这一段……'; for (const id of ['gmHead', 'gmTail', 'gmOrders']) { const el = document.getElementById(id); if (el) el.textContent = ''; } }
   for (;;) {
     await new Promise(res => setTimeout(res, 800));
     let j;
@@ -710,7 +710,7 @@ async function pollTurnJob(job) {
     if (j.partial) {
       if (!shown) {
         shown = true;
-        for (const id of ['gmHead', 'gmTail']) { const el = document.getElementById(id); if (el) el.textContent = ''; }
+        for (const id of ['gmHead', 'gmTail', 'gmOrders']) { const el = document.getElementById(id); if (el) el.textContent = ''; }
         $('#draftBox').classList.remove('hidden');
         sc.classList.add('streaming');
       }
@@ -813,6 +813,10 @@ function renderLast() {
   } else {
     ['gmHead', 'gmTail'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
   }
+  // 这一段里交代的差事与进展：一眼看到办没办
+  const ords = (d.orders || []).filter(o => o && o.who && o.what);
+  const ob = box('gmOrders', false);
+  ob.textContent = ords.length ? '【差事】\n' + ords.map(o => `· ${o.who}：${o.what} —— ${o.status || '在办'}${o.result ? '，' + o.result : ''}`).join('\n') : '';
   $('#draftMeta').textContent = ` · 适配器 ${LAST.adapterId}${LAST.parseFailed ? ' · 返回不是标准 JSON，已按纯文本处理' : ''}`;
 
   // 回显：你写的指令 / AI 说它听懂了什么 / 本轮它去检索了什么 —— 让「听岔、替你做主」一眼可见
