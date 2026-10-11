@@ -59,7 +59,8 @@ function applyDesk(state, draft) {
   }
   // 案头：新的一批来报替换上一批（上一批没处理的，模型会在新来报里或暗线里交代）
   const reps = arr(d.reports).filter(r => r && (r.title || r.text)).slice(0, 4)
-    .map(r => ({ title: cut(r.title, 16), from: cut(r.from, 30), form: cut(r.form, 6), text: cut(r.text, 320), deadline: cut(r.deadline, 40), turn }));
+    .map(r => ({ title: cut(r.title, 16), from: cut(r.from, 30), form: cut(r.form, 6), text: cut(r.text, 320), deadline: cut(r.deadline, 40), turn,
+      options: arr(r.options).filter(o => o && o.text).slice(0, 4).map(o => ({ text: cut(o.text, 80), who: cut(o.who, 20), risk: cut(o.risk, 4), cost: cut(o.cost, 60) })) }));
   if (reps.length) state.desk = reps;
   // 暗线：只有 GM 知道
   const notes = arr(d.gmNotes).map(x => cut(typeof x === 'string' ? x : JSON.stringify(x), 140)).filter(Boolean).slice(0, 5);

@@ -283,6 +283,51 @@ const routes = {
     return { ok: true, status: 'running', partial: j.partial };
   },
   /* 玩家在界面上改了草稿正文：存回记着的草稿 */
+  /* 问人：问一个身边的人，他按立场私心回答并出主意（不过时间） */
+  async 'POST /api/ask'(body) {
+    const b = body || {};
+    const who = String(b.who || '').trim().slice(0, 20);
+    const q = String(b.question || '').trim().slice(0, 300) || '这件事你怎么看？该怎么办？';
+    if (!who) return { ok: false, why: '先选一个要问的人' };
+    const desk = require('./core/desk');
+    const st0 = await engine.loadState(b.saveId);
+    const { system, prompt } = desk.askPrompt(st0, who, q);
+    const text = await engine.quickCall({ system, prompt, temperature: 0.8, maxTokens: 1500 });
+    let j = engine.extractJson(text);
+    if (j.parseFailed || !j.reply) j = { reply: String(text).replace(/^[\s\S]*?"reply"\s*:\s*"/, '').slice(0, 600), suggestions: [] };
+    const rec = { turn: (st0.turn || 0) + 1, who, q, reply: String(j.reply).slice(0, 800), memo: String(j.memo || '').slice(0, 200),
+      suggestions: (Array.isArray(j.suggestions) ? j.suggestions : []).filter(x => x && x.text).slice(0, 3).map(x => ({ text: String(x.text).slice(0, 160), risk: String(x.risk || '').slice(0, 4) })) };
+    return withSaveLock(b.saveId, async () => {
+      const st = await engine.loadState(b.saveId);
+      st.consults = (Array.isArray(st.consults) ? st.consults : []).concat([rec]).slice(-30);
+      await engine.writeState(st);
+      const { memo, ...pub } = rec;   // 他心里的打算不给玩家看
+      return { ok: true, consult: pub };
+    });
+  },
+  /* 润色：大白话 → 合乎身份的文书 */
+  async 'POST /api/polish'(body) {
+    const b = body || {};
+    const text = String(b.text || '').trim().slice(0, 1200);
+    if (!text) return { ok: false, why: '先写下你的打算' };
+    const st = await engine.loadState(b.saveId);
+    const { system, prompt } = require('./core/desk').polishPrompt(st, text);
+    const out = (await engine.quickCall({ system, prompt, temperature: 0.6, maxTokens: 1200 })).trim();
+    return { ok: true, text: out, form: require('./core/desk').polishForm(st) };
+  },
+  /* 建议簿：收进 / 删掉一条主意 */
+  async 'POST /api/advice'(body) {
+    const b = body || {};
+    return withSaveLock(b.saveId, async () => {
+      const st = await engine.loadState(b.saveId);
+      let book = Array.isArray(st.adviceBook) ? st.adviceBook : [];
+      if (b.remove != null) book = book.filter((_, i) => i !== Number(b.remove));
+      else if (b.text) book = book.concat([{ who: String(b.who || '').slice(0, 20), text: String(b.text).slice(0, 200), risk: String(b.risk || '').slice(0, 4), turn: (st.turn || 0) + 1 }]).slice(-30);
+      st.adviceBook = book;
+      await engine.writeState(st);
+      return { ok: true, advice: book };
+    });
+  },
   async 'POST /api/draft/save'(body) {
     const b = body || {};
     return withSaveLock(b.saveId, async () => {
