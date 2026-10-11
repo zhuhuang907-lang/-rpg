@@ -23,7 +23,7 @@ const GEN_DIR = path.join(process.env.RPG_DATA_DIR || path.join(__dirname, '..',
 async function wikiExtract(title) {
   const url = `https://zh.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&variant=zh-cn&titles=${encodeURIComponent(title)}`;
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'PivotEngine/0.1 (history-rpg)' }, signal: AbortSignal.timeout(25000) });
+    const res = await require('./net').fetchX(url, { headers: { 'User-Agent': 'PivotEngine/0.1 (history-rpg)' }, signal: AbortSignal.timeout(25000) });
     if (!res.ok) return '';
     const j = await res.json();
     const pages = (j && j.query && j.query.pages) || {};

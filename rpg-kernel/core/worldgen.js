@@ -247,6 +247,7 @@ async function sparqlRetry(q, tries = 3) {
     const r = await sparql(q);
     if (!r.error) return r;
     last = r;
+    if (/连不上|不再重试/.test(String(r.error))) break;   // 网络不通，重试无用
     await new Promise(t => setTimeout(t, 400 * (i + 1)));
   }
   return last;

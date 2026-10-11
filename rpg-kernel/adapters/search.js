@@ -325,7 +325,7 @@ async function sparql(query, { noCache } = {}) {
   if (!noCache) { const hit = await cacheRead(key); if (hit) return { ...hit, cached: true }; }
   const t0 = Date.now();
   try {
-    const res = await fetch('https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(query), {
+    const res = await require('../core/net').fetchX('https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(query), {
       // Wikidata 要求带 User-Agent，否则直接 403
       headers: { 'User-Agent': 'PivotEngine/0.1 (local history-rpg tool)', accept: 'application/sparql-results+json' },
       signal: AbortSignal.timeout(60000),

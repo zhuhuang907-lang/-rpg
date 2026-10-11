@@ -382,6 +382,8 @@ $('#btnNew').onclick = async () => {
 
 /* ================= 渲染主区与档案 ================= */
 function renderState() {
+  // 记住正在玩的那一局：刷新页面、重开浏览器后直接回到这里（连同还没接上的那一段）
+  try { if (STATE && STATE.meta) localStorage.setItem('lastSave', STATE.meta.id); else localStorage.removeItem('lastSave'); } catch (_) { /* 无存储就算了 */ }
   renderStatusBar();
   if (!STATE) {
     $('#starterCards').classList.remove('hidden');
@@ -532,6 +534,13 @@ function renderState() {
       </div>`;
   if (!hasLog && $('#btnOpening')) $('#btnOpening').onclick = () => runTurnWith('', []);
   $('#draftBox').classList.add('hidden');
+  // 刷新页面后把上次生成、还没接上的那一段找回来
+  const pd = s.pendingDraft;
+  if (pd && pd.draft && (pd.draft.baseTurn == null || Number(pd.draft.baseTurn) === Number(s.turn || 0))) {
+    if (!LAST || LAST.draft !== pd.draft) { LAST = { ...pd }; renderLast(); }
+  } else if (LAST && LAST.draft && LAST.draft.baseTurn != null && Number(LAST.draft.baseTurn) !== Number(s.turn || 0)) {
+    LAST = null;
+  }
 }
 
 function suggestFirstAction(s) {
@@ -660,8 +669,15 @@ $('#threadBox').onclick = async e => {
 };
 
 /* ================= 回合 ================= */
-async function runTurnWith(input, confirmedThreads) {
+async function runTurnWith(input, confirmedThreads, opts) {
   if (!STATE) return alert('先开一个局：点上面「＋ 新开局」或选一个现成局面');
+  // 有上一段没确认、而你写了下一步：先把上一段接进世界，再写新的（不再要求先点「采纳」）
+  if (LAST && !(opts && opts.regenerate)) {
+    $('#btnRun').disabled = true; $('#btnRun').textContent = '接上上一段…';
+    const ok = await acceptLast(true);
+    $('#btnRun').disabled = false; $('#btnRun').textContent = '推进回合';
+    if (!ok) return;
+  }
   $('#btnRun').disabled = true; $('#btnRun').textContent = '调用 AI 中…';
   try {
     const r = await post('/api/turn', {
@@ -670,7 +686,7 @@ async function runTurnWith(input, confirmedThreads) {
       adapterId: SEL,
       adapterConfig: {},
       confirmedThreads,
-      verbosity: $('#verbosity').value || 'long',
+      verbosity: $('#verbosity').value || 'normal',
       factMode: ($('#factMode') && $('#factMode').value) || 'standard',
       autoVerifyNpcs: $('#autoVerify').checked,
       autoFactCheck: $('#autoFactCheck').checked,
@@ -749,6 +765,8 @@ function renderLast() {
     if (seg.length) echo.push(`<div class="echo-line"><b>本轮构思（先想后写）</b><br>${seg.map(s => '· ' + s).join('<br>')}</div>`);
   }
   $('#draftEcho').innerHTML = echo.join('');
+  const simple = document.body.classList.contains('simple');
+  ['gmHead', 'gmTail'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.toggle('adv', true); });
 
   // 天降之事（本轮掷出的话，醒目提示）
   const eb = $('#eventBanner');
@@ -770,7 +788,7 @@ function renderLast() {
     fb.classList.remove('hidden');
     fb.innerHTML = `<b>⛔ 本轮不合格（必过项未通过）</b><br>`
       + (LAST.report.blockingFailed || []).map(x => `· <b>${escapeHtml(x.name)}</b>：${escapeHtml(x.detail)}`).join('<br>')
-      + `<br><span class="muted">按规则，本轮应作废：点「这段不行，重来」重跑，或改掉问题后仍选择采纳。</span>`;
+      + `<br><span class="muted">建议点「重新生成」重写这一段，或点「修改这段」自己改掉。</span>`;
   } else { fb.classList.add('hidden'); fb.innerHTML = ''; }
 
   // 引擎自动核查报告（写前预检索 + 写后逐条校验 + 自动订正）
@@ -794,6 +812,11 @@ function renderLast() {
     $('#draftEcho').innerHTML = echo.join('');
   }
 
+  // 简洁模式：正文上方只留「你的指令」一行，引擎的构思、检索、核查清单都收起来（高级模式里仍可看）
+  if (simple) $('#draftEcho').innerHTML = echo[0] || '';
+  const sc0 = document.getElementById('draftScene');
+  if (sc0) { sc0.setAttribute('contenteditable', 'false'); sc0.classList.remove('editing'); }
+  $('#btnEdit').textContent = '修改这段';
   $('#draftBox').classList.remove('hidden');
 
   const rows = LAST.report?.rows || [];
@@ -995,8 +1018,10 @@ async function renderWorldPanel() {
       + ((j.chain || []).length ? '<div class="railnote">因果：' + j.chain.slice(-4).map(c =>
         `<span class="linklike" data-cf="${escapeHtml(c.id)}" title="点我做反事实推演">${escapeHtml(c.cause)} → ${escapeHtml(c.effect)}</span>`).join('；')
         + '　<span class="muted">（点一条可推演「若当初相反」）</span></div>' : '');
-    const chg = [].concat(j.worldChanges || [], (j.npcActions || []).map(x => 'NPC：' + x), (j.rumors || []));
-    $('#worldChangeBox').innerHTML = chg.length ? chg.map(x => `<div class="meta">· ${escapeHtml(String(x))}</div>`).join('') : '<div class="muted">本轮世界没有额外变化。</div>';
+    // 简洁模式只列真实发生的变化；引擎推演的「NPC 自行其事」只在高级模式里看（玩家反馈：侧栏那些像假的）
+    const simpleMode = document.body.classList.contains('simple');
+    const chg = [].concat(j.worldChanges || [], simpleMode ? [] : (j.npcActions || []).map(x => 'NPC（推演）：' + x), simpleMode ? [] : (j.rumors || []));
+    $('#worldChangeBox').innerHTML = chg.length ? chg.map(x => `<div class="meta">· ${escapeHtml(String(x))}</div>`).join('') : '<div class="muted">最近没有新的大事传到这里。</div>';
     const t = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const el = $('#worldUpdated'); if (el) el.textContent = '更新于 ' + t;
     renderFigureAudit(j);
@@ -1394,9 +1419,28 @@ document.addEventListener('click', async e => {
 });
 
 $('#btnRetry').onclick = () => {
-  // 真·重来：用同一句指令重新生成一次（旧代码只是把草稿藏起来，点了没反应 —— 已修）
+  // 重新生成：同一句指令再写一次；可以顺手说一句想怎么改（比如「短一点」「别编阴谋」）
   if (!LAST) return;
-  runTurnWith(LAST.input || $('#input').value, LAST.confirmedThreads || []);
+  const note = prompt('想怎么改？可以写一句要求，比如「短一点」「多写街上的事」「别扯到江陵」。\n不写就直接重新生成。', '');
+  if (note === null) return;
+  const base = LAST.input || '';
+  const input = note.trim() ? (base ? base + '\n' : '') + '（这次重写的要求：' + note.trim() + '）' : base;
+  runTurnWith(input, LAST.confirmedThreads || [], { regenerate: true });
+};
+// 修改这段：直接在正文上改，改完点「保存修改」，接下去就按你改过的写
+$('#btnEdit').onclick = async () => {
+  if (!LAST) return;
+  const sc = document.getElementById('draftScene');
+  if (sc.getAttribute('contenteditable') === 'true') {
+    sc.setAttribute('contenteditable', 'false'); sc.classList.remove('editing');
+    LAST.draft = { ...(LAST.draft || {}), scene: sc.innerText };
+    $('#btnEdit').textContent = '修改这段';
+    const r = await post('/api/draft/save', { saveId: STATE.meta.id, scene: LAST.draft.scene });
+    if (r.error) alert('修改没存上：' + r.error + '（本页面里仍按你改过的接续）');
+  } else {
+    sc.setAttribute('contenteditable', 'true'); sc.classList.add('editing'); sc.focus();
+    $('#btnEdit').textContent = '保存修改';
+  }
 };
 
 /* ================= 战阵：只有「碰上战争」才出现 =================
@@ -1479,8 +1523,9 @@ function renderBattleHint() {
   el.innerHTML = `已布阵：我军 ${b.ourTroops} 人（阵形与战术已选定）。点上方「开战」提交。`;
 }
 
-$('#btnAccept').onclick = async () => {
-  if (!LAST) return;
+// 确认这一段（写进世界、时间往前走）。写下一步时会自动先做这一步，所以平常不用点
+async function acceptLast(silent) {
+  if (!LAST) return true;
   const dropNpcs = [...document.querySelectorAll('#newNpcBox .chip')].filter(c => !c.classList.contains('on')).map(c => c.dataset.drop);
   const chips = [...document.querySelectorAll('#threadChips .chip')];
   const closeThreads = chips.filter(c => c.textContent.includes('·搁置')).map(c => c.dataset.thread);
@@ -1496,13 +1541,16 @@ $('#btnAccept').onclick = async () => {
       edits: { dropNpcs, closeThreads, resolveThreads },
     });
   } finally { $('#btnAccept').disabled = false; }
-  if (r.error || !r.state) return alert('这一轮没有采纳：' + (r.error || '服务没有返回新的存档') + '\n\n存档没有变。可以点「推进回合」重写这一轮，或改改你的指令再试。');
-  STATE = r.state; LAST = null; $('#input').value = '';
+  if (r.error || !r.state) { alert('上一段没能接上：' + (r.error || '服务没有返回新的存档') + '\n\n存档没有变。可以点「重新生成」重写上一段，再写下一步。'); return false; }
+  STATE = r.state; LAST = null;
+  if (!silent) $('#input').value = '';
   // 时间必须往前走：保留当前选择（不重置为 0，否则时间会永远停住）
   await renderState(); await reloadSaves();
-  $('#input').focus();
+  if (!silent) $('#input').focus();
   showTurnDelta();   // 明确告诉你「本轮变了什么」
-};
+  return true;
+}
+$('#btnAccept').onclick = () => acceptLast(false);
 
 /* 时间预览：采纳后日期会变成什么，让你心里有数（时间每回合必须往前走） */
 /* 农历月日：「闰四月廿三」 */
@@ -1776,7 +1824,7 @@ $('#btnSettings').onclick = () => {
     const isLlm = a2 && ['deepseek', 'openai-compatible'].includes(a2.id);
     $('#sAdapterFields').innerHTML = (a2?.fields || []).map(f => f.key === 'model' && isLlm
       ? `<div class="field"><label>${escapeHtml(f.label)}</label><input data-k="model" list="sModelList" value="${escapeHtml(/^deepseek-(chat|reasoner)$/.test(c.model || '') ? 'deepseek-v4-pro' : (c.model ?? f.def ?? ''))}"><datalist id="sModelList"><option value="deepseek-v4-pro"></option><option value="deepseek-v4.1-pro"></option><option value="deepseek-flash"></option></datalist> <button type="button" id="sModels">获取型号</button></div>`
-      : `<div class="field"><label>${escapeHtml(f.label)}</label><input data-k="${f.key}" type="${f.secret ? 'password' : 'text'}" value="${escapeHtml(c[f.key] ?? f.def ?? '')}"></div>`).join('')
+      : `<div class="field"><label>${escapeHtml(f.label)}${f.secret && c[f.key] ? `<span class="okline">（已保存，尾号 ${escapeHtml(String(c[f.key]).slice(-4))}）</span>` : ''}</label><input data-k="${f.key}" type="${f.secret ? 'password' : 'text'}" value="${escapeHtml(c[f.key] ?? f.def ?? '')}"></div>`).join('')
       + (isLlm ? `<div class="field"><label>思考模式</label><label><input data-k="thinking" type="checkbox" ${c.thinking === 'on' || c.thinking === true ? 'checked' : ''}> 打开（更慢、更贵，推理更细；默认关）</label></div>` : '');
     const mb = document.getElementById('sModels');
     if (mb) mb.onclick = async () => {
@@ -1791,7 +1839,7 @@ $('#btnSettings').onclick = () => {
     const sc = await get('/api/search/config');
     const id = $('#sSearch').value;
     $('#sSearchFields').innerHTML = (SEARCH_FIELDS[id] || []).map(f =>
-      `<div class="field"><label>${escapeHtml(f.label)}</label><input data-k="${f.key}" type="${f.secret ? 'password' : 'text'}" value="${escapeHtml(sc.providers?.[id]?.[f.key] ?? f.def ?? '')}"></div>`).join('');
+      `<div class="field"><label>${escapeHtml(f.label)}${f.secret && sc.providers?.[id]?.[f.key] ? `<span class="okline">（已保存，尾号 ${escapeHtml(String(sc.providers[id][f.key]).slice(-4))}）</span>` : ''}</label><input data-k="${f.key}" type="${f.secret ? 'password' : 'text'}" value="${escapeHtml(sc.providers?.[id]?.[f.key] ?? f.def ?? '')}"></div>`).join('');
     const svc = (SEARCH?.providers || []).find(p => p.id === id);
     $('#sSearchHint').innerHTML = svc
       ? `${escapeHtml(svc.note || '')}${svc.free ? '<br>（免费，无需 key）' : '<br>（需填 API Key）'}`
@@ -1980,6 +2028,15 @@ async function renderStarterCards() {
   await step('search', reloadSearch);
   PACK = (await step('rulepacks', () => get('/api/rulepacks'), []))[0] || { id: 'history-sim-v4', starters: [], eraPresets: [] };
   await step('saves', reloadSaves);
+  await step('lastSave', async () => {
+    let id = null; try { id = localStorage.getItem('lastSave'); } catch (_) { id = null; }
+    if (!id) return;
+    const list = await get('/api/saves');
+    if (Array.isArray(list) && list.some(x => x.id === id)) {
+      const st = await post('/api/state', { saveId: id });
+      if (st && st.meta) { STATE = st; await reloadSaves(); }
+    }
+  });
   await step('bindWorldUi', async () => bindWorldUi());
   await step('starterCards', renderStarterCards);
   await step('renderState', async () => renderState());
@@ -1994,13 +2051,22 @@ async function refreshQuick() {
   try { st = await get('/api/quick-status'); } catch (_) { st = {}; }
   const box = $('#qStatus');
   if (st.hasKey) {
+    // Key 已经存好：首页只留一行状态，Key 框收起来；要换 Key / 型号 / 博查，去「设置」
     box.classList.remove('hidden');
-    box.innerHTML = `<span>AI：DeepSeek · <b>${escapeHtml(st.modelName || '')}</b> · Key 尾号 ${escapeHtml(st.keyTail || '')}</span>`
-      + `<span>查史：${st.search === 'bocha' && st.hasBocha ? '博查' : '维基百科（免费）'}</span>`
-      + `<a id="qChange">更换 Key / 型号 / 博查</a><a id="qNet2">检查网络</a>`;
-    $('#qChange').onclick = () => { $('#qKey').classList.toggle('hidden'); fillQuickKey(st); };
-    $('#qNet2').onclick = () => { $('#qKey').classList.remove('hidden'); fillQuickKey(st); $('#qNet').click(); };
-    if (!$('#qKey').classList.contains('hidden')) fillQuickKey(st);
+    box.innerHTML = `<span class="ok">✓ AI 已接通（DeepSeek · ${escapeHtml(st.modelName || '')}）</span>`
+      + `<span>查史：${st.search === 'bocha' && st.hasBocha ? '博查 ✓' : '维基百科（免费）'}</span>`
+      + `<a id="qChange">设置</a><a id="qNet2">检查网络</a>`;
+    $('#qChange').onclick = () => $('#btnSettings').click();
+    $('#qNet2').onclick = async () => {
+      const o = document.getElementById('qNetOut') || box.appendChild(Object.assign(document.createElement('div'), { id: 'qNetOut', className: 'qkeyout' }));
+      o.style.flexBasis = '100%'; o.textContent = '正在检查网络（最多十几秒）……';
+      const r = await get('/api/netcheck');
+      o.innerHTML = r.error ? `<span class="bad">${escapeHtml(r.error)}</span>` : r.results.map(x => x.ok
+        ? `<span class="ok">✓ ${escapeHtml(x.name)}：连得上（${x.ms}ms）</span>`
+        : `<span class="bad">✗ ${escapeHtml(x.name)}：${escapeHtml(x.why)}</span>`).join('\n');
+    };
+    $('#qKey').classList.add('hidden');
+    $('#qKeyIn').placeholder = `已保存（尾号 ${st.keyTail || ''}）`;
   } else {
     box.classList.add('hidden');
     $('#qKey').classList.remove('hidden');
@@ -2058,7 +2124,9 @@ $('#qKeySave').onclick = async () => {
     try { await loadCfgs(); } catch (_) { /* 忽略 */ }
     const allOk = (!r.test || r.test.ok) && (!r.bocha || r.bocha.ok);
     await refreshQuick();
-    if (allOk) setTimeout(() => { $('#qKey').classList.add('hidden'); }, 2500);
+    // 有没连通的：Key 框留着，原因就在框里；全通了：框收起，状态行写明已保存
+    if (!allOk) $('#qKey').classList.remove('hidden');
+    else $('#qStatus').insertAdjacentHTML('beforeend', '<span class="ok">✓ 刚刚保存并连通</span>');
   } catch (e) {
     out.innerHTML = `<span class="bad">保存失败：${escapeHtml(e.message || e)}（游戏服务可能没在运行，请重新双击启动游戏）</span>`;
   } finally { $('#qKeySave').disabled = false; $('#qKeySave').textContent = '保存'; }

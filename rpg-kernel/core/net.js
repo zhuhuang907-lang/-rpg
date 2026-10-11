@@ -28,10 +28,23 @@ function explain(e, host) {
   err.cause = e; err.netError = true;
   return err;
 }
+/* 连不上的站点记 3 分钟：在国内维基常常直接连不上，每个请求都要等到超时，
+   开一局要查几十次，就成了「生成半天啥都没有」。记住后同一站点立即失败，走兜底。
+   只记「连接层」失败（域名、拒绝、重置、证书、代理、连接超时）；
+   读响应超时（模型写长文写得慢）不记，免得把 DeepSeek 误判成连不上。 */
+const DOWN = new Map();
+const CONNECT_FAIL = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|EPIPE|CERT|SELF_SIGNED|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER|ERR_TLS|UND_ERR_CONNECT_TIMEOUT|EACCES|EPERM|cancel|tunnel|proxy/i;
 /** fetch 包一层：网络层失败时给出中文原因 */
-async function fetchX(url, opts) {
-  try { return await fetch(url, opts); }
-  catch (e) { let host = ''; try { host = new URL(url).host; } catch (_) { /* 忽略 */ } throw explain(e, host); }
+async function fetchX(url, opts, { noFastFail = false } = {}) {
+  let host = ''; try { host = new URL(url).host; } catch (_) { /* 忽略 */ }
+  const d = DOWN.get(host);
+  if (!noFastFail && d && d.until > Date.now()) { const err = new Error(d.msg + '（几分钟内不再重试）'); err.netError = true; err.fastFail = true; throw err; }
+  try { const r = await fetch(url, opts); DOWN.delete(host); return r; }
+  catch (e) {
+    const err = explain(e, host);
+    if (host && CONNECT_FAIL.test(causeCode(e))) DOWN.set(host, { until: Date.now() + 3 * 60 * 1000, msg: err.message });
+    throw err;
+  }
 }
 /** 网络诊断：逐个试连模型、博查、维基。能拿到任何 HTTP 回应（哪怕 401）就算「连得上」 */
 async function check() {
@@ -39,12 +52,13 @@ async function check() {
     ['DeepSeek（写剧情）', 'https://api.deepseek.com/models'],
     ['博查（查史，可选）', 'https://api.bochaai.com/v1/web-search'],
     ['维基百科（免费查史）', 'https://zh.wikipedia.org/w/api.php?action=query&format=json&meta=siteinfo'],
+    ['Wikidata（免费查人物）', 'https://query.wikidata.org/sparql?format=json&query=ASK%7B%7D'],
   ];
   const out = [];
   await Promise.all(targets.map(async ([name, url], i) => {
     const t0 = Date.now();
     try {
-      const r = await fetchX(url, { method: 'GET', signal: AbortSignal.timeout(12000) });
+      const r = await fetchX(url, { method: 'GET', signal: AbortSignal.timeout(12000) }, { noFastFail: true });
       out[i] = { name, ok: true, status: r.status, ms: Date.now() - t0 };
     } catch (e) { out[i] = { name, ok: false, why: String(e.message || e), ms: Date.now() - t0 }; }
   }));
