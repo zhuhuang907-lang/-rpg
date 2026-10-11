@@ -175,7 +175,7 @@ function applyStatusChanges(state, draft) {
       from = state.resources[item] != null ? String(state.resources[item]) : '';
       state.resources[item] = to;
     }
-    done.push({ turn: state.turn || 0, item, from, to, why: why.slice(0, 60) });
+    done.push({ turn: (state.turn || 0) + 1, item, from, to, why: why.slice(0, 60) });   // 采纳在回合数加一之前：记成界面上的「第几轮」
   }
   state.statusLog = (state.statusLog || []).concat(done).slice(-500);
   return done;

@@ -356,7 +356,7 @@ function recordHistoryChanges(state, draft) {
     const cause = String((c && (c.cause || c.原因)) || '').trim();
     if (!event || !now || !cause) continue;   // 三样缺一不收：史书怎么写、现在怎样、因为玩家哪一步
     const rec = {
-      id: 'H' + (d.history.length + 1), turn: state.turn || 0,
+      id: 'H' + (d.history.length + 1), turn: (state.turn || 0) + 1,
       date: state.clock ? `${state.clock.yearLabel}${state.clock.month}月` : '',
       event: event.slice(0, 80), now: now.slice(0, 120), cause: cause.slice(0, 80),
       scope: String((c && c.scope) || '').slice(0, 20),
