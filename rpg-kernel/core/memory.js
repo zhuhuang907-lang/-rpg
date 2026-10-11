@@ -21,7 +21,8 @@ function onAccept(state, draft, input) {
   const M = ensureMemory(state);
   let s = String((draft && draft.turnSummary) || '').trim();
   if (!s) s = String((draft && draft.scene) || '').replace(/\s+/g, '').slice(0, 150);
-  M.turns.push({ turn: state.turn || 0, input: String(input || '').slice(0, 60), summary: s.slice(0, 160),
+  // 采纳发生在回合数加一之前：记成玩家看到的「第几轮」
+  M.turns.push({ turn: (state.turn || 0) + 1, input: String(input || '').slice(0, 60), summary: s.slice(0, 160),
     date: state.clock ? `${state.clock.yearLabel}${state.clock.month}月${state.clock.day}日` : '' });
   if (M.turns.length > 400) M.turns = M.turns.slice(-400);
 }

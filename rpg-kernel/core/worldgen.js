@@ -587,7 +587,7 @@ function historyThreads(state, r) {
   }
   if (hasTimeline && Y) {
     const k = timeline.knownAt(polity, place, Y, M, D);
-    for (const ev of k.known.filter(e => !e.foreign).slice(-2)) push(ev.text, 'eraEvents', ev.text, { eventId: ev.id });
+    for (const ev of k.known.filter(e => !e.foreign && e.y >= Y - 1).slice(-2)) push(ev.text, 'eraEvents', ev.text, { eventId: ev.id });
     const rum = k.rumored.filter(e => !e.foreign).slice(-1)[0];
     if (rum) push('传闻：' + rum.text, 'rumor', rum.text, { eventId: rum.id, hearsay: true, stance: '消息未经证实，真伪与详情都还不清楚' });
   } else if (events.length) {
@@ -785,7 +785,8 @@ function refreshEraEvents(state) {
   // 本局已被玩家改写的史事：已知的换成本局实际情形，将来的不再「照史书发生」
   const dv = require('./divergence');
   const asPlayed = e => { const c = dv.changedEvent(state, e.text); return c ? `本局：${c.now}（史书原载「${e.text.slice(0, 30)}」，因${c.cause}未照此发生）` : e.text; };
-  state.eraEvents = k.known.map(asPlayed);
+  // 只取近五年的：几十年前的旧事不是「刚传到的消息」
+  state.eraEvents = k.known.filter(e => e.y >= y - 5).map(asPlayed);
   state.eraEventsSource = 'timeline';
   state.eraEventsRumored = k.rumored.filter(e => !dv.changedEvent(state, e.text)).map(e => e.text);
   state.eraEventsUnheard = k.unheard.map(e => e.id);
@@ -796,7 +797,7 @@ function refreshEraEvents(state) {
 /* 旧存档体检：判断这个档的开局剧情是不是旧随机模板池的产物。
    判据：① 线索没有 source 字段（历史驱动版每条都带来源）；
         ② 开场白命中已删除的模板句（「陇西的马场」「井里」等）。 */
-const DEAD_OPENING = /陇西|马场|井里|父亲咽气|赐婚的诏书|乳母快死|清君侧|举荐你升迁|就地正法|征丁的榜文|菜园|地契上的界|义仓开仓|十年副将|你的粮只够十天|幼子被掳|最小的儿子被对头掳/;
+const DEAD_OPENING = /陇西|马场|井里|父亲咽气|赐婚的诏书|乳母快死|举荐你升迁|就地正法|征丁的榜文|菜园|地契上的界|义仓开仓|十年副将|你的粮只够十天|幼子被掳|最小的儿子被对头掳/;
 function needsPlotRebuild(state) {
   if (!state) return false;
   const th = state.threads || [];
@@ -992,17 +993,9 @@ function backgroundFor(role, r) {
 }
 
 /* 与主角的一条确切关系（rulepack 要求「与他人的一条确切关系」） */
+// 与主角的关系：只给寻常的往来，不再随机安上旧怨、救命之恩、倾慕、暗中使绊——那些都是凭空造戏
 function tieToProtagonist(r, pname) {
-  return pick(r, [
-    `受${pname}管辖，平日表面恭顺`,
-    `与${pname}有田产旧怨，见面便冷笑`,
-    `曾于危难中救过${pname}一命`,
-    `是${pname}座师门下的同年，暗通声气`,
-    `受${pname}之托办事，各有算计`,
-    `与${pname}是同乡，借此在本地说话`,
-    `是${pname}的倾慕者，凡事肯帮衬`,
-    `${pname}升迁的绊脚石，暗中使绊`,
-  ]);
+  return pick(r, [`与${pname}相识，平日有往来`, `与${pname}是同乡`, `与${pname}有公事往来`, `与${pname}是街坊`, `受${pname}之托办过事`]);
 }
 
 function lastSeg(loc) {
@@ -1041,11 +1034,19 @@ function generateHousehold(identity, protagonist, r, pname, loc, polity, gYear) 
     ...(extra.rank ? { rank: extra.rank } : {}),
     ...(extra.inner ? { inner: true } : {}),
   });
-  if (r() < 0.95) add('父', age + 24 + Math.floor(r() * 8), '（已退养/在堂）', '一家之主，阅历最深，最在意门第与田产。', false, '男');
-  if (r() < 0.9) add('母', age + 20 + Math.floor(r() * 6), '（在堂）', '主持中馈，最知家中进项与亲族往来。', true, '女');
+  // 是否已婚先定：已婚女子随夫家过日子（列夫、子女，不列娘家父母）；未婚的不生子女
+  const married = age > 18 && r() < 0.75;
+  if (!(isFemale && married)) {
+    if (r() < 0.95) add('父', age + 24 + Math.floor(r() * 8), '（已退养/在堂）', '一家之主，阅历最深，最在意门第与田产。', false, '男');
+    if (r() < 0.9) add('母', age + 20 + Math.floor(r() * 6), '（在堂）', '主持中馈，最知家中进项与亲族往来。', true, '女');
+  }
   // 正室：主角为女则「夫」，为男则「妻」
-  if (age > 18 && r() < 0.75) add(isFemale ? '夫' : '妻', age - 2 + Math.floor(r() * 4), isFemale ? '（夫主）' : '（结发正室）',
-    isFemale ? '结发之夫，家中名分所系。' : '结发正室，掌中馈、管妾媵与家中进项，最清楚你的私交。', true, isFemale ? '男' : '女');
+  let spouseSurname = '';
+  if (married) {
+    add(isFemale ? '夫' : '妻', age - 2 + Math.floor(r() * 4), isFemale ? '（夫主）' : '（结发正室）',
+      isFemale ? '结发之夫，家中名分所系。' : '结发正室，掌中馈与家中进项。', true, isFemale ? '男' : '女');
+    spouseSurname = String(members[members.length - 1].name || '').slice(0, 1);
+  }
   // 妾媵（仅男性且在位者）：位分有别，是内宅争斗的常见源头
   let nConcubine = 0;
   if (hasInnerCourt && r() < 0.8) nConcubine = 1 + Math.floor(r() * 3);
@@ -1054,20 +1055,23 @@ function generateHousehold(identity, protagonist, r, pname, loc, polity, gYear) 
       pick(r, ['出身寒微，凭姿容入府，最盼生个儿子。', '本为婢女抬举，根基浅而心气高。', '娘家小有势力，在内宅自成一派。']),
       true, '女', { inner: true });
   }
-  // 子女：嫡出（正室所生）与庶出（妾所生）分明
-  const nKids = Math.floor(r() * 4);
-  const maxKid = age > 22 ? Math.max(1, age - 15) : 4;
+  // 子女：只有成婚的才有；嫡出（正室所生）与庶出（妾所生）分明；子女年龄至少比父母小 16 岁
+  const nKids = married ? Math.floor(r() * 4) : 0;
+  const maxKid = Math.max(1, age - 16);
   for (let i = 0; i < nKids; i++) {
     const kidGender = r() < 0.5 ? '男' : '女';
     const isDi = nConcubine === 0 || i === 0; // 有妾时，长子为嫡，余可庶出
     const rank = isDi ? '嫡' : '庶';
     const rel = rank + (kidGender === '男' ? '子' : '女');
-    add(rel, 1 + Math.floor(r() * maxKid), '', isDi ? '正室所出，名分最正。' : '妾室所出，地位随母，易生嫡庶之争。', false, kidGender, { rank: isDi ? '嫡' : '庶', inner: true });
+    add(rel, 1 + Math.floor(r() * maxKid), '', isDi ? '正室所出。' : '妾室所出。', false, kidGender, { rank: isDi ? '嫡' : '庶', inner: hasInnerCourt });
+    // 女主角的子女随夫姓
+    if (isFemale && spouseSurname) members[members.length - 1].name = spouseSurname + members[members.length - 1].name.slice(clan.length || 1);
   }
   // 手足
   const nSib = Math.floor(r() * 3);
-  for (let i = 0; i < nSib; i++) add(r() < 0.5 ? '兄' : '弟', age - 3 + Math.floor(r() * 6), '', '同辈手足，或同心或相忌。', false, '男');
-  if (r() < 0.4) add(r() < 0.5 ? '姊' : '妹', age - 2 + Math.floor(r() * 6), '', '同辈姊妹，多用于联姻，其婚事亦是家中大事。', false, '女');
+  // 兄、姊比主角大，弟、妹比主角小（旧版会生出比 19 岁主角还大的「妹」）
+  for (let i = 0; i < nSib; i++) { const older = r() < 0.5; add(older ? '兄' : '弟', older ? age + 1 + Math.floor(r() * 6) : Math.max(1, age - 1 - Math.floor(r() * 6)), '', '同辈手足。', false, '男'); }
+  if (r() < 0.4) { const older = r() < 0.5; add(older ? '姊' : '妹', older ? age + 1 + Math.floor(r() * 5) : Math.max(1, age - 1 - Math.floor(r() * 5)), '', '同辈姊妹。', false, '女'); }
   // 内宅管事（女）：内宅事务的实际操持者，连通内外消息
   if (hasInnerCourt) add('内宅管事', 35 + Math.floor(r() * 20), pick(r, ['（管家娘子）', '（内宅掌事）']),
     '内宅钱粮、奴仆、采买尽经其手，最知内宅阴私与人情往来。', true, '女', { inner: true });
@@ -1170,8 +1174,8 @@ function realHousehold(identity, protagonist, r, realKin = []) {
   const property = identity === 'emperor'
     ? { 宫禁: '紫禁深严，侍卫环卫', 宗庙: '太庙四时致祭', 禁军: '京营、亲军宿卫', 内帑: '天下财赋所归', 后妃: '中宫与诸妃分居东西六宫（妃嫔须依史实）' }
     : (identity === 'noble' || identity === 'official')
-      ? { 田: '请依史实补录', 宅: '请依史实补录', 赀财: '请依史实补录', 内眷: '正室与妾侍、嫡庶之别须依史实，引擎不虚构' }
-      : { 田: '请依史实补录', 宅: '请依史实补录', 赀财: '请依史实补录' };
+      ? { 田: '未登记', 宅: '未登记', 赀财: '未登记' }
+      : { 田: '未登记', 宅: '未登记', 赀财: '未登记' };
 
   // 真实亲属：用真实姓名与关系（来自 Wikidata 亲属关系）
   const members = (realKin || []).map(k => {
@@ -1195,7 +1199,7 @@ function realHousehold(identity, protagonist, r, realKin = []) {
     used.add(role);
     members.push({
       name: `${pick(r, SURNAMES)}${makeGiven(r)}`,
-      gender: r() < 0.35 ? '女' : '男',
+      gender: /婢|侍女|乳母|嬷|娘|妪|宫女|女|稳婆/.test(role) ? '女' : /宦|内侍|太监|书童|小厮|长随|亲兵|家丁|仆|马夫|门子|僮/.test(role) ? '男' : (r() < 0.35 ? '女' : '男'),
       relation: '近侍', rank: '', age: 16 + Math.floor(r() * 30), status: '在世',
       role, attitude: '', nativePlace: '', inner: ['emperor', 'noble', 'official'].includes(identity),
       background: '无名近侍，与主角朝夕相处，最知内宅与私事。', tie: '主角的近侍',

@@ -230,7 +230,7 @@ function initEconomy(state, opts = {}) {
     },
     population: { households, total: pop, ...age, byClass, farmlandMu, grainPerMu, annualGrainShi: annual },
     revenue: { annualTaxShi, annualUpkeepShi, taxRate, retainedRatio, retainedShi: Math.round(annualTaxShi * retainedRatio), upwardShi: annualTaxShi - Math.round(annualTaxShi * retainedRatio) },
-    agriculture: { phase: '冬藏', busy: false, grainStoredShi: Math.round(annual * 0.35), lossRate: 0.08, disaster: '无' },
+    agriculture: { phase: farmPhase(state.clock && state.clock.month).phase, busy: farmPhase(state.clock && state.clock.month).busy, grainStoredShi: Math.round(annual * 0.35), lossRate: 0.08, disaster: '无' },
     treasury: { cashGuan, grainShi, taxRate, debtGuan: 0 },
     military: { total: troops, combat: 0, aux: 0, wounded: 0, sick: 0, desertion: 0, morale: 0.6, horses: 0, weapons: 0, arrows: 0 },
     market: { grainWenPerShi: grainBaselineByEra(year).value, grainBaseline: grainBaselineByEra(year).value, horseGuan: 30, oxGuan: 8, clothWenPerBolt: 500, laborWenPerDay: 30, grainSource: 'estimate', grainNote: '米价为引擎按朝代量级推算的中值，非史实定值；启用检索后可据史核定覆盖。' },

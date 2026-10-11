@@ -295,6 +295,8 @@ async function createCustomSave(spec) {
     geography: spec.geography || null,
   };
   if (reignNote) state.reignNote = reignNote;
+  // 有人物档案（萧纪那样的人工档案，或之前 AI 建过的）就先按档案落定身份、驻地、生卒——不必等联网核定
+  if (state.mode === 'real') { try { applyFigureDossier(state); } catch (_) { /* 无档案 */ } }
   // 年号换算不出来时，明确记下来 —— 宁可提示，也不要让世界按「公元 0 年」去跑
   if (!gYear) state.yearUnknown = true;
 
@@ -1216,7 +1218,7 @@ async function runTurn(args) {
     throw e;
   }
 }
-async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmedThreads, identityModule, temperature, autoVerifyNpcs, verbosity: verbosityOverride, battle: battleOrders, autoFactCheck: autoFactCheckIn = true, autoRepair = true, planFirst = true, factMode }) {
+async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmedThreads, identityModule, temperature, autoVerifyNpcs, verbosity: verbosityOverride, battle: battleOrders, autoFactCheck: autoFactCheckIn = true, autoRepair = true, planFirst = true, factMode, regenNote }) {
   const state = await loadState(saveId);
   const pack = await loadPack(state.meta.ruleset);
   // 史实宽容度（《设计书》§1.3）：严格 / 标准（默认）/ 宽松。记在存档里，下次沿用。
@@ -1256,6 +1258,10 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
   agency.ensureAgency(state);        // NPC 的目标 / 恐惧 / 底线 / 行动能力
   div.ensureDiv(state);              // 史实锚点 / 因果链 / 分歧
   plot.ensurePlot(state);            // 剧情：编号 / 七层 / 状态机 / 因果链
+  // 默认走精简写作链（core/lean.js）：一次调用、一份规则、只喂真实材料。旧链只在存档显式选用时走。
+  if (!(state.meta && state.meta.legacyEngine)) {
+    return runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOverride, regenNote, autoFactCheck });
+  }
   // —— 剧情生成器：先决定「本轮可能发生什么、为什么、谁行动」——
   // 这一步在写正文**之前**：没有可追溯的触发条件就一个剧情也不生成，
   // 从根上掐掉「为了精彩强行编排」。
@@ -1775,6 +1781,78 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
   return { draft, report, plan, system, prompt, adapterId: adapter.id, adapterMeta: res.meta, parseFailed: !!draft.parseFailed, verifications, searches: didSearches, claims: changedTerritory, identityChanges: changedIdentities, event: evt, battle: state.pendingBattle, factCheck: factReport, baseTurn: state.turn, stateVersion: state.version || 0 };
 }
 
+/* 精简写作链的一回合：见 core/lean.js 的说明 */
+async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOverride, regenNote, autoFactCheck }) {
+  const __t0 = Date.now();
+  const saved = await loadAdapterConfig();
+  const aid = adapterId || saved.selected || 'deepseek';
+  const { adapter, config } = await resolveAdapter(aid, { ...(saved.configs?.[aid] || {}), ...(adapterConfig || {}) });
+  if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请在「设置」里填好 DeepSeek 的 Key');
+  try { await require('./memory').compressIfDue(state, adapter, config); } catch (_) { /* 压缩失败不阻塞 */ }
+  const isOpening = !(state.log || []).some(l => l.speaker === 'GM');
+  const verbosity = verbosityOverride || (state.meta && state.meta.verbosity) || 'normal';
+  state.meta.verbosity = verbosity;
+  // 写前查证（可选）：检索所得只作参考资料，不再让模型自己发 SEARCH、也不再事后改写正文
+  let preEvidence = [];
+  if (autoFactCheck) {
+    try {
+      const qs = factcheck.planPreSearch(state, input).slice(0, 3);
+      preEvidence = await Promise.all(qs.map(async q => {
+        const r = await search(q, { noCache: false }).catch(() => ({ results: [] }));
+        return { query: q, provider: r.provider, fallbackFrom: r.fallbackFrom, results: r.results || [], count: (r.results || []).length };
+      }));
+    } catch (_) { preEvidence = []; }
+  }
+  const lean = require('./lean');
+  const built = lean.buildLeanPrompt(state, input, { verbosity, isOpening, preEvidence });
+  const system = built.system;
+  let prompt = built.prompt;
+  if (regenNote && String(regenNote).trim()) prompt += `\n\n【玩家对上一版的意见：这次重写照此改】${String(regenNote).trim().slice(0, 200)}`;
+  const maxTokens = verbosity === 'long' ? 5000 : verbosity === 'short' ? 2000 : 3500;
+  let res = await adapter.call({ system, prompt, temperature: 0.8, maxTokens }, config);
+  let draft = extractJson(res.text);
+  if (draft.parseFailed || !String(draft.scene || '').trim()) {
+    res = await adapter.call({ system, prompt: prompt + '\n\n（上一次的输出不是合法 JSON。这次只输出一个 JSON 对象，不要任何别的文字。）', temperature: 0.6, maxTokens }, config);
+    draft = extractJson(res.text);
+    if (draft.parseFailed || !String(draft.scene || '').trim()) throw new Error('AI 这次返回的格式不对，没能读出正文。请点「重新生成」再试一次。');
+  }
+  // 收稿整理
+  const arr = v => (Array.isArray(v) ? v : []);
+  draft.scene = String(draft.scene).replace(/[「『]?用户决定[」』]?/g, '').trim();
+  draft.understood = String(draft.understood || '');
+  draft.presentNpcs = arr(draft.presentNpcs).filter(n => n && n.name);
+  draft.newNpcs = arr(draft.newNpcs).filter(n => n && n.name).map(n => ({ ...n, background: n.background || n.role || '', source: n.source || 'fictional' }));
+  draft.statusChanges = arr(draft.statusChanges);
+  draft.historyChanges = arr(draft.historyChanges);
+  draft.doubts = arr(draft.doubts).map(d => (typeof d === 'string' ? d : JSON.stringify(d)));
+  draft.turnSummary = String(draft.turnSummary || '').slice(0, 200);
+  draft.pendingDecision = String(draft.pendingDecision || '').replace(/[「『]?用户决定[」』]?/g, '').trim() || '等你决断';
+  draft.touchedThreads = [];
+  draft.lean = true;
+  // 虚构人物不撞真人名；官名合时代（人物字段全改，正文只改「那时还没有」的官名）
+  try { await require('./realnames').fixDraftCollisions(state, draft, { online: true }); } catch (_) { /* 查不了就算了 */ }
+  try {
+    const off = require('./offices');
+    const Y = state.clock.gregorianYear || 0;
+    for (const n of [...draft.newNpcs, ...draft.presentNpcs]) { if (n.role) n.role = off.fixTitle(n.role, Y).text; if (n.background) n.background = off.fixTitle(n.background, Y).text; }
+    const fx = off.fixTitle(draft.scene, Y, { futureOnly: true });
+    if (fx.changed.length) { draft.scene = fx.text; draft.doubts.push(`正文里的官名不合本朝，已改：${[...new Set(fx.changed.map(([a, b]) => a + '→' + b))].join('、')}`); }
+  } catch (_) { /* 忽略 */ }
+  draft.baseTurn = state.turn;
+  await writeState(state);
+  try {
+    require('./telemetry').logTurn(state.meta.id, {
+      turn: (state.turn || 0) + 1, input: String(input || '').slice(0, 60), chars: draft.scene.length,
+      secs: Math.round((Date.now() - __t0) / 1000), engine: 'lean', promptChars: system.length + prompt.length, adapter: adapter.id,
+    });
+  } catch (_) { /* 日志失败不影响游戏 */ }
+  return {
+    draft, report: { rows: [], failed: false }, plan: null, system, prompt, adapterId: adapter.id, adapterMeta: res.meta,
+    parseFailed: false, verifications: [], searches: preEvidence.filter(x => x.count).map(x => ({ query: x.query, count: x.count })),
+    claims: [], identityChanges: [], event: null, battle: null, factCheck: null, baseTurn: state.turn, stateVersion: state.version || 0,
+  };
+}
+
 /* 年龄按史实重算：有生年者用「公元年 − 生年 + 1」精确推算，无生年者按跨年数递增。
    真人（主角与历史人物）优先走精确路径，避免年龄与史实脱节或跨年后不更新。 */
 function recomputeAges(state, yearsPassed) {
@@ -1797,6 +1875,9 @@ function recomputeAges(state, yearsPassed) {
  */
 async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
   const state = await loadState(saveId);
+  // 这一段发生的日子（推进时间之前）：记进回合记录，免得开场被记成十天以后
+  let sceneTime = '';
+  try { sceneTime = require('./lunar').label(Number(state.clock.month) || 1, Number(state.clock.day) || 1, state.clock.leap); } catch (_) { sceneTime = `${state.clock.month}月${state.clock.day}日`; }
 
   // —— ① 版本锁：旧草稿不得覆盖新世界（长局稳定性 · 第二批指令第 11 项）——
   // 草稿带着它是基于第几轮生成的（baseTurn）。若世界已经往前走了，
@@ -1820,7 +1901,7 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
     antiCheat = anticheat.check({ state, draft, scene: String((draft && (draft.scene || draft.text)) || '') });
   } catch { /* 校验本身出错不阻断游戏，但会留痕 */ }
   const blockers = anticheat.blocking(antiCheat);
-  if (blockers.length && !force) {
+  if (blockers.length && !force && !(draft && draft.lean)) {
     return {
       ok: false, antiCheat: true,
       why: '这一轮有 ' + blockers.length + ' 处「围着玩家改规则」的写法，已拦下：\n' + anticheat.render(blockers),
@@ -1836,7 +1917,7 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
   try {
     plotAudit = plot.auditText(state, String((draft && (draft.scene || draft.text)) || ''), (draft && draft.plotArcs) ? draft.plotArcs.map(a => a.id) : null);
   } catch (_) { /* 审计出错不阻断 */ }
-  if (plotAudit && plotAudit.blocking.length && !force) {
+  if (plotAudit && plotAudit.blocking.length && !force && !(draft && draft.lean)) {
     return {
       ok: false, plotAudit: true,
       why: '这一轮的剧情过不了质量审计（' + plotAudit.blocking.length + ' 处硬伤），已拦下：\n'
@@ -1976,8 +2057,8 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
   state.npcActions = npcActions || [];
   state.rumors = rumors || [];
 
-  if (input) state.log.push({ turn: state.turn, time: `${state.clock.month}月${state.clock.day}日`, speaker: '玩家', text: input });
-  state.log.push({ turn: state.turn, time: `${state.clock.month}月${state.clock.day}日`, speaker: 'GM', text: draft.scene || '' });
+  if (input) state.log.push({ turn: state.turn, time: sceneTime, speaker: '玩家', text: input });
+  state.log.push({ turn: state.turn, time: sceneTime, speaker: 'GM', text: draft.scene || '' });
   if (draft.worldNote) state.log.push({ turn: state.turn, time: '', speaker: '世界大事', text: draft.worldNote });
 
   // 每轮结束存一份档案卡快照（版本化，便于换对话或回查）

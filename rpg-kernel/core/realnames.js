@@ -22,12 +22,24 @@ const FAMOUS = `
 `.split(/\s+/).filter(Boolean);
 const FAMOUS_SET = new Set(FAMOUS);
 
-function localFigureNames() {
+/** 本地人物档案里的真人；给了年份就只取那时在世（或生卒不详）的，免得把别的朝代的人列成「本局真人」 */
+function localFigureNames(year) {
   const out = [];
-  try { out.push(...Object.keys(require('./figure-data').FIGURES || {})); } catch (_) { /* 无 */ }
+  const Y = Number(year) || 0;
+  const alive = f => !Y || !f || ((f.born == null || f.born <= Y) && (f.died == null || f.died >= Y));
+  let FIG = {};
+  try { FIG = require('./figure-data').FIGURES || {}; } catch (_) { FIG = {}; }
+  for (const [n, f] of Object.entries(FIG)) if (alive(f)) out.push(n);
   try {
     const dir = path.join(__dirname, '..', 'data', 'figures');
-    for (const f of fs.readdirSync(dir)) if (f.endsWith('.json')) out.push(f.replace(/\.json$/, ''));
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.json') || f.startsWith('_')) continue;
+      const n = f.replace(/\.json$/, '');
+      if (out.includes(n)) continue;
+      let fig = FIG[n];
+      if (!fig) { try { const j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); fig = j.figure || j; } catch (_) { fig = null; } }
+      if (!Y || (fig && alive(fig))) out.push(n);
+    }
   } catch (_) { /* 无 */ }
   return out;
 }
@@ -35,6 +47,7 @@ function localFigureNames() {
 /** 本局的真人名单 */
 function realNamesOf(state) {
   const set = new Set(FAMOUS_SET);
+  // 撞名检查用全部（任何朝代的真人名都不该借给虚构人物）
   for (const n of localFigureNames()) set.add(n);
   const s = state || {};
   for (const n of (s.npcs || [])) if (n && n.name && /historical|real|真实/.test(String(n.source || ''))) set.add(n.name);
@@ -102,7 +115,10 @@ async function fixDraftCollisions(state, draft, { online = true } = {}) {
 
 /** 提示词：本局里不得给虚构人物用的名字（只列本局相关的真人，太长没用） */
 function renderRealNameRule(state) {
-  const local = [...realNamesOf(state)].filter(n => !FAMOUS_SET.has(n)).slice(0, 40);
+  // 列给模型看的只放「此时在世」的本局真人
+  const Y = state && state.clock && state.clock.gregorianYear;
+  const eraNames = new Set(localFigureNames(Y));
+  const local = [...realNamesOf(state)].filter(n => !FAMOUS_SET.has(n) && (eraNames.has(n) || !localFigureNames().includes(n))).slice(0, 40);
   return '【虚构人物与真人】虚构人物不得与任何史载真人同名，也不得被写成真人的亲属、门生、部属、旧交（玩家指定的除外）；'
     + '虚构的小人物不会轻易见到帝王、宰执、名将，真人只出现在史载他此时所在之处。'
     + (local.length ? `本局已登记的真人：${local.join('、')}——这些名字只能指他们本人。` : '');

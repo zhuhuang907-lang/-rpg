@@ -25,7 +25,8 @@ function prefHead(y) {
   return '知府';
 }
 function prefDeputy(y) {
-  if (y < 589) return '郡丞';
+  if (y < 220) return '郡丞';
+  if (y < 589) return '别驾、长史';    // 魏晋南北朝：州有别驾、长史、司马；郡有郡丞
   if (y < 960) return '州司马';
   if (y < 1279) return '通判';
   if (y < 1368) return '同知';
