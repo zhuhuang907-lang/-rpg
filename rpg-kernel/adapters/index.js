@@ -54,7 +54,7 @@ async function saveAdapterConfig({ selected, configs }) {
 function trimSlash(u) { return String(u || '').replace(/\/+$/, ''); }
 
 async function httpJson(url, { method = 'POST', headers = {}, body, timeoutMs = 120000 } = {}) {
-  const res = await fetch(url, {
+  const res = await require('../core/net').fetchX(url, {
     method,
     headers: { 'content-type': 'application/json', ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),

@@ -1,14 +1,13 @@
 // 历史模拟 RPG 启动器（Windows 自带 csc.exe 编译，无需安装任何东西）
 //
 // 双击后：
-//   1. 立刻弹出「正在启动」小窗——不会再出现「双击没反应」；
+//   1. 立刻弹出一个小窗「历史模拟 RPG」——游戏运行期间它一直在，关掉它就退出游戏；
 //   2. 检查是不是在压缩包里直接运行（那样找不到文件），是的话提示先解压；
 //   3. 关掉端口上残留的旧服务（只关 node 进程），端口被别的程序占了就换一个；
-//   4. 用自带的 runtime\node.exe 启动 server.js（无黑窗口，日志写到 data\server.log）；
-//   5. 用 Edge/Chrome 的「应用模式」开一个独立窗口；浏览器若立刻退出（已在运行、被拦截），
-//      改用默认浏览器打开，并留一个「游戏运行中」小窗，关掉它才结束游戏服务。
+//   4. 用自带的 runtime\node.exe 启动游戏服务（无黑窗口，日志写到 data\server.log）；
+//   5. 服务就绪后用电脑的默认浏览器打开游戏页面；小窗上有「打开游戏」按钮，浏览器关了可以再开。
 // 启动过程写到 data\launcher.log，出问题时把它发给我。
-// 编译：见 launcher\build.bat
+// 目录：游戏文件可以和本程序放在一起，也可以放在旁边的 app 文件夹里（压缩包版就是这样）。
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -25,35 +24,43 @@ static class GameLauncher
     static int Port = 8787;
     static string Url { get { return "http://127.0.0.1:" + Port + "/"; } }
     static string AppDir = AppDomain.CurrentDomain.BaseDirectory;
+    static string GameDir;
     static string LogPath, LauncherLog;
-    static Form Splash;
-    static Label SplashText;
+    static Form Win;
+    static Label Info;
+    static Button BtnOpen, BtnQuit;
     static Process Server;
+    static bool Ready;
 
     [STAThread]
     static void Main()
     {
         Application.EnableVisualStyles();
-        try { Directory.CreateDirectory(Path.Combine(AppDir, "data")); } catch { }
-        LogPath = Path.Combine(AppDir, "data", "server.log");
-        LauncherLog = Path.Combine(AppDir, "data", "launcher.log");
+        GameDir = File.Exists(Path.Combine(AppDir, "server.js")) ? AppDir : Path.Combine(AppDir, "app");
+        try { Directory.CreateDirectory(Path.Combine(GameDir, "data")); } catch { }
+        LogPath = Path.Combine(GameDir, "data", "server.log");
+        LauncherLog = Path.Combine(GameDir, "data", "launcher.log");
         try { File.WriteAllText(LauncherLog, ""); } catch { }
-        Log("启动器：" + AppDir);
+        Log("启动器：" + AppDir + "　游戏目录：" + GameDir);
 
-        Splash = new Form
+        Win = new Form
         {
-            Text = TITLE, Width = 420, Height = 150, StartPosition = FormStartPosition.CenterScreen,
-            FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, TopMost = true,
+            Text = TITLE, Width = 460, Height = 210, StartPosition = FormStartPosition.CenterScreen,
+            FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false,
         };
-        try { Splash.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
-        SplashText = new Label
+        try { Win.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+        Info = new Label
         {
-            Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter,
-            Font = new Font("Microsoft YaHei UI", 11f), Text = "正在启动游戏……",
+            Left = 16, Top = 14, Width = 412, Height = 90, Font = new Font("Microsoft YaHei UI", 10.5f),
+            Text = "正在启动游戏……",
         };
-        Splash.Controls.Add(SplashText);
-        Splash.Shown += (s, e) => new Thread(Run) { IsBackground = true }.Start();
-        Application.Run(Splash);
+        BtnOpen = new Button { Text = "打开游戏", Left = 16, Top = 112, Width = 150, Height = 36, Enabled = false, Font = new Font("Microsoft YaHei UI", 10f) };
+        BtnQuit = new Button { Text = "退出游戏", Left = 278, Top = 112, Width = 150, Height = 36, Font = new Font("Microsoft YaHei UI", 10f) };
+        BtnOpen.Click += (s, e) => OpenBrowser();
+        BtnQuit.Click += (s, e) => Win.Close();
+        Win.Controls.Add(Info); Win.Controls.Add(BtnOpen); Win.Controls.Add(BtnQuit);
+        Win.Shown += (s, e) => new Thread(Run) { IsBackground = true }.Start();
+        Application.Run(Win);
         StopServer();
     }
 
@@ -63,28 +70,27 @@ static class GameLauncher
         catch (Exception ex)
         {
             Log("异常：" + ex);
-            Fail("启动时出错：" + ex.Message + "\n\n详细记录在 data\\launcher.log");
+            Fail("启动时出错：" + ex.Message + "\n\n详细记录在 app\\data\\launcher.log");
         }
-        Ui(() => Splash.Close());
     }
 
     static void RunInner()
     {
         // 从压缩包里直接双击：Windows 只把 exe 解到临时目录，旁边没有游戏文件
         string lower = AppDir.ToLowerInvariant();
-        if (!File.Exists(Path.Combine(AppDir, "server.js")))
+        if (!File.Exists(Path.Combine(GameDir, "server.js")))
         {
             if (lower.Contains("\\temp\\") || lower.Contains(".zip"))
-                Fail("看起来你是在压缩包里直接双击的。\n\n请先在压缩包上点右键 →「全部解压缩」，\n再打开解压出来的文件夹，双击里面的「启动游戏.exe」。");
+                Fail("看起来你是在压缩包里直接双击的。\n\n请先在压缩包上点右键 →「全部解压缩」，\n再打开解压出来的文件夹，双击里面的「启动游戏.exe」。\n（更省事：下载「安装程序」那个文件，双击安装即可。）");
             else
-                Fail("找不到 server.js。\n请保持解压后的文件夹完整，不要单独把 exe 拿出来。");
+                Fail("找不到游戏文件（server.js）。\n请保持文件夹完整，不要单独把「启动游戏.exe」拿出来；或者重新下载安装程序。");
             return;
         }
         string node = FindNode();
         Log("node：" + (node ?? "（没找到）"));
         if (node == null)
         {
-            Fail("找不到 Node.js 运行环境（runtime\\node.exe）。\n请重新下载完整的游戏压缩包并解压；或安装 Node.js 22（https://nodejs.org）。");
+            Fail("找不到游戏自带的运行环境（runtime\\node.exe）。\n可能被杀毒软件删掉了：请把游戏文件夹加入杀毒软件的信任区，然后重新下载安装。");
             return;
         }
 
@@ -99,7 +105,7 @@ static class GameLauncher
         Say("启动游戏服务……");
         var psi = new ProcessStartInfo(node, "server.js")
         {
-            WorkingDirectory = AppDir, UseShellExecute = false, CreateNoWindow = true,
+            WorkingDirectory = GameDir, UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true,
         };
         psi.EnvironmentVariables["PORT"] = Port.ToString();
@@ -111,58 +117,70 @@ static class GameLauncher
         Server.BeginOutputReadLine();
         Server.BeginErrorReadLine();
 
-        bool ready = false;
         for (int i = 0; i < 120 && !Server.HasExited; i++)
         {
-            if (Ping()) { ready = true; break; }
+            if (Ping()) { Ready = true; break; }
             if (i == 10) Say("第一次启动稍慢（杀毒软件可能在扫描），请稍等……");
             Thread.Sleep(500);
         }
-        Log("服务就绪：" + ready + "，端口 " + Port);
-        if (!ready)
+        Log("服务就绪：" + Ready + "，端口 " + Port);
+        if (!Ready)
         {
             Thread.Sleep(300);
-            Fail("游戏服务没有正常启动。\n\n日志最后几行：\n" + TailLog(12) + "\n\n（日志在 data\\server.log）");
+            Fail("游戏服务没有正常启动。\n\n日志最后几行：\n" + TailLog(12) +
+                "\n\n常见原因：杀毒软件拦住了游戏自带的 node.exe——请把游戏文件夹加入信任后再试。");
             return;
         }
 
-        Say("打开游戏窗口……");
-        string browser = FindBrowser();
-        Log("浏览器：" + (browser ?? "（用默认浏览器）"));
-        bool appWindowWorked = false;
-        if (browser != null)
+        Ui(() =>
         {
+            Info.Text = "游戏正在运行。\n已在浏览器里打开：" + Url +
+                "\n浏览器关了可以点「打开游戏」再开。玩完点「退出游戏」（进度自动保存）。";
+            BtnOpen.Enabled = true;
+        });
+        OpenBrowser();
+    }
+
+    static void OpenBrowser()
+    {
+        try { Process.Start(new ProcessStartInfo(Url) { UseShellExecute = true }); Log("已用默认浏览器打开"); }
+        catch (Exception ex)
+        {
+            Log("默认浏览器打开失败：" + ex.Message);
+            // 没有默认浏览器关联时，直接找 Edge
             try
             {
-                string profile = Path.Combine(AppDir, "data", "app-window");
-                var t0 = DateTime.Now;
-                var ui = Process.Start(new ProcessStartInfo(browser,
-                    "--app=" + Url + " --user-data-dir=\"" + profile + "\" --window-size=1280,860 --no-first-run --no-default-browser-check")
-                { UseShellExecute = false });
-                Ui(() => Splash.Hide());
-                ui.WaitForExit();
-                // 正常情况下窗口开着就一直等；几秒内就退出，说明它把页面交给了别的浏览器进程或被拦截
-                appWindowWorked = (DateTime.Now - t0).TotalSeconds > 8;
-                Log("应用窗口退出，用时 " + (DateTime.Now - t0).TotalSeconds.ToString("0.0") + " 秒");
+                string edge = new[] {
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft\Edge\Application\msedge.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft\Edge\Application\msedge.exe"),
+                }.FirstOrDefault(File.Exists);
+                if (edge != null) Process.Start(edge, Url);
+                else Ui(() => Info.Text = "请手动打开浏览器，访问：" + Url);
             }
-            catch (Exception ex) { Log("应用窗口失败：" + ex.Message); }
+            catch { Ui(() => Info.Text = "请手动打开浏览器，访问：" + Url); }
         }
-        if (appWindowWorked) return;
-
-        try { Process.Start(Url); } catch (Exception ex) { Log("默认浏览器失败：" + ex.Message); }
-        Ui(() => Splash.Hide());
-        MessageBox.Show("游戏正在运行，已在浏览器里打开。\n\n如果浏览器没有自动打开，请手动访问：\n" + Url +
-            "\n\n玩完后点「确定」结束游戏（进度会自动保存）。", TITLE, MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     static void StopServer()
     {
-        try { if (Server != null && !Server.HasExited) Server.Kill(); } catch { }
+        // 连同子进程一起关（游戏服务会带着联网开关重启自己一次）
+        try
+        {
+            if (Server != null && !Server.HasExited)
+            {
+                var k = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + Server.Id) { UseShellExecute = false, CreateNoWindow = true });
+                if (k != null) k.WaitForExit(5000);
+                if (!Server.HasExited) Server.Kill();
+            }
+        }
+        catch { }
     }
 
     static string FindNode()
     {
-        foreach (var p in new[] { Path.Combine(AppDir, "runtime", "node.exe"), Path.Combine(AppDir, "node.exe") })
+        foreach (var p in new[] {
+            Path.Combine(GameDir, "runtime", "node.exe"), Path.Combine(AppDir, "runtime", "node.exe"),
+            Path.Combine(GameDir, "node.exe"), Path.Combine(AppDir, "node.exe") })
             if (File.Exists(p)) return p;
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';'))
         {
@@ -170,18 +188,6 @@ static class GameLauncher
         }
         string pf = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe");
         return File.Exists(pf) ? pf : null;
-    }
-
-    static string FindBrowser()
-    {
-        string[] c = {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft\Edge\Application\msedge.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft\Edge\Application\msedge.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Google\Chrome\Application\chrome.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Google\Chrome\Application\chrome.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Google\Chrome\Application\chrome.exe"),
-        };
-        return c.FirstOrDefault(File.Exists);
     }
 
     static bool Ping()
@@ -242,17 +248,16 @@ static class GameLauncher
         try { File.AppendAllText(LauncherLog, DateTime.Now.ToString("HH:mm:ss ") + s + Environment.NewLine); } catch { }
     }
 
-    static void Say(string s) { Log(s); Ui(() => SplashText.Text = s); }
+    static void Say(string s) { Log(s); Ui(() => Info.Text = s); }
 
     static void Ui(Action a)
     {
-        try { if (Splash != null && Splash.IsHandleCreated) Splash.Invoke(a); } catch { }
+        try { if (Win != null && Win.IsHandleCreated) Win.Invoke(a); } catch { }
     }
 
     static void Fail(string msg)
     {
         Log("失败：" + msg);
-        Ui(() => Splash.Hide());
-        MessageBox.Show(msg, TITLE + " · 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        Ui(() => { Info.Text = "启动失败，详见弹窗。"; MessageBox.Show(Win, msg, TITLE + " · 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error); Win.Close(); });
     }
 }

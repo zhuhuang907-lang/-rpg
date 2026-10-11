@@ -22,8 +22,28 @@ const NULL_EL = new Proxy({}, {
 const $ = s => { try { return document.querySelector(s) || NULL_EL; } catch { return NULL_EL; } };
 // 服务端出错统一回 {ok:false, why}；界面里很多地方只认 r.error，这里补齐，免得失败被当成成功
 const normResp = r => (r && r.ok === false && r.why && !r.error ? { ...r, error: r.why } : r);
-const post = async (u, b) => normResp(await (await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) })).json());
-const get = async u => normResp(await (await fetch(u)).json());
+// 游戏服务连不上（被关掉了 / 直接打开了网页文件）：顶部大字提示，并每 3 秒重试，服务回来就自动消失
+let SERVER_DOWN = false;
+function serverDown() {
+  if (location.protocol === 'file:' || SERVER_DOWN) return;
+  SERVER_DOWN = true;
+  const b = document.getElementById('fatalBanner');
+  if (b) {
+    b.classList.remove('hidden');
+    b.innerHTML = '<b>游戏服务没有在运行，所以什么都保存不了。</b>多半是启动游戏的小窗口被关掉了。<br>请关掉这个页面，重新双击桌面上的<b>「历史模拟RPG」</b>（或游戏文件夹里的「启动游戏.exe」）。服务恢复后这条提示会自己消失。';
+  }
+  const t = setInterval(async () => {
+    try { const r = await fetch('/api/health'); if (r.ok) { clearInterval(t); SERVER_DOWN = false; if (b) b.classList.add('hidden'); } } catch (_) { /* 还没回来 */ }
+  }, 3000);
+}
+async function fetchJson(u, opt) {
+  let r;
+  try { r = await fetch(u, opt); }
+  catch (e) { serverDown(); throw new Error('游戏服务没有在运行（' + (e.message || e) + '）：请重新双击「启动游戏」'); }
+  return normResp(await r.json());
+}
+const post = (u, b) => fetchJson(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) });
+const get = u => fetchJson(u);
 const escapeHtml = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 let STATE = null, ADAPTERS = [], CONFIGS = {}, LAST = null, SEARCH = null, VERIFY_LOG = [], PACK = null, SEL = 'deepseek';
@@ -61,7 +81,7 @@ function askConfirm(text, okLabel = '确定') {
   return new Promise(resolve => {
     let done = false;
     const finish = v => { if (done) return; done = true; resolve(v); };
-    openModal('确认', `<div class="secnote">${escapeHtml(text)}</div>`, () => { finish(true); closeModal(); }, () => finish(false));
+    openModal('确认', `<div class="secnote" style="white-space:pre-wrap">${escapeHtml(text)}</div>`, () => { finish(true); closeModal(); }, () => finish(false));
     const ok = $('#modalOk'); ok.textContent = okLabel;
     ok.focus();
   });
@@ -106,12 +126,29 @@ $('#btnSaves').onclick = async () => {
   const testCount = list.filter(s => isTestSave(s.id)).length;
   const head = `<div class="secnote">共 <span id="saveCount">${list.length}</span> 个存档。点「打开」切换，点「删除」永久删掉。` +
     (testCount ? `<button id="btnClearTest" class="minibtn" style="margin-left:8px">一键清空 ${testCount} 个测试存档</button>` : '') +
-    `</div>`;
+    `<button id="btnCleanBad" class="minibtn" style="margin-left:8px">检查并清理坏存档</button></div>`;
 
   openModal('存档管理', `${head}<div class="list">${rows}</div>`, null);
   // 行内删除：删完直接移除该行并刷新计数，不再关掉整个弹窗重开（更顺滑）
+  // 坏存档：读不懂的、开局没成功的、AI 没接通时写进占位剧情的——列出来，确认后一次删掉，正常存档不动
+  const cleanBtn = $('#btnCleanBad');
+  if (cleanBtn) cleanBtn.onclick = async () => {
+    const r = await get('/api/saves/bad');
+    if (r.error) return alert('检查失败：' + r.error);
+    if (!r.bad.length) return alert('检查完了：没有坏存档，现有存档都是好的。');
+    const lines = r.bad.map(b => `· ${b.title}（${b.reasons.join('；')}）`).join('\n');
+    const yes = await askConfirm(`找到 ${r.bad.length} 个坏存档，删掉它们？其余正常存档不会动。\n\n${lines}`, '删掉这些');
+    if (!yes) { $('#btnSaves').click(); return; }
+    const c = await post('/api/saves/cleanup', { ids: r.bad.map(b => b.id) });
+    if (c.error) return alert('清理失败：' + c.error);
+    if (STATE && c.removed.includes(STATE.meta.id)) STATE = null;
+    await reloadSaves(); renderState();
+    alert(`已删掉 ${c.removed.length} 个坏存档，保留 ${c.kept} 个正常存档。`);
+    $('#btnSaves').click();
+  };
   $('#modalContent').querySelectorAll('button[data-del]').forEach(b => b.onclick = async () => {
     if (await doDeleteSave(b.dataset.del, b.dataset.title)) {
+      $('#btnSaves').click(); return; // 确认框关掉了存档管理，删完重新打开，列表就是最新的
       const item = b.closest('.saveitem'); if (item) item.remove();
       const remaining = $('#modalContent').querySelectorAll('.saveitem').length;
       const cnt = $('#saveCount'); if (cnt) cnt.textContent = remaining;
@@ -655,8 +692,8 @@ async function runTurnWith(input, confirmedThreads) {
     if (/Key|余额|401|402|403|未接|skeleton|骨架|型号|Model Not Exist|model/i.test(msg)) {
       alert('AI 没接通：' + msg + '\n\n接下来会打开「设置」，把 DeepSeek 的 Key 粘贴进去、点「测试连接」即可。');
       $('#btnSettings').click();
-    } else if (/fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(msg)) {
-      alert('连不上模型服务：' + msg + '\n\n请检查网络（能否打开 api.deepseek.com）、代理或防火墙；网络恢复后再点「推进回合」。');
+    } else if (/连不上|fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(msg)) {
+      alert(msg + '\n\n可以在首页点「检查网络」看看卡在哪；网络恢复后再点「推进回合」。');
     } else alert('调用失败：' + msg + '\n\n可以再点一次「推进回合」；反复出现的话，把这段话发给我。');
   } finally { $('#btnRun').disabled = false; $('#btnRun').textContent = '推进回合'; }
 }
@@ -1960,8 +1997,9 @@ async function refreshQuick() {
     box.classList.remove('hidden');
     box.innerHTML = `<span>AI：DeepSeek · <b>${escapeHtml(st.modelName || '')}</b> · Key 尾号 ${escapeHtml(st.keyTail || '')}</span>`
       + `<span>查史：${st.search === 'bocha' && st.hasBocha ? '博查' : '维基百科（免费）'}</span>`
-      + `<a id="qChange">更换 Key / 型号 / 博查</a>`;
+      + `<a id="qChange">更换 Key / 型号 / 博查</a><a id="qNet2">检查网络</a>`;
     $('#qChange').onclick = () => { $('#qKey').classList.toggle('hidden'); fillQuickKey(st); };
+    $('#qNet2').onclick = () => { $('#qKey').classList.remove('hidden'); fillQuickKey(st); $('#qNet').click(); };
     if (!$('#qKey').classList.contains('hidden')) fillQuickKey(st);
   } else {
     box.classList.add('hidden');
@@ -1977,6 +2015,16 @@ async function refreshQuick() {
 function fillQuickKey(st) {
   if (!$('#qModel').value) $('#qModel').value = (st && st.modelName) || 'deepseek-v4-pro';
 }
+$('#qNet').onclick = async () => {
+  const out = $('#qKeyOut');
+  out.innerHTML = '正在检查网络（最多十几秒）……';
+  const r = await get('/api/netcheck');
+  if (r.error) { out.innerHTML = `<span class="bad">${escapeHtml(r.error)}</span>`; return; }
+  out.innerHTML = r.results.map(x => x.ok
+    ? `<span class="ok">✓ ${escapeHtml(x.name)}：连得上（${x.ms}ms）</span>`
+    : `<span class="bad">✗ ${escapeHtml(x.name)}：${escapeHtml(x.why)}</span>`).join('\n')
+    + (r.proxy ? `\n（正在使用系统代理 ${escapeHtml(r.proxy)}）` : '');
+};
 $('#qModelFetch').onclick = async () => {
   const out = $('#qKeyOut');
   out.innerHTML = '正在向 DeepSeek 查询你能用的型号……';

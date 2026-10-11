@@ -385,6 +385,43 @@ async function createCustomSave(spec) {
   return state;
 }
 
+/* 坏存档：读不懂的、开局没生成成功的、AI 没接通时写进了占位剧情的、主角没名字/年代没定下来的。
+   正常的存档（有名有年、剧情是真 AI 写的）一律不算。 */
+async function findBadSaves() {
+  ensureDirs();
+  const files = (await fsp.readdir(SAVE_DIR)).filter(f => f.endsWith('.json'));
+  const out = [];
+  for (const f of files) {
+    const id = f.replace(/\.json$/, '');
+    let s = null;
+    try { s = JSON.parse(await fsp.readFile(path.join(SAVE_DIR, f), 'utf8')); } catch (_) { s = null; }
+    if (!s || !s.meta || !s.clock || !s.protagonist) { out.push({ id, title: (s && s.meta && s.meta.title) || id, turn: s && s.turn, reasons: ['存档文件损坏，读不出来'] }); continue; }
+    const reasons = [];
+    const logText = JSON.stringify(s.log || []);
+    if (/骨架输出|此处本应由外部框架生成正文|假文，仅供审计自检/.test(logText)) reasons.push('剧情是 AI 没接通时的占位文字');
+    if (!s.turn && !String(s.opening || '').trim() && !(s.threads || []).length) reasons.push('开局没有生成成功');
+    if (/未命名/.test(String(s.protagonist.name || '')) && s.mode !== 'real') reasons.push('主角没有名字（旧版一句话开局的错误）');
+    if (s.yearUnknown || !s.clock.gregorianYear) reasons.push('年代没有定下来');
+    if (reasons.length) out.push({ id, title: s.meta.title || id, turn: s.turn, reasons });
+  }
+  return out;
+}
+/* 清理坏存档：只删 findBadSaves 认定的；删之前在 data/saves-deleted 留一份备份 */
+async function cleanupBadSaves(ids) {
+  const bad = await findBadSaves();
+  const want = new Set((ids || bad.map(b => b.id)).map(String));
+  const backupDir = path.join(ROOT, 'data', 'saves-deleted');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const removed = [];
+  for (const b of bad.filter(x => want.has(x.id))) {
+    try { safeId(b.id); } catch (_) { continue; }
+    const file = path.join(SAVE_DIR, `${b.id}.json`);
+    try { fs.copyFileSync(file, path.join(backupDir, `${b.id}.json`)); } catch (_) { /* 备份失败也继续 */ }
+    try { await deleteSave(b.id); removed.push(b.id); } catch (_) { try { fs.unlinkSync(file); removed.push(b.id); } catch (__) { /* 删不掉就跳过 */ } }
+  }
+  return { ok: true, removed, kept: (await listSaves()).length };
+}
+
 async function deleteSave(id) {
   safeId(id);
   const p = path.join(SAVE_DIR, `${id}.json`);
@@ -2257,7 +2294,7 @@ async function getDossier({ saveId } = {}) {
 
 module.exports = {
   generateFigure, getGmCards, flagTurn, getStats,
-  ensureDirs, listSaves, loadState, writeState, listRulepacks, loadPack, createSave, createCustomSave, deleteSave, sweepArchives,
+  ensureDirs, listSaves, loadState, writeState, listRulepacks, loadPack, createSave, createCustomSave, deleteSave, findBadSaves, cleanupBadSaves, sweepArchives,
   listLore, loadLore, saveLore, runTurn, applyDraft, updateThread, updateNpc, archiveCard, seedWorld, parseSearch,
   applyClaims, changeIdentity, IDM_LABEL_ALL, snapshotCard, listCards, addCorrection, getCorrections, setHumanChecks,
   identifyDossier, applyDossierToSave, getDossier,

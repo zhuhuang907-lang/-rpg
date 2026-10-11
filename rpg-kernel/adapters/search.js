@@ -97,7 +97,7 @@ async function cacheWrite(key, val) {
 }
 
 async function http(url, { method = 'GET', headers = {}, body, timeoutMs = 30000 } = {}) {
-  const res = await fetch(url, {
+  const res = await require('../core/net').fetchX(url, {
     method,
     headers: { 'content-type': 'application/json', ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
