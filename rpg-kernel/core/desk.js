@@ -90,7 +90,7 @@ function applyDesk(state, draft) {
     if (!n || !n.name) continue;
     const k = cut(n.name, 12);
     const o = P[k] || {};
-    P[k] = { ...o, role: cut(n.role || o.role, 40), tie: cut(n.tie || o.tie, 30), attitude: cut(n.attitude || o.attitude, 8), want: cut(n.want || o.want, 60), status: cut(n.status || o.status, 60), seen: turn };
+    P[k] = { ...o, personality: cut(n.personality || o.personality, 12), ability: cut(n.ability || o.ability, 2), role: cut(n.role || o.role, 40), tie: cut(n.tie || o.tie, 30), attitude: cut(n.attitude || o.attitude, 8), want: cut(n.want || o.want, 60), status: cut(n.status || o.status, 60), seen: turn };
   }
   // 暗线：只有 GM 知道
   const notes = arr(d.gmNotes).map(x => cut(typeof x === 'string' ? x : JSON.stringify(x), 140)).filter(Boolean).slice(0, 5);
@@ -126,7 +126,7 @@ function peopleCardBlock(state) {
   const P = Object.entries(state.people || {}).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 12);
   if (!P.length) return '';
   return '【人物近况（态度与处境以此为准，有变化的在 presentNpcs 里更新 attitude / want / status）】\n'
-    + P.map(([k, v]) => `· ${k}：${v.role || ''}${v.attitude ? '，对主角' + v.attitude : ''}${v.want ? '，想要' + v.want : ''}${v.status ? '，近况：' + v.status : ''}`).join('\n');
+    + P.map(([k, v]) => `· ${k}：${v.role || ''}${v.personality ? '，性格' + v.personality : ''}${v.ability ? '，本事' + v.ability : ''}${v.attitude ? '，对主角' + v.attitude : ''}${v.want ? '，想要' + v.want : ''}${v.status ? '，近况：' + v.status : ''}`).join('\n');
 }
 
 function hiddenBlock(state) {
@@ -165,7 +165,7 @@ function askPrompt(state, who, q) {
 要求：
 1. 用这个人的身份、性格、说话方式回答，合乎本朝本年；他只知道他这个身份能知道的事，不知道的就说不知道或照传闻说。
 2. 他有自己的立场和私心：给的主意对他自己有利的地方，他不会明说；他也可能说谎、夸大、隐瞒，但不会荒唐。
-3. 回答直截了当，不客套、不说教；三到六句。主意一到三条，各有隐患，risk 写他觉得有几成把握。
+3. 主意的好坏由他的本事和性格决定：本事低的人会出馊主意还说得很笃定，谨慎的人总劝缓，贪的人主意里藏着自己的好处，能人也会看走眼——照他这个人真实会说的来，不要替他想周全。回答直截了当，三到六句；主意零到三条（没主意就说没主意），risk 写他自己嘴上说的把握。
 4. 主角想做的事哪怕违法越权，他也按自己的利害和胆量回应：可能帮着出主意、可能劝阻、可能借机要好处、可能转身去告发——照他这个人的真实反应来。
 5. 不出现现代词语，不写「据考」。`;
   const prompt = [
