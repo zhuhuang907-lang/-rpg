@@ -409,7 +409,18 @@ ${body.what === 'geography'
     const saveId = (body || {}).saveId;
     try {
       const ctx = await engine.getArchive(saveId);
-      return { ok: true, saveId, archive: ctx };
+      // 本局的记事：每回合一条、每十回合一段小结、玩家改写的历史、主角的变动、史事进程——都只属于这一个存档
+      const st = await engine.loadState(saveId);
+      const mem = (st.memory) || {};
+      const chronicle = {
+        turns: (mem.turns || []).slice(-400),
+        blocks: mem.blocks || [],
+        history: (st.divergence && st.divergence.history) || [],
+        status: st.statusLog || [],
+        figures: (st.figureLog || []).slice(-100),
+        files: { archive: require('./core/archive').archiveFile(saveId), cards: require('./core/gmCard').cardDirOf(st.meta) },
+      };
+      return { ok: true, saveId, archive: ctx, chronicle };
     } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
   },
   /** 随时调阅：支持按板块取（identity/era/factions/persons/geography/numeric/vocab） */

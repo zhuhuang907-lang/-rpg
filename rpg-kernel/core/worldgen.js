@@ -782,12 +782,15 @@ function refreshEraEvents(state) {
   const { gregorianYear: y, month: m, day: d } = state.clock;
   if (!y || !timeline.EVENTS.some(e => e.polity === polity)) return;
   const k = timeline.knownAt(polity, place, y, m, d);
-  state.eraEvents = k.known.map(e => e.text);
+  // 本局已被玩家改写的史事：已知的换成本局实际情形，将来的不再「照史书发生」
+  const dv = require('./divergence');
+  const asPlayed = e => { const c = dv.changedEvent(state, e.text); return c ? `本局：${c.now}（史书原载「${e.text.slice(0, 30)}」，因${c.cause}未照此发生）` : e.text; };
+  state.eraEvents = k.known.map(asPlayed);
   state.eraEventsSource = 'timeline';
-  state.eraEventsRumored = k.rumored.map(e => e.text);
+  state.eraEventsRumored = k.rumored.filter(e => !dv.changedEvent(state, e.text)).map(e => e.text);
   state.eraEventsUnheard = k.unheard.map(e => e.id);
   // 尚未发生的事：留在后台，严禁写进正文当作已知（协议 §17.1 第 5 条）
-  state.eraEventsPending = k.future.map(e => ({ y: e.y, m: e.m || null, text: e.text }));
+  state.eraEventsPending = k.future.filter(e => !dv.changedEvent(state, e.text)).map(e => ({ y: e.y, m: e.m || null, text: e.text }));
 }
 
 /* 旧存档体检：判断这个档的开局剧情是不是旧随机模板池的产物。

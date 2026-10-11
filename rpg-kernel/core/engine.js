@@ -423,8 +423,16 @@ async function deleteSave(id) {
   try {
     const lg = path.join(ROOT, 'data', 'logs', String(id).replace(/[^\w一-龥-]/g, '_') + '.jsonl');
     if (fs.existsSync(lg)) { fs.unlinkSync(lg); extraRemoved.push('日志'); }
-    const cardDir = path.join(ROOT, '历史RPG存档', String(title || id).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40));
-    if (title && fs.existsSync(cardDir)) { fs.rmSync(cardDir, { recursive: true, force: true }); extraRemoved.push('档案卡'); }
+    // 本档自己的档案卡目录（标题+编号，各档互不相干）
+    const gm = require('./gmCard');
+    const cardDir = gm.cardDirOf({ title, id });
+    if (fs.existsSync(cardDir)) { fs.rmSync(cardDir, { recursive: true, force: true }); extraRemoved.push('档案卡'); }
+    // 旧版按标题建的目录：只有没有别的存档同名时才删，免得误删另一局的
+    const legacy = path.join(gm.ROOT, String(title || id).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40));
+    if (title && fs.existsSync(legacy)) {
+      const others = (await listSaves()).filter(x => x.id !== id && x.title === title);
+      if (!others.length) { fs.rmSync(legacy, { recursive: true, force: true }); extraRemoved.push('旧档案卡'); }
+    }
   } catch (_) { /* 附属文件删不掉不影响删档 */ }
   try { await fsp.unlink(p); return { ok: true, deleted: id, archiveRemoved, extraRemoved }; }
   catch (e) {
@@ -465,6 +473,9 @@ function advanceAllFigures(state, oldY, newY) {
   const applyOne = (obj, name) => {
     if (!obj || !name) return;
     const nm = String(name).trim();
+    // 本局里这个人的命运已被玩家改写（救下、罢黜、改投……）：不再照史书的官历与卒年「到点自动变」
+    const touched = ((state.divergence && state.divergence.history) || []).some(h => h.person === nm);
+    if (touched) return;
     // ① 本地档案优先（含身份轨迹）
     const changes = figure.advanceOne(nm, oldY, newY);
     if (changes.length) {
@@ -1218,7 +1229,9 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
   // —— 主角已故：本局到此为止，不再让模型替死人写下一回合 ——
   //    （库里曾有 554 年仍在理政的萧纪档，就是没有这道闸）
   {
-    const pst = state.protagonist && figure.statusAt(state.protagonist.name, state.clock.gregorianYear || 0, state.clock.month);
+    const pst0 = state.protagonist && figure.statusAt(state.protagonist.name, state.clock.gregorianYear || 0, state.clock.month);
+    const ovr = state.protagonist && div.personOverride(state, state.protagonist.name);
+    const pst = ovr && ovr.alive ? null : pst0;   // 本局里命运已改写、仍在世的，不按史书卒年判死
     if (state.protagonistDead || (pst && !pst.alive)) {
       const why = (state.protagonistDead && state.protagonistDead.note) || (pst && pst.deathNote) || '主角已故';
       throw new Error(`本局主角已故（${why}），故事到此结束，不能再推进回合。可回滚到身故之前的快照，或另开新局。`);
@@ -1298,6 +1311,7 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
     agency.renderAgency(state),
     info.renderInfo(state),
     div.renderDivergence(state),
+    div.renderHistoryChanges(state),
     plot.renderPlotBlock(state),
     require('./ethics').renderEthics(state),
     ({
@@ -1837,6 +1851,7 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
   try {
     const ll = require('./longline');
     const pr = ll.applyPatch(state, draft || {});
+    try { div.recordHistoryChanges(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
     try { require('./profile').applyStatusChanges(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
     const ev = ll.advanceWorld(state, input, draft || {});
     state.longlineLast = { turn: state.turn, rejected: pr.rejected, events: ev };
@@ -1889,7 +1904,8 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
       try {
         const tl = require('./timeline');
         const polity = (state.location && state.location.polity) || null;
-        const done = tl.eventsBefore(polity, y, state.clock.month, state.clock.day)
+        // 本局已被玩家改写的史事，不再「到点自动结算」
+        const done = tl.eventsBefore(polity, y, state.clock.month, state.clock.day).filter(e => !div.changedEvent(state, e.text))
           .filter(e => !(state.settledEvents || []).includes(e.id));
         if (done.length) {
           state.settledEvents = (state.settledEvents || []).concat(done.map(e => e.id));
@@ -1906,7 +1922,8 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
     try { worldgen.refreshEraEvents(state); } catch (_) { /* 无年表不影响推进 */ }
     // ② 主角卒月判定：萧纪卒于 553 年 7 月，年内推进到 8 月也必须立碑，不能等到跨年
     try {
-      const pst = state.protagonist && figure.statusAt(state.protagonist.name, y, m);
+      const ovr2 = state.protagonist && div.personOverride(state, state.protagonist.name);
+      const pst = ovr2 && ovr2.alive ? null : (state.protagonist && figure.statusAt(state.protagonist.name, y, m));
       if (pst && !pst.alive && !state.protagonistDead) {
         state.protagonist.status = '已故'; state.protagonist.alive = false;
         state.protagonistDead = { name: state.protagonist.name, year: y, month: m, note: pst.deathNote || '' };

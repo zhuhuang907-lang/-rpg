@@ -1678,6 +1678,23 @@ async function renderArchive() {
   try { a = await post('/api/archive', { saveId: STATE.meta.id }); }
   catch (e) { box.innerHTML = '<div class="railnote">档案馆载入失败：' + escapeHtml(String(e.message || e)) + '</div>'; return; }
   if (a && a.error) { box.innerHTML = '<div class="railnote">档案馆载入失败：' + escapeHtml(a.error) + '</div>'; return; }
+  // 本局记事（只属于这个存档，删档时一起删）
+  const ch = (a && a.chronicle) || null;
+  const chron = [];
+  if (ch) {
+    const sec0 = (title, inner) => `<div class="arch-sec"><div class="arch-h">${title}</div>${inner}</div>`;
+    if (ch.history.length) chron.push(sec0('本局与史书不同之处（你改写的历史）', ch.history.slice().reverse().map(h =>
+      `<div class="arch-row">· <b>${escapeHtml(h.date)}</b> 史书：${escapeHtml(h.event)}<br>　本局：${escapeHtml(h.now)}<br>　<span class="muted">因：${escapeHtml(h.cause)}</span></div>`).join('')));
+    if (ch.turns.length) chron.push(sec0(`大事记（共 ${ch.turns.length} 轮，每轮一条）`, ch.turns.slice().reverse().map(t =>
+      `<div class="arch-row">· 第${t.turn}轮 ${escapeHtml(t.date || '')}${t.input ? `　<span class="muted">你：${escapeHtml(t.input)}</span>` : ''}<br>　${escapeHtml(t.summary)}</div>`).join('')));
+    if (ch.blocks.length) chron.push(sec0('每十回合小结', ch.blocks.slice().reverse().map(b => `<div class="arch-row">· 第${b.from}–${b.to}轮：${escapeHtml(b.text)}</div>`).join('')));
+    if (ch.status.length) chron.push(sec0('你的变动（钱财、官职、爵位、健康）', ch.status.slice().reverse().map(x =>
+      `<div class="arch-row">· 第${x.turn}轮 ${escapeHtml(x.item)}：${escapeHtml(x.from ? x.from + ' → ' : '')}${escapeHtml(x.to)}<span class="muted">（${escapeHtml(x.why)}）</span></div>`).join('')));
+    if (ch.figures.length) chron.push(sec0('史事进程（人物生死、已结算的大事）', ch.figures.slice().reverse().map(x => `<div class="arch-row">· ${escapeHtml(String(x.year || ''))} ${escapeHtml(String(x.text || x.name || ''))}</div>`).join('')));
+    if (!chron.length) chron.push('<div class="muted">还没有记事：玩过几轮之后，这里会按回合记下发生过的事。</div>');
+    chron.push(`<div class="arch-row muted">本局档案只属于这个存档：存在 ${escapeHtml(ch.files.archive)} 与 ${escapeHtml(ch.files.cards)}；删除存档时一并删除，不影响别的存档。</div>`);
+    chron.push('<div class="arch-sec"><div class="arch-h">—— 以下是本局的历史底盘 ——</div></div>');
+  }
   // 接口回的是 {ok, archive:{…}}，档案本体在 archive 里（旧代码直接读外层，于是永远是空的）
   a = a && a.archive ? a.archive : a;
   if (!a) { box.innerHTML = '<div class="muted">本局还没生成底盘（点「重新生成世界」）。</div>'; return; }
@@ -1710,7 +1727,7 @@ async function renderArchive() {
   if (a.persons && a.persons.length) {
     rows.push(sec(`同代真人（前 ${a.persons.length} 位·真实）`, a.persons.map(p => { const v = p.value || {}; const age = (v.age == null) ? '' : ` ${v.age}岁`; return `<div class="arch-row">· ${escapeHtml(v.name || '')}（${escapeHtml(v.role || '?')}${age}${v.nativePlace ? ('，' + escapeHtml(v.nativePlace)) : ''}） ${srcBadge(p)}</div>`; }).join('')));
   }
-  box.innerHTML = rows.join('');
+  box.innerHTML = chron.join('') + rows.join('');
 }
 document.getElementById('btnArchiveRefresh').onclick = () => renderArchive();
 

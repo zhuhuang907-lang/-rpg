@@ -104,6 +104,12 @@ function profileCard(state) {
   ].join('\n');
 }
 
+/** 本存档的档案卡目录：标题 + 存档编号。两局同名（比如都叫「熙宁元年 · 赵顼」）也各用各的，删一局不碰另一局 */
+function cardDirOf(meta) {
+  const m = meta || {};
+  return path.join(ROOT, safe(String(m.title || '存档')).slice(0, 30) + '_' + safe(String(m.id || '')));
+}
+
 /** 写入（覆盖）三个文件；返回内容与路径 */
 function writeCards(state) {
   let recap = '';
@@ -112,7 +118,7 @@ function writeCards(state) {
   // 自测脚本建的临时档不落盘（否则 历史RPG存档 里满是「版本锁测试」「剧情模块端到端」）
   const id = String((state.meta && state.meta.id) || ''), title = String((state.meta && state.meta.title) || '');
   if (process.env.RPG_NO_CARDS === '1' || /^(selftest|plot-e2e|xjlong|mxs|ver|diag|agetest|stress|t-)/.test(id) || /测试|端到端|自测|长线/.test(title)) return out0;
-  const dir = path.join(ROOT, safe((state.meta && (state.meta.title || state.meta.id))));
+  const dir = cardDirOf(state.meta);
   const out = { ...out0 };
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -122,4 +128,4 @@ function writeCards(state) {
   return out;
 }
 
-module.exports = { writeCards, quickSheet, rosterSheet, profileCard };
+module.exports = { cardDirOf, ROOT, writeCards, quickSheet, rosterSheet, profileCard };
