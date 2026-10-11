@@ -177,7 +177,7 @@ function applyStatusChanges(state, draft) {
     }
     done.push({ turn: state.turn || 0, item, from, to, why: why.slice(0, 60) });
   }
-  state.statusLog = (state.statusLog || []).concat(done).slice(-60);
+  state.statusLog = (state.statusLog || []).concat(done).slice(-500);
   return done;
 }
 

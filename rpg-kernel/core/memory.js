@@ -93,6 +93,9 @@ function retrieve(state, input) {
 function renderMemory(state, input) {
   const M = ensureMemory(state);
   const lines = [];
+  // 更早的小结压成一行一段，全部带上：长局里第 5 轮发生的事，到第 200 轮也不能忘
+  const older = M.blocks.slice(0, -3);
+  if (older.length) { lines.push('【全局大事记（更早的每十回合一行）】'); for (const b of older.slice(-40)) lines.push(`· 第${b.from}–${b.to}轮：${String(b.text).slice(0, 70)}`); }
   const blocks = M.blocks.slice(-3);
   if (blocks.length) { lines.push('【前情小结（每十回合一段）】'); for (const b of blocks) lines.push(`· 第${b.from}–${b.to}轮：${b.text}`); }
   const recent = M.turns.slice(-10);

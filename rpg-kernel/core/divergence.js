@@ -334,7 +334,65 @@ function renderDivergence(state) {
   return '=== 史实锚点与分歧（不得推翻锚点；因果须登记；后果半径不得越级） ===\n' + lines.join('\n');
 }
 
+/* ============================ 本局改变的历史（玩家改写了史书） ============================
+   玩家的行动真把一件史载的事、或一个真人的命运改掉了：记进本存档（只在本存档，不影响别的存档）。
+   之后：这件事不再按史书「自动发生 / 自动结算」，传到各地的消息改成本局的实际情形；
+   被救下的人不再按史书卒年「到点就死」；GM 从变化后的局面往后推，影响由近及远、按日程扩散。 */
+function bigrams(s) { const t = String(s || '').replace(/[^一-龥]/g, ''); const out = new Set(); for (let i = 0; i < t.length - 1; i++) out.add(t.slice(i, i + 2)); return out; }
+function similar(a, b) {
+  const A = bigrams(a), B = bigrams(b);
+  if (!A.size || !B.size) return 0;
+  let hit = 0; for (const g of B) if (A.has(g)) hit++;
+  return hit / B.size;
+}
+function recordHistoryChanges(state, draft) {
+  const list = Array.isArray(draft && draft.historyChanges) ? draft.historyChanges.slice(0, 4) : [];
+  const d = ensureDiv(state);
+  d.history = Array.isArray(d.history) ? d.history : [];
+  const done = [];
+  for (const c of list) {
+    const event = String((c && (c.event || c.原史实)) || '').trim();
+    const now = String((c && (c.now || c.现在)) || '').trim();
+    const cause = String((c && (c.cause || c.原因)) || '').trim();
+    if (!event || !now || !cause) continue;   // 三样缺一不收：史书怎么写、现在怎样、因为玩家哪一步
+    const rec = {
+      id: 'H' + (d.history.length + 1), turn: state.turn || 0,
+      date: state.clock ? `${state.clock.yearLabel}${state.clock.month}月` : '',
+      event: event.slice(0, 80), now: now.slice(0, 120), cause: cause.slice(0, 80),
+      scope: String((c && c.scope) || '').slice(0, 20),
+      person: String((c && c.person) || '').trim().slice(0, 10) || null,
+      alive: typeof (c && c.alive) === 'boolean' ? c.alive : null,
+    };
+    d.history.push(rec);
+    try { addRipple(state, { what: `${rec.event} → ${rec.now}`, atRadius: 'town', scale: 'serious', from: rec.cause, turn: rec.turn }); } catch (_) { /* 忽略 */ }
+    done.push(rec);
+  }
+  if (done.length) d.level = (Number(d.level) || 0) + done.length;
+  return done;
+}
+/** 这件史事在本局是否已被玩家改写；是则返回那条改写记录 */
+function changedEvent(state, text) {
+  const h = (state && state.divergence && state.divergence.history) || [];
+  for (let i = h.length - 1; i >= 0; i--) if (similar(text, h[i].event) >= 0.5 || similar(h[i].event, text) >= 0.6) return h[i];
+  return null;
+}
+/** 某真人的命运在本局是否被改写（例如本该死而被救下） */
+function personOverride(state, name) {
+  const h = (state && state.divergence && state.divergence.history) || [];
+  for (let i = h.length - 1; i >= 0; i--) if (h[i].person && h[i].person === name && h[i].alive != null) return h[i];
+  return null;
+}
+function renderHistoryChanges(state) {
+  const h = (state && state.divergence && state.divergence.history) || [];
+  if (!h.length) return '';
+  return '=== 本局与史书不同之处（玩家已改写的历史，以此为准） ===\n'
+    + h.slice(-20).map(x => `· ${x.date}（第${x.turn}轮）史书：${x.event}　本局：${x.now}　因：${x.cause}`).join('\n')
+    + '\n往后推演：受这些变化牵连的史事不再照史书发生，要从变化后的局面合理推出（谁得利、谁受损、谁会怎么应对）；'
+    + '没受牵连的史事仍照史书。影响由近及远、按驿传日程扩散，远方的人还不知道的事不能先有反应；不要一下子改天换地。';
+}
+
 module.exports = {
+  recordHistoryChanges, changedEvent, personOverride, renderHistoryChanges, similar,
   ensureDiv, addAnchor, registerCausal, addRipple, propagate, counterfactual,
   auditHistory, auditCausal, renderDivergence, RADIUS, SCALE, radiusOf, scaleOf, ANACHRONISM,
 };
