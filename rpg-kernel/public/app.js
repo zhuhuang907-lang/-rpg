@@ -1640,11 +1640,23 @@ async function renderMe() {
   box.innerHTML = '<div class="muted">载入中…</div>';
   const r = await post('/api/profile', { saveId: STATE.meta.id });
   if (r.error) { box.innerHTML = '<div class="railnote">载入失败：' + escapeHtml(r.error) + '</div>'; return; }
-  box.innerHTML = r.sections.map(sec => `<div class="me-sec"><div class="me-h">${escapeHtml(sec.title)}</div>`
+  const rebuild = STATE.mode === 'real'
+    ? '<div class="row" style="margin:6px 0"><button id="btnMeRebuild" class="minibtn">身份不对？让 AI 重新查证建档</button><span class="muted">能联网就按检索资料，不能就据正史推断；查不到的写「史无明载」，不编</span></div>' : '';
+  box.innerHTML = rebuild + r.sections.map(sec => `<div class="me-sec"><div class="me-h">${escapeHtml(sec.title)}</div>`
     + sec.rows.map(x => `<div class="me-row"><span class="me-k">${escapeHtml(x.k)}</span><span class="me-v">${escapeHtml(x.v)}${x.src ? ` <span class="muted">〔${escapeHtml(x.src)}〕</span>` : ''}</span></div>`).join('')
     + '</div>').join('');
 }
 document.getElementById('btnMeRefresh') && (document.getElementById('btnMeRefresh').onclick = () => renderMe());
+document.addEventListener('click', async ev => {
+  if (!ev.target || ev.target.id !== 'btnMeRebuild' || !STATE) return;
+  const b = ev.target; b.disabled = true; b.textContent = '查证中（一两分钟）…';
+  const r = await post('/api/profile/rebuild', { saveId: STATE.meta.id });
+  b.disabled = false; b.textContent = '身份不对？让 AI 重新查证建档';
+  if (r.error || !r.ok) { alert('没建成：' + (r.error || r.why || '未知原因')); return; }
+  STATE = await post('/api/state', { saveId: STATE.meta.id });
+  renderStatusBar(); renderMe();
+  alert('已重新建档' + (r.knowledge ? '（据正史推断，未联网核对）' : '（据检索资料）') + (r.applied && r.applied.title ? `：${r.applied.title}，驻${r.applied.seat || '?'}` : ''));
+});
 // 状态栏点一下就打开个人面板
 document.getElementById('statusBar') && document.getElementById('statusBar').addEventListener('click', () => { if (STATE) switchRail('me'); });
 document.querySelectorAll('.railtab').forEach(b => b.onclick = () => switchRail(b.dataset.rail));

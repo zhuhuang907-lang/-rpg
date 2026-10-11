@@ -317,8 +317,9 @@ async function createCustomSave(spec) {
           // 网络故障：建档不阻断，但明确告诉玩家主角身份未核实
           state.dossierError = d.why || '检索后端暂不可用，未能核实主角真实身份；可稍后在「档案核定」重新核定。';
         } else {
-          // 真的查无此人：必须阻断，逼玩家改姓名或换虚构模式
-          throw new Error(`查无此人：「${state.protagonist.name}」${d.why}。真人模式要求扮演真实历史人物并核对底子；请确认姓名用字（繁简/异体/字号），或改用虚构模式。`);
+          // 检索查不到：不再直接阻断——很多史载不多的人（如朱友璋）检索后端里就是没有，
+          // 交给生成世界时的「人物建档」由模型据正史推断；模型也不知道，才提示玩家核对姓名
+          state.dossierError = `检索没查到「${state.protagonist.name}」（${d.why}），将由 AI 据正史推断其身份与处境（标「未联网核对」）。`;
         }
       } else {
         const ch = dossier.applyToState(state, d, { force: true });
@@ -326,22 +327,8 @@ async function createCustomSave(spec) {
         // 有本地人工档案的：联网自动抽取只作参考，身份/驻地/生卒一律以本地档案为准。
         // 实测新建萧纪档时，联网抽取把他写成「元太守」（元是北魏宗室姓）、地点写成「益州」，
         // 初始化检查随即判三项阻断——一个本该最稳的剧本开不了局。
-        const lf = figure.dossierAt(state.protagonist.name, gYear, state.clock.month);
-        if (lf) {
-          const t = figure.titleAt(state.protagonist.name, gYear);
-          if (t) { state.protagonist.role = t; state.protagonist.office = (lf.post && lf.post.title) || t; }
-          state.protagonist.born = lf.born; state.protagonist.birthYear = lf.born; state.protagonist.died = lf.died;
-          if (lf.age != null) state.protagonist.age = lf.age;
-          if (lf.seat && state.location.placeFrom !== 'player') { state.location.full = lf.seat; state.location.placeFrom = 'figure-verified'; }
-          if (state.anchors) {
-            state.anchors.born = lf.born; state.anchors.died = lf.died;
-            // 仕履也用本地档案（截至开局年），否则联网抽到的「元太守」会作为硬约束进提示词
-            const f0 = figure.FIGURES[state.protagonist.name] || {};
-            state.anchors.officeHistory = (f0.posts || []).filter(p => p.from <= gYear)
-              .map(p => `${p.from}起 ${p.title}${p.seat ? '（驻' + p.seat + '）' : ''}`).join('；');
-          }
-          state.dossierChanges = (state.dossierChanges || []).concat([`以本地核验档案为准：${t || ''}，驻${lf.seat || '?'}（联网抽取的身份「${d.role || ''}」仅作参考）`]);
-        }
+        const lf = applyFigureDossier(state);
+        if (lf) state.dossierChanges = (state.dossierChanges || []).concat([`以人物档案为准：${lf.title || ''}，驻${lf.seat || '?'}（联网抽取的身份「${d.role || ''}」仅作参考）`]);
         // —— 修复「点错成皇帝不会修改」：真人身份与所选身份模块矛盾时，按真实身份纠正 ——
         const isRuler = dossier.roleIsRuler(d.role);
         if (state.identityModule === 'emperor' && !isRuler) {
@@ -792,7 +779,9 @@ async function seedWorld({ saveId, adapterId, force }) {
   if (state.mode === 'real' && pname && !/未命名|无名/.test(pname) && !figure.dossierAt(pname, year)) {
     try {
       const g = await figureGen.generate(pname, year, (state.location && state.location.polity) || '', { adapter, config: adapterCfg });
-      state.figureGen = { ok: !!g.ok, why: g.why || '', notes: (g.notes || []).slice(0, 20), sources: g.sources || [], at: Date.now() };
+      state.figureGen = { ok: !!g.ok, why: g.why || '', notes: (g.notes || []).slice(0, 20), sources: g.sources || [], knowledge: !!g.knowledge, at: Date.now() };
+      // 建档成功：开局身份、驻地、年龄一律按档案落定（不再沿用开局时随口给的身份）
+      if (g.ok) { applyFigureDossier(state); if (g.knowledge) state.dossierError = ''; }
     } catch (e) {
       state.figureGen = { ok: false, why: String((e && e.message) || e), at: Date.now() };
     }
@@ -881,6 +870,53 @@ async function seedWorld({ saveId, adapterId, force }) {
 
   await writeState(state);
   return { state, histError: w.histError, histCount: w.historicalNpcs.length, localCount: w.localCast.length, seedVerify, figureAudit, initAudit };
+}
+
+/* 把人物档案（萧纪那样的人工档案，或 AI 据史书建的档案）落到存档上：
+   开局那年的官爵、驻地、生卒、年龄、仕履。档案优先于联网抽取与开局时随口给的身份。 */
+function applyFigureDossier(state) {
+  const p = state.protagonist || {};
+  const gYear = (state.clock && state.clock.gregorianYear) || 0;
+  const lf = figure.dossierAt(p.name, gYear, state.clock && state.clock.month);
+  if (!lf) return null;
+  // 有实职用实职；只有爵位（如宗室诸王）就用爵位
+  const t = figure.titleAt(p.name, gYear) || (lf.rank && lf.rank.title) || null;
+  if (t) { p.role = t; p.office = (lf.post && lf.post.title) || t; }
+  if (lf.born) { p.born = lf.born; p.birthYear = lf.born; }
+  if (lf.died) p.died = lf.died;
+  if (lf.age != null) p.age = lf.age;
+  if (lf.gender && !p.gender) p.gender = lf.gender;
+  if (lf.seat && state.location && state.location.placeFrom !== 'player') { state.location.full = lf.seat; state.location.placeFrom = 'figure-verified'; }
+  const f0 = figure.FIGURES[p.name] || {};
+  state.anchors = { ...(state.anchors || {}), born: lf.born || (state.anchors && state.anchors.born) || null, died: lf.died || (state.anchors && state.anchors.died) || null,
+    officeHistory: (f0.posts || []).filter(x => x.from <= gYear).map(x => `${x.from}起 ${x.title}${x.seat ? '（驻' + x.seat + '）' : ''}`).join('；') };
+  // 身份模块与档案对不上（档案是王爵/节度/刺史，却按平民或皇帝开局）：按档案纠正
+  const roleText = (f0.posts || []).filter(x => x.from <= gYear && (x.to == null || x.to >= gYear)).map(x => x.title).join('、') || t || '';
+  if (roleText) {
+    const to = /皇帝|天子/.test(roleText) ? 'emperor' : /节度使|都督|将军|总管|指挥/.test(roleText) ? 'warlord' : /王|公主|郡主|宗室/.test(roleText) ? 'noble' : /刺史|太守|县令|知|使|郎|丞|尉|令/.test(roleText) ? 'official' : null;
+    if (to && to !== state.identityModule && !(state.identityModule === 'noble' && to === 'warlord')) {
+      state.identityCorrected = { from: state.identityModule, to, note: `按人物档案（${roleText}）更正身份类型` };
+      state.identityModule = to;
+    }
+  }
+  return { title: t, seat: lf.seat };
+}
+
+/** 玩家在「我的状态」里点「重新建档」：重新查证 / 推断主角档案，并按档案落定身份、驻地 */
+async function rebuildProtagonistDossier({ saveId } = {}) {
+  const state = await loadState(saveId);
+  if (state.mode !== 'real') return { ok: false, why: '虚构人物没有史料档案可建' };
+  const p = state.protagonist || {};
+  const saved = await loadAdapterConfig();
+  const aid = saved.selected || 'deepseek';
+  const { adapter, config } = await resolveAdapter(aid, saved.configs?.[aid] || {});
+  if (!adapter || adapter.id === 'skeleton') return { ok: false, why: '还没接上 AI，无法建档' };
+  const g = await figureGen.generate(p.name, state.clock.gregorianYear, (state.location && state.location.polity) || '', { adapter, config, force: true });
+  state.figureGen = { ok: !!g.ok, why: g.why || '', notes: (g.notes || []).slice(0, 20), sources: g.sources || [], knowledge: !!g.knowledge, at: Date.now() };
+  let applied = null;
+  if (g.ok) { applied = applyFigureDossier(state); if (state.protagonist.age == null) state.protagonist.ageUnknown = true; }
+  await writeState(state);
+  return { ok: !!g.ok, why: g.why || '', applied, knowledge: !!g.knowledge, notes: g.notes || [] };
 }
 
 /** 取本局「档案馆」底盘：优先返回已落盘的结构；没有则现算并缓存。 */
@@ -2324,7 +2360,7 @@ async function getDossier({ saveId } = {}) {
 
 module.exports = {
   generateFigure, getGmCards, flagTurn, getStats,
-  ensureDirs, listSaves, loadState, writeState, listRulepacks, loadPack, createSave, createCustomSave, deleteSave, findBadSaves, cleanupBadSaves, sweepArchives,
+  ensureDirs, listSaves, loadState, writeState, listRulepacks, loadPack, createSave, createCustomSave, deleteSave, rebuildProtagonistDossier, findBadSaves, cleanupBadSaves, sweepArchives,
   listLore, loadLore, saveLore, runTurn, applyDraft, updateThread, updateNpc, archiveCard, seedWorld, parseSearch,
   applyClaims, changeIdentity, IDM_LABEL_ALL, snapshotCard, listCards, addCorrection, getCorrections, setHumanChecks,
   identifyDossier, applyDossierToSave, getDossier,

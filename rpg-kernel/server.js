@@ -180,6 +180,7 @@ const routes = {
   'GET /api/rulepacks': async () => engine.listRulepacks(),
   'GET /api/saves': async () => engine.listSaves(),
   /* 个人面板：名位、职权、钱财、兵马、家人、人际、近来变化 */
+  async 'POST /api/profile/rebuild'(body) { return engine.rebuildProtagonistDossier(body || {}); },
   async 'POST /api/profile'(body) { return require('./core/profile').buildProfile(await engine.loadState((body || {}).saveId)); },
   'GET /api/saves/bad': async () => ({ ok: true, bad: await engine.findBadSaves() }),
   async 'POST /api/saves/cleanup'(body) { return engine.cleanupBadSaves((body || {}).ids); },

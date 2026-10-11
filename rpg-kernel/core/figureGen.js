@@ -145,7 +145,8 @@ function validate(raw, ctx) {
   if (!raw || typeof raw !== 'object') return { ok: false, why: '模型没有返回可解析的档案' };
   const born = num(raw.born), died = num(raw.died);
   const Y = Number(ctx.year) || 0;
-  if (!born && !died) return { ok: false, why: '档案没有生卒年，无法判定此人是否活在该年' };
+  // 生卒史无明载的人（宗室子弟、偏裨将佐常见）：只要有能落年份的官爵或处境，就照样建档，生卒标「不详」
+  if (!born && !died) notes.push('生卒史无明载，按官爵与处境的年份判定在世');
   if (born && died && died < born) return { ok: false, why: `生卒自相矛盾（${born}–${died}）` };
   if (born && Y && Y < born) return { ok: false, why: `${raw.name || ctx.name}生于 ${born} 年，${Y} 年尚未出生` };
   if (died && Y && Y > died) return { ok: false, why: `${raw.name || ctx.name}卒于 ${died} 年，${Y} 年已不在世` };
@@ -170,11 +171,12 @@ function validate(raw, ctx) {
     polity: String(raw.polity || ctx.polity || ''), gender: raw.gender === '女' ? '女' : '男',
     father: String(raw.father || ''), traits: String(raw.traits || '').slice(0, 160),
     generated: true, generatedAt: new Date().toISOString(), evidenceSources: ctx.sources || [],
+    ...(ctx.knowledge ? { knowledgeOnly: true } : {}),
   };
   // 官职：在生年之内、带出处
   fig.posts = (Array.isArray(raw.posts) ? raw.posts : []).map(p => ({
     from: num(p.from), to: num(p.to), title: String(p.title || ''), seat: String(p.seat || ''),
-    kind: p.kind === '爵' ? '爵' : '职', src: String(p.src || ''), conf: 'medium', note: '',
+    kind: p.kind === '爵' ? '爵' : '职', src: String(p.src || ''), conf: ctx.knowledge ? 'low' : 'medium', note: '',
   })).filter(p => {
     if (p.from && !p.to) p.to = fDied || p.from;   // 只知始任、不知去任：按至卒年计，不另编
     const okp = p.title && p.src && p.from && p.to && p.from <= p.to && life(p.from);
@@ -231,7 +233,7 @@ function validate(raw, ctx) {
     if (c.born == null && c.died == null) { notes.push(`丢弃人物「${c.name}」：生卒不详，无法确认 ${Y} 年在世`); return false; }
     if (c.died && Y && c.died < Y) { notes.push(`丢弃人物「${c.name}」：${c.died} 年已死`); return false; }
     if (c.born && Y && c.born > Y) { notes.push(`丢弃人物「${c.name}」：${Y} 年尚未出生`); return false; }
-    if (!ev.includes(c.name)) { notes.push(`丢弃人物「${c.name}」：证据中查无此名`); return false; }
+    if (!ctx.knowledge && !ev.includes(c.name)) { notes.push(`丢弃人物「${c.name}」：证据中查无此名`); return false; }
     return true;
   }).slice(0, 14);
   fig.factions = (Array.isArray(raw.factions) ? raw.factions : []).filter(f => f && f.title && f.sideA && f.sideB && f.src).map(f => ({
@@ -252,6 +254,7 @@ function validate(raw, ctx) {
   })).filter(e => {
     if (!e.y || !e.text || !e.src || e.y < lo || e.y > hi) return false;
     if (e.m != null && (e.m < 1 || e.m > 12)) e.m = null;
+    if (ctx.knowledge) return true;   // 凭史书记忆编纂：没有证据原文可比对，条目已标 low
     const cov = coverage(e.text, ev);
     if (cov < 0.3) { notes.push(`丢弃事件「${e.text.slice(0, 16)}」：证据里找不到对应字句（覆盖率 ${Math.round(cov * 100)}%）`); return false; }
     if (cov >= 0.55) e.conf = 'medium';
@@ -345,7 +348,9 @@ async function generate(name, year, polity, opts = {}) {
   if (!opts.adapter) return { ok: false, why: '未配置模型 API（在游戏设置里选好模型并填 Key 后再试）' };
 
   const evd = await gatherEvidence(nm, year, polity);
-  if (!evd.text || evd.text.length < 200) return { ok: false, why: `检索不到「${nm}」的足够资料，不建档（宁可留白不编）` };
+  // 查不到资料（国内连不上维基、没配博查、或检索无果）：改由模型凭它对正史的了解编纂，
+  // 每条标「据史书记忆，未联网核对」、可信度一律 low；拿不准的留空。总好过退回通用模板瞎给身份。
+  const knowledge = !evd.text || evd.text.length < 200;
 
   // 分两次要：一次输出全部字段太长，实测 DeepSeek 会在 JSON 中途截断。
   //   第一次：生卒、官职、轨迹、资源、处境、矛盾、否定设定；第二次：身边人、派系、年表事件。
@@ -353,7 +358,14 @@ async function generate(name, year, polity, opts = {}) {
   const ask = async (keys) => {
     const r = await opts.adapter.call({
       system: SYSTEM,
-      prompt: `${head}只输出下面结构中的这些字段：${keys.join('、')}（其他字段不要输出）。结构：\n${SCHEMA_HINT}\n\n【证据】\n${evd.text}`,
+      prompt: `${head}只输出下面结构中的这些字段：${keys.join('、')}（其他字段不要输出）。结构：\n${SCHEMA_HINT}\n\n`
+        + (knowledge
+          ? `【证据】联网检索不可用或查不到。请依据你对正史（二十四史、《资治通鉴》等）中此人的确切了解来编纂：\n`
+            + `· 只写你确知的事实；生卒、官爵、驻地、亲属拿不准的一律留空或 null，不要猜；\n`
+            + `· src 写具体史书篇名（如《旧五代史·宗室传》），并在末尾加「（据史书记忆，未联网核对）」；\n`
+            + `· 处境写他在开局年真实所处的位置与要办的事；若此人史载极少，宁可只给生卒、出身、爵位与大致处境。\n`
+            + (evd.text ? `可参考的零星资料：\n${evd.text}` : '')
+          : `【证据】\n${evd.text}`),
       temperature: 0.1, maxTokens: 6000,
     }, opts.config || {});
     const text = (r && r.text) || '';
@@ -371,11 +383,11 @@ async function generate(name, year, polity, opts = {}) {
   } catch (e) {
     return { ok: false, why: `模型调用失败：${(e && e.message) || e}` };
   }
-  const v = validate(raw, { name: nm, year, polity, evidence: evd.text, ident: evd.ident, sources: evd.sources });
+  const v = validate(raw, { name: nm, year, polity, evidence: evd.text, ident: evd.ident, sources: knowledge ? ['模型据史书推断（未联网核对）'] : evd.sources, knowledge });
   if (!v.ok) return { ok: false, why: v.why, notes: v.notes || [] };
   const file = save(v.figure, v.events);
   register(v.figure, v.events);
-  return { ok: true, figure: v.figure, events: v.events, notes: v.notes, file, sources: evd.sources };
+  return { ok: true, figure: v.figure, events: v.events, notes: v.notes, file, sources: v.figure.evidenceSources, knowledge };
 }
 
 module.exports = { generate, validate, loadAll, register, coverage, gatherEvidence, closeJson, GEN_DIR };

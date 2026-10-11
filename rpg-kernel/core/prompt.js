@@ -114,7 +114,7 @@ function renderStateBrief(s, pack) {
   const lines = [];
   lines.push(`时间锁定：${s.clock.yearLabel}（公元 ${s.clock.gregorianYear} 年）农历${require('./lunar').label(s.clock.month, s.clock.day, s.clock.leap)} ${s.clock.season}。写到此处为止，不得向后推进。`);
   lines.push(`地点：${s.location.full}。隶属：${s.location.polity}。实际控制者：${s.location.controller}。`);
-  lines.push(`主角：${p.name}，此时年 ${p.age} 岁，身份类型：${idmLabel}，具体职衔：${p.role}。`);
+  lines.push(`主角：${p.name}，${p.age != null && p.age !== "" ? "此时年 " + p.age + " 岁" : "年岁史无明载（不要在正文里写具体岁数）"}，身份类型：${idmLabel}，具体职衔：${p.role}。`);
   if (p.nativePlace) lines.push(`主角籍贯：${p.nativePlace}。`);
   if (p.background) lines.push(`主角处境 / 背景：${p.background}`);
   if (s.reigningSovereign) lines.push(`当朝天子：${s.reigningSovereign}（你非人主，天下大事皆由此君与朝局牵引，不可僭称帝号或预知宫禁秘事）。`);
