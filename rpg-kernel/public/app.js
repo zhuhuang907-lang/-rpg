@@ -539,8 +539,9 @@ function renderState() {
   const pd = s.pendingDraft;
   if (pd && pd.draft && (pd.draft.baseTurn == null || Number(pd.draft.baseTurn) === Number(s.turn || 0))) {
     if (!LAST || LAST.draft !== pd.draft) { LAST = { ...pd }; renderLast(); }
-  } else if (LAST && LAST.draft && LAST.draft.baseTurn != null && Number(LAST.draft.baseTurn) !== Number(s.turn || 0)) {
-    LAST = null;
+  } else {
+    if (LAST && LAST.draft && LAST.draft.baseTurn != null && Number(LAST.draft.baseTurn) !== Number(s.turn || 0)) LAST = null;
+    if (!LAST) resumeRunningTurn(s.meta.id);
   }
 }
 
@@ -685,6 +686,54 @@ function setTurnBusy(on, note) {
     n.textContent = note || 'AI 正在写，一般半分钟到一两分钟，请稍等……';
   } else if (n) n.remove();
 }
+/* 边写边显示：服务端先开工，前端每 0.8 秒取一次已写出的正文 */
+async function streamTurn(body) {
+  const s = await post('/api/turn-start', body);
+  if (!s || !s.job) {
+    if (s && (s.error || s.ok === false)) throw new Error(s.error || s.why || '未知错误');
+    return post('/api/turn', body); // 老服务没有这个接口：照旧一次取回
+  }
+  return pollTurnJob(s.job);
+}
+async function pollTurnJob(job) {
+  const sc = $('#draftScene');
+  let shown = false, misses = 0;
+  // 旧的一段先收起，免得以为新的一段已经写好了
+  if (!$('#draftBox').classList.contains('hidden')) { sc.textContent = 'AI 正在写这一段……'; for (const id of ['gmHead', 'gmTail']) { const el = document.getElementById(id); if (el) el.textContent = ''; } }
+  for (;;) {
+    await new Promise(res => setTimeout(res, 800));
+    let j;
+    try { j = await post('/api/turn-job', { job }); misses = 0; }
+    catch (e) { if (++misses > 5) throw e; continue; }
+    if (j.status === 'done') return j.result;
+    if (j.status === 'error' || j.ok === false) throw new Error(j.why || j.error || '未知错误');
+    if (j.partial) {
+      if (!shown) {
+        shown = true;
+        for (const id of ['gmHead', 'gmTail']) { const el = document.getElementById(id); if (el) el.textContent = ''; }
+        $('#draftBox').classList.remove('hidden');
+        sc.classList.add('streaming');
+      }
+      sc.textContent = j.partial;
+    }
+  }
+}
+/* 刷新页面时 AI 还在写：接着显示，写完照常出现在草稿区 */
+async function resumeRunningTurn(saveId) {
+  if (TURN_BUSY || !saveId) return;
+  let q = null;
+  try { q = await post('/api/turn-running', { saveId }); } catch (_) { return; }
+  if (!q || !q.job || TURN_BUSY || !STATE || STATE.meta.id !== saveId) return;
+  setTurnBusy(true, 'AI 还在写刚才那一段，正在接着显示……');
+  try {
+    const r = await pollTurnJob(q.job);
+    if (r && r.ok !== false && !r.error && STATE && STATE.meta.id === saveId) {
+      LAST = { ...r, confirmedThreads: q.threads || [], input: q.input || '' };
+      renderLast();
+    }
+  } catch (e) { alert('刚才那一段没写成：' + String(e.message || e) + '\n\n可以再点一次「推进回合」。'); }
+  finally { setTurnBusy(false); const sc = document.getElementById('draftScene'); if (sc) sc.classList.remove('streaming'); }
+}
 async function runTurnWith(input, confirmedThreads, opts) {
   if (!STATE) return alert('先开一个局：点上面「＋ 新开局」或选一个现成局面');
   if (TURN_BUSY) return;
@@ -698,7 +747,7 @@ async function runTurnWith(input, confirmedThreads, opts) {
   setTurnBusy(true, opts && opts.regenerate ? 'AI 正在重写这一段，请稍等……' : (LAST ? 'AI 正在写，请稍等……' : 'AI 正在写这一段，一般半分钟到一两分钟……'));
   $('#btnRun').textContent = 'AI 正在写…';
   try {
-    const r = await post('/api/turn', {
+    const r = await streamTurn({
       saveId: STATE.meta.id,
       input,
       regenNote: (opts && opts.regenNote) || '',
@@ -722,6 +771,7 @@ async function runTurnWith(input, confirmedThreads, opts) {
     // 简洁模式下不跳走，侧栏停在玩家正在看的那一页
     if (!document.body.classList.contains('simple')) switchRail('check');
   } catch (e) {
+    if (LAST) try { renderLast(); } catch (_) { /* 重写失败：把原来那一段放回来 */ }
     const msg = String(e.error || e.message || e);
     // AI 没接通（没填 Key / Key 失效 / 欠费）：说清楚，并直接打开设置，免得玩家对着空白页不知道发生了什么
     if (/Key|余额|401|402|403|未接|skeleton|骨架|型号|Model Not Exist|model/i.test(msg)) {
@@ -730,7 +780,7 @@ async function runTurnWith(input, confirmedThreads, opts) {
     } else if (/连不上|fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(msg)) {
       alert(msg + '\n\n可以在首页点「检查网络」看看卡在哪；网络恢复后再点「推进回合」。');
     } else alert('调用失败：' + msg + '\n\n可以再点一次「推进回合」；反复出现的话，把这段话发给我。');
-  } finally { setTurnBusy(false); $('#btnRun').textContent = '推进回合'; }
+  } finally { setTurnBusy(false); $('#btnRun').textContent = '推进回合'; const sc = document.getElementById('draftScene'); if (sc) sc.classList.remove('streaming'); }
 }
 
 $('#btnRun').onclick = () => runTurnWith(
@@ -866,6 +916,7 @@ function renderLast() {
     + (touched.length ? touched.map(t => `<span class="chip" data-thread="${escapeHtml(t)}">${escapeHtml(t)}</span>`).join('') : '<span class="muted">本轮没碰到线索</span>');
   $('#draftBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   renderNano();
+  updateAdvPreview(); // 「按剧情自动」要跟着这一段的天数走
 }
 
 /* ================= 纳米级剧情审计（P0–P9 十遍扫描） ================= */
@@ -1541,6 +1592,15 @@ function renderBattleHint() {
   el.innerHTML = `已布阵：我军 ${b.ourTroops} 人（阵形与战术已选定）。点上方「开战」提交。`;
 }
 
+// 这一段过了几天：选了「按剧情自动」就用 AI 报的天数（当场办完的事是 0 天），否则按玩家选的
+function advDaysFor(last) {
+  const v = $('#advDays').value;
+  if (v === 'auto' || !v) {
+    const d = last && last.draft && Number(last.draft.elapsedDays);
+    return Number.isFinite(d) && d >= 0 ? d : 1;
+  }
+  return Number(v) || 1;
+}
 // 确认这一段（写进世界、时间往前走）。写下一步时会自动先做这一步，所以平常不用点
 async function acceptLast(silent) {
   if (!LAST) return true;
@@ -1555,7 +1615,7 @@ async function acceptLast(silent) {
   try {
     r = await post('/api/apply', {
       saveId: STATE.meta.id, draft: LAST.draft, input: LAST.input,
-      advanceDays: Number($('#advDays').value || 1),
+      advanceDays: advDaysFor(LAST),
       edits: { dropNpcs, closeThreads, resolveThreads },
     });
   } finally { $('#btnAccept').disabled = false; }
@@ -1584,8 +1644,8 @@ function lunarText(c) {
 async function updateAdvPreview() {
   const box = $('#advPreview');
   if (!box || !STATE || !STATE.clock) { if (box) box.textContent = ''; return; }
-  const d = Number(($('#advDays') && $('#advDays').value) || 1);
-  if (d <= 0) { box.innerHTML = `⚠ 本轮不推进时间。剧情会原地打转 —— 建议至少推进 1 天。`; return; }
+  const d = advDaysFor(LAST);
+  if (d <= 0) { box.innerHTML = '这一段是当场的事，时间不往前走。'; return; }
   const c = STATE.clock;
   let r = null;
   try { r = await post('/api/calendar/add', { y: c.gregorianYear, m: c.month, d: c.day, leap: c.leap, n: d }); } catch (_) { r = null; }

@@ -1221,7 +1221,7 @@ async function runTurn(args) {
     throw e;
   }
 }
-async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmedThreads, identityModule, temperature, autoVerifyNpcs, verbosity: verbosityOverride, battle: battleOrders, autoFactCheck: autoFactCheckIn = true, autoRepair = true, planFirst = true, factMode, regenNote }) {
+async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmedThreads, identityModule, temperature, autoVerifyNpcs, verbosity: verbosityOverride, battle: battleOrders, autoFactCheck: autoFactCheckIn = true, autoRepair = true, planFirst = true, factMode, regenNote, onDelta }) {
   const state = await loadState(saveId);
   const pack = await loadPack(state.meta.ruleset);
   // 史实宽容度（《设计书》§1.3）：严格 / 标准（默认）/ 宽松。记在存档里，下次沿用。
@@ -1263,7 +1263,7 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
   plot.ensurePlot(state);            // 剧情：编号 / 七层 / 状态机 / 因果链
   // 默认走精简写作链（core/lean.js）：一次调用、一份规则、只喂真实材料。旧链只在存档显式选用时走。
   if (!(state.meta && state.meta.legacyEngine)) {
-    return runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOverride, regenNote, autoFactCheck });
+    return runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOverride, regenNote, autoFactCheck, onDelta });
   }
   // —— 剧情生成器：先决定「本轮可能发生什么、为什么、谁行动」——
   // 这一步在写正文**之前**：没有可追溯的触发条件就一个剧情也不生成，
@@ -1785,7 +1785,7 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
 }
 
 /* 精简写作链的一回合：见 core/lean.js 的说明 */
-async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOverride, regenNote, autoFactCheck }) {
+async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOverride, regenNote, autoFactCheck, onDelta }) {
   const __t0 = Date.now();
   const saved = await loadAdapterConfig();
   const aid = adapterId || saved.selected || 'deepseek';
@@ -1800,8 +1800,10 @@ async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOv
   if (autoFactCheck) {
     try {
       const qs = factcheck.planPreSearch(state, input).slice(0, 3);
+      // 查证最多等 8 秒：查不到就不查，不能让玩家干等
+      const cap = new Promise(res => setTimeout(() => res({ results: [] }), 8000));
       preEvidence = await Promise.all(qs.map(async q => {
-        const r = await search(q, { noCache: false }).catch(() => ({ results: [] }));
+        const r = await Promise.race([search(q, { noCache: false }).catch(() => ({ results: [] })), cap]);
         return { query: q, provider: r.provider, fallbackFrom: r.fallbackFrom, results: r.results || [], count: (r.results || []).length };
       }));
     } catch (_) { preEvidence = []; }
@@ -1812,10 +1814,10 @@ async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOv
   let prompt = built.prompt;
   if (regenNote && String(regenNote).trim()) prompt += `\n\n【玩家对上一版的意见：这次重写照此改】${String(regenNote).trim().slice(0, 200)}`;
   const maxTokens = verbosity === 'long' ? 5000 : verbosity === 'short' ? 2000 : 3500;
-  let res = await adapter.call({ system, prompt, temperature: 0.8, maxTokens }, config);
+  let res = await adapter.call({ system, prompt, temperature: 0.8, maxTokens, onDelta }, config);
   let draft = extractJson(res.text);
   if (draft.parseFailed || !String(draft.scene || '').trim()) {
-    res = await adapter.call({ system, prompt: prompt + '\n\n（上一次的输出不是合法 JSON。这次只输出一个 JSON 对象，不要任何别的文字。）', temperature: 0.6, maxTokens }, config);
+    res = await adapter.call({ system, prompt: prompt + '\n\n（上一次的输出不是合法 JSON。这次只输出一个 JSON 对象，不要任何别的文字。）', temperature: 0.6, maxTokens, onDelta }, config);
     draft = extractJson(res.text);
     if (draft.parseFailed || !String(draft.scene || '').trim()) throw new Error('AI 这次返回的格式不对，没能读出正文。请点「重新生成」再试一次。');
   }
@@ -1831,6 +1833,9 @@ async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOv
   draft.turnSummary = String(draft.turnSummary || '').slice(0, 200);
   draft.pendingDecision = String(draft.pendingDecision || '').replace(/[「『]?用户决定[」』]?/g, '').trim() || '等你决断';
   draft.touchedThreads = [];
+  // 这一步实际花了几天（模型按事情的性质给）：赶路、等回信可以过几天到一两个月
+  const ed = Number(draft.elapsedDays);
+  draft.elapsedDays = Number.isFinite(ed) ? Math.max(0, Math.min(180, Math.round(ed))) : null;
   draft.lean = true;
   // 虚构人物不撞真人名；官名合时代（人物字段全改，正文只改「那时还没有」的官名）
   try { await require('./realnames').fixDraftCollisions(state, draft, { online: true }); } catch (_) { /* 查不了就算了 */ }

@@ -87,6 +87,56 @@ async function selectedModel() {
   return adapters.resolveAdapter(aid, saved.configs?.[aid] || {});
 }
 
+
+// 正在写的回合：页面轮询取已写出的部分
+const TURN_JOBS = new Map();
+/** 从还没写完的 JSON 里取出 scene 字段已写出的部分（处理转义） */
+function partialScene(text) {
+  const t = String(text || '');
+  const m = t.match(/"scene"\s*:\s*"/);
+  if (!m) return '';
+  let out = '', i = m.index + m[0].length;
+  for (; i < t.length; i++) {
+    const c = t[i];
+    if (c === '\\') { const n = t[i + 1]; if (n === undefined) break; out += n === 'n' ? '\n' : n === 't' ? '\t' : n === 'u' ? String.fromCharCode(parseInt(t.slice(i + 2, i + 6), 16) || 32) : n; i += n === 'u' ? 5 : 1; continue; }
+    if (c === '"') break;
+    out += c;
+  }
+  return out;
+}
+async function doTurn(body, onDelta) {
+  // 允许调用方关掉自动改写：body.autoRepair = false。
+  // 「自己会改」是用户反复抱怨的一点——程序替模型改正文必须可以关闭，
+  // 且改过之后必须留痕（autoRepaired / autoRepairReason / originalScene）。
+  let r;
+  try { r = await engine.runTurn({ ...(body || {}), onDelta }); recordTest(true); }
+  catch (e) { if (/连不上|Key|HTTP 4\d\d|HTTP 5\d\d|余额|型号/.test(String(e.message || e))) recordTest(false, e.message); throw e; }
+  // 把这一轮的草稿记进存档：刷新页面、关掉浏览器再开，草稿还在，不用重新生成
+  try {
+    if (r && r.draft && String(r.draft.scene || '').trim()) {
+      await withSaveLock(body.saveId, async () => {
+        const st = await engine.loadState(body.saveId);
+        st.pendingDraft = {
+          draft: r.draft, input: body.input || '', confirmedThreads: body.confirmedThreads || [],
+          adapterId: r.adapterId, plan: r.plan, factCheck: r.factCheck, searches: r.searches, at: Date.now(),
+        };
+        await engine.writeState(st);
+      });
+    }
+  } catch (_) { /* 记不上不影响本轮 */ }
+  // 若适配器掉到了本地骨架，正文会是占位符——必须明确告知，
+  // 否则用户只看到「AI 没反馈内容」，完全查不出原因。
+  const scene = String((r && r.draft && r.draft.scene) || '');
+  if (/骨架输出/.test(scene)) {
+    return {
+      ...r,
+      placeholder: true,
+      why: '当前未接入叙事框架：模型适配器不可用（多半是 Key 未配置或未选定）。请到「模型设置」里选定适配器并填好 API Key，再用本回合重试。',
+    };
+  }
+  return r;
+}
+
 const routes = {
   /* ---- 一句话开局 ---- */
   async 'POST /api/quick-start'(body) {
@@ -207,37 +257,30 @@ const routes = {
   async 'POST /api/state'(body) {
     return engine.loadState(body.saveId);
   },
-  async 'POST /api/turn'(body) {
-    // 允许调用方关掉自动改写：body.autoRepair = false。
-    // 「自己会改」是用户反复抱怨的一点——程序替模型改正文必须可以关闭，
-    // 且改过之后必须留痕（autoRepaired / autoRepairReason / originalScene）。
-    let r;
-    try { r = await engine.runTurn(body || {}); recordTest(true); }
-    catch (e) { if (/连不上|Key|HTTP 4\d\d|HTTP 5\d\d|余额|型号/.test(String(e.message || e))) recordTest(false, e.message); throw e; }
-    // 把这一轮的草稿记进存档：刷新页面、关掉浏览器再开，草稿还在，不用重新生成
-    try {
-      if (r && r.draft && String(r.draft.scene || '').trim()) {
-        await withSaveLock(body.saveId, async () => {
-          const st = await engine.loadState(body.saveId);
-          st.pendingDraft = {
-            draft: r.draft, input: body.input || '', confirmedThreads: body.confirmedThreads || [],
-            adapterId: r.adapterId, plan: r.plan, factCheck: r.factCheck, searches: r.searches, at: Date.now(),
-          };
-          await engine.writeState(st);
-        });
-      }
-    } catch (_) { /* 记不上不影响本轮 */ }
-    // 若适配器掉到了本地骨架，正文会是占位符——必须明确告知，
-    // 否则用户只看到「AI 没反馈内容」，完全查不出原因。
-    const scene = String((r && r.draft && r.draft.scene) || '');
-    if (/骨架输出/.test(scene)) {
-      return {
-        ...r,
-        placeholder: true,
-        why: '当前未接入叙事框架：模型适配器不可用（多半是 Key 未配置或未选定）。请到「模型设置」里选定适配器并填好 API Key，再用本回合重试。',
-      };
-    }
-    return r;
+  async 'POST /api/turn'(body) { return doTurn(body || {}); },
+  /* 边写边看：开一个后台任务写这一回合，页面每秒来取一次已写出的正文 */
+  async 'POST /api/turn-start'(body) {
+    const job = { status: 'running', partial: '', result: null, error: null, at: Date.now(), saveId: (body || {}).saveId, input: (body || {}).input || '', threads: (body || {}).confirmedThreads || [] };
+    const id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    TURN_JOBS.set(id, job);
+    doTurn(body || {}, text => { job.partial = partialScene(text); })
+      .then(r => { job.status = 'done'; job.result = r; })
+      .catch(e => { job.status = 'error'; job.error = String(e && e.message || e); });
+    for (const [k, j] of TURN_JOBS) if (Date.now() - j.at > 3600e3) TURN_JOBS.delete(k);
+    return { ok: true, job: id };
+  },
+  /* 刷新页面时：这一局有没有还在写的一段（有就接着看，不丢） */
+  async 'POST /api/turn-running'(body) {
+    const sid = (body || {}).saveId;
+    for (const [k, j] of TURN_JOBS) if (j.saveId === sid && j.status === 'running') return { ok: true, job: k, input: j.input, threads: j.threads, partial: j.partial };
+    return { ok: true, job: null };
+  },
+  async 'POST /api/turn-job'(body) {
+    const j = TURN_JOBS.get((body || {}).job);
+    if (!j) return { ok: false, why: '任务不存在或已过期' };
+    if (j.status === 'done') { TURN_JOBS.delete(body.job); return { ok: true, status: 'done', result: j.result }; }
+    if (j.status === 'error') { TURN_JOBS.delete(body.job); return { ok: false, status: 'error', why: j.error }; }
+    return { ok: true, status: 'running', partial: j.partial };
   },
   /* 玩家在界面上改了草稿正文：存回记着的草稿 */
   async 'POST /api/draft/save'(body) {
