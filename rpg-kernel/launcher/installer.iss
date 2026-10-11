@@ -44,3 +44,5 @@ Name: "{autoprograms}\{#AppName} 使用说明"; Filename: "{app}\使用说明.tx
 
 [Run]
 Filename: "{app}\启动游戏.exe"; Description: "现在就开始玩"; Flags: postinstall nowait skipifsilent
+; 游戏里点「一键更新」时是静默安装：装完自动把游戏重新打开
+Filename: "{app}\启动游戏.exe"; Flags: nowait; Check: WizardSilent
