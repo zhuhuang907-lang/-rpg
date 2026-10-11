@@ -1,5 +1,10 @@
 # 历史模拟 RPG
 
+## 网页版（不用安装）
+
+在 claude.ai 登录后打开：https://claude.ai/artifact/5Ee1nY93Uqezf3uyrX74nQ
+用你自己的 Claude 账号写剧情，不用 DeepSeek Key；存档存在账号里。源码在 `web/`（`game.src.html` 是源文件，`python3 web/build.py` 嵌入农历月表生成 `index.html`）。
+
 ## 下载就玩（Windows）
 
 1. 打开 https://github.com/zhuhuang907-lang/-rpg/releases/tag/latest
