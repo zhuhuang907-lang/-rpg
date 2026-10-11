@@ -17,10 +17,15 @@ async function getJson(url, tries = 3) {
   let last;
   for (let i = 0; i < tries; i++) {
     try {
-      const res = await fetch(url, { headers: UA, signal: AbortSignal.timeout(30000) });
+      const res = await require('./net').fetchX(url, { headers: UA, signal: AbortSignal.timeout(30000) });
       if (!res.ok) { last = new Error(`HTTP ${res.status}`); await new Promise(r => setTimeout(r, 400 * (i + 1))); continue; }
       return await res.json();
-    } catch (e) { last = e; await new Promise(r => setTimeout(r, 400 * (i + 1))); }
+    } catch (e) {
+      last = e;
+      // 连不上（没网、被墙、被拦）重试也没用，直接放弃，别让开局干等
+      if (e && e.netError) break;
+      await new Promise(r => setTimeout(r, 400 * (i + 1)));
+    }
   }
   throw last;
 }

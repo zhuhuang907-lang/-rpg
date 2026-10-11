@@ -1217,7 +1217,10 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
   //    先让他站稳，第二回合起再掷。
   // 注意：下面那个 isOpening 变量要到后面才定义（TDZ），这里自己判一次。
   const isFirstTurn = !(state.log || []).some(l => l.speaker === 'GM');
-  const evt = isFirstTurn ? null : events.rollEvent(state, { probability: 0.08 });
+  // 2026-10-11 玩家：「不要随机产生剧情，要根据历史主线来」——随机天灾与随机戏剧节拍默认关闭，
+  // 只有在存档里显式打开 meta.randomBeats 才掷。剧情只来自玩家指令、真实史事与人物的自然反应。
+  const randomOn = !!(state.meta && state.meta.randomBeats);
+  const evt = (isFirstTurn || !randomOn) ? null : events.rollEvent(state, { probability: 0.08 });
   state.currentEvent = evt;
   if (evt) {
     state.eventLog = state.eventLog || [];
@@ -1230,13 +1233,13 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
   }
 
   // —— 戏剧张力：每轮掷一个「有分量」的节拍（约 75%），让人物自己动起来、把剧情推向有价值处 ——
-  state.drama = drama.rollDrama(state);
+  state.drama = randomOn ? drama.rollDrama(state) : null;
 
   await writeState(state);
 
   // 旧档里记着的「short」是 300 字时代的默认值，不是玩家选的；没有显式指定时按新标准 long
   const storedVb = state.meta && state.meta.verbosity;
-  const verbosity = verbosityOverride || (storedVb && storedVb !== 'short' ? storedVb : 'long');
+  const verbosity = verbosityOverride || storedVb || 'normal';
   const isOpening = !(state.log || []).some(l => l.speaker === 'GM');
   const built = buildPrompt(pack, state, input, { playerConfirmedThreads: confirmedThreads, identityModule: idm, verbosity, isOpening });
   const system = built.system;
@@ -1276,6 +1279,12 @@ async function runTurnInner({ saveId, input, adapterId, adapterConfig, confirmed
   // —— 主角真实档案（检索核定）：写他时必须照此，不得另编一套身份/年龄/籍贯/事件 ——
   const dossierBlock = dossier.renderDossier(state);
   if (dossierBlock) prompt += '\n\n' + dossierBlock;
+  // 放在最后、最显眼：玩家反复抱怨的三件事——编剧情、牵强附会、文字拖沓
+  prompt += '\n\n=== 最后再说一遍（比上面所有背景资料都优先） ===\n'
+    + '1. 剧情只来自：玩家指令的直接后果；上面列出的、此时此地已发生并已传到的真实史事及其对本地的实际影响；在场人物按真实身份处境的正常反应。'
+    + '上面「人物各自在做什么」「篇章」「对手」之类只是背景参考，不得据此新编密探、刺探、阴谋、巧合或无史可据的冲突，不得把无关史事硬扯到一起。\n'
+    + '2. 文字平实紧凑：句子短，每段都推进；比喻全文不超过 3 处，景物光影声响全文不超过 3 句，不写微表情与心理揣测；写具体的事务与生活。\n'
+    + (isOpening ? '3. 这是开场：先用三四句平实交代主角是谁、何年何月、在何处、眼下真实局势，然后进事。\n' : '3. 第一句就接上玩家这一步的直接结果。\n');
   // 界面没带配置过来时，用落盘保存的那份（双击启动后不必重新填 Key）
   // 注意：resolveAdapter 在 id 为空时会静默掉到 skeleton（本地骨架），
   // 那东西只返回占位符、根本不调模型——用户看到的就是「AI 没有反馈」。

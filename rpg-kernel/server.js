@@ -200,6 +200,19 @@ const routes = {
     // 「自己会改」是用户反复抱怨的一点——程序替模型改正文必须可以关闭，
     // 且改过之后必须留痕（autoRepaired / autoRepairReason / originalScene）。
     const r = await engine.runTurn(body || {});
+    // 把这一轮的草稿记进存档：刷新页面、关掉浏览器再开，草稿还在，不用重新生成
+    try {
+      if (r && r.draft && String(r.draft.scene || '').trim()) {
+        await withSaveLock(body.saveId, async () => {
+          const st = await engine.loadState(body.saveId);
+          st.pendingDraft = {
+            draft: r.draft, input: body.input || '', confirmedThreads: body.confirmedThreads || [],
+            adapterId: r.adapterId, plan: r.plan, factCheck: r.factCheck, searches: r.searches, at: Date.now(),
+          };
+          await engine.writeState(st);
+        });
+      }
+    } catch (_) { /* 记不上不影响本轮 */ }
     // 若适配器掉到了本地骨架，正文会是占位符——必须明确告知，
     // 否则用户只看到「AI 没反馈内容」，完全查不出原因。
     const scene = String((r && r.draft && r.draft.scene) || '');
@@ -212,8 +225,31 @@ const routes = {
     }
     return r;
   },
+  /* 玩家在界面上改了草稿正文：存回记着的草稿 */
+  async 'POST /api/draft/save'(body) {
+    const b = body || {};
+    return withSaveLock(b.saveId, async () => {
+      const st = await engine.loadState(b.saveId);
+      if (!st.pendingDraft || !st.pendingDraft.draft) return { ok: false, why: '没有待接续的草稿' };
+      st.pendingDraft.draft.scene = String(b.scene || '').slice(0, 20000);
+      st.pendingDraft.edited = true;
+      await engine.writeState(st);
+      return { ok: true };
+    });
+  },
   async 'POST /api/apply'(body) {
-    const s = await withSaveLock((body || {}).saveId, () => engine.applyDraft(body));
+    const s = await withSaveLock((body || {}).saveId, async () => {
+      const out = await engine.applyDraft(body);
+      // 采纳了就清掉记着的草稿
+      if (out && out.ok !== false) {
+        try {
+          const st = await engine.loadState(body.saveId);
+          if (st.pendingDraft) { delete st.pendingDraft; await engine.writeState(st); }
+          if (out.state) delete out.state.pendingDraft;
+        } catch (_) { /* 忽略 */ }
+      }
+      return out;
+    });
     // 拒绝采纳时必须原样透出。过去这里一律包成 { ok:true, state }，
     // 于是「过期草稿 / 剧情作弊 / 剧情硬伤」三道拦截在界面上全都显示「成功」——
     // 明明被拦下了，玩家却以为生效了。这是实打实的功能 bug。
@@ -435,4 +471,6 @@ fs.mkdirSync(adapters.ADAPTER_DIR, { recursive: true });
 
 server.listen(PORT, HOST, () => {
   console.log(`枢引擎 running: http://${HOST}:${PORT}`);
+  // 启动时先探一遍外网：连不上的站点（国内常见的维基）提前记下，开局时直接走兜底，不再一个个等超时
+  if (!process.env.RPG_OFFLINE) require('./core/net').check().then(r => console.log('[net]', r.results.map(x => `${x.name}:${x.ok ? 'ok' : 'down'}`).join(' '))).catch(() => {});
 });
