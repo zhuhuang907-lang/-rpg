@@ -1829,6 +1829,7 @@ async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOv
   draft.newNpcs = arr(draft.newNpcs).filter(n => n && n.name).map(n => ({ ...n, background: n.background || n.role || '', source: n.source || 'fictional' }));
   draft.statusChanges = arr(draft.statusChanges);
   draft.historyChanges = arr(draft.historyChanges);
+  draft.orders = arr(draft.orders).filter(o => o && o.who && o.what);
   draft.doubts = arr(draft.doubts).map(d => (typeof d === 'string' ? d : JSON.stringify(d)));
   draft.turnSummary = String(draft.turnSummary || '').slice(0, 200);
   draft.pendingDecision = String(draft.pendingDecision || '').replace(/[「『]?用户决定[」』]?/g, '').trim() || '等你决断';
@@ -1942,6 +1943,7 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
     const pr = ll.applyPatch(state, draft || {});
     try { div.recordHistoryChanges(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
     try { require('./profile').applyStatusChanges(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
+    try { require('./orders').record(state, draft || {}); } catch (_) { /* 记不上不阻断 */ }
     const ev = ll.advanceWorld(state, input, draft || {});
     state.longlineLast = { turn: state.turn, rejected: pr.rejected, events: ev };
   } catch (_) { /* 长线落账失败不阻断采纳 */ }
@@ -1956,6 +1958,16 @@ async function applyDraft({ saveId, draft, input, advanceDays, edits, force }) {
   state.turn += 1;
   state.version = (state.version || 0) + 1;
 
+  // 时钟走得比正文写到的多（玩家手动选了「过一个月」之类）：记下来，下一段先把这几天的事交代清楚
+  if (state.meta) {
+    const covered = Number(draft && draft.elapsedDays) || 0;
+    const gapDays = (typeof advanceDays === 'number' ? advanceDays : 0) - covered;
+    if (gapDays > 0) {
+      let to = '';
+      try { const z = require('./lunar').addDays({ y: state.clock.gregorianYear || 0, m: state.clock.month || 1, d: state.clock.day || 1, leap: state.clock.leap }, advanceDays); to = require('./lunar').label(z.m, z.d, z.leap); } catch (_) { to = ''; }
+      state.meta.unwrittenGap = { days: gapDays, from: sceneTime, to };
+    } else delete state.meta.unwrittenGap;
+  }
   if (typeof advanceDays === 'number' && advanceDays > 0) {
     // 按真实农历进位（大小月、闰月；core/lunar.js），跨年时按史实重算所有人年龄
     const nd = require('./lunar').addDays({ y: state.clock.gregorianYear || 0, m: state.clock.month || 1, d: state.clock.day || 1, leap: state.clock.leap }, advanceDays);

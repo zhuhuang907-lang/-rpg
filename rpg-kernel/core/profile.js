@@ -143,6 +143,7 @@ function buildProfile(state) {
       force.length ? { title: '兵马与地盘', rows: force } : null,
       family.length ? { title: '家人', rows: family } : null,
       people.length ? { title: '人际', rows: people } : null,
+      (() => { const r = require('./orders').profileRows(s); return r.length ? { title: '交代下去的事', rows: r } : null; })(),
       (s.statusLog || []).length ? { title: '近来变化', rows: s.statusLog.slice(-10).reverse().map(x => ({ k: `第${x.turn}轮`, v: `${x.item}：${x.from ? x.from + ' → ' : ''}${x.to}${x.why ? '（' + x.why + '）' : ''}` })) } : null,
     ].filter(Boolean),
   };
