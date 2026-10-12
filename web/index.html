@@ -320,20 +320,23 @@ const api = async (url, body) => {
 function localSample(input, opts = {}) {
   return new Promise(async (resolve, reject) => {
     const messages = Array.isArray(input) ? input : [{ role: 'user', content: String(input) }];
-    let job = null, stopped = false;
+    let job = opts.resumeJob || null, stopped = false;
     const onAbort = () => { stopped = true; if (job) api('/api/llm-stop', { job }).catch(() => {}); reject({ code: 'cancelled' }); };
     if (opts.signal) { if (opts.signal.aborted) return onAbort(); opts.signal.addEventListener('abort', onAbort, { once: true }); }
     try {
-      const r = await api('/api/llm-start', { messages, maxTokens: 8000 });
-      if (!r.ok) return reject({ code: 'local', message: r.why || '没发出去' });
-      job = r.job;
+      if (!job) {
+        const r = await api('/api/llm-start', { messages, maxTokens: 8000 });
+        if (!r.ok) return reject({ code: 'local', message: r.why || '没发出去' });
+        job = r.job;
+        opts.onJob && opts.onJob(job);
+      }
       let last = '';
       for (;;) {
         await new Promise(res => setTimeout(res, 700));
         if (stopped) return;
         let j; try { j = await api('/api/llm-job', { job }); } catch (_) { return reject({ code: 'local', message: '游戏服务没有回应：启动游戏的小窗口是不是被关掉了？' }); }
         if (j.text && j.text !== last) { last = j.text; opts.onText && opts.onText({ text: last, delta: '' }); }
-        if (j.status === 'done') return resolve({ text: j.text, truncated: false });
+        if (j.status === 'done') return resolve({ text: j.text, truncated: !!j.truncated });
         if (j.status === 'error' || !j.ok) return reject({ code: 'local', message: j.error || j.why || '没写成' });
         if (j.status === 'cancelled') return;
       }
@@ -437,10 +440,43 @@ const errText = e => (e && (e.code === 'local' || e.code === 'no_key' || e.code 
 function parseJSON(text) {
   const t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
-  if (a < 0 || b <= a) return null;
-  try { return JSON.parse(t.slice(a, b + 1)); } catch (_) {
-    try { return JSON.parse(t.slice(a, b + 1).replace(/,\s*([}\]])/g, '$1')); } catch (__) { return null; }
+  if (a < 0) return null;
+  if (b > a) {
+    try { return JSON.parse(t.slice(a, b + 1)); } catch (_) { /* 往下修 */ }
+    try { return JSON.parse(t.slice(a, b + 1).replace(/,\s*([}\]])/g, '$1')); } catch (_) { /* 往下修 */ }
   }
+  return repairJSON(t.slice(a)) || fixQuotes(t.slice(a));
+}
+/** 正文里的引号没转义（「他说"好"」）：把正文那一段里的引号补上转义再读 */
+function fixQuotes(t) {
+  const m = /"(reply|scene)"\s*:\s*"/.exec(t); if (!m) return null;
+  const st = m.index + m[0].length;
+  const tail = /"\s*,\s*"(mode|elapsedDays|yearLabel|moveTo|settlement|meters|groups|estate|setup|world|hints|turnSummary)"\s*:/.exec(t.slice(st));
+  if (!tail) return null;
+  const inner = t.slice(st, st + tail.index).replace(/\\"/g, '"').replace(/"/g, '\\"');
+  const fixed = t.slice(0, st) + inner + t.slice(st + tail.index);
+  const b = fixed.lastIndexOf('}');
+  try { return JSON.parse(fixed.slice(0, b + 1)); } catch (_) { return repairJSON(fixed); }
+}
+/** 回复被截断（写太长撞到上限）：退到最后一个完整的字段，把括号补齐。正文在最前面，一般都能保住 */
+function repairJSON(t) {
+  let depth = 0, inStr = false, esc2 = false, lastCut = -1;
+  const stack = [];
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) { if (esc2) esc2 = false; else if (c === '\\') esc2 = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === '{' || c === '[') { stack.push(c === '{' ? '}' : ']'); depth++; }
+    else if (c === '}' || c === ']') { stack.pop(); depth--; if (depth === 1) lastCut = i + 1; }
+    else if (c === ',' && depth === 1) lastCut = i;
+  }
+  if (lastCut < 0) return null;
+  try { return JSON.parse(t.slice(0, lastCut).replace(/,\s*$/, '') + '}'); } catch (_) { return null; }
+}
+/** 实在读不出 JSON，但正文已经写出来了：先把正文留下，账这回不记 */
+function salvage(text) {
+  const r = partial(text);
+  return r && r.length >= 40 ? { reply: r, mode: 'play', elapsedDays: 0, _salvaged: true } : null;
 }
 /** 流式时先把 reply 读出来显示 */
 function partial(text) {
@@ -458,13 +494,13 @@ function partial(text) {
   }
   return out;
 }
-async function callClaude(input, onReply) {
+async function callClaude(input, onReply, extra) {
   if (MODE === 'local' && !KEY.has) throw { code: 'no_key', message: '还没填 DeepSeek 的 Key：在首页把 Key 粘贴进去点「保存」' };
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
   CTL = new AbortController();
   const opts = { signal: CTL.signal, cache: false, modelTier: SETTINGS.tier };
   if (SETTINGS.tier !== 'complex' && MODE === 'claude') opts.effort = 'low';
-  return SAMPLE(input, { ...opts, onText: onReply ? ({ text }) => onReply(partial(text)) : undefined });
+  return SAMPLE(input, { ...opts, ...(MODE === 'local' ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(partial(text)) : undefined });
 }
 
 /* ========== 账册 → 给 AI 的材料 ========== */
@@ -729,6 +765,7 @@ function extrasHtml(x) {
   if (arr(x.life).length) parts.push(`<div class="ex life"><div class="eh">这段日子里</div>${x.life.map(r => `<div>${r.who ? `<b>${esc(r.who)}</b>：` : ''}${esc(r.what)}</div>`).join('')}</div>`);
   if (arr(x.news).length) parts.push(`<div class="ex news"><div class="eh">天下事<span>按史书此时发生的</span></div>${x.news.map(r => `<div>${esc(r.y)}年${r.m ? r.m + '月' : ''}：${esc(r.text)}${r.changed ? ' <span class="mine">（本局）</span>' : ''}</div>`).join('')}</div>`);
   if (x.moved) parts.push(`<div class="ex"><div class="eh">搬到了</div><div>${esc(x.moved)}</div></div>`);
+  if (x.salvaged) parts.push(`<div class="ex"><div class="eh">提醒</div><div>AI 这回的格式出了岔子，正文留下了，但账册这回没更新。觉得要紧可以点「重写这一条」。</div></div>`);
   if (x.succession) parts.push(`<div class="ex news"><div class="eh">传承</div><div>${esc(x.succession)}</div></div>`);
   return parts.length ? `<div class="extras">${parts.join('')}</div>` : '';
 }
@@ -872,21 +909,26 @@ async function startGame(sentence) {
   } catch (e) { if (!(e && e.code === 'cancelled')) ERRMSG = errText(e); }
   finally { STREAM = ''; setBusy(false); }
 }
-async function send(said, span, note) {
+async function send(said, span, note, resumeJob) {
   if (BUSY || !S) return;
   ERRMSG = ''; STREAM = ''; PENDING_SAID = String(said || '').trim(); LAST_ACTION = () => send(said, span, note);
   const before = clone(S); before.prev = null;
   if ($('#said')) $('#said').value = '';
   setBusy(true);
   try {
-    const { text } = await callClaude(turnInput(S, said, span, note), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); });
-    const d = parseJSON(text);
-    if (!d || !(d.reply || d.scene)) throw { code: 'bad_json' };
+    const { text } = await callClaude(turnInput(S, said, span, note), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); },
+      { resumeJob, onJob: job => lsSet('hrpg:pending', JSON.stringify({ job, saveId: S.id, said, span, note, at: Date.now() })) });
+    lsSet('hrpg:pending', null);
+    let d = parseJSON(text);
+    if (!d || !(d.reply || d.scene)) d = salvage(text);
+    if (!d) throw { code: 'bad_json' };
     applyReply(S, d, said);
+    if (d._salvaged) { const g = S.chat[S.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { salvaged: true }); }
     S.prev = before;
     LAST_ACTION = null;
     try { await store.save(S); } catch (_) { SAVED = '这回没存上，下回会再试。'; SAVED_BAD = true; }
   } catch (e) {
+    lsSet('hrpg:pending', null);
     if (!(e && e.code === 'cancelled')) ERRMSG = errText(e);
     const keepPrev = S.prev; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, before, { prev: keepPrev });
     setTimeout(() => { if ($('#said') && !$('#said').value) $('#said').value = said || ''; }, 0);
@@ -979,5 +1021,11 @@ render();
     try { const s = await store.load(last.split('|')[0]); if (s) { S = s; VIEW = 'game'; } } catch (_) { /* 留在首页 */ }
   }
   render();
+  // 刷新前还有一回合在写：接着等它写完，不丢
+  try {
+    const p = JSON.parse(lsGet('hrpg:pending') || 'null');
+    if (p && MODE === 'local' && S && p.saveId === S.id && Date.now() - p.at < 30 * 60e3) send(p.said, p.span, p.note, p.job);
+    else lsSet('hrpg:pending', null);
+  } catch (_) { lsSet('hrpg:pending', null); }
 })();
 </script>
