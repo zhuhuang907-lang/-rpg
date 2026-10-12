@@ -350,6 +350,30 @@ const routes = {
     return { ok: true, status: j.status, text: j.text, error: j.error, truncated: !!j.truncated };
   },
   async 'POST /api/llm-stop'(body) { const j = LLM_JOBS.get((body || {}).job); if (j) j.status = 'cancelled'; return { ok: true }; },
+  /* 深读维基百科：每条查询找最相关的一篇中文条目，取正文（简体），给写戏与核实当材料；查过的存本机 */
+  async 'POST /api/wiki'(body) {
+    const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 40)).filter(Boolean).slice(0, 6);
+    const dir = path.join(ROOT, 'data', 'cache', 'wiki'); fs.mkdirSync(dir, { recursive: true });
+    const one = async q => {
+      const cf = path.join(dir, require('crypto').createHash('md5').update(q).digest('hex') + '.json');
+      try { return JSON.parse(fs.readFileSync(cf, 'utf8')); } catch (_) { /* 没缓存 */ }
+      const u = (process.env.WIKI_BASE || 'https://zh.wikipedia.org') + '/w/api.php?' + new URLSearchParams({ action: 'query', format: 'json', generator: 'search', gsrsearch: q, gsrlimit: '1', prop: 'extracts|info', inprop: 'url', explaintext: '1', exsectionformat: 'plain', exchars: '4000', variant: 'zh-cn', converttitles: '1', origin: '*' });
+      try {
+        const r = await require('./core/net').fetchX(u, { headers: { 'User-Agent': 'HistoryRPG/1.0 (game)' }, signal: AbortSignal.timeout(10000) });
+        if (!r.ok) return { q, error: 'HTTP ' + r.status };
+        const d = await r.json();
+        const pg = Object.values((d.query || {}).pages || {})[0];
+        if (!pg || !pg.extract) return { q, error: '没有条目' };
+        const FICTION = /小说|游戏|电视剧|动画|漫画|电影/;
+        if (FICTION.test(pg.title)) return { q, error: '只找到虚构作品的条目' };
+        const out = { q, title: pg.title, url: pg.fullurl || ('https://zh.wikipedia.org/wiki/' + encodeURIComponent(pg.title)), text: String(pg.extract).replace(/\n{2,}/g, '\n').slice(0, 4000) };
+        fs.writeFileSync(cf, JSON.stringify(out));
+        return out;
+      } catch (e) { return { q, error: String(e && e.message || e).slice(0, 100) }; }
+    };
+    const results = await Promise.all(qs.map(one));
+    return { ok: true, results };
+  },
   /* 中国历史地名（CHGIS 时空地名辞典 TGaz，复旦镜像优先、哈佛兜底）：按名字、年份、上级查县、州府、郡的位置与隶属；查过的存本机 */
   'GET /api/tgaz': async (_b, q) => {
     const n = String(q.get('n') || '').slice(0, 20), yr = String(q.get('yr') || '').replace(/[^\d-]/g, ''), ipar = String(q.get('ipar') || '').slice(0, 20), ftyp = String(q.get('ftyp') || '').slice(0, 10);
@@ -359,7 +383,7 @@ const routes = {
     const cf = path.join(dir, key + '.json');
     try { return JSON.parse(fs.readFileSync(cf, 'utf8')); } catch (_) { /* 没缓存 */ }
     const params = new URLSearchParams({ fmt: 'json' }); if (n) params.set('n', n); if (yr) params.set('yr', yr); if (ipar) params.set('ipar', ipar); if (ftyp) params.set('ftyp', ftyp);
-    const bases = (process.env.TGAZ_BASE ? [process.env.TGAZ_BASE] : []).concat(['https://tgaz.fudan.edu.cn', 'http://tgaz.fudan.edu.cn', 'https://maps.cga.harvard.edu']);
+    const bases = (process.env.TGAZ_BASE ? [process.env.TGAZ_BASE] : []).concat(['https://maps.cga.harvard.edu', 'https://tgaz.fudan.edu.cn', 'http://tgaz.fudan.edu.cn']);
     let lastErr = '';
     for (const b of bases) {
       try {
