@@ -219,7 +219,9 @@ const CAL = (() => {
   const N = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
   const dayName = d => (d <= 10 ? '初' + N[d] : d < 20 ? '十' + N[d - 10] : d === 20 ? '二十' : d < 30 ? '廿' + N[d - 20] : '三十');
   const label = (m, d, leap) => (leap ? '闰' : '') + (MC[m] || m + '月') + (d ? dayName(d) : '');
-  return { addDays, label };
+  /** 两个日子之间跨了几个月（闰月也算一个月） */
+  function monthsBetween(a, b) { const i = idx(a.y, a.m, a.leap), j = idx(b.y, b.m, b.leap); return i >= 0 && j >= 0 ? j - i : (b.y * 12 + b.m) - (a.y * 12 + a.m); }
+  return { addDays, label, monthsBetween };
 })();
 const yearText = y => (y < 0 ? '公元前' + -y + '年' : '公元' + y + '年');
 const timeText = c => `${c.yearLabel || ''}（${yearText(c.y)}）${CAL.label(c.m, c.d, c.leap)}`;
@@ -328,7 +330,7 @@ function ledgerRules() {
 "powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}],
 "territory":[{"place":"","pop":0,"troops":0,"grain":0,"loyalty":50,"tax":0,"ruler":"","note":""}],
 "forces":[{"name":"","leader":"","troops":0,"grain":0,"quality":"","at":"","status":"驻守/行军/交战/休整"}],
-"succession":{"died":"","heir":"","heirRole":"","heirAge":0,"note":""},
+"succession":{"died":"主角死了才填「是」","heir":"","heirRole":"","heirAge":0,"note":""},
 "career":{"office":"","rank":"","post":"","titles":[""],"duties":"","powers":"","superior":"","subordinates":"","evaluation":"","tenure":"","nextSteps":[{"to":"","need":""}]},
 "careerEvents":[{"what":"","office":""}],
 "statusChanges":[{"项":"","后":"","原因":""}],
@@ -363,6 +365,7 @@ function localSample(input, opts = {}) {
         const r = await api('/api/llm-start', { messages, maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature });
         if (!r.ok) return reject({ code: 'local', message: r.why || '没发出去' });
         job = r.job;
+        if (stopped) { api('/api/llm-stop', { job }).catch(() => {}); return; }
         opts.onJob && opts.onJob(job);
       }
       let last = '';
@@ -440,8 +443,16 @@ function shrink(s) {
   const slim = (x, keep) => { if (!x || !x.chat) return; x.chat.forEach((c, i) => { if (i < x.chat.length - keep && c.text) { c.text = ''; c.extra = null; } }); if (x.chat.length > 400) x.chat = x.chat.slice(-400); };
   slim(s, 30);
   if (s.prev) { slim(s.prev, 4); s.prev.prev = null; }
+  // 越玩越多的册子也设上限
+  const P = Object.entries(s.people || {});
+  if (P.length > 150) s.people = Object.fromEntries(P.sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 150));
+  const PL = Object.entries(s.places || {});
+  if (PL.length > 150) s.places = Object.fromEntries(PL.slice(-150));
+  if (arr(s.almanac).length > 160) s.almanac = s.almanac.slice(-160);
+  if (arr(s.searchedQ).length > 200) s.searchedQ = s.searchedQ.slice(-200);
   let keep = 30;
   while (bytes(JSON.stringify(s)) > 240000 && keep > 4) { keep -= 4; slim(s, keep); if (s.prev) s.prev = null; }
+  if (bytes(JSON.stringify(s)) > 240000) { s.research = arr(s.research).slice(-12); s.almanac = arr(s.almanac).slice(-80); s.summaries = arr(s.summaries).slice(-40); }
 }
 /** 第一版存档（按回合记的 log）转成对话 */
 function migrate(s) {
@@ -587,7 +598,7 @@ function problemReport() {
 
 /* ========== 官制：玩家给框架，AI 按本局年代核对改正，游戏照改正后的来 ========== */
 const KB_KEY = 'hrpg:kb';
-let INSTING = false, INSTMSG = '';
+let INSTING = false, INSTMSG = '', INST_CACHE = null;
 function instText(s, max) {
   const I = s.inst; if (!I) return '';
   const lad = arr(I.ladder).map(g => `${g.tier}：` + arr(g.posts).map(x => `${x.name}${x.rank ? '（' + x.rank + '）' : ''}${x.duty ? '—' + x.duty : ''}${x.sure === false ? '[推]' : ''}`).join('；')).join('\n');
@@ -622,13 +633,15 @@ async function buildInst(s) {
     const d = parseJSON(text);
     if (!d || !Array.isArray(d.ladder)) throw { code: 'bad_json' };
     const o = v => one(v, 80);
-    s.inst = { at: s.turn, when: timeText(s.clock), era: o(d.era), summary: cut(d.summary, 500), local: cut(d.local, 200),
+    const tgt = S && S.id === s.id ? S : s;
+    tgt.inst = { at: s.turn, when: timeText(s.clock), era: o(d.era), summary: cut(d.summary, 500), local: cut(d.local, 200),
       ladder: d.ladder.filter(g => g && g.tier).slice(0, 10).map(g => ({ tier: one(g.tier, 20), posts: arr(g.posts).filter(x => x && x.name).slice(0, 14).map(x => ({ name: one(x.name, 20), rank: one(x.rank, 16), duty: one(x.duty, 50), sure: x.sure !== false })) })),
       paths: arr(d.paths).map(o).filter(Boolean).slice(0, 10),
       fixes: arr(d.fixes).filter(x => x && (x.yours || x.right)).slice(0, 30).map(x => ({ yours: o(x.yours), right: o(x.right), why: o(x.why) })),
       unsure: arr(d.unsure).map(o).filter(Boolean).slice(0, 10), kb: !!lsGet(KB_KEY) };
-    INSTMSG = '✓ 整理好了' + (s.inst.fixes.length ? `，改正了框架里 ${s.inst.fixes.length} 处` : '');
-    try { await store.save(s); } catch (_) { /* 下回合一起存 */ }
+    INSTMSG = '✓ 整理好了' + (tgt.inst.fixes.length ? `，改正了框架里 ${tgt.inst.fixes.length} 处` : '');
+    INST_CACHE = { id: tgt.id, inst: tgt.inst };
+    if (!BUSY) { try { await store.save(tgt); } catch (_) { /* 下回合一起存 */ } }
   } catch (e) { if (!(e && e.code === 'cancelled')) INSTMSG = '没整理成：' + errText(e); }
   finally { INSTING = false; render(); }
 }
@@ -669,7 +682,7 @@ function figuresAt(s, y) {
   for (const h of HIST) for (const f of h.figures) {
     if (seen.has(f.name)) continue; seen.add(f.name);
     const o = fo[f.name] || {};
-    const died = o.died != null ? o.died : f.died;
+    const died = o.dead === true ? (o.deadY || y) - 1 : o.dead === false ? null : (o.died != null ? o.died : f.died);
     if (f.born != null && f.born > y) continue;
     const post = o.post || (arr(f.posts).filter(p => p[0] <= y && p[1] >= y).map(p => p[2]).pop() || '');
     out.push({ name: f.name, age: f.born != null ? y - f.born + 1 : null, born: f.born, died, alive: died == null || died >= y, post, native: f.native || '', fate: f.fate || '', note: o.note || f.note || '', changed: !!fo[f.name] });
@@ -719,7 +732,7 @@ function mentionedFigures(s, text) {
   const y = s.clock.y, out = [], seen = new Set();
   for (const h of HIST) for (const f of h.figures) {
     if (seen.has(f.name) || f.name.length < 2 || !text.includes(f.name)) continue; seen.add(f.name);
-    const o = (s.figOver || {})[f.name] || {}, died = o.died != null ? o.died : f.died;
+    const o = (s.figOver || {})[f.name] || {}, died = o.dead === true ? (o.deadY || y) - 1 : o.dead === false ? null : (o.died != null ? o.died : f.died);
     const st = f.born != null && f.born > y ? `此时尚未出生（${f.born}年生）` : died != null && died < y ? `已于${died}年去世` : (o.post || arr(f.posts).filter(p => p[0] <= y && p[1] >= y).map(p => p[2]).pop() || '在世');
     out.push(`${f.name}：${st}`);
   }
@@ -908,10 +921,10 @@ async function worldTick(s) {
   if (!d || !Array.isArray(d.upcoming)) throw { code: 'bad_json' };
   const w = s.world, nowYM = ymOf(s.clock), old = arr(w.upcoming);
   const up = d.upcoming.filter(u => u && u.text).map(u => ({ y: num(u.y) ?? s.clock.y, m: Math.min(12, Math.max(0, num(u.m) || 0)), text: one(u.text, 100), status: /变/.test(u.status || '') ? '已变' : /新/.test(u.status || '') ? '新出' : '照史', why: one(u.why, 100) }))
-    .filter(u => (u.m ? u.y * 12 + u.m : u.y * 12 + 12) > nowYM).sort((a, b) => a.y - b.y || a.m - b.m).slice(0, 20);
+    .filter(u => evYM(u) > nowYM).sort((a, b) => a.y - b.y || a.m - b.m).slice(0, 20);
   const report = [];
   for (const u of up) if (u.status !== '照史' && !old.some(o => o.status === u.status && one(o.text, 10) === one(u.text, 10))) report.push({ text: `${u.y}年${u.m ? u.m + '月' : ''}：${u.text}`, status: u.status, why: u.why });
-  for (const o of old) if ((!o.status || o.status === '照史') && !up.some(u => one(u.text, 8) === one(o.text, 8)) && (o.m ? o.y * 12 + o.m : o.y * 12 + 12) > nowYM + 1) {
+  for (const o of old) if ((!o.status || o.status === '照史') && !up.some(u => one(u.text, 8) === one(o.text, 8)) && evYM(o) > nowYM + 1) {
     const alt = up.find(u => u.status !== '照史' && u.y >= o.y - 1 && u.y <= o.y + 2);
     if (!alt) report.push({ text: `${o.y}年${o.m ? o.m + '月' : ''}：${o.text}`, status: '不再照史', why: '' });
   }
@@ -934,7 +947,7 @@ async function worldTick(s) {
     }
     w.extra = w.extra.filter(x => evYM(x) > nowYM - 12).slice(-30);
     s.figOver = s.figOver || {};
-    for (const f of arr(d.figures)) if (f && f.name) s.figOver[one(f.name, 10)] = { post: one(f.post, 40), note: one(f.note || f.stance, 60), died: f.alive === false ? s.clock.y : undefined };
+    for (const f of arr(d.figures)) if (f && f.name) { const k = one(f.name, 10), o = s.figOver[k] || {}; s.figOver[k] = { post: one(f.post, 40) || o.post || '', note: one(f.note || f.stance, 60) || o.note || '', dead: f.alive === false ? true : (f.alive === true ? false : o.dead), deadY: f.alive === false ? (o.deadY || s.clock.y) : o.deadY }; }
     syncHist(s);
     d.figures = null;
   } else if (up.length) w.upcoming = up;
@@ -1103,6 +1116,9 @@ function applyFixes(text, fixes) {
 /* ========== 记账 ========== */
 const W = v => (v >= 80 ? '感戴' : v >= 60 ? '安' : v >= 40 ? '平常' : v >= 25 ? '不满' : '怨');
 function applyReply(s, d, said) {
+  // AI 偶尔在列表里塞 null：先清掉，免得一处读错整回作废
+  for (const k of Object.keys(d)) if (Array.isArray(d[k])) d[k] = d[k].filter(x => x != null);
+  if (d.estate && typeof d.estate === 'object') for (const k of Object.keys(d.estate)) if (Array.isArray(d.estate[k])) d.estate[k] = d.estate[k].filter(x => x != null);
   const play = d.mode !== 'talk';
   const H = hasHist(s);
   if (H) { syncHist(s); d.worldUpcoming = []; d.worldEvents = arr(d.worldEvents).filter(x => x && x.changed); }
@@ -1113,7 +1129,8 @@ function applyReply(s, d, said) {
     const when = `${s.clock.yearLabel || ''}${CAL.label(s.clock.m, s.clock.d, s.clock.leap)}`;
     const acc = [];
     for (const m of arr(d.meters)) {
-      const k = one(m && (m.项 || m.name), 16), v = one(m && (m.值 || m.value), 40);
+      if (!m || typeof m !== 'object') continue;
+      const k = one(m.项 || m.name, 16), v = one(m.值 || m.value, 40);
       if (!k || !v) continue;
       const old = (s.meters[k] || {}).value;
       if (old && old !== v) acc.push({ k, from: old, to: v, why: one(m.因, 60) });
@@ -1128,7 +1145,7 @@ function applyReply(s, d, said) {
     }
     if (d.estate && typeof d.estate === 'object') {
       const e = s.estate;
-      for (const k of ['assets', 'income', 'expense', 'projects']) if (Array.isArray(d.estate[k])) e[k] = d.estate[k].filter(x => x && (x.name || x.item)).slice(0, 30).map(x => Object.fromEntries(Object.entries(x).map(([a, b]) => [a, typeof b === 'number' ? b : one(b, 80)])));
+      for (const k of ['assets', 'income', 'expense', 'projects']) if (Array.isArray(d.estate[k])) { const rows = d.estate[k].filter(x => x && (x.name || x.item)).slice(0, 30).map(x => Object.fromEntries(Object.entries(x).map(([a, b]) => [a, typeof b === 'number' ? b : one(b, 80)]))); if (rows.length) e[k] = rows; }
       if (s.money.cash == null && N0(d.estate.cash) != null) s.money.cash = N0(d.estate.cash);
     }
     // 钱：程序记账——本回合一笔笔的进出 + 过月的固定进出
@@ -1164,8 +1181,8 @@ function applyReply(s, d, said) {
       else s.orders.push({ turn, who: one(o.who, 20), what: one(o.what, 80), status: one(o.status || '在办', 4), result: one(o.result, 140) });
     }
     s.orders = s.orders.slice(-50);
-    for (const t of arr(d.gmNotesDone)) s.gmNotes = s.gmNotes.filter(n => !String(n.text).startsWith(String(t).slice(0, 8)));
-    for (const t of arr(d.gmNotes)) if (t) s.gmNotes.push({ turn, text: one(typeof t === 'string' ? t : JSON.stringify(t), 140) });
+    for (const t of arr(d.gmNotesDone)) { const pf = String(t || '').trim().slice(0, 8); if (pf.length >= 2) s.gmNotes = s.gmNotes.filter(n => !String(n.text).startsWith(pf)); }
+    for (const t of arr(d.gmNotes)) if (t && String(typeof t === 'string' ? t : JSON.stringify(t)).trim().length > 3) s.gmNotes.push({ turn, text: one(typeof t === 'string' ? t : JSON.stringify(t), 140) });
     s.gmNotes = s.gmNotes.slice(-20);
     for (const c of arr(d.statusChanges)) { const k = one(c && (c.项 || c.item), 12), v = one(c && (c.后 || c.to), 60); if (k && v) { s.status[k] = v; s.statusLog.push({ turn, k, v, why: one(c.原因, 60) }); } }
     s.statusLog = s.statusLog.slice(-60);
@@ -1178,7 +1195,7 @@ function applyReply(s, d, said) {
       s.world.upcoming = s.world.upcoming.filter(u => !(u.y === r.y && one(u.text, 8) === one(r.text, 8)));
     }
     s.world.events = s.world.events.slice(-120);
-    const beforeYM = { y: s.clock.y, m: s.clock.m };
+    const beforeYM = { y: s.clock.y, m: s.clock.m, leap: !!s.clock.leap };
     const days = Math.max(0, Math.min(400, Math.round(Number(d.elapsedDays) || 0)));
     if (days) {
       const nd = CAL.addDays(s.clock, days), years = Math.max(0, nd.y - s.clock.y);
@@ -1187,7 +1204,7 @@ function applyReply(s, d, said) {
     }
     // 到了日子的史线：照它发生（不再悄悄丢掉）；被改写的、新出的照本局的样子
     const nowYM = s.clock.y * 12 + s.clock.m;
-    const due = s.world.upcoming.filter(u => (u.m ? u.y * 12 + u.m : u.y * 12 + 12) <= nowYM);
+    const due = s.world.upcoming.filter(u => evYM(u) <= nowYM);
     if (due.length) {
       s.world.upcoming = s.world.upcoming.filter(u => !due.includes(u));
       for (const u of due) {
@@ -1202,7 +1219,7 @@ function applyReply(s, d, said) {
     if (el && !arr(s.history).some(h => /帝|皇|王|崩|即位|篡|年号|改元/.test(h.event + h.now))) s.clock.yearLabel = el;
     if (H) syncHist(s);
     // 定本：一直成立的事
-    for (const x of arr(d.canonDone)) s.canon = arr(s.canon).filter(c => !String(c.text).startsWith(String(x).slice(0, 6)));
+    for (const x of arr(d.canonDone)) { const pf = String(x || '').trim().slice(0, 6); if (pf.length >= 2) s.canon = arr(s.canon).filter(c => !String(c.text).startsWith(pf)); }
     for (const x of arr(d.canon).slice(0, 6)) if (x && String(x).trim().length > 3 && !arr(s.canon).some(c => c.text === one(x, 80))) s.canon = arr(s.canon).concat([{ turn: s.turn, text: one(x, 80) }]);
     s.canon = arr(s.canon).slice(-80);
     for (const f of arr(d.localFigures).slice(0, 6)) if (f && f.name && String(f.name).length >= 2) {
@@ -1211,7 +1228,7 @@ function applyReply(s, d, said) {
     if (Array.isArray(d.almanac)) addAlmanac(s, d.almanac);
     if (Array.isArray(d.lookups)) s.lookups = d.lookups.map(x => one(x, 40)).filter(Boolean).slice(0, 3);
     // 过了几个月就按每月进项开销结几次
-    const months = Math.max(0, (s.clock.y * 12 + s.clock.m) - (beforeYM.y * 12 + beforeYM.m));
+    const months = Math.max(0, CAL.monthsBetween(beforeYM, s.clock));
     const inc = arr(s.estate.income).reduce((a, x) => a + (N0(x.amount) || 0), 0), exp = arr(s.estate.expense).reduce((a, x) => a + (N0(x.amount) || 0), 0);
     if (months && (inc || exp)) ledger.push({ item: `月结 ${months} 个月（进项 ${fmtN(inc)} − 开销 ${fmtN(exp)}）`, amount: months * (inc - exp), note: '' });
     if (mo.cash != null) {
@@ -1229,7 +1246,7 @@ function applyReply(s, d, said) {
       rums: arr(st.风声).map(x => one(x, 120)).filter(Boolean).slice(0, 4),
     });
     // 作为：做过的事留下的痕迹与可能的后续
-    for (const t of arr(d.deedsDone)) { const x = s.deeds.find(e => !e.done && String(e.what).startsWith(String(t).slice(0, 6))); if (x) x.done = turn; }
+    for (const t of arr(d.deedsDone)) { const pf = String(t || '').trim().slice(0, 6); if (pf.length < 2) continue; const x = s.deeds.find(e => !e.done && String(e.what).startsWith(pf)); if (x) x.done = turn; }
     for (const x of arr(d.deeds).slice(0, 4)) if (x && x.what) s.deeds.push({ turn, when, what: one(x.what, 80), effect: one(x.effect, 80), later: one(x.later, 80) });
     s.deeds = s.deeds.slice(-80);
     // 仕途：官职、品级、称号、职权；履历
@@ -1240,7 +1257,7 @@ function applyReply(s, d, said) {
     s.careerLog = s.careerLog.slice(-80);
     // 传承：主角死了，由继承人接着玩
     const sc = d.succession && typeof d.succession === 'object' ? d.succession : null;
-    if (sc && sc.heir && (sc.died === true || /是|true|死|故/.test(String(sc.died)))) {
+    if (sc && String(sc.heir || '').trim() && (sc.died === true || (String(sc.died || '').trim() && !/^(否|false|没|无|未)/.test(String(sc.died).trim())))) {
       const old = s.protagonist, heir = one(sc.heir, 8), m = s.household.find(x => x.name === heir);
       s.chronicle.push({ turn, when, who: old.name, what: `去世，享年${old.age != null ? old.age : '不详'}。由${heir}承继家业。` });
       s.household = s.household.filter(x => x.name !== heir);
@@ -1256,8 +1273,8 @@ function applyReply(s, d, said) {
   if (d.career && typeof d.career === 'object' && !Array.isArray(d.career)) {
     const c = Object.assign({}, s.career || {}), k = d.career;
     for (const f of ['office', 'rank', 'post', 'duties', 'powers', 'superior', 'subordinates', 'evaluation', 'tenure']) if (k[f] != null && k[f] !== '') c[f] = one(k[f], f === 'powers' || f === 'duties' || f === 'subordinates' ? 120 : 50);
-    if (Array.isArray(k.titles)) c.titles = k.titles.map(x => one(x, 30)).filter(Boolean).slice(0, 12);
-    if (Array.isArray(k.nextSteps)) c.nextSteps = k.nextSteps.filter(x => x && x.to).slice(0, 5).map(x => ({ to: one(x.to, 40), need: one(x.need, 80) }));
+    if (Array.isArray(k.titles)) { const v = k.titles.map(x => one(x, 30)).filter(Boolean).slice(0, 12); if (v.length) c.titles = v; }
+    if (Array.isArray(k.nextSteps)) { const v = k.nextSteps.filter(x => x && x.to).slice(0, 5).map(x => ({ to: one(x.to, 40), need: one(x.need, 80) })); if (v.length) c.nextSteps = v; }
     s.career = c;
   }
   const rows = (a, n) => a.filter(x => x && typeof x === 'object').slice(0, n).map(x => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, one(v, 60)])));
@@ -1559,11 +1576,11 @@ function pane(tab) {
 
 /* ========== 动作 ========== */
 let PHASE = '', TICKMSG = '', LOOKST = null;
-async function startGame(sentence, have) {
+async function startGame(sentence, have, havePre) {
   sentence = String(sentence || '').trim(); if (!sentence || BUSY) return;
   ERRMSG = ''; STREAM = ''; PHASE = '';
   setBusy(true);
-  let st = have || null, looked = null, pre = null;
+  let st = have || null, looked = null, pre = havePre || null;
   try {
     if (!st && canSearch()) {
       PHASE = 'search'; render();
@@ -1579,7 +1596,7 @@ async function startGame(sentence, have) {
       if (st.text.length < 40) throw { code: 'empty_completion' };
     }
     STREAM = st.text; PHASE = 'ledger'; render();
-    LAST_ACTION = () => startGame(sentence, st);
+    LAST_ACTION = () => startGame(sentence, st, pre);
     const { text: lt } = await callClaude(openingLedgerInput(sentence, st.text, st.hidden), null, { maxTokens: 8000, temperature: 0.3 });
     const d = parseJSON(lt);
     if (!d || !d.setup) throw { code: 'bad_json' };
@@ -1596,7 +1613,7 @@ async function startGame(sentence, have) {
     Object.assign(d, { reply: fx.text, mode: 'play', elapsedDays: 0, ledger: [] });
     applyReply(s, d, '');
     if (fx.done.length) { const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { fixes: fx.done }); }
-    if (pre) { s.research = pre.research; s.almanac = arr(pre.almanac); }
+    if (pre) { s.research = pre.research.concat(arr(s.research)); const got = arr(s.almanac); s.almanac = arr(pre.almanac); addAlmanac(s, got); }
     if (looked) { const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { looked }); }
     S = s; VIEW = 'game'; LAST_ACTION = null; TAB = 'board';
     await store.save(S);
@@ -1610,14 +1627,16 @@ async function startGame(sentence, have) {
 /** 一回合：先写正文（边写边显示），再交给账房记账核史实。账没记上，正文也留下，可以补记 */
 async function send(said, span, note, resume) {
   if (BUSY || !S) return;
-  ERRMSG = ''; STREAM = ''; PHASE = ''; PENDING_SAID = String(said || '').trim(); LAST_ACTION = () => send(said, span, note);
+  ERRMSG = ''; STREAM = ''; PHASE = ''; PENDING_SAID = String(said || '').trim();
+  const orig = resume && resume.orig;
+  LAST_ACTION = () => { if (orig) S = restorePrev(orig); send(said, span, note, resume && (resume.story || orig) ? { story: resume.story, orig } : undefined); };
   const before = clone(S); before.prev = null;
   if ($('#said')) $('#said').value = '';
   setBusy(true);
-  const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), ...o }));
+  const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), baseTurn: S.turn, redo: !!orig, ...o }));
   let st = resume && resume.story ? resume.story : null, looked = null;
   try {
-    if (!st && canSearch() && !resume) {
+    if (!st && canSearch() && !(resume && resume.job)) {
       PHASE = 'search'; render();
       looked = await doLookups(S, lookupQueries(S, said));
       PHASE = ''; render();
@@ -1645,7 +1664,11 @@ async function send(said, span, note, resume) {
       const g = S.chat[S.chat.length - 1];
       if (looked) g.extra = Object.assign(g.extra || {}, { looked });
       if (fx.done.length) g.extra = Object.assign(g.extra || {}, { fixes: fx.done });
+      g.span = span || 'auto';
       if (!ok) { g.extra = Object.assign(g.extra || {}, { salvaged: true }); g.unsettled = { said, span, hidden: st.hidden }; }
+      // 先存一次：后面整理章节、推演天下要一会儿，这时关页面也不丢这一回
+      S.prev = before;
+      try { await store.save(S); } catch (_) { /* 后面再存 */ }
       if (ok && arr(S.summaries).length > 60) { PHASE = 'memory'; render(); await compactMemory(S); }
       if (ok && SETTINGS.world !== false && needTick(S, d)) {
         lsSet('hrpg:pending', null);
@@ -1660,20 +1683,29 @@ async function send(said, span, note, resume) {
   } catch (e) {
     lsSet('hrpg:pending', null);
     if (!(e && e.code === 'cancelled')) ERRMSG = errText(e);
-    const keepPrev = S.prev; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, before, { prev: keepPrev });
+    if (orig) S = orig;  // 重写或补记没成：原来那一回照旧留着
+    if (INST_CACHE && INST_CACHE.id === S.id && !S.inst) S.inst = INST_CACHE.inst;
+    else { const keepPrev = S.prev; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, before, { prev: keepPrev }); }
     setTimeout(() => { if ($('#said') && !$('#said').value) $('#said').value = said || ''; }, 0);
   } finally {
     STREAM = ''; PHASE = ''; PENDING_SAID = ''; setBusy(false);
     const all = document.querySelectorAll('.chat .msg'); const last = all[all.length - 1]; if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
+/** 撤回到上一版：上一版存档里早先的对话只留了几句，从现在的对话里补回来 */
+function restorePrev(cur) {
+  const p = clone(cur.prev);
+  arr(p.chat).forEach((c, i) => { const o = cur.chat[i]; if (o && !c.text && o.text) { c.text = o.text; c.extra = o.extra; c.hints = o.hints; } });
+  for (const k of ['inst', 'research', 'almanac', 'locals', 'searchedQ']) if (cur[k] && !p[k]) p[k] = cur[k];
+  return p;
+}
 /** 上一回的账没记上：退回那一回之前的账册，用写好的正文重新记一次 */
 async function settleLast() {
   const g = S && S.chat[S.chat.length - 1];
   if (!g || !g.unsettled || !S.prev || BUSY) return;
-  const u = g.unsettled, text = g.text;
-  S = clone(S.prev);
-  return send(u.said, u.span, '', { story: { text, hidden: u.hidden, talk: false } });
+  const u = g.unsettled, text = g.text, orig = S;
+  S = restorePrev(orig);
+  return send(u.said, u.span, '', { story: { text, hidden: u.hidden, talk: false }, orig });
 }
 
 document.addEventListener('submit', e => { if (e.target.id === 'fStart') { e.preventDefault(); startGame($('#qText').value); } });
@@ -1736,8 +1768,9 @@ document.addEventListener('click', async e => {
     const note = $('#regenNote').value.trim() || '换一种写法';
     const n = S.chat.length, lastGm = S.chat[n - 1], beforeIt = S.chat[n - 2];
     const said = lastGm && lastGm.role === 'gm' && beforeIt && beforeIt.role === 'me' ? beforeIt.text : '';
-    S = clone(S.prev);
-    send(said, 'auto', note); return;
+    const orig = S, span = (lastGm && lastGm.span) || 'auto';
+    S = restorePrev(orig);
+    send(said, span, note, { orig }); return;
   }
   if (t.id === 'bInst') {
     const kb = ($('#kbText').value || '').trim();
@@ -1795,7 +1828,10 @@ render();
   // 刷新前还有一回合在写：接着等它写完，不丢
   try {
     const p = JSON.parse(lsGet('hrpg:pending') || 'null');
-    if (p && S && p.saveId === S.id && Date.now() - p.at < 30 * 60e3 && (p.story || (p.job && MODE === 'local'))) send(p.said, p.span, p.note, { job: p.job, story: p.story });
+    if (p && S && p.saveId === S.id && Date.now() - p.at < 30 * 60e3 && (p.story || (p.job && MODE === 'local'))) {
+      if (p.redo && S.turn !== p.baseTurn && S.prev) S = restorePrev(S);
+      if (S.turn === p.baseTurn) send(p.said, p.span, p.note, { job: p.job, story: p.story }); else lsSet('hrpg:pending', null);
+    }
     else lsSet('hrpg:pending', null);
   } catch (_) { lsSet('hrpg:pending', null); }
 })();
