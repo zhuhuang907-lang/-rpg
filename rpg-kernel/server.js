@@ -91,6 +91,7 @@ async function selectedModel() {
 // 正在写的回合：页面轮询取已写出的部分
 const TURN_JOBS = new Map();
 const LLM_JOBS = new Map();
+let LOOKUP_STATUS = null;
 /** 从还没写完的 JSON 里取出 scene 字段已写出的部分（处理转义） */
 function partialScene(text) {
   const t = String(text || '');
@@ -187,7 +188,7 @@ const routes = {
     const patch = { model, baseUrl: saved.baseUrl || 'https://api.deepseek.com' };
     if (k) patch.apiKey = k;
     if (k || b.model) await adapters.saveAdapterConfig({ selected: 'deepseek', configs: { deepseek: patch } });
-    if (bk) await search.saveConfig({ provider: 'bocha', providers: { bocha: { apiKey: bk } } });
+    if (bk) await search.saveConfig({ provider: 'bocha', providers: { bocha: { apiKey: bk, count: 8 } } });
     const out = { ok: true, saved: { deepseek: !!k, model, bocha: !!bk } };
     // 试连与保存分开：试连失败也不影响已保存的 Key，只如实告诉玩家原因
     if (k || b.model) {
@@ -230,7 +231,7 @@ const routes = {
       ok: true, model: aid, modelName: c.model || (aid === 'deepseek' ? 'deepseek-v4-pro' : ''),
       hasKey: !!c.apiKey || ['ollama', 'skeleton', 'mock'].includes(aid),
       keyTail: c.apiKey ? String(c.apiKey).slice(-4) : '',
-      search: scfg.provider, hasBocha: !!bochaKey,
+      search: scfg.provider, hasBocha: !!bochaKey, lookup: LOOKUP_STATUS,
       lastTest: readStatus().lastTest || null,
     };
   },
@@ -299,20 +300,43 @@ const routes = {
     for (const [k, j] of LLM_JOBS) if (Date.now() - j.at > 3600e3) LLM_JOBS.delete(k);
     return { ok: true, job: id };
   },
-  /* 每回合联网查证：几条搜索并行跑，各取前三条摘要；单条超时不拖累整回合 */
+  /* 每回合联网查证：并行搜（最多三路同时），各取靠谱的前几条；
+     去掉小说、演义、影视、游戏的结果（免得把虚构当史实），百科、正史、学术站排前面；
+     博查出错时给出明白的原因（Key 无效、余额不足、太频繁），状态记下来给页面显示 */
   async 'POST /api/lookup'(body) {
-    const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean).slice(0, 6);
+    const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean).slice(0, 10);
     if (!qs.length) return { ok: true, results: [] };
     const cfg = await search.loadConfig();
+    const isBocha = cfg.provider === 'bocha';
+    const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
+    const GOOD = /baike\.baidu|wikipedia|baike\.sogou|ctext|guoxue|gushiwen|zhonghuadiancang|shidianguji|cnki|cass|historychina|zgdsw|dpm\.org|ndlib|chinaknowledge|douban\.com\/note|zhihu/;
     const one = q => Promise.race([
-      search.search(q).catch(e => ({ query: q, results: [], error: String(e && e.message || e) })),
-      new Promise(r => setTimeout(() => r({ query: q, results: [], error: '超时' }), 15000)),
+      search.search(q, isBocha ? { noFallback: true } : {}).catch(e => ({ query: q, results: [], error: String(e && e.message || e) })),
+      new Promise(r => setTimeout(() => r({ query: q, results: [], error: '超时（20 秒没回）' }), 20000)),
     ]);
-    const rs = await Promise.all(qs.map(one));
-    return {
-      ok: true, provider: cfg.provider,
-      results: rs.map((r, i) => ({ q: qs[i], provider: r.provider || cfg.provider, error: r.error || '', items: (r.results || []).slice(0, 3).map(h => ({ title: String(h.title || '').slice(0, 60), url: String(h.url || ''), snippet: String(h.snippet || '').replace(/\s+/g, ' ').slice(0, 320) })) })),
+    const rs = [];
+    for (let i = 0; i < qs.length; i += 3) rs.push(...await Promise.all(qs.slice(i, i + 3).map(one)));
+    const friendly = e => {
+      const s = String(e || '');
+      if (/401|无效|invalid|unauthor/i.test(s)) return '博查 Key 无效（到 open.bochaai.com 核对，或在首页重新填）';
+      if (/403|余额|balance|insufficient|欠费/i.test(s)) return '博查余额不足（到 open.bochaai.com 充值）';
+      if (/429|频繁|rate/i.test(s)) return '搜得太频繁，博查限流了（过一会儿自动恢复）';
+      if (/未配置|没填/.test(s)) return '还没填博查 Key（首页「联网查证」里填）';
+      if (/ENOTFOUND|ECONN|fetch failed|超时|timeout|abort/i.test(s)) return '连不上搜索服务（网络或代理问题）';
+      return s.slice(0, 120);
     };
+    let okN = 0, lastErr = '';
+    const results = rs.map((r, i) => {
+      const seen = new Set();
+      const items = (r.results || []).filter(h => h && h.title && !FICTION.test(h.title + ' ' + (h.url || '')))
+        .filter(h => { const k = String(h.url || h.title).replace(/[?#].*$/, ''); if (seen.has(k)) return false; seen.add(k); return true; })
+        .sort((a, b) => (GOOD.test(b.url || '') ? 1 : 0) - (GOOD.test(a.url || '') ? 1 : 0))
+        .slice(0, 4).map(h => ({ title: String(h.title || '').slice(0, 60), url: String(h.url || ''), snippet: String(h.snippet || '').replace(/\s+/g, ' ').slice(0, 600) }));
+      if (items.length) okN++; else if (r.error) lastErr = friendly(r.error);
+      return { q: qs[i], provider: r.provider || cfg.provider, error: r.error ? friendly(r.error) : '', items };
+    });
+    LOOKUP_STATUS = { at: Date.now(), provider: cfg.provider, ok: okN > 0 || !lastErr, okN, total: qs.length, err: okN ? '' : lastErr };
+    return { ok: true, provider: cfg.provider, status: LOOKUP_STATUS, results };
   },
   async 'POST /api/llm-job'(body) {
     const j = LLM_JOBS.get((body || {}).job);
