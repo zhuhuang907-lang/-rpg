@@ -189,7 +189,7 @@ async function streamChat(url, headers, body, timeoutMs, onDelta) {
       if (j.usage) usage = j.usage;
       if (!ch) continue;
       const d = ch.delta || {};
-      if (d.content) { content += d.content; try { onDelta(content); } catch (_) { /* 界面回调出错不影响收稿 */ } }
+      if (d.content) { content += d.content; try { onDelta(content); } catch (e) { if (e && e.stopStream) { try { await reader.cancel(); } catch (_) { /* 已断 */ } throw e; } /* 界面回调别的出错不影响收稿 */ } }
       if (d.reasoning_content) reasoning += d.reasoning_content;
       if (ch.finish_reason) finish = ch.finish_reason;
     }
