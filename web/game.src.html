@@ -264,7 +264,7 @@ function storyRules() {
 
 笔法（只学笔法，不照搬内容）：
 ——掌柜把那匹缎子往柜上一抖，灯底下泛出一层水光。「东家瞧这织口，一寸二十八梭，城里能织到这个份上的不出五家。」你没接话，捻了捻边角。他便压低了声音：「去年腊月一两四钱一尺，今年丝贵，一两六钱，再少小号就赔了。」门外挑担的喊着热馄饨过去了。你说一两五。他咂了下嘴，回头冲后堂喊：「取秤来，给东家记上。」
-——签押房里只点了一盏灯。周师爷把账册翻到夹着红签的那页，不先说话，只用指甲在一个数目底下划了一道。「上忙征的是八千三百两，解府库的是七千九。」他抬眼看你，「这四百两，前任拿来补火耗，府里也知道。东翁要动它，开春考成的时候，就得有人替咱们说话。」窗外打了二更。
+——签押房里只点了一盏灯。周师爷把账册翻到夹着红签的那页，不先说话，只用指甲在一个数目底下划了一道。「今年夏税实征八千三百两，解府库的是七千九。」他抬眼看你，「这四百两，前任拿来补火耗，府里也知道。东翁要动它，开春考成的时候，就得有人替咱们说话。」窗外打了二更。
 ——你进门时，母亲正坐在灶下添柴，见了你也不起身，只问：「吃过没有？」你说吃过了。她「嗯」了一声，过了一会儿又说：「西头王家的二丫头，今年十六了，你见过的。」灶膛里噼啪响了一下。父亲在里屋咳嗽，咳完了隔着帘子说：「你娘的意思，你自己掂量。」
 
 戏里与戏外
@@ -921,25 +921,27 @@ function overlap(a, b) {
 }
 function instPoints(s, said, extra) {
   const L = instLibFor(s); if (!L.length) return '';
-  const ctx = [said, s.protagonist.role, (s.career || {}).office, (s.career || {}).duties, s.place.full, extra].join(' ');
+  const act = [said, extra].join(' ');                          // 挑程序、文书：只看这一回的事
+  const who = [s.protagonist.role, (s.career || {}).office, s.place.full].join(' ');  // 挑地方衙署：看身份与所在
   const out = [];
   for (const h of L) {
     const y = s.clock.y, inRange = x => (x.from == null || x.from <= y) && (x.to == null || x.to >= y);
-    const top = (xs, f, n) => arr(xs).filter(inRange).map(x => [overlap(ctx, f(x)), x]).filter(([k]) => k > 0).sort((a, b) => b[0] - a[0]).slice(0, n).map(([, x]) => x);
-    const lines = [`${h.title}：${cut(h.summary, 260)}`];
-    const loc = arr(h.local).filter(inRange);
-    if (loc.length) lines.push('地方：' + loc.map(x => `${x.level}·${x.organ}（${x.head}${x.staff ? '；' + cut(x.staff, 60) : ''}）`).join('；'));
-    const cen = top(h.central, x => x.organ + x.role + x.notes, 4);
-    if (cen.length) lines.push('相关中枢：' + cen.map(x => `${x.organ}（${x.head}）：${cut(x.role, 70)}`).join('；'));
-    const pr = top(h.procedures, x => x.name + arr(x.steps).join('') + x.notes, 3);
-    for (const x of pr) lines.push(`程序·${x.name}：${arr(x.steps).map((st, i) => `${i + 1}${st}`).join(' ')}${x.timeline ? '（' + x.timeline + '）' : ''}${x.notes ? '；常见：' + cut(x.notes, 80) : ''}`);
-    const docs = top(h.documents, x => x.name + x.use + x.from + x.to, 6);
-    if (docs.length) lines.push('文书：' + docs.map(x => `${x.name}（${x.from}→${x.to}，${cut(x.use, 30)}${x.flow ? '；' + cut(x.flow, 50) : ''}）`).join('；'));
-    if (arr(h.address).length) lines.push('称谓：' + h.address.slice(0, 24).map(x => `${x.who}称「${x.term}」`).join('；'));
-    if (arr(h.pitfalls).length) lines.push('易错处（不得犯）：' + h.pitfalls.slice(0, 16).join('；'));
+    const top = (xs, f, n, ctx, min) => arr(xs).filter(inRange).map(x => [overlap(ctx, f(x)), x]).filter(([k]) => k >= (min || 1)).sort((a, b) => b[0] - a[0]).slice(0, n).map(([, x]) => x);
+    const lines = [`${h.title}：${cut(h.summary, 160)}`];
+    if (arr(h.pitfalls).length) lines.push('易错处（不得犯）：' + h.pitfalls.slice(0, 18).join('；'));
+    if (arr(h.address).length) lines.push('称谓：' + h.address.slice(0, 22).map(x => `${x.who}称「${x.term}」`).join('；'));
+    const lv = /县/.test(who) ? ['县', '府', '乡'] : /府|州/.test(who) ? ['府', '州', '省', '道'] : /省|布政|按察|巡抚|总督/.test(who) ? ['省', '道', '府'] : [];
+    const loc = arr(h.local).filter(inRange).filter(x => !lv.length || lv.some(k => String(x.level).includes(k))).slice(0, 4);
+    if (loc.length) lines.push('相关衙署：' + loc.map(x => `${x.organ}（${cut(x.head, 30)}；${cut(x.staff, 90)}）`).join('；'));
+    const pr = top(h.procedures, x => x.name + ' ' + arr(x.steps).join(''), 2, act, 3);
+    for (const x of pr) lines.push(`程序·${x.name}：${arr(x.steps).map((st, i) => `${i + 1}${cut(st, 70)}`).join(' ')}${x.timeline ? '（' + cut(x.timeline, 40) + '）' : ''}${x.notes ? '；常见：' + cut(x.notes, 80) : ''}`);
+    const docs = top(h.documents, x => x.name + x.use + x.flow, 5, act, 2);
+    if (docs.length) lines.push('可能用到的文书：' + docs.map(x => `${x.name}（${x.from}→${x.to}，${cut(x.use, 30)}）`).join('；'));
+    const cen = top(h.central, x => x.organ + x.role, 3, act, 3);
+    if (cen.length) lines.push('相关中枢：' + cen.map(x => `${x.organ}（${cut(x.head, 20)}）：${cut(x.role, 60)}`).join('；'));
     out.push(lines.join('\n'));
   }
-  return '【制度要点（内置制度库，以此为准；衙门、职衔、文书、程序、称谓照这里，不照记忆）】\n' + cut(out.join('\n'), 3600);
+  return '【制度要点（内置制度库，以此为准；衙门、职衔、文书、程序、称谓照这里，不照记忆）】\n' + cut(out.join('\n'), 4000);
 }
 
 /* ========== 本地志：主角所在地方此时的样子（衙署与官员、经济行业、大族、街巷市镇、风俗、本地时事），开局与搬家时查一次 ========== */
