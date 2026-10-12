@@ -345,6 +345,22 @@ const routes = {
     return { ok: true, status: j.status, text: j.text, error: j.error, truncated: !!j.truncated };
   },
   async 'POST /api/llm-stop'(body) { const j = LLM_JOBS.get((body || {}).job); if (j) j.status = 'cancelled'; return { ok: true }; },
+  /* 联网自建的史料包（没有内置史料的年代，游戏边玩边查边建）：存在本机，各存档共用 */
+  'GET /api/hpacks': async () => {
+    const dir = path.join(ROOT, 'data', 'histpacks');
+    let files = []; try { files = fs.readdirSync(dir).filter(f => /^[\w\-]+\.json$/.test(f)); } catch (_) { files = []; }
+    const packs = [];
+    for (const f of files) { try { packs.push(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))); } catch (_) { /* 坏文件跳过 */ } }
+    return { ok: true, packs };
+  },
+  async 'POST /api/hpack'(body) {
+    const pk = (body || {}).pack;
+    if (!pk || !/^[\w\-]+$/.test(String(pk.id || '')) || !Array.isArray(pk.range)) return { ok: false, why: '格式不对' };
+    const dir = path.join(ROOT, 'data', 'histpacks'); fs.mkdirSync(dir, { recursive: true });
+    const tmp = path.join(dir, pk.id + '.json.tmp');
+    fs.writeFileSync(tmp, JSON.stringify(pk)); fs.renameSync(tmp, path.join(dir, pk.id + '.json'));
+    return { ok: true };
+  },
   'GET /api/wsaves': async () => {
     const dir = path.join(ROOT, 'data', 'websaves');
     let files = []; try { files = fs.readdirSync(dir).filter(f => /^[a-z0-9]+\.json$/i.test(f)); } catch (_) { files = []; }
