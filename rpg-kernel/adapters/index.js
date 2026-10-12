@@ -197,13 +197,14 @@ async function streamChat(url, headers, body, timeoutMs, onDelta) {
   return { choices: [{ message: { content, reasoning_content: reasoning || undefined }, finish_reason: finish }], usage };
 }
 
-async function openaiChat({ system, prompt, messages, temperature, maxTokens, onDelta }, cfg) {
+async function openaiChat({ system, prompt, messages, temperature, maxTokens, onDelta, json: wantJson }, cfg) {
   const base = trimSlash(cfg.baseUrl || 'https://api.openai.com/v1');
   if (!cfg.apiKey && !/127\.0\.0\.1|localhost/.test(base)) throw new Error('还没填模型的 Key：请在首页或「设置」里粘贴 DeepSeek 的 Key');
   let model = MODEL_CACHE.get(base + '|' + cfg.model) || cfg.model || 'gpt-4o-mini';
   const isDeepseek = /deepseek/i.test(base) || /deepseek/i.test(model);
   const thinking = cfg.thinking === true || cfg.thinking === 'on';
   let sendThinkingFlag = isDeepseek && !isThinkingModel(model);
+  let useJsonMode = !!wantJson && isDeepseek;
   let budget = maxTokens ?? 3000;
   if (thinking) budget = Math.max(budget * 4, 4000);
   let switched = '';
@@ -216,6 +217,8 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
       stream: false,
     };
     if (sendThinkingFlag) body.thinking = { type: thinking ? 'enabled' : 'disabled' };
+    // 要 JSON 的调用：让 DeepSeek 只输出合法 JSON（对白里的引号会被正确转义，不再因为一个引号整回合作废）
+    if (useJsonMode) body.response_format = { type: 'json_object' };
     if (!thinking && !isThinkingModel(model)) body.temperature = temperature ?? 0.9;
     let json;
     try {
@@ -233,6 +236,8 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
       }
     } catch (e) {
       const msg = String(e.message || e);
+      // 服务端不认 JSON 模式：去掉再试
+      if (useJsonMode && /HTTP 4\d\d/.test(msg) && /response_format|json/i.test(msg)) { useJsonMode = false; continue; }
       // 服务端不认 thinking 参数：去掉再试
       if (sendThinkingFlag && /HTTP 4\d\d/.test(msg) && /thinking|unrecognized|unknown|extra/i.test(msg)) { sendThinkingFlag = false; continue; }
       // 型号不存在（比如已下线的 deepseek-chat）：拉型号列表换一个
@@ -257,7 +262,7 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
       budget = Math.min(32000, Math.max(budget * 4, 4000));
       continue;
     }
-    return { text, raw: JSON.stringify(json), meta: { adapter: 'openai-compatible', model, usage: json?.usage, switched: switched || undefined } };
+    return { text, raw: JSON.stringify(json), meta: { adapter: 'openai-compatible', model, usage: json?.usage, switched: switched || undefined, truncated: choice.finish_reason === 'length' } };
   }
   throw new Error('模型连续几次没给出正文（可能思考过长被截断），请稍后再试，或在「设置」里关掉思考模式。');
 }

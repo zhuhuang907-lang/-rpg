@@ -2504,8 +2504,8 @@ async function chatCall({ messages, maxTokens = 8000, temperature = 0.8, onDelta
   const aid = saved.selected || 'deepseek';
   const { adapter, config } = await resolveAdapter(aid, saved.configs?.[aid] || {});
   if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请先在首页填好 DeepSeek 的 Key');
-  const res = await adapter.call({ system: '', messages, prompt: messages.length ? messages[messages.length - 1].content : '', temperature, maxTokens, onDelta }, config);
-  return String((res && res.text) || '');
+  const res = await adapter.call({ system: '', messages, prompt: messages.length ? messages[messages.length - 1].content : '', temperature, maxTokens, onDelta, json: true }, config);
+  return { text: String((res && res.text) || ''), truncated: !!(res && res.meta && res.meta.truncated) };
 }
 
 module.exports = {

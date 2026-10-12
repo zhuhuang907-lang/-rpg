@@ -294,7 +294,7 @@ const routes = {
     const job = { status: 'running', text: '', error: null, at: Date.now() };
     LLM_JOBS.set(id, job);
     engine.chatCall({ messages: msgs, maxTokens: Math.min(16000, Number(b.maxTokens) || 8000), onDelta: t => { if (job.status === 'running') job.text = String(t || ''); } })
-      .then(t => { if (job.status === 'running') { job.status = 'done'; job.text = t; recordTest(true); } })
+      .then(r => { if (job.status === 'running') { job.status = 'done'; job.text = r.text; job.truncated = r.truncated; recordTest(true); } })
       .catch(e => { if (job.status === 'running') { job.status = 'error'; job.error = String(e && e.message || e).slice(0, 400); recordTest(false, job.error); } });
     for (const [k, j] of LLM_JOBS) if (Date.now() - j.at > 3600e3) LLM_JOBS.delete(k);
     return { ok: true, job: id };
@@ -302,8 +302,8 @@ const routes = {
   async 'POST /api/llm-job'(body) {
     const j = LLM_JOBS.get((body || {}).job);
     if (!j) return { ok: false, why: '任务不存在或已过期' };
-    if (j.status !== 'running') LLM_JOBS.delete(body.job);
-    return { ok: true, status: j.status, text: j.text, error: j.error };
+    // 写完的任务留一阵：页面刷新或网络抖一下再来取，结果还在
+    return { ok: true, status: j.status, text: j.text, error: j.error, truncated: !!j.truncated };
   },
   async 'POST /api/llm-stop'(body) { const j = LLM_JOBS.get((body || {}).job); if (j) j.status = 'cancelled'; return { ok: true }; },
   'GET /api/wsaves': async () => {
