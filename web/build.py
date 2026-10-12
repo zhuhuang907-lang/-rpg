@@ -14,7 +14,10 @@ for f in sorted((here / 'history').glob('*.json')):
     except Exception as e:
         print('skip', f.name, e)
 hist_js = json.dumps(hist, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
-body = (here / 'game.src.html').read_text(encoding='utf8').replace('__CAL__', compact).replace('__HIST__', hist_js)
+# 现代词 → 古代说法（rpg-kernel/core/eraVocab.js 的 MAP）
+import subprocess
+vocab = subprocess.run(['node', '-e', "process.stdout.write(JSON.stringify(require('./core/eraVocab.js').MAP.map(x=>[x.m,x.a])))"], cwd=str(here.parent / 'rpg-kernel'), capture_output=True, text=True, encoding='utf8').stdout or '[]'
+body = (here / 'game.src.html').read_text(encoding='utf8').replace('__CAL__', compact).replace('__HIST__', hist_js).replace('__VOCAB__', vocab.replace('</', '<\\/'))
 (here / 'index.html').write_text(body, encoding='utf8')
 # 桌面版由本机服务直接发出，需要自己的文档外壳
 page = ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
