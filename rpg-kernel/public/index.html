@@ -340,7 +340,7 @@ function ledgerRules() {
 "canon":[""],"canonDone":[""],
 "lookups":["下一回合写之前该联网查证的搜索词"],
 "localFigures":[{"name":"","role":"此时此地的身份","y":0,"note":"出自哪条资料、与主角的远近"}],
-"almanac":[{"cat":"人物/官制/地方/物价/风俗/时事/器物","text":"一句事实","src":"出处"}],
+"almanac":[{"cat":"人物/官制/地方/物价/风俗/时事/器物","text":"一句事实","src":"出处","grade":"B=资料里明写 / C=你据资料推断"}],
 "worldShift":"玩家这回的作为可能波及天下大势、改变史书走向的地方，一句话；没有就空",
 "turnSummary":""}`;
 }
@@ -655,15 +655,17 @@ let HIST = [];
 try { HIST = JSON.parse(document.getElementById('hist').textContent || '[]'); } catch (_) { HIST = []; }
 /** 联网自建的史料包（桌面版：没有内置史料的年代，边玩边查边建，存在本机） */
 let RUNHIST = [];
-const HALL = () => (RUNHIST.length ? HIST.concat(RUNHIST) : HIST);
+/** 自建史料只给同一政权的存档用（内置史料不分） */
+const polOK = (h, pol) => !h.grade || !pol || !h.polity || String(h.polity).includes(pol) || pol.includes(String(h.polity));
+const HALL = s => { const pol = String(((s || S || {}).place || {}).polity || ''); return RUNHIST.length ? HIST.concat(RUNHIST.filter(h => polOK(h, pol))) : HIST; };
 const evYM = e => e.y * 12 + (e.m || 6);
 const evKey = e => e.y + ':' + String(e.text).slice(0, 14);
 /** 覆盖本局年份的史料（可能两段交界都要） */
-function histFor(y) { return HALL().filter(h => y >= h.range[0] && y <= h.range[1]); }
-const hasHist = s => !!(s && histFor(s.clock.y).length);
+function histFor(y, s) { return HALL(s).filter(h => y >= h.range[0] && y <= h.range[1]); }
+const hasHist = s => !!(s && histFor(s.clock.y, s).length);
 function histEvents(s, fromYM, toYM) {
   const out = [], seen = new Set();
-  for (const h of HALL()) {
+  for (const h of HALL(s)) {
     if (h.range[1] * 12 + 12 < fromYM || h.range[0] * 12 > toYM) continue;
     for (const e of h.events) { const ym = evYM(e), k = evKey(e); if (ym > fromYM && ym <= toYM && !seen.has(k)) { seen.add(k); out.push({ ...e, key: k }); } }
   }
@@ -678,6 +680,11 @@ function histView(s, e) {
 /** 把「将要发生」按史料重排：五年内的史事（照本局的改动）+ 本局新出的事 */
 function syncHist(s) {
   if (!hasHist(s)) return;
+  const w0 = s.world;
+  if (!w0.over && !w0.extra) {  // 头一回有史料：先把本局推演出的已变、新出的事挪进 extra，免得被史料覆盖掉
+    w0.extra = arr(w0.upcoming).filter(u => u && u.status && u.status !== '照史').map(u => ({ ...u, status: '新出', key: u.key || ('n' + u.y + ':' + String(u.text).slice(0, 14)) }));
+    w0.over = {};
+  }
   const w = s.world, now = ymOf(s.clock), done = new Set(arr(w.events).map(e => e.key).filter(Boolean));
   const list = histEvents(s, now, now + 60).filter(e => !done.has(e.key)).map(e => histView(s, e)).filter(e => e.status !== '取消');
   const extra = arr(w.extra).filter(x => evYM(x) > now && !done.has(x.key));
@@ -686,7 +693,7 @@ function syncHist(s) {
 /** 此时在世的真人：年龄、当时的官职；本局的改动优先 */
 function figuresAt(s, y) {
   const out = [], seen = new Set(), fo = s.figOver || {};
-  for (const h of HALL()) for (const f of arr(h.figures)) {
+  for (const h of HALL(s)) for (const f of arr(h.figures)) {
     if (seen.has(f.name)) continue; seen.add(f.name);
     const o = fo[f.name] || {};
     const died = o.dead === true ? (o.deadY || y) - 1 : o.dead === false ? null : (o.died != null ? o.died : f.died);
@@ -697,9 +704,9 @@ function figuresAt(s, y) {
   return out;
 }
 /** 这一年在位的君主与年号（照史料；本局改了君主的，交给 AI 的年号） */
-function rulersAt(y) {
+function rulersAt(y, s) {
   const out = [];
-  for (const h of histFor(y)) for (const r of arr(h.rulers)) if (r.from <= y && r.to >= y) {
+  for (const h of histFor(y, s)) for (const r of arr(h.rulers)) if (r.from <= y && r.to >= y) {
     const rg = arr(r.reigns).filter(x => x[1] <= y).sort((a, b) => a[1] - b[1]).pop();
     out.push({ polity: r.polity, name: r.name, title: r.title || '', era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
   }
@@ -708,7 +715,7 @@ function rulersAt(y) {
 const NUMZH = n => { const d = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']; if (n === 1) return '元'; if (n < 10) return d[n]; if (n < 20) return '十' + d[n - 10]; return d[Math.floor(n / 10)] + '十' + d[n % 10]; };
 function eraLabel(s, y) {
   const pol = String(s.place.polity || '');
-  const rs = rulersAt(y).filter(r => r.era && (!pol || pol.includes(r.polity) || r.polity.includes(pol)));
+  const rs = rulersAt(y, s).filter(r => r.era && (!pol || pol.includes(r.polity) || r.polity.includes(pol)));
   if (!rs.length) return '';
   const r = rs[rs.length - 1];
   return r.era + NUMZH(r.n) + '年';
@@ -717,8 +724,8 @@ function eraLabel(s, y) {
 function histBlock(s) {
   if (!hasHist(s)) return '';
   const y = s.clock.y, now = ymOf(s.clock), L = [];
-  const rs = rulersAt(y);
-  L.push(histFor(y).some(h => h.grade === 'B') && !histFor(y).some(h => !h.grade) ? '【联网自建史料（游戏据检索与通行史书整理，B 级；以此为准，与你的记忆不同时照这里）】' : '【内置史料（程序据史书整理，以此为准；与你的记忆不同时照这里）】');
+  const rs = rulersAt(y, s);
+  L.push(histFor(y, s).some(h => h.grade === 'B') && !histFor(y, s).some(h => !h.grade) ? '【联网自建史料（游戏据检索与通行史书整理，B 级；以此为准，与你的记忆不同时照这里）】' : '【内置史料（程序据史书整理，以此为准；与你的记忆不同时照这里）】');
   if (rs.length) L.push('在位：' + rs.map(r => `${r.title && r.title.startsWith(r.polity) ? '' : r.polity}${r.title ? r.title : ''}${r.name}${r.era ? '（' + r.era + NUMZH(r.n) + '年）' : ''}`).join('；'));
   const past = histEvents(s, now - 30, now).map(e => histView(s, e)).filter(e => e.status !== '取消');
   if (past.length) L.push('近两三年的史事：\n' + past.slice(-14).map(e => `· ${e.y}年${e.m ? e.m + '月' : ''}：${e.text}${e.status !== '照史' ? '（本局：' + e.status + '）' : ''}`).join('\n'));
@@ -737,7 +744,7 @@ function histBlock(s) {
 function mentionedFigures(s, text) {
   if (!hasHist(s)) return '';
   const y = s.clock.y, out = [], seen = new Set();
-  for (const h of HALL()) for (const f of arr(h.figures)) {
+  for (const h of HALL(s)) for (const f of arr(h.figures)) {
     if (seen.has(f.name) || f.name.length < 2 || !text.includes(f.name)) continue; seen.add(f.name);
     const o = (s.figOver || {})[f.name] || {}, died = o.dead === true ? (o.deadY || y) - 1 : o.dead === false ? null : (o.died != null ? o.died : f.died);
     const st = f.born != null && f.born > y ? `此时尚未出生（${f.born}年生）` : died != null && died < y ? `已于${died}年去世` : (o.post || arr(f.posts).filter(p => p[0] <= y && p[1] >= y).map(p => p[2]).pop() || '在世');
@@ -826,7 +833,7 @@ async function digestResearch(s) {
 游戏：${s.title || ''}${s.clock && s.clock.y ? '，' + timeText(s.clock) : ''}${s.place && s.place.full ? '，' + s.place.full : ''}。
 ${R.map(x => `· 查「${x.q}」：${x.text}`).join('\n')}
 
-只输出一个 JSON 对象：{"almanac":[{"cat":"人物/官制/地方/物价/风俗/时事/器物","text":"一句事实","src":"出自哪条（网站或书名）"}]}，二十到四十条。`, null, { maxTokens: 5000, temperature: 0.2, kind: '研读' });
+只输出一个 JSON 对象：{"almanac":[{"cat":"人物/官制/地方/物价/风俗/时事/器物","text":"一句事实","src":"出自哪条（网站或书名）","grade":"B=资料里明写 / C=据资料推断"}]}，二十到四十条。`, null, { maxTokens: 5000, temperature: 0.2, kind: '研读' });
   const d = parseJSON(text);
   if (d && Array.isArray(d.almanac)) addAlmanac(s, d.almanac);
 }
@@ -867,26 +874,27 @@ function lookupQueries(s, said, extra) {
     const yl = s.clock.yearLabel || (s.clock.y + '年');
     const txt = String(said || '') + (arr(s.chat).slice(-1)[0] || {}).text;
     const seen = new Set();
-    for (const h of HALL()) for (const f of arr(h.figures)) if (f.name.length >= 2 && !seen.has(f.name) && String(said || '').includes(f.name)) { seen.add(f.name); add(`${f.name} ${yl}`); }
-    if (!arr(s.searchedYears).includes(s.clock.y)) { add(`${yl} ${s.place.polity || ''} 大事`); s.searchedYears = arr(s.searchedYears).concat([s.clock.y]).slice(-40); }
+    for (const h of HALL(s)) for (const f of arr(h.figures)) if (f.name.length >= 2 && !seen.has(f.name) && String(said || '').includes(f.name)) { seen.add(f.name); add(`${f.name} ${yl}`); }
+    if (!arr(s.searchedYears).includes(s.clock.y)) add(`${yl} ${s.place.polity || ''} 大事`);
     if (!hasHist(s) && txt) { /* 没有内置史料的时期：账房列的查证词就是主要来源 */ }
   }
   if (s) for (const x of ambientQueries(s)) add(x);
-  const out = q.slice(0, 8);
-  if (s) s.searchedQ = arr(s.searchedQ).concat(out).slice(-300);
-  return out;
+  return q.slice(0, 8);
 }
 /** 搜一轮，结果存进 s.research（每条留标题和摘要）；返回给这一回显示用的清单 */
 async function doLookups(s, queries) {
   if (!queries.length) return null;
   let r;
-  try { r = await api('/api/lookup', { queries }); } catch (e) { return { err: '游戏服务没有回应' }; }
+  const sig = CTL && CTL.signal;
+  try { r = await Promise.race([api('/api/lookup', { queries }), new Promise((_, rej) => { if (sig) { if (sig.aborted) rej({ code: 'cancelled' }); sig.addEventListener('abort', () => rej({ code: 'cancelled' }), { once: true }); } })]); }
+  catch (e) { if (e && e.code === 'cancelled') throw e; return { err: '游戏服务没有回应' }; }
   const shown = [], errs = [];
   for (const x of arr(r.results)) {
     if (x.error && !arr(x.items).length) { errs.push(`${x.q}：${x.error}`); continue; }
     const text = arr(x.items).map(i => `${i.title}：${i.snippet}`).join(' / ');
     if (s && text) { s.research = arr(s.research).filter(o => o.q !== x.q).concat([{ q: x.q, turn: s.turn, y: s.clock.y, text: cut(text, 700), links: arr(x.items).slice(0, 3).map(i => ({ t: one(i.title, 30), u: String(i.url || '').slice(0, 200) })).filter(l => /^https?:\/\//.test(l.u)) }]).slice(-40); }
     shown.push({ q: x.q, titles: arr(x.items).map(i => i.title).slice(0, 3) });
+    if (s && arr(x.items).length) { s.searchedQ = arr(s.searchedQ).concat([x.q]).slice(-300); if (/大事$/.test(x.q) && s.clock && !arr(s.searchedYears).includes(s.clock.y)) s.searchedYears = arr(s.searchedYears).concat([s.clock.y]).slice(-40); }
   }
   if (r.status) LOOKST = r.status;
   return { shown, err: errs.length && !shown.length ? errs[0] : '', provider: r.provider };
@@ -908,7 +916,7 @@ const polKey = p => [...String(p || 'x')].map(c => c.charCodeAt(0).toString(36))
 function packNeed(s) {
   if (!canSearch() || !s || !s.clock) return null;
   if (s.hbFail != null && s.turn - s.hbFail < 3) return null;  // 刚失败过，隔几回合再试
-  const y = s.clock.y, cov = HALL().filter(h => y >= h.range[0] - 0 && y <= h.range[1]);
+  const y = s.clock.y, cov = HALL(s).filter(h => y >= h.range[0] && y <= h.range[1]);
   const end = cov.length ? Math.max(...cov.map(h => h.range[1])) : null;
   if (end != null && end >= y + 3) return null;
   const from = end != null ? end + 1 : y - 3;
@@ -940,13 +948,13 @@ events 三十到六十条，只收 ${from}–${to} 年的；figures 二十到四
   const pack = { id: `rt_${polKey(pol)}_${from}`, title: `${pol} ${from}–${to}（联网自建）`, range: [from, to], polity: pol, grade: 'B', built: new Date().toISOString().slice(0, 10), rulers, events, figures };
   RUNHIST = RUNHIST.filter(h => h.id !== pack.id).concat([pack]);
   try { await api('/api/hpack', { pack }); } catch (_) { /* 存不下也先用着 */ }
-  addAlmanac(s, events.slice(0, 6).map(e => ({ cat: '时事', text: `${e.y}年${e.m ? e.m + '月' : ''}：${e.text}`, src: e.src === '记忆' ? '通行史书' : '检索' })));
+  addAlmanac(s, events.slice(0, 6).map(e => ({ cat: '时事', text: `${e.y}年${e.m ? e.m + '月' : ''}：${e.text}`, src: e.src === '记忆' ? 'AI 据通行史书' : '检索', grade: e.src === '记忆' ? 'C' : 'B' })));
   syncHist(s);
   return pack;
 }
 async function ensureHistPack(s) {
   const need = packNeed(s); if (!need) return null;
-  PHASE = 'histbuild'; render();
+  PHASE = 'histbuild'; CTL = new AbortController(); render();
   try { const p = await buildHistPack(s, need.from, need.to); s.hbFail = null; HBMSG = `✓ 已建 ${p.title}：${p.events.length} 件事、${p.figures.length} 位人物`; return p; }
   catch (e) { if (e && e.code === 'cancelled') throw e; HBMSG = '这次没建成：' + errText(e); s.hbFail = s.turn; return null; }
   finally { PHASE = ''; }
@@ -1067,7 +1075,7 @@ async function compactMemory(s) {
   try {
     const r = await callClaude(`把下面这局历史模拟游戏较早的三十回合经过，压成一段四百字以内的章节摘要：按时间先后，只留事实（谁、何时、在哪、做了什么、结果、钱粮与名位的变化、结下的恩怨与约定），不加评论，不丢要紧的人名地名数目。只输出摘要正文。\n\n主角：${s.protagonist.name}，${s.protagonist.role}\n\n` + old.map(x => `第${x.turn}回合（${x.when}）：${x.text}`).join('\n'), null, { json: false, maxTokens: 1500, temperature: 0.2, kind: '修史' }, 'quick');
     text = cut(String(r.text || '').trim(), 500);
-  } catch (e) { if (e && e.code === 'cancelled') return; }
+  } catch (e) { if (e && e.code === 'cancelled') return 'cancelled'; }
   if (text.length < 40) text = cut(old.map(x => x.text).join('；'), 500);
   s.chapters = arr(s.chapters).concat([{ from: old[0].when, to: old[old.length - 1].when, text }]);
   while (s.chapters.length > 12) { const [a, b] = s.chapters; s.chapters.splice(0, 2, { from: a.from, to: b.to, text: cut(a.text + '；' + b.text, 700) }); }
@@ -1646,7 +1654,7 @@ function pane(tab) {
       ${arr(w.ripples).length ? `<div class="h"><span class="seal">果</span>你引起的连锁变化</div><div class="list">${w.ripples.slice().reverse().map(r => `<div><span class="when">第${r.turn}回合</span><b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`).join('')}</div>` : ''}
       <div class="h"><span class="seal">后</span>将要发生<span class="note">你知道，书中人不知道；红的是被本局改了的</span></div>
       <div class="list">${w.upcoming.map(x => `<div><span class="when">${esc(x.y)}年${x.m ? x.m + '月' : ''}</span>${badge(x.status)}${esc(x.text)}${x.why && x.status && x.status !== '照史' ? `<div class="muted">${esc(x.why)}</div>` : ''}${x.needs ? `<div class="muted">前提：${esc(x.needs)}</div>` : ''}</div>`).join('') || '<div class="muted">下一回合会补上。</div>'}</div>
-      ${hasHist(s) ? `<div class="muted" style="font-size:12px">${histFor(s.clock.y).some(h => !h.grade) ? '本时期有内置史料：史事、君主年号、真人生卒官职由程序据史书给出，AI 不凭记忆编。' : '本时期史料为联网自建（B 级）：游戏查了年表、君主年号、重臣、战事、灾荒，再整理成史料；不够准时可以在下面重建。'}</div>` : `<div class="muted" style="font-size:12px">${canSearch() ? '这个时期的史料正在或将要联网自建（每回合检查，缺了就查）。' : '这个时期没有内置史料，网页版不能联网自建，史线由 AI 按记忆整理，可能有误；桌面版会自动联网自建。'}</div>`}
+      ${hasHist(s) ? `<div class="muted" style="font-size:12px">${histFor(s.clock.y, s).some(h => !h.grade) ? '本时期有内置史料：史事、君主年号、真人生卒官职由程序据史书给出，AI 不凭记忆编。' : '本时期史料为联网自建（B 级）：游戏查了年表、君主年号、重臣、战事、灾荒，再整理成史料；不够准时可以在下面重建。'}</div>` : `<div class="muted" style="font-size:12px">${canSearch() ? '这个时期的史料正在或将要联网自建（每回合检查，缺了就查）。' : '这个时期没有内置史料，网页版不能联网自建，史线由 AI 按记忆整理，可能有误；桌面版会自动联网自建。'}</div>`}
       ${canSearch() ? `<div class="row" style="margin-top:2px"><button id="bHistBuild" ${BUSY ? 'disabled' : ''}>联网（重新）建这十年的史料</button><span class="muted" style="font-size:12px">${esc(HBMSG)}</span></div>` : ''}
       ${hasHist(s) ? (() => { const fs = figuresAt(s, s.clock.y).filter(f => f.alive && f.post).slice(0, 40); return fs.length ? `<div class="h"><span class="seal">人</span>此时在世的要紧人物<span class="note">内置史料；本局改过的标出</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此时官职</th><th>籍贯</th></tr>${fs.map(f => `<tr><td><b>${esc(f.name)}</b>${f.age ? `<div class="muted">${esc(f.age)}岁</div>` : ''}</td><td>${esc(f.post)}${f.changed ? ' <span class="badge b-bad">本局</span>' : ''}${f.note ? `<div class="muted">${esc(f.note)}</div>` : ''}</td><td>${esc(f.native)}</td></tr>`).join('')}</table></div>` : ''; })() : ''}
       ${arr(s.figures).length && !hasHist(s) ? `<div class="h"><span class="seal">人</span>要紧人物<span class="note">真人此时的官职、所在、生死</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>官职身份</th><th>在</th><th>态度</th></tr>${s.figures.map(f => `<tr><td><b>${esc(f.name)}</b>${f.age ? `<div class="muted">${esc(f.age)}岁</div>` : ''}${f.alive === false ? '<div class="muted">已故</div>' : ''}</td><td>${esc(f.post)}${f.note ? `<div class="muted">${esc(f.note)}</div>` : ''}</td><td>${esc(f.where)}</td><td>${esc(f.stance)}</td></tr>`).join('')}</table></div>` : ''}
@@ -1699,6 +1707,7 @@ let PHASE = '', TICKMSG = '', LOOKST = null;
 async function startGame(sentence, have, havePre) {
   sentence = String(sentence || '').trim(); if (!sentence || BUSY) return;
   ERRMSG = ''; STREAM = ''; PHASE = '';
+  CTL = new AbortController();
   setBusy(true);
   let st = have || null, looked = null, pre = havePre || null;
   try {
@@ -1755,11 +1764,12 @@ async function send(said, span, note, resume) {
   if (BUSY || !S) return;
   ERRMSG = ''; STREAM = ''; PHASE = ''; PENDING_SAID = String(said || '').trim();
   const orig = resume && resume.orig;
-  LAST_ACTION = () => { if (orig) S = restorePrev(orig); send(said, span, note, resume && (resume.story || orig) ? { story: resume.story, orig } : undefined); };
+  LAST_ACTION = () => { if (orig) S = restorePrev(orig); send(said, span, note, resume && (resume.story || orig) ? { story: resume.story, orig, ruling: resume.ruling } : undefined); };
   const before = clone(S); before.prev = null;
   if ($('#said')) $('#said').value = '';
+  CTL = new AbortController();
   setBusy(true);
-  const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), baseTurn: S.turn, redo: !!orig, ...o }));
+  const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), baseTurn: S.turn, baseChat: S.chat.length, redo: !!orig, ...o }));
   let st = resume && resume.story ? resume.story : null, looked = null, ruling = (resume && resume.ruling) || null;
   try {
     if (!st && canSearch() && !(resume && resume.job)) {
@@ -1767,11 +1777,11 @@ async function send(said, span, note, resume) {
       looked = await doLookups(S, lookupQueries(S, said));
       PHASE = ''; render();
     }
-    if (!st && SETTINGS.ruling !== false && needRuling(said)) { PHASE = 'ruling'; render(); ruling = await getRuling(S, said); PHASE = ''; render(); }
+    if (!st && !(resume && (resume.job || resume.ruling)) && SETTINGS.ruling !== false && needRuling(said)) { PHASE = 'ruling'; render(); ruling = await getRuling(S, said); PHASE = ''; render(); }
     if (!st) {
       const sys = MODE === 'local';
       const { text } = await callClaude(storyInput(S, said, span, note, sys, ruling), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); },
-        { json: false, temperature: 1.3, maxTokens: 6000, system: sys ? storyRules() : '', resumeJob: resume && resume.job, onJob: job => pend({ job }) });
+        { json: false, temperature: 1.3, maxTokens: 6000, system: sys ? storyRules() : '', resumeJob: resume && resume.job, onJob: job => pend({ job, ruling }) });
       st = splitStory(text);
       // 偶尔一个字没写出来：自动再写一次，不让玩家点
       if (!st.text) {
@@ -1805,14 +1815,16 @@ async function send(said, span, note, resume) {
       // 先存一次：后面整理章节、推演天下要一会儿，这时关页面也不丢这一回
       S.prev = before;
       try { await store.save(S); } catch (_) { /* 后面再存 */ }
-      if (ok && arr(S.summaries).length > 60) { PHASE = 'memory'; render(); await compactMemory(S); }
-      if (ok && SETTINGS.world !== false && needTick(S, d)) {
+      // 后面几步（整理章节、推演、自建史料）：按一次停下，后面的都不做了，这一回照样留下
+      let stopped = false;
+      if (ok && arr(S.summaries).length > 60) { PHASE = 'memory'; render(); if ((await compactMemory(S)) === 'cancelled') stopped = true; }
+      if (ok && !stopped && SETTINGS.world !== false && needTick(S, d)) {
         lsSet('hrpg:pending', null);
         PHASE = 'world'; render();
         try { const r = await worldTick(S); if (r.changes.length || r.ripples.length || arr(r.moves).length) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }
-        catch (e) { if (e && e.code === 'cancelled') { /* 停下只停推演，这一回照样留下 */ } }
+        catch (e) { if (e && e.code === 'cancelled') stopped = true; }
       }
-      if (ok && packNeed(S)) { try { await ensureHistPack(S); } catch (_) { /* 停下就下回再建 */ } }
+      if (ok && !stopped && packNeed(S)) { try { await ensureHistPack(S); } catch (_) { /* 停下就下回再建 */ } }
     }
     S.prev = before;
     LAST_ACTION = null;
@@ -1821,8 +1833,8 @@ async function send(said, span, note, resume) {
     lsSet('hrpg:pending', null);
     if (!(e && e.code === 'cancelled')) ERRMSG = errText(e);
     if (orig) S = orig;  // 重写或补记没成：原来那一回照旧留着
-    if (INST_CACHE && INST_CACHE.id === S.id && !S.inst) S.inst = INST_CACHE.inst;
     else { const keepPrev = S.prev; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, before, { prev: keepPrev }); }
+    if (INST_CACHE && INST_CACHE.id === S.id && !S.inst) S.inst = INST_CACHE.inst;
     setTimeout(() => { if ($('#said') && !$('#said').value) $('#said').value = said || ''; }, 0);
   } finally {
     STREAM = ''; PHASE = ''; PENDING_SAID = ''; setBusy(false);
@@ -1842,7 +1854,7 @@ async function settleLast() {
   if (!g || !g.unsettled || !S.prev || BUSY) return;
   const u = g.unsettled, text = g.text, orig = S;
   S = restorePrev(orig);
-  return send(u.said, u.span, '', { story: { text, hidden: u.hidden, talk: false }, orig });
+  return send(u.said, u.span, '', { story: { text, hidden: u.hidden, talk: false }, orig, ruling: g.extra && g.extra.ruling });
 }
 
 document.addEventListener('submit', e => { if (e.target.id === 'fStart') { e.preventDefault(); startGame($('#qText').value); } });
@@ -1919,7 +1931,7 @@ document.addEventListener('click', async e => {
     if (BUSY || !S) return;
     const y = S.clock.y, cov = RUNHIST.find(h => y >= h.range[0] && y <= h.range[1]);
     const from = cov ? cov.range[0] : y - 3;
-    setBusy(true); PHASE = 'histbuild';
+    CTL = new AbortController(); setBusy(true); PHASE = 'histbuild';
     try { const p = await buildHistPack(S, from, from + 11, true); HBMSG = `✓ 已建 ${p.title}：${p.events.length} 件事、${p.figures.length} 位人物`; await store.save(S); }
     catch (e) { if (!(e && e.code === 'cancelled')) HBMSG = '没建成：' + errText(e); }
     finally { PHASE = ''; setBusy(false); }
@@ -1935,11 +1947,14 @@ document.addEventListener('click', async e => {
   }
   if (t.id === 'bBranch') {
     if (BUSY || !S) return;
-    await store.save(S);
-    const b = clone(S); b.id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); b.prev = null;
-    b.title = `${one(S.title, 20)}（分支·第${S.turn}回合）`; b.branchOf = S.id; b.createdAt = Date.now();
-    await store.save(b); S = b; lsSet('hrpg:last', b.id);
-    render(); const m = $('#branchMsg'); if (m) m.textContent = '✓ 已另存为分支，现在玩的是分支'; return;
+    setBusy(true);
+    try {
+      await store.save(S);
+      const b = clone(S); b.id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); b.prev = null;
+      b.title = `${one(S.title, 20)}（分支·第${S.turn}回合）`; b.branchOf = S.id; b.createdAt = Date.now();
+      await store.save(b); S = b; lsSet('hrpg:last', b.id);
+    } finally { setBusy(false); }
+    const m = $('#branchMsg'); if (m) m.textContent = '✓ 已另存为分支，现在玩的是分支'; return;
   }
   if (t.id === 'bReport') {
     const txt = problemReport();
@@ -1985,8 +2000,10 @@ render();
   try {
     const p = JSON.parse(lsGet('hrpg:pending') || 'null');
     if (p && S && p.saveId === S.id && Date.now() - p.at < 30 * 60e3 && (p.story || (p.job && MODE === 'local'))) {
-      if (p.redo && S.turn !== p.baseTurn && S.prev) S = restorePrev(S);
-      if (S.turn === p.baseTurn) send(p.said, p.span, p.note, { job: p.job, story: p.story, ruling: p.ruling }); else lsSet('hrpg:pending', null);
+      const moved = p.baseChat != null ? S.chat.length !== p.baseChat : S.turn !== p.baseTurn;
+      if (p.redo && moved && S.prev) S = restorePrev(S);
+      const still = p.baseChat != null ? S.chat.length === p.baseChat : S.turn === p.baseTurn;
+      if (still) send(p.said, p.span, p.note, { job: p.job, story: p.story, ruling: p.ruling }); else lsSet('hrpg:pending', null);
     }
     else lsSet('hrpg:pending', null);
   } catch (_) { lsSet('hrpg:pending', null); }
