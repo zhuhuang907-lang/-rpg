@@ -427,7 +427,9 @@ const store = {
 function shrink(s) {
   const slim = (x, keep) => { if (!x || !x.chat) return; x.chat.forEach((c, i) => { if (i < x.chat.length - keep && c.text) { c.text = ''; c.extra = null; } }); if (x.chat.length > 400) x.chat = x.chat.slice(-400); };
   slim(s, 30);
-  if (s.prev) { slim(s.prev, 4); s.prev.prev = null; }
+  if (s.prev) { slim(s.prev, 4); s.prev.prev = null; for (const k of ['inst', 'research', 'almanac', 'locals', 'searchedQ', 'searchedYears', 'wikiDone', 'geo', 'gazetteer']) delete s.prev[k]; }
+  // 维基正文只给当回合用：早几回合的留个开头
+  for (const x of arr(s.research)) if (x.wiki && x.turn < (s.turn || 0) - 1 && String(x.text).length > 600) x.text = cut(x.text, 600);
   // 越玩越多的册子也设上限
   const P = Object.entries(s.people || {});
   if (P.length > 150) s.people = Object.fromEntries(P.sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 150));
@@ -969,16 +971,17 @@ const LI_KM = 0.55;   // 一里约 0.55 公里（唐宋明清大致如此）
 function hav(a, b) { const R = 6371, r = x => x * Math.PI / 180, dLa = r(b.lat - a.lat), dLo = r(b.lon - a.lon); const h = Math.sin(dLa / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
 function dirOf(a, b) { const dx = (b.lon - a.lon) * Math.cos((a.lat + b.lat) / 2 * Math.PI / 180), dy = b.lat - a.lat; const ang = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360; return ['北', '东北', '东', '东南', '南', '西南', '西', '西北'][Math.round(ang / 45) % 8]; }
 const liOf = km => Math.round(km / LI_KM / 5) * 5;
-async function tgaz(params) { try { const q = new URLSearchParams(params); const r = await api('/api/tgaz?' + q); return r && r.ok ? arr(r.results) : null; } catch (_) { return null; } }
+async function tgaz(params) { if (TURN && TURN.signal.aborted) throw { code: 'cancelled' }; try { const q = new URLSearchParams(params); const r = await api('/api/tgaz?' + q); return r && r.ok ? arr(r.results) : null; } catch (_) { return null; } }
 const isCounty = u => /县|縣/.test(u.type) || /县$|縣$/.test(u.name);
 const isPref = u => /州|府|郡|军|監|监|路|道|省/.test(u.type) && !isCounty(u);
 const geoValid = (u, y) => u && u.lat && u.lon && (u.from == null || u.from <= y) && (u.to == null || u.to >= y);
 /** 从「河北道范阳郡范阳（幽州）城」这类全称里拆出可查的地名，先具体后宽泛 */
 function placeNames(full) {
-  const s = String(full || '').replace(/[（(][^）)]*[）)]/g, m => ' ' + m.slice(1, -1) + ' ');
-  const out = [];
-  for (const m of s.matchAll(/([^\s省道路府州郡县縣城镇鎮]{1,4})(县|縣|州|府|郡|城|镇)/g)) out.push(m[1] + (m[2] === '城' || m[2] === '镇' ? '' : m[2]), m[1]);
-  return [...new Set(out.filter(x => x && x.length >= 2))].reverse();
+  const s = String(full || '').replace(/[（(][^）)]*[）)]/g, m => ' ' + m.slice(1, -1) + ' ').replace(/(南直隶|北直隶|直隶|承宣布政使司|布政使司|布政司|行中书省|中书省|.{1,2}道(?=.)|.{1,3}路(?=.)|.{1,3}省)/g, ' ');
+  const pairs = [];
+  for (const m of s.matchAll(/([^\s省道路府州郡县縣城镇鎮]{1,4})(县|縣|州|府|郡|城|镇)/g)) pairs.push([m[1] + (m[2] === '城' || m[2] === '镇' ? '' : m[2]), m[1]]);
+  // 先查最具体的（县），全称在前、简称在后
+  return [...new Set(pairs.reverse().flat().filter(x => x && x.length >= 2))];
 }
 async function buildGeo(s, extraNames) {
   const y = s.clock.y, units = new Map();
@@ -987,7 +990,12 @@ async function buildGeo(s, extraNames) {
   let here = null;
   for (const n of placeNames(s.place.full)) {
     const rs = arr(await tgaz({ n, yr: y })).filter(u => geoValid(u, y));
-    if (rs.length) { here = rs.find(isCounty) || rs[0]; rs.forEach(add); break; }
+    if (rs.length) {
+      const full = String(s.place.full || ''), stemOf = x => String(x || '').replace(/[县縣州府郡军道路]+$/, '');
+      const fit = rs.filter(u => u.parent && full.includes(stemOf(u.parent)));
+      here = (fit.length ? fit : rs).find(isCounty) || (fit.length ? fit : rs)[0];
+      add(here); break;
+    }
   }
   if (!here) return null;
   // 2. 所在州府的属县；州府的上级下的各州府，再取最近的几个州府的属县
@@ -1028,7 +1036,7 @@ function geoBlock(s, said) {
   const prefs = g.units.filter(isPref).filter(u => u.name !== here.parent).map(u => [hav(here, u), u]).sort((a, b) => a[0] - b[0]).slice(0, 10).map(([, u]) => u);
   if (prefs.length) L.push('邻近州府（治所）：' + prefs.map(fmt).join('、'));
   // 玩家这回说到的地方：给出里程方向和沿途县城
-  const named = g.units.filter(u => u.name.length >= 2 && String(said || '').includes(u.name.replace(/[县縣州府郡]$/, '')) && u.name !== here.name).slice(0, 3);
+  const named = g.units.filter(u => { const st = u.name.replace(/[县縣州府郡]$/, ''); return u.name !== here.name && (st.length >= 2 ? String(said || '').includes(st) : String(said || '').includes(u.name)); }).slice(0, 3);
   for (const u of named) {
     const c = corridor(g, here, u);
     L.push(`去${u.name}：${dirOf(here, u)}，直线约${liOf(hav(here, u))}里，走路约${liOf(hav(here, u) * 1.3)}里；沿途县城：${c.length ? c.map(x => `${x.u.name}（距此约${liOf(x.along * 1.3)}里）`).join(' → ') : '（直线附近没有县城）'}`);
@@ -1376,7 +1384,7 @@ ${story}${hidden ? '\n\n【幕后】' + hidden : ''}
 只输出那一个 JSON 对象。`;
 }
 /** 开局时：玩家写了年份或年号，就先把那几年的史料给 AI */
-function openingHist(sentence) {
+function sentenceYear(sentence) {
   let y = null;
   const m = String(sentence).match(/(-?\d{3,4})\s*年/); if (m) y = Number(m[1]);
   if (y == null) for (const h of HIST) for (const r of arr(h.rulers)) for (const [era, st] of arr(r.reigns)) if (era.length >= 2 && sentence.includes(era)) {
@@ -1385,6 +1393,10 @@ function openingHist(sentence) {
     y = n ? st + n - 1 : st + Math.floor((r.to - st) / 2);
   }
   if (y == null) for (const h of HIST) for (const f of h.figures) if (f.name.length >= 2 && sentence.includes(f.name) && f.born != null) y = f.born + 30;
+  return y;
+}
+function openingHist(sentence) {
+  const y = sentenceYear(sentence);
   if (y == null) return '';
   const fake = { clock: { y, m: 6 }, place: { polity: '' }, world: {}, chat: [], figOver: {} };
   const b = histBlock(fake);
@@ -1401,7 +1413,7 @@ function verifyMaterials(s, said, text) {
 async function verifyText(s, said, text) {
   if (!text || SETTINGS.check === false) return { text, audit: [] };
   const audit = [];
-  const head = `你是一位严谨的史学审校。下面是一局历史模拟游戏刚写好、还没给玩家看的一段正文。时间：${timeText(s.clock)}；地点：${s.place.full}（${s.place.polity || ''}）；主角：${s.protagonist.name}，${s.protagonist.role}。
+  const head = `你是一位严谨的史学审校。下面是一局历史模拟游戏刚写好、还没给玩家看的一段正文。${s.noTime ? '（这是开场，年代与地点以正文自己交代的为准，核对正文前后是否自洽、与史实是否相符）' : `时间：${timeText(s.clock)}；地点：${s.place.full}（${s.place.polity || ''}）`}；主角：${s.protagonist.name ? s.protagonist.name + '，' : ''}${s.protagonist.role}。
 只审史实与制度，不改文风、不改情节、不改虚构人物的言行：真实人物此时的官职、所在、生死；衙门、职衔、品级、文书、办事程序、称谓是否合本朝本年（【制度框架】只是框架，可能有错，以确凿史实为准）；地名与隶属；年号、干支、节令、史事时间；器物、作物、制度是否此时已有；物价与钱粮单位；现代词语。`;
   // 第一步：拿材料核，能确定的直接改；拿不准的列出来去查
   let A = null;
@@ -1968,15 +1980,16 @@ async function startGame(sentence, have, havePre) {
       const sys = MODE === 'local';
       DRAFTN = 0; PHASE = 'draft'; render();
       const { text } = await callClaude(openingStoryInput(sentence, sys) + (pre && arr(pre.almanac).length ? '\n\n' + almanacBlock(pre) : '') + (pre && pre.research.length ? '\n\n' + researchBlock(pre) : ''), draftCb, { json: false, temperature: 1.3, maxTokens: 6000, system: sys ? storyRules() : '' });
-      st = splitStory(text);
-      if (st.text.length < 40) {
+      let draft = splitStory(text);
+      if (draft.text.length < 40) {
         const r2 = await callClaude(openingStoryInput(sentence, sys) + (pre && arr(pre.almanac).length ? '\n\n' + almanacBlock(pre) : ''), draftCb, { json: false, temperature: 1.3, maxTokens: 6000, system: sys ? storyRules() : '' });
-        st = splitStory(r2.text);
-        if (st.text.length < 40) throw { code: 'empty_completion' };
+        draft = splitStory(r2.text);
+        if (draft.text.length < 40) throw { code: 'empty_completion' };
       }
       PHASE = 'verify'; render();
-      const vr = await verifyText({ ...(pre || {}), research: arr(pre && pre.research), almanac: arr(pre && pre.almanac), clock: { y: 0, m: 1, d: 1, yearLabel: '' }, place: { full: '', polity: '' }, protagonist: { name: '', role: sentence }, chat: [], world: {}, figOver: {}, turn: 0 }, sentence, st.text);
-      st.text = vr.text;
+      const oy = sentenceYear(sentence);
+      const vr = await verifyText({ ...(pre || {}), research: arr(pre && pre.research), almanac: arr(pre && pre.almanac), clock: { y: oy ?? 0, m: 6, d: 1, yearLabel: '' }, place: { full: '', polity: '' }, protagonist: { name: '', role: sentence }, chat: [], world: {}, figOver: {}, turn: 0, noTime: oy == null }, sentence, draft.text);
+      draft.text = vr.text; st = draft;
     }
     STREAM = st.text; PHASE = 'ledger'; render();
     LAST_ACTION = () => startGame(sentence, st, pre);
@@ -2003,6 +2016,7 @@ async function startGame(sentence, have, havePre) {
   } catch (e) {
     if (!(e && e.code === 'cancelled')) ERRMSG = errText(e) + (st ? '（开场已经写好了，再试只补账册）' : '');
     if (!st) LAST_ACTION = () => startGame(sentence, null, pre);
+    else if (!LAST_ACTION) LAST_ACTION = () => startGame(sentence, st, pre);
   }
   finally { STREAM = ''; PHASE = ''; TURN = null; setBusy(false); }
   if (S && VIEW === 'game' && (packNeed(S) || needGaz(S) || needGeo(S))) {
@@ -2044,9 +2058,10 @@ async function send(said, span, note, resume) {
         if (lk2) looked = { shown: arr(looked && looked.shown).concat(arr(lk2.shown).map(x => ({ ...x, ai: true }))), err: (looked && looked.err) || lk2.err, provider: lk2.provider };
       }
       // 玩家说到的地方地图上还没有：到历史地名库里查出来补上，好算里程和沿途
-      if (canGeo() && S.geo && ruling && arr(ruling.places).length) {
-        const miss = ruling.places.filter(n => !S.geo.units.some(u => u.name === n || u.name.replace(/[县縣州府郡]$/, '') === n.replace(/[县縣州府郡]$/, '')));
-        for (const n of miss.slice(0, 4)) { const rs = arr(await tgaz({ n, yr: S.clock.y })).filter(u => geoValid(u, S.clock.y)); if (rs.length) { const u = rs.sort((a, b) => hav(S.geo.here, a) - hav(S.geo.here, b))[0]; S.geo.units.push({ id: u.id, name: u.name, type: u.type, parent: u.parent, lat: +u.lat, lon: +u.lon }); } }
+      if (canGeo() && S.geo && ruling && arr(ruling.places).length && !(S.geoFail != null && S.turn - S.geoFail < 5)) {
+        const stem = x => String(x).replace(/[县縣州府郡军道路城]+$/, '');
+        const miss = ruling.places.filter(n => !S.geo.units.some(u => u.name === n || stem(u.name) === stem(n) || u.name.startsWith(stem(n)) && stem(n).length >= 2));
+        for (const n of miss.slice(0, 4)) { const rs = arr(await tgaz({ n, yr: S.clock.y })).filter(u => geoValid(u, S.clock.y)); if (rs.length) { const u = rs.sort((a, b) => hav(S.geo.here, a) - hav(S.geo.here, b))[0]; if (!S.geo.units.some(x => x.id === u.id)) S.geo.units.push({ id: u.id, name: u.name, type: u.type, parent: u.parent, lat: +u.lat, lon: +u.lon }); } }
       }
       PHASE = ''; render();
     }
@@ -2103,7 +2118,7 @@ async function send(said, span, note, resume) {
         catch (e) { if (e && e.code === 'cancelled') stopped = true; }
       }
       if (ok && !stopped && packNeed(S)) { try { await ensureHistPack(S); } catch (e) { if (e && e.code === 'cancelled') stopped = true; } }
-      if (ok && !stopped && needGaz(S)) { PHASE = 'gaz'; render(); try { await buildGazetteer(S); } catch (_) { /* 下回合再查 */ } }
+      if (ok && !stopped && needGaz(S)) { PHASE = 'gaz'; render(); try { await buildGazetteer(S); } catch (e) { if (e && e.code === 'cancelled') stopped = true; } }
       if (ok && !stopped && needGeo(S)) { try { await ensureGeo(S, S.gazetteer && S.gazetteer.counties); } catch (_) { /* 下回合再查 */ } }
     }
     S.prev = before;
@@ -2128,7 +2143,7 @@ async function send(said, span, note, resume) {
 function restorePrev(cur) {
   const p = clone(cur.prev);
   arr(p.chat).forEach((c, i) => { const o = cur.chat[i]; if (o && !c.text && o.text) { c.text = o.text; c.extra = o.extra; c.hints = o.hints; } });
-  for (const k of ['inst', 'research', 'almanac', 'locals', 'searchedQ']) if (cur[k] && !p[k]) p[k] = cur[k];
+  for (const k of ['inst', 'research', 'almanac', 'locals', 'searchedQ', 'searchedYears', 'wikiDone', 'geo', 'gazetteer']) if (cur[k] && !p[k]) p[k] = cur[k];
   return p;
 }
 /** 上一回的账没记上：退回那一回之前的账册，用写好的正文重新记一次 */
