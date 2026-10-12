@@ -312,10 +312,15 @@ const routes = {
     const GOOD = /baike\.baidu|wikipedia|baike\.sogou|ctext|guoxue|gushiwen|zhonghuadiancang|shidianguji|cnki|cass|historychina|zgdsw|dpm\.org|ndlib|chinaknowledge|douban\.com\/note|zhihu/;
     const one = q => Promise.race([
       search.search(q, isBocha ? { noFallback: true } : {}).catch(e => ({ query: q, results: [], error: String(e && e.message || e) })),
-      new Promise(r => setTimeout(() => r({ query: q, results: [], error: '超时（20 秒没回）' }), 20000)),
+      new Promise(r => setTimeout(() => r({ query: q, results: [], error: `超时（${isBocha ? 20 : 8} 秒没回）` }), isBocha ? 20000 : 8000)),
     ]);
     const rs = [];
-    for (let i = 0; i < qs.length; i += 3) rs.push(...await Promise.all(qs.slice(i, i + 3).map(one)));
+    const netErr = r => !(r.results || []).length && /超时|ENOTFOUND|ECONN|fetch failed|timeout|abort|socket|network/i.test(String(r.error || ''));
+    for (let i = 0; i < qs.length; i += 3) {
+      // 头一批全都连不上：后面的不再白等，直接记同样的原因
+      if (i > 0 && rs.length && rs.every(netErr)) { for (const q of qs.slice(i)) rs.push({ query: q, results: [], error: rs[0].error }); break; }
+      rs.push(...await Promise.all(qs.slice(i, i + 3).map(one)));
+    }
     const friendly = e => {
       const s = String(e || '');
       if (/401|无效|invalid|unauthor/i.test(s)) return '博查 Key 无效（到 open.bochaai.com 核对，或在首页重新填）';
