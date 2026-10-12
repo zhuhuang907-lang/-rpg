@@ -2499,12 +2499,23 @@ async function quickCall({ system, prompt, temperature = 0.7, maxTokens = 1500 }
 }
 
 /** 聊天式玩法：整段对话交给当前选定的 AI，流式回传 */
-async function chatCall({ messages, maxTokens = 8000, temperature = 0.8, onDelta, json = true }) {
+async function chatCall({ messages, system = '', maxTokens = 8000, temperature = 0.8, onDelta, json = true }) {
   const saved = await loadAdapterConfig();
   const aid = saved.selected || 'deepseek';
   const { adapter, config } = await resolveAdapter(aid, saved.configs?.[aid] || {});
   if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请先在首页填好 DeepSeek 的 Key');
-  const res = await adapter.call({ system: '', messages, prompt: messages.length ? messages[messages.length - 1].content : '', temperature, maxTokens, onDelta, json: !!json }, config);
+  // 模型服务一时忙（429 / 5xx / 断线）且还没写出字时，自动再试两次，不让玩家看到报错
+  let res, wrote = false;
+  const od = onDelta ? t => { wrote = true; onDelta(t); } : undefined;
+  for (let i = 0; ; i++) {
+    try { res = await adapter.call({ system, messages, prompt: messages.length ? messages[messages.length - 1].content : '', temperature, maxTokens, onDelta: od, json: !!json }, config); break; }
+    catch (e) {
+      const m = String(e && e.message || e);
+      if (e && e.stopStream) throw e;
+      if (i >= 2 || wrote || !/HTTP (429|500|502|503|504)|ECONNRESET|socket hang up|fetch failed|terminated|ETIMEDOUT/i.test(m)) throw e;
+      await new Promise(r => setTimeout(r, i === 0 ? 2500 : 6000));
+    }
+  }
   return { text: String((res && res.text) || ''), truncated: !!(res && res.meta && res.meta.truncated) };
 }
 
