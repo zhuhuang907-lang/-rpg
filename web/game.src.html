@@ -280,7 +280,7 @@ function storyRules() {
 
 七、文风
 24. 像好的历史正剧那样写（《大明王朝1566》《雍正王朝》的笔法）：叙述干净流畅，有起有落，场面里有人有声；人物说话带时代与身份的腔调，官场有官腔和潜台词，市井说市井话，家人说家常话。少写气氛，多写人和事。称主角为「你」。
-25. 不要：电报体、清单式排比、小标题；「空气仿佛凝固」「嘴角勾起」「不禁」「一丝」「眸子」「深吸一口气」「意味深长」这类套话；现代词语与现代观念；括号里的按语、注释、考证、自我更正（写错了就直接写对的，不解释）；在正文里列「你可以……」的选项；替玩家总结或下判断。
+25. 不要：电报体、清单式排比、小标题；「空气仿佛凝固」「嘴角勾起」「嘴角微微上扬」「眼中闪过一丝」「不禁」「一丝」「眸子」「深吸一口气」「意味深长」「空气中弥漫着」「命运的齿轮」「心中暗想」「仿佛在诉说」这类套话；粗体、标题、列表符号、分隔线；现代词语与现代观念；括号里的按语、注释、考证、自我更正（写错了就直接写对的，不解释）；在正文里列「你可以……」的选项；替玩家总结或下判断。
 25a. 笔法示范（只学笔法：用具体的动作、器物、数目和有来有往的对话把事办出来，叙述短、人物话里有潜台词；不照搬这里的年代、人名、内容）：
 ——掌柜把那匹缎子往柜上一抖，灯底下泛出一层水光。「东家瞧这织口，一寸二十八梭，城里能织到这个份上的不出五家。」你没接话，捻了捻边角。他便压低了声音：「去年腊月一两四钱一尺，今年丝贵，一两六钱，再少小号就赔了。」门外挑担的喊着热馄饨过去了。你说一两五。他咂了下嘴，回头冲后堂喊：「取秤来，给东家记上。」
 ——签押房里只点了一盏灯。周师爷把账册翻到夹着红签的那页，不先说话，只用指甲在一个数目底下划了一道。「上忙征的是八千三百两，解府库的是七千九。」他抬眼看你，「这四百两，前任拿来补火耗，府里也知道。东翁要动它，开春考成的时候，就得有人替咱们说话。」窗外打了二更。
@@ -362,7 +362,7 @@ function localSample(input, opts = {}) {
     if (opts.signal) { if (opts.signal.aborted) return onAbort(); opts.signal.addEventListener('abort', onAbort, { once: true }); }
     try {
       if (!job) {
-        const r = await api('/api/llm-start', { messages, maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature });
+        const r = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature });
         if (!r.ok) return reject({ code: 'local', message: r.why || '没发出去' });
         job = r.job;
         if (stopped) { api('/api/llm-stop', { job }).catch(() => {}); return; }
@@ -855,11 +855,12 @@ async function doLookups(s, queries) {
   if (r.status) LOOKST = r.status;
   return { shown, err: errs.length && !shown.length ? errs[0] : '', provider: r.provider };
 }
-function researchBlock(s, extraText) {
-  const R = arr(s && s.research).slice(-14);
+function researchBlock(s, extraText, localsOnly) {
+  const R = localsOnly ? [] : arr(s && s.research).slice(-14);
   const extra = extraText ? '\n' + extraText : '';
-  if (!R.length && !extra) return '';
   const LC = arr(s && s.locals).slice(-30);
+  if (localsOnly) return LC.length ? '【此时此地的真人（从查证里认出来的）】\n' + LC.map(x => `· ${x.name}：${x.role}${x.y ? '（' + x.y + '年前后）' : ''}${x.note ? '，' + x.note : ''}`).join('\n') : '';
+  if (!R.length && !extra) return '';
   return '【联网查到的资料（这个年代此时此地真实的人和事；搜索摘要可信度不一：与内置史料冲突以内置史料为准，与你的记忆冲突以这里为准；没查到的不要硬编）】\n' + R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') + extra
     + (LC.length ? '\n【此时此地的真人（从查证里认出来的）】\n' + LC.map(x => `· ${x.name}：${x.role}${x.y ? '（' + x.y + '年前后）' : ''}${x.note ? '，' + x.note : ''}`).join('\n') : '');
 }
@@ -977,7 +978,7 @@ async function compactMemory(s) {
 }
 
 /* ========== 账册 → 给 AI 的材料 ========== */
-function blocks(s) {
+function blocks(s, forStory) {
   const p = s.protagonist, c = s.clock, L = [], id = IDM[s.idm] || IDM.commoner;
   L.push(`【此刻】${timeText(c)}，${season(c.m)}。主角现居：${s.place.full}（${s.place.polity || ''}）。`);
   const st = Object.entries(s.status || {}).map(([k, v]) => `${k}：${v}`).join('；');
@@ -1002,7 +1003,7 @@ function blocks(s) {
   const w = s.world || {};
   const hb = histBlock(s); if (hb) L.push(hb);
   const ab = almanacBlock(s); if (ab) L.push(ab);
-  const rb = researchBlock(s); if (rb) L.push(rb);
+  const rb = researchBlock(s, '', forStory); if (rb) L.push(rb);
   if (arr(s.canon).length) L.push('【定本（本局已经确立、以后一直成立的事；不得前后矛盾）】\n' + s.canon.map(c => `· ${c.text}`).join('\n'));
   if (arr(s.chapters).length) L.push('【前几章（较早的经过）】\n' + s.chapters.map(c => `${c.from}至${c.to}：${c.text}`).join('\n'));
   L.push('【史线（以此为准）】' + (w.overview || '（开局时补全）') + (arr(w.events).length ? '\n已经发生：\n' + w.events.slice(-24).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}${x.changed ? '（本局实际如此）' : ''}`).join('\n') : '')
@@ -1033,7 +1034,9 @@ function splitStory(text) {
   const i = t.indexOf('【幕后】');
   const hidden = i >= 0 ? t.slice(i + 4).trim() : '';
   if (i >= 0) t = t.slice(0, i);
-  t = t.replace(/【幕?$/, '').replace(/[（(](?:按|注|编者按|作者按)[：:][^）)]*[）)]/g, '').trim();
+  t = t.replace(/【幕?$/, '').replace(/[（(](?:按|注|编者按|作者按)[：:][^）)]*[）)]/g, '')
+    // AI 爱用的排版记号：粗体、标题、列表符、分隔线，正文里都不要
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1').replace(/^#{1,6}\s*/gm, '').replace(/^\s*[-*•]\s+/gm, '').replace(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
   const talk = /^【戏外】/.test(t);
   return { text: t.replace(/^【戏外】\s*/, '').trim(), hidden, talk };
 }
@@ -1053,8 +1056,8 @@ function pushUser(turns, content) {
   return turns;
 }
 /** 写戏：规则 + 账册当第一句，然后是最近的对话，最后是玩家这回说的话；只要正文 */
-function storyInput(s, said, span, note) {
-  const turns = recentTurns(s, storyRules() + '\n\n' + blocks(s));
+function storyInput(s, said, span, note, sys) {
+  const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true));
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、家业与账目、家里与身边人的变化、季节年景与市面、传来的消息），其余带过但交代清楚。` : '';
   const what = String(said || '').trim() ? `【玩家这回说】\n${said}` : '【玩家这回没说话】就按他的身份和处境往下过一段日子（一般几天到一旬，在打仗就写这几日的军中与敌情），有事找上门就停在那里。';
   return pushUser(turns, what + modernNote(said) + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + '\n\n照规则写正文。');
@@ -1064,8 +1067,8 @@ function ledgerInput(s, said, story, hidden, span) {
   const mf = [mentionedFigures(s, story), modernInStory(story)].filter(Boolean).join('\n'), el = eraLabel(s, s.clock.y);
   return ledgerRules() + '\n\n' + blocks(s) + (mf ? '\n\n' + mf : '') + (el ? `\n【按史料，本年年号纪年为「${el}」；若本局君主或年号已被改写，照本局】` : '') + `\n\n【玩家这回说】${String(said || '').trim() || '（没说话，照常过日子）'}${SPANS[span] ? '（这一回要过' + SPANS[span] + '）' : ''}\n\n【这一回的正文】\n${story}${hidden ? '\n\n【幕后】' + hidden : ''}\n\n照规则记账、核史实，只输出那一个 JSON 对象。`;
 }
-function openingStoryInput(sentence) {
-  return storyRules() + openingHist(sentence) + `
+function openingStoryInput(sentence, sys) {
+  return (sys ? '' : storyRules()) + openingHist(sentence) + `
 
 【开局】玩家想当的人：「${sentence}」
 先替玩家把这个人落到真实历史里：没说年代就挑这个身份最有戏、史料最清楚的年份；没说地点就挑当时真实存在、与身份相称的地方。真实人物用他本人此时的真实身份、年龄、家人；虚构人物起一个合乎时代、不与史载真人同名的名字，家人也虚构。
@@ -1591,9 +1594,14 @@ async function startGame(sentence, have, havePre) {
       PHASE = ''; render();
     }
     if (!st) {
-      const { text } = await callClaude(openingStoryInput(sentence) + (pre && arr(pre.almanac).length ? '\n\n' + almanacBlock(pre) : '') + (pre && pre.research.length ? '\n\n' + researchBlock(pre) : ''), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); }, { json: false, temperature: 0.9, maxTokens: 6000 });
+      const sys = MODE === 'local';
+      const { text } = await callClaude(openingStoryInput(sentence, sys) + (pre && arr(pre.almanac).length ? '\n\n' + almanacBlock(pre) : '') + (pre && pre.research.length ? '\n\n' + researchBlock(pre) : ''), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); }, { json: false, temperature: 1.3, maxTokens: 6000, system: sys ? storyRules() : '' });
       st = splitStory(text);
-      if (st.text.length < 40) throw { code: 'empty_completion' };
+      if (st.text.length < 40) {
+        const r2 = await callClaude(openingStoryInput(sentence, sys) + (pre && arr(pre.almanac).length ? '\n\n' + almanacBlock(pre) : ''), t => { STREAM = t; render(); }, { json: false, temperature: 1.3, maxTokens: 6000, system: sys ? storyRules() : '' });
+        st = splitStory(r2.text);
+        if (st.text.length < 40) throw { code: 'empty_completion' };
+      }
     }
     STREAM = st.text; PHASE = 'ledger'; render();
     LAST_ACTION = () => startGame(sentence, st, pre);
@@ -1642,10 +1650,16 @@ async function send(said, span, note, resume) {
       PHASE = ''; render();
     }
     if (!st) {
-      const { text } = await callClaude(storyInput(S, said, span, note), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); },
-        { json: false, temperature: 0.9, maxTokens: 6000, resumeJob: resume && resume.job, onJob: job => pend({ job }) });
+      const sys = MODE === 'local';
+      const { text } = await callClaude(storyInput(S, said, span, note, sys), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); },
+        { json: false, temperature: 1.3, maxTokens: 6000, system: sys ? storyRules() : '', resumeJob: resume && resume.job, onJob: job => pend({ job }) });
       st = splitStory(text);
-      if (!st.text) throw { code: 'empty_completion' };
+      // 偶尔一个字没写出来：自动再写一次，不让玩家点
+      if (!st.text) {
+        const r2 = await callClaude(storyInput(S, said, span, note, sys), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); }, { json: false, temperature: 1.3, maxTokens: 6000, system: sys ? storyRules() : '' });
+        st = splitStory(r2.text);
+        if (!st.text) throw { code: 'empty_completion' };
+      }
     }
     if (st.talk) {
       lsSet('hrpg:pending', null);
@@ -1654,7 +1668,9 @@ async function send(said, span, note, resume) {
       pend({ story: st });
       STREAM = st.text; PHASE = 'ledger'; render();
       let d = null;
-      try { const { text: lt } = await callClaude(ledgerInput(S, said, st.text, st.hidden, span), null, { maxTokens: 8000, temperature: 0.3 }); d = parseJSON(lt); } catch (e) { if (e && e.code === 'cancelled') throw e; }
+      for (let k = 0; k < 2 && !d; k++) {
+        try { const { text: lt } = await callClaude(ledgerInput(S, said, st.text, st.hidden, span), null, { maxTokens: 8000, temperature: 0.3 }); d = parseJSON(lt); } catch (e) { if (e && e.code === 'cancelled') throw e; }
+      }
       lsSet('hrpg:pending', null);
       const ok = !!d;
       d = d || { elapsedDays: 0 };
