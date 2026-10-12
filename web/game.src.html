@@ -230,7 +230,7 @@ const season = m => '春春春夏夏夏秋秋秋冬冬冬'[(m - 1) % 12] || '';
 /* ========== 规则 ========== */
 let SETTINGS = { len: 'normal', tier: 'default', check: true };
 try { Object.assign(SETTINGS, JSON.parse(lsGet('hrpg:settings') || '{}')); } catch (_) { /* 默认 */ }
-const LEN = { short: '三四百字', normal: '六百到一千字', long: '一千到一千六百字' };
+const LEN = { short: '五六百字', normal: '九百到一千五百字', long: '一千五百到两千五百字' };
 const IDM = {
   emperor: { meters: '国库（钱、粮）、内帑、民心、吏治、威望、军心', groups: '朝官各派、宗室、宦官或外戚、军队、农户、工商', estate: '国库与内帑的岁入岁出、皇庄、各项大工与军费', ways: '开仓赈济、兴修水利、整饬吏治、加征、裁冗、练兵、用人罢人、和战' },
   warlord: { meters: '府库、兵额实数、粮饷可支几月、地盘、部将忠心、名分', groups: '部将、士人、百姓、邻近势力', estate: '辖地赋税、屯田、军需、私产', ways: '募兵、屯田、修城、积粮、遣使、结盟离间、出兵' },
@@ -275,6 +275,7 @@ function storyRules() {
 
 六、史线与地理
 22. 【史线】是这一年前后真实的天下大势，以它为准，不编史书没有的大事；本局被改写过的以【被改写的历史】为准。时间过去时，史书上这段时间的大事按路程与身份迟到、可能走样后传到主角耳朵里。小人物见不到帝王将相；不把无关的真人硬扯到主角身边；虚构人物不与史载真人同名。真人此时的官职、年龄、生死、所在地必须对，以【要紧人物】为准。【将要发生】里标「已变」「新出」的，是本局因果推演出的新走向，照它写；【本局的连锁变化】里的事要在合适的时候让主角看到、听到、受到影响。
+22b. 历史的质感在具体：写公事就写到哪个衙门、什么职衔、走什么文书与程序、按什么惯例；写市井就写到哪条街、哪个行当、什么价、怎么称呼；写人就写他的出身、功名、籍贯、在这件事里的位置和盘算。这些从【本地志】【场景简报】【年代志】【这一回联网查到的资料】【内置史料】里取，用在动作和对话里，不要掉书袋、不要讲解。人物用那个年代的人的心思想事，不用现代人的眼光。
 22a. 主角活在那个年代里：【联网查到的资料】【此时此地的真人】【内置史料】是这个时代真实的人和事。像那时的人一样，主角会陆续看到、听到——邸报与告示、街谈巷议、来往客商与亲友捎来的消息、本地官府与士绅的动静、物价年景的变化，也会在合乎身份的场合碰到真人（上官、同僚、本地士绅、名士、商人）。每回挑一两条与主角处境相关、他够得着的，自然带出；不相关的不硬塞，真人不会无缘无故找上门，小人物见不到大人物，不牵强附会。
 23. 一律用当时的地名与隶属，【地理册】里的地方照它，前后不能矛盾。头一次去或提到一个地方，顺带写出它在哪个方向、多远、要走几天。路程按真实里程和走法：步行日行五六十里，骑马百里上下，驿马急递三四百里，漕船顺水日行百里左右、逆水减半，山路雨雪更慢。
 
@@ -469,6 +470,7 @@ function migrate(s) {
     if (!Array.isArray(s.almanac)) s.almanac = [];
     if (!Array.isArray(s.annals)) s.annals = [];
     if (!Array.isArray(s.factions)) s.factions = [];
+    if (s.gazetteer && typeof s.gazetteer !== 'object') s.gazetteer = null;
     if (!Array.isArray(s.chapters)) s.chapters = [];
     if (!s.figOver) s.figOver = {};
     if (s.world && !Array.isArray(s.world.ripples)) s.world.ripples = [];
@@ -736,8 +738,10 @@ function histBlock(s) {
   const figs = figuresAt(s, y);
   const near = new Set(histEvents(s, now - 36, now + 60).flatMap(e => arr(e.who)));
   const talked = arr(s.chat).slice(-12).map(c => c.text).join('');
-  const alive = figs.filter(f => f.alive && (f.post || near.has(f.name) || talked.includes(f.name)))
-    .sort((a, b) => (talked.includes(b.name) - talked.includes(a.name)) || (!!b.post - !!a.post) || (near.has(b.name) - near.has(a.name))).slice(0, 36);
+  const pl = String(s.place.full || ''), keys = [...new Set((pl.match(/[^省道路府州县郡]{2}(?=[省道路府州县郡])/g) || []).concat(pl.slice(0, 2), pl.slice(2, 4)))].filter(k => k.length === 2);
+  const local = f => keys.some(k => String(f.post || '').includes(k) || String(f.native || '').includes(k)) ? 1 : 0;
+  const score = f => (talked.includes(f.name) ? 8 : 0) + local(f) * 4 + (near.has(f.name) ? 2 : 0) + (f.post ? 1 : 0);
+  const alive = figs.filter(f => f.alive && score(f) >= 1).sort((a, b) => score(b) - score(a)).slice(0, 30);
   if (alive.length) L.push('此时在世的要紧真人（官职与年龄以此为准）：\n' + alive.map(f => `· ${f.name}${f.age ? '，' + f.age + '岁' : ''}${f.post ? '，' + f.post : ''}${f.native ? '，' + f.native + '人' : ''}${f.changed ? '（本局有变）' : ''}`).join('\n'));
   const dead = figs.filter(f => !f.alive && f.died >= y - 25).sort((a, b) => b.died - a.died).slice(0, 24);
   if (dead.length) L.push('新近已故（不得作为活人出场）：' + dead.map(f => `${f.name}（${f.died}年故）`).join('、'));
@@ -771,19 +775,21 @@ function rulingInput(s, said) {
 【钱粮】现钱 ${mo.cash == null ? '未定' : fmtN(mo.cash, u)}；产业：${arr((s.estate || {}).assets).map(a => a.name + (a.qty ? a.qty : '')).join('、') || '无'}；每月净得 ${fmtN(arr((s.estate || {}).income).reduce((a, x) => a + (N0(x.amount) || 0), 0) - arr((s.estate || {}).expense).reduce((a, x) => a + (N0(x.amount) || 0), 0), u)}
 ${arr(s.forces).length ? '【兵马】' + s.forces.map(x => `${x.name}${x.troops}人在${x.at}`).join('；') + '\n' : ''}${arr(s.territory).length ? '【地盘】' + s.territory.map(x => x.place).join('、') + '\n' : ''}【身边的人】${P.map(([k, v]) => `${k}（${v.role || ''}，好感${v.favor ?? '?'}${v.where ? '，在' + v.where : ''}）`).join('；') || '无'}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '无'}
-${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}
+${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}
 【玩家这回说】${said}
 
+再为这一回写一份场景简报（brief），给写正文的人当材料——要具体、确凿、有那个年代的味道：这件事牵涉的衙门与办事程序（谁有权、走什么文书：如牌票、禀帖、揭帖、题本、告示、契约）、此时此地相关职位上是谁（确知才写名字）、当时人的说法与称谓、相关各方（人群、行当、衙役、士绅、商人）的利害与惯常做法、可写进场面的器物与细节；拿不准的标「推」，不编造。
 另外，写这一回之前要联网查证什么，由你来定：玩家这一步牵涉的真人（此时的官职、所在、生死）、地方（此时的名称、隶属、路程）、制度门道、器物风俗、正在发生的时事，凡是要写准就得查的，列成搜索词（三到六条，如「海瑞 万历十三年 南京」「明代 苏州 织造局 机户」）；已经清楚的不必再查。
 如果玩家这回是在戏外提问（问历史、地理、局面、建议），steps 给 []，search 列出回答需要查的。
-只输出一个 JSON 对象：{"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/难/不能","why":"裁定的理由（身份、权限、钱粮、制度、路程、对方的利害）"}],"risks":["可能出的岔子"],"alt":"办不到时可行的替代办法（没有就空）","search":["搜索词"]}。steps 零到四步。`;
+只输出一个 JSON 对象：{"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/难/不能","why":"裁定的理由（身份、权限、钱粮、制度、路程、对方的利害）"}],"risks":["可能出的岔子"],"alt":"办不到时可行的替代办法（没有就空）","search":["搜索词"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人（确知的写名字）","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"}}。steps 零到四步。`;
 }
 async function getRuling(s, said) {
   try {
-    const { text } = await callClaude(rulingInput(s, said), null, { maxTokens: 1500, temperature: 0.2, kind: '裁定' }, 'quick');
+    const { text } = await callClaude(rulingInput(s, said), null, { maxTokens: 3000, temperature: 0.2, kind: '裁定' }, 'quick');
     const d = parseJSON(text);
     if (!d || !Array.isArray(d.steps)) return null;
-    return { search: arr(d.search).map(x => one(x, 40)).filter(x => x.length >= 2).slice(0, 6), steps: d.steps.filter(x => x && x.what).slice(0, 4).map(x => ({ what: one(x.what, 50), who: one(x.who, 20), cost: one(x.cost, 50), time: one(x.time, 20), ok: /不能|办不到/.test(x.ok || '') ? '不能' : /难/.test(x.ok || '') ? '难' : '能', why: one(x.why, 90) })), risks: arr(d.risks).map(x => one(x, 60)).filter(Boolean).slice(0, 3), alt: one(d.alt, 80) };
+    const bf = d.brief && typeof d.brief === 'object' ? d.brief : {};
+    return { brief: ['institutions', 'people', 'terms', 'interests', 'details'].map(k => [k, cut(bf[k], 260)]).filter(([, v]) => v), search: arr(d.search).map(x => one(x, 40)).filter(x => x.length >= 2).slice(0, 6), steps: d.steps.filter(x => x && x.what).slice(0, 4).map(x => ({ what: one(x.what, 50), who: one(x.who, 20), cost: one(x.cost, 50), time: one(x.time, 20), ok: /不能|办不到/.test(x.ok || '') ? '不能' : /难/.test(x.ok || '') ? '难' : '能', why: one(x.why, 90) })), risks: arr(d.risks).map(x => one(x, 60)).filter(Boolean).slice(0, 3), alt: one(d.alt, 80) };
   } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
 }
 const rulingText = r => r && arr(r.steps).length ? '【裁定（裁判已按主角的身份、权限、钱粮、人手和制度核过；正文照此写：能办的写办成什么样，难办的写出代价、时日与周折，不能办的写明卡在哪里、谁拦着；不得让办不到的事轻易办成）】\n' + r.steps.map((x, i) => `${i + 1}. ${x.what}（${x.who || '主角'}；${x.ok}${x.cost ? '；花费' + x.cost : ''}${x.time ? '；' + x.time : ''}）：${x.why}`).join('\n') + (r.risks.length ? '\n风险：' + r.risks.join('；') : '') + (r.alt ? '\n替代办法：' + r.alt : '') : '';
@@ -918,6 +924,33 @@ function researchBlock(s, extraText, localsOnly) {
   if (!R.length && !extra) return '';
   return '【联网查到的资料（这个年代此时此地真实的人和事；搜索摘要可信度不一：与内置史料冲突以内置史料为准，与你的记忆冲突以这里为准；没查到的不要硬编）】\n' + R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') + extra
     + (LC.length ? '\n【此时此地的真人（从查证里认出来的）】\n' + LC.map(x => `· ${x.name}：${x.role}${x.y ? '（' + x.y + '年前后）' : ''}${x.note ? '，' + x.note : ''}`).join('\n') : '');
+}
+
+/* ========== 本地志：主角所在地方此时的样子（衙署与官员、经济行业、大族、街巷市镇、风俗、本地时事），开局与搬家时查一次 ========== */
+function gazQueries(s) {
+  const pl = String(s.place.full || ''), yl = s.clock.yearLabel || (s.clock.y + '年'), dy = (s.place.polity || '') + '代';
+  const fu = (pl.match(/[^省道路]{2,4}(府|州|郡)/) || [''])[0], xian = (pl.match(/[^府州郡]{2,4}县/) || [''])[0];
+  return [`${pl} ${yl}`, `${fu || pl} ${yl} 知府 官员`, `${xian || pl} ${dy} 县志 衙署`, `${fu || pl} ${dy} 经济 行业 物产`, `${fu || pl} ${dy} 街巷 城门 市镇 名胜`, `${fu || pl} ${dy} 风俗 岁时`, `${fu || pl} ${dy} 望族 士绅`, `${fu || pl} ${yl} 时事`].filter(q => q.trim().length > 4);
+}
+async function buildGazetteer(s) {
+  const tmp = { research: [], turn: s.turn, clock: s.clock, place: s.place, title: s.title };
+  if (canSearch()) await doLookups(tmp, gazQueries(s));
+  const R = arr(tmp.research);
+  const { text } = await callClaude(`为一局历史模拟游戏整理主角所在地方的「本地志」：${s.place.full}（${s.place.polity || ''}），${timeText(s.clock)}。主角：${s.protagonist.role}。
+要的是让人身临其境的、确凿的地方知识：这地方此时的行政隶属与衙署（同城有几个县、各衙门在哪）、此时在任的上下官员（知府、知县、佐贰、驻地的监司、太监、卫所等，写本名，确知的才写名字）、经济与行业（主业、行会、市镇、税关）、望族士绅、城门街巷桥梁市集寺观、风俗岁时、方言称谓、本地此时正在发生的事。下面是联网查到的资料，优先用；资料里没有、你确知的通行史实也可以写，拿不准的标「推」。小说演义影视的不收。
+${R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') || '（没有查到资料）'}
+
+只输出一个 JSON 对象：{"admin":"行政隶属与衙署，三四句","officials":[{"post":"官职","name":"本名或空","note":"此时的作为或口碑","sure":true}],"economy":"经济与行业，三四句","families":"望族士绅，两三句","places":"城门街巷桥梁市集寺观，三四句（写真名）","customs":"风俗岁时、称谓方言，两三句","current":"本地此时的时事与人心，两三句"}`, null, { maxTokens: 3500, temperature: 0.2, kind: '方志' });
+  const d = parseJSON(text);
+  if (!d || !d.admin) throw { code: 'bad_json' };
+  s.gazetteer = { place: s.place.full, y: s.clock.y, admin: cut(d.admin, 300), economy: cut(d.economy, 300), families: cut(d.families, 200), places: cut(d.places, 300), customs: cut(d.customs, 200), current: cut(d.current, 200),
+    officials: arr(d.officials).filter(o => o && o.post).slice(0, 14).map(o => ({ post: one(o.post, 20), name: one(o.name, 10), note: one(o.note, 50), sure: o.sure !== false })), src: R.length ? '检索' : '记忆' };
+  return s.gazetteer;
+}
+const needGaz = s => s && (!s.gazetteer || s.gazetteer.place !== s.place.full || Math.abs(s.clock.y - s.gazetteer.y) >= 8);
+function gazBlock(s) {
+  const g = s.gazetteer; if (!g) return '';
+  return `【本地志（${g.place}，${g.y}年前后；${g.src === '检索' ? '据检索资料整理' : 'AI 据通行史书整理'}，写本地的人、地、事照这里）】\n衙署：${g.admin}\n官员：${arr(g.officials).map(o => `${o.post}${o.name ? ' ' + o.name : ''}${o.sure ? '' : '[推]'}${o.note ? '（' + o.note + '）' : ''}`).join('；')}\n经济：${g.economy}\n士绅：${g.families}\n地方：${g.places}\n风俗：${g.customs}\n时事：${g.current}`;
 }
 
 /* ========== 联网自建史料：没有内置史料的年代，按十来年一段查年表、君主、重臣、战事、灾荒、制度，整理成同样格式 ========== */
@@ -1118,6 +1151,7 @@ function blocks(s, forStory) {
   const od = arr(s.orders).filter(o => /在办|待办|推迟/.test(o.status));
   if (od.length) L.push('【差事：交代下去还没办完的（到时必须写结果）】\n' + od.map(o => `· 第${o.turn}回合交代 ${o.who}：${o.what}（${o.status}${o.result ? '，' + o.result : ''}）`).join('\n'));
   const w = s.world || {};
+  const gb = gazBlock(s); if (gb) L.push(gb);
   const hb = histBlock(s); if (hb) L.push(hb);
   const ab = almanacBlock(s); if (ab) L.push(ab);
   const rb = researchBlock(s, '', forStory); if (rb) L.push(rb);
@@ -1179,7 +1213,9 @@ function storyInput(s, said, span, note, sys, ruling) {
   const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料') : ''));
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、家业与账目、家里与身边人的变化、季节年景与市面、传来的消息），其余带过但交代清楚。` : '';
   const what = String(said || '').trim() ? `【玩家这回说】\n${said}` : '【玩家这回没说话】就按他的身份和处境往下过一段日子（一般几天到一旬，在打仗就写这几日的军中与敌情），有事找上门就停在那里。';
-  return pushUser(turns, what + modernNote(said) + (ruling ? '\n' + rulingText(ruling) : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + '\n\n照规则写正文。');
+  const BN = { institutions: '衙门与程序', people: '相关的人', terms: '当时的说法', interests: '各方利害', details: '可写的细节' };
+  const brief = ruling && arr(ruling.brief).length ? '\n【场景简报（这一回的史料与细节，场面要落在这些具体的东西上；[推] 是推断，写时留余地）】\n' + ruling.brief.map(([k, v]) => `${BN[k] || k}：${v}`).join('\n') : '';
+  return pushUser(turns, what + modernNote(said) + (ruling ? '\n' + rulingText(ruling) : '') + brief + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + '\n\n照规则写正文。');
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
 function ledgerInput(s, said, story, hidden, span, ruling) {
@@ -1547,7 +1583,7 @@ function renderGame() {
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '写好了，账房正在记账、核史实' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮（人物、地方、制度、时事）' : PHASE === 'ruling' ? '裁判在按你的身份、钱粮、人手和制度裁定这一步' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM ? `<div class="text ${PHASE === 'ledger' ? '' : 'caret'}" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '写好了，账房正在记账、核史实' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮（人物、地方、制度、时事）' : PHASE === 'ruling' ? '裁判在按你的身份、钱粮、人手和制度裁定这一步' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM ? `<div class="text ${PHASE === 'ledger' ? '' : 'caret'}" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
   const keep = { said: $('#said') ? $('#said').value : '', span: $('#span') ? $('#span').value : 'auto' };
   $('#app').innerHTML = `<div class="game">
     <div class="chat">
@@ -1678,6 +1714,7 @@ function pane(tab) {
   if (tab === 'geo') {
     const pl = Object.entries(s.places);
     return `<div class="h" style="margin-top:6px"><span class="seal">地</span>地理册<span class="note">当时地名、今地、隶属、离你多远</span></div>
+      ${s.gazetteer ? `<div class="h"><span class="seal">志</span>本地志<span class="note">${esc(s.gazetteer.place)} · ${esc(s.gazetteer.y)}年前后 · ${s.gazetteer.src === '检索' ? '据检索整理' : 'AI 据史书整理'}</span></div><dl class="kv">${[['衙署', s.gazetteer.admin], ['官员', arr(s.gazetteer.officials).map(o => o.post + (o.name ? ' ' + o.name : '') + (o.sure ? '' : '（推）')).join('；')], ['经济', s.gazetteer.economy], ['士绅', s.gazetteer.families], ['地方', s.gazetteer.places], ['风俗', s.gazetteer.customs], ['时事', s.gazetteer.current]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
       <div class="row" style="margin-top:0"><span class="muted">你现在在：<b style="color:var(--ink)">${esc(s.place.full)}</b></span><span class="grow"></span><button id="bCopyGeo" ${pl.length ? '' : 'disabled'}>复制全部（给做地图用）</button></div>
       ${pl.length ? `<div class="tblwrap"><table class="tbl"><tr><th>地名</th><th>今地</th><th>隶属</th><th>离你</th></tr>${pl.map(([k, v]) => `<tr><td><b>${esc(k)}</b>${v.note ? `<div class="muted">${esc(v.note)}</div>` : ''}</td><td>${esc(v.now)}</td><td>${esc(v.belong)}</td><td>${esc(v.from)}</td></tr>`).join('')}</table></div>` : '<div class="muted">开场后出现；正文里提到新地方会自动记进来。</div>'}
       <div id="copyMsg" class="muted"></div>`;
@@ -1697,7 +1734,7 @@ function pane(tab) {
   }
   return `<div class="h" style="margin-top:6px"><span class="seal">设</span>设置</div>
     <label class="muted" for="sLen">戏里每回正文多长</label>
-    <select id="sLen">${[['short', '短（三四百字）'], ['normal', '标准（六百到一千字）'], ['long', '长（一千到一千六百字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    <select id="sLen">${[['short', '短（五六百字）'], ['normal', '标准（九百到一千五百字）'], ['long', '长（一千五百到两千五百字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sCheck" style="width:auto" ${SETTINGS.check !== false ? 'checked' : ''}>账房记账时顺带核史实，确凿的错处自动改正（改了什么会列出来）</label>
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sWorld" style="width:auto" ${SETTINGS.world !== false ? 'checked' : ''}>天下大势自动推演（每过半年、或你做了波及天下的事时，多一次调用，推演史书的走向和你造成的变化）</label>
     ${MODE === 'local' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sSearch" style="width:auto" ${SETTINGS.search !== false ? 'checked' : ''}>每回合先联网查证（搜这一回涉及的真人、事件、年份；用${KEY.bocha ? '博查' : '维基百科，国内多半连不上，建议在首页填博查 Key'}）</label>` : '<p class="muted" style="font-size:13px">联网查证只在桌面版里有（用你自己的博查 Key）。</p>'}
@@ -1769,7 +1806,10 @@ async function startGame(sentence, have, havePre) {
     if (!st) LAST_ACTION = () => startGame(sentence, null, pre);
   }
   finally { STREAM = ''; PHASE = ''; TURN = null; setBusy(false); }
-  if (S && VIEW === 'game' && packNeed(S)) { CTL = new AbortController(); TURN = CTL; setBusy(true); try { await ensureHistPack(S); await store.save(S); } catch (_) { /* 下回合再建 */ } finally { TURN = null; setBusy(false); } }
+  if (S && VIEW === 'game' && (packNeed(S) || needGaz(S))) {
+    CTL = new AbortController(); TURN = CTL; setBusy(true);
+    try { if (packNeed(S)) await ensureHistPack(S); if (needGaz(S)) { PHASE = 'gaz'; render(); await buildGazetteer(S); } await store.save(S); } catch (_) { /* 下回合再建 */ } finally { PHASE = ''; TURN = null; setBusy(false); }
+  }
   if (S && !S.inst && VIEW === 'game') buildInst(S);
 }
 /** 一回合：先写正文（边写边显示），再交给账房记账核史实。账没记上，正文也留下，可以补记 */
@@ -1849,7 +1889,8 @@ async function send(said, span, note, resume) {
         try { const r = await worldTick(S); if (r.changes.length || r.ripples.length || arr(r.moves).length) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }
         catch (e) { if (e && e.code === 'cancelled') stopped = true; }
       }
-      if (ok && !stopped && packNeed(S)) { try { await ensureHistPack(S); } catch (_) { /* 停下就下回再建 */ } }
+      if (ok && !stopped && packNeed(S)) { try { await ensureHistPack(S); } catch (e) { if (e && e.code === 'cancelled') stopped = true; } }
+      if (ok && !stopped && needGaz(S)) { PHASE = 'gaz'; render(); try { await buildGazetteer(S); } catch (_) { /* 下回合再查 */ } }
     }
     S.prev = before;
     LAST_ACTION = null;
