@@ -350,6 +350,35 @@ const routes = {
     return { ok: true, status: j.status, text: j.text, error: j.error, truncated: !!j.truncated };
   },
   async 'POST /api/llm-stop'(body) { const j = LLM_JOBS.get((body || {}).job); if (j) j.status = 'cancelled'; return { ok: true }; },
+  /* 中国历史地名（CHGIS 时空地名辞典 TGaz，复旦镜像优先、哈佛兜底）：按名字、年份、上级查县、州府、郡的位置与隶属；查过的存本机 */
+  'GET /api/tgaz': async (_b, q) => {
+    const n = String(q.get('n') || '').slice(0, 20), yr = String(q.get('yr') || '').replace(/[^\d-]/g, ''), ipar = String(q.get('ipar') || '').slice(0, 20), ftyp = String(q.get('ftyp') || '').slice(0, 10);
+    if (!n && !ipar) return { ok: false, why: '没给地名' };
+    const key = require('crypto').createHash('md5').update([n, yr, ipar, ftyp].join('|')).digest('hex');
+    const dir = path.join(ROOT, 'data', 'cache', 'tgaz'); fs.mkdirSync(dir, { recursive: true });
+    const cf = path.join(dir, key + '.json');
+    try { return JSON.parse(fs.readFileSync(cf, 'utf8')); } catch (_) { /* 没缓存 */ }
+    const params = new URLSearchParams({ fmt: 'json' }); if (n) params.set('n', n); if (yr) params.set('yr', yr); if (ipar) params.set('ipar', ipar); if (ftyp) params.set('ftyp', ftyp);
+    const bases = (process.env.TGAZ_BASE ? [process.env.TGAZ_BASE] : []).concat(['https://tgaz.fudan.edu.cn', 'http://tgaz.fudan.edu.cn', 'https://maps.cga.harvard.edu']);
+    let lastErr = '';
+    for (const b of bases) {
+      try {
+        const r = await require('./core/net').fetchX(`${b}/tgaz/placename?${params}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
+        if (!r.ok) { lastErr = 'HTTP ' + r.status; continue; }
+        const d = await r.json();
+        const yrs = s => (String(s || '').match(/-?\d+/g) || []).map(Number);
+        const results = (d.placenames || []).map(x => {
+          const xy = String(x['xy coordinates'] || '').split(',').map(v => parseFloat(v));
+          const ys = yrs(x.years);
+          return { id: x.sys_id, name: x.name, type: x['feature type'] || '', parent: x['parent name'] || '', parentId: x['parent sys_id'] || '', from: ys[0] ?? null, to: ys[1] ?? ys[0] ?? null, lon: xy[0] || null, lat: xy[1] || null };
+        });
+        const out = { ok: true, base: b, total: Number(d['count of total results'] || results.length), results };
+        fs.writeFileSync(cf, JSON.stringify(out));
+        return out;
+      } catch (e) { lastErr = String(e && e.message || e).slice(0, 120); }
+    }
+    return { ok: false, why: '连不上复旦/哈佛的历史地名库：' + lastErr };
+  },
   /* 联网自建的史料包（没有内置史料的年代，游戏边玩边查边建）：存在本机，各存档共用 */
   'GET /api/hpacks': async () => {
     const dir = path.join(ROOT, 'data', 'histpacks');
