@@ -2499,12 +2499,12 @@ async function quickCall({ system, prompt, temperature = 0.7, maxTokens = 1500 }
 }
 
 /** 聊天式玩法：整段对话交给当前选定的 AI，流式回传 */
-async function chatCall({ messages, maxTokens = 8000, temperature = 0.8, onDelta }) {
+async function chatCall({ messages, maxTokens = 8000, temperature = 0.8, onDelta, json = true }) {
   const saved = await loadAdapterConfig();
   const aid = saved.selected || 'deepseek';
   const { adapter, config } = await resolveAdapter(aid, saved.configs?.[aid] || {});
   if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请先在首页填好 DeepSeek 的 Key');
-  const res = await adapter.call({ system: '', messages, prompt: messages.length ? messages[messages.length - 1].content : '', temperature, maxTokens, onDelta, json: true }, config);
+  const res = await adapter.call({ system: '', messages, prompt: messages.length ? messages[messages.length - 1].content : '', temperature, maxTokens, onDelta, json: !!json }, config);
   return { text: String((res && res.text) || ''), truncated: !!(res && res.meta && res.meta.truncated) };
 }
 
