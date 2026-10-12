@@ -450,6 +450,7 @@ function migrate(s) {
     if (!Array.isArray(s.figures)) s.figures = [];
     if (!Array.isArray(s.canon)) s.canon = [];
     if (!Array.isArray(s.locals)) s.locals = [];
+    if (!Array.isArray(s.wikiDone)) s.wikiDone = [];
     if (!Array.isArray(s.almanac)) s.almanac = [];
     if (!Array.isArray(s.annals)) s.annals = [];
     if (!Array.isArray(s.factions)) s.factions = [];
@@ -901,13 +902,28 @@ async function doLookups(s, queries) {
   if (arr(r.results).length && !gotAny) { if (++SEARCH_DOWN >= 2) SEARCH_OFF = (errs[0] || '一条都没搜到').replace(/^[^：]*：/, ''); } else if (gotAny) SEARCH_DOWN = 0;
   return { shown, err: errs.length && !shown.length ? errs[0] : '', provider: r.provider };
 }
+/** 深读维基百科：找最相关的中文条目读正文，存进资料（比搜索摘要细得多） */
+async function wikiRead(s, queries) {
+  const qs = [...new Set(arr(queries).map(q => String(q || '').trim()).filter(q => q.length >= 2))].slice(0, 4);  // 同一条目再读走本机缓存，不花钱
+  if (!qs.length || MODE !== 'local' || SETTINGS.search === false) return [];
+  let r; try { r = await api('/api/wiki', { queries: qs }); } catch (_) { return []; }
+  const got = [];
+  for (const x of arr(r && r.results)) {
+    if (!x || !x.text) continue;
+    const q = '维基：' + x.title;
+    s.research = arr(s.research).filter(o => o.q !== q).concat([{ q, turn: s.turn, y: s.clock ? s.clock.y : 0, text: cut(x.text, 1800), links: [{ t: x.title, u: x.url }], wiki: true }]).slice(-40);
+    got.push(x.title);
+  }
+  s.wikiDone = arr(s.wikiDone).concat(qs).slice(-200);
+  return got;
+}
 function researchBlock(s, extraText, localsOnly) {
   const R = localsOnly ? [] : arr(s && s.research).slice(-14);
   const extra = extraText ? '\n' + extraText : '';
   const LC = arr(s && s.locals).slice(-30);
   if (localsOnly) return LC.length ? '【此时此地的真人（从查证里认出来的）】\n' + LC.map(x => `· ${x.name}：${x.role}${x.y ? '（' + x.y + '年前后）' : ''}${x.note ? '，' + x.note : ''}`).join('\n') : '';
   if (!R.length && !extra) return '';
-  return '【联网查到的资料（这个年代此时此地真实的人和事；搜索摘要可信度不一：与内置史料冲突以内置史料为准，与你的记忆冲突以这里为准；没查到的不要硬编）】\n' + R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') + extra
+  return '【联网查到的资料（这个年代此时此地真实的人和事；「维基：」开头的是维基百科条目正文；搜索摘要可信度不一：与内置史料冲突以内置史料为准，与你的记忆冲突以这里为准；没查到的不要硬编）】\n' + R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') + extra
     + (LC.length ? '\n【此时此地的真人（从查证里认出来的）】\n' + LC.map(x => `· ${x.name}：${x.role}${x.y ? '（' + x.y + '年前后）' : ''}${x.note ? '，' + x.note : ''}`).join('\n') : '');
 }
 
@@ -1047,8 +1063,8 @@ function gazQueries(s) {
   return [`${pl} ${yl}`, `${fu || pl} ${yl} 知府 官员`, `${xian || pl} ${dy} 县志 衙署`, `${fu || pl} ${dy} 经济 行业 物产`, `${fu || pl} ${dy} 街巷 城门 市镇 名胜`, `${fu || pl} ${dy} 风俗 岁时`, `${fu || pl} ${dy} 望族 士绅`, `${fu || pl} ${yl} 时事`].filter(q => q.trim().length > 4);
 }
 async function buildGazetteer(s) {
-  const tmp = { research: [], turn: s.turn, clock: s.clock, place: s.place, title: s.title };
-  if (canSearch()) await doLookups(tmp, gazQueries(s));
+  const tmp = { research: [], wikiDone: [], turn: s.turn, clock: s.clock, place: s.place, title: s.title };
+  if (canSearch()) await Promise.all([doLookups(tmp, gazQueries(s)), wikiRead(tmp, placeNames(s.place.full).slice(0, 2))]);
   const R = arr(tmp.research);
   const { text } = await callClaude(`为一局历史模拟游戏整理主角所在地方的「本地志」：${s.place.full}（${s.place.polity || ''}），${timeText(s.clock)}。主角：${s.protagonist.role}。
 要的是让人身临其境的、确凿的地方知识：这地方此时的行政隶属与衙署（同城有几个县、各衙门在哪）、此时在任的上下官员（知府、知县、佐贰、驻地的监司、太监、卫所等，写本名，确知的才写名字）、经济与行业（主业、行会、市镇、税关）、望族士绅、城门街巷桥梁市集寺观、风俗岁时、方言称谓、本地此时正在发生的事。下面是联网查到的资料，优先用；资料里没有、你确知的通行史实也可以写，拿不准的标「推」。小说演义影视的不收。
@@ -1754,7 +1770,7 @@ function renderGame() {
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'draft' ? '正在写，已写约 <span id="draftN">' + DRAFTN + '</span> 字（写完先核实，再给你看）' : PHASE === 'verify' ? '写好了，正在核实史实与制度，拿不准的联网去查' : PHASE === 'ledger' ? '核实好了，账房正在记账' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮（人物、地方、制度、时事）' : PHASE === 'ruling' ? '裁判在按你的身份、钱粮、人手和制度裁定这一步' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'draft' ? '正在写，已写约 <span id="draftN">' + DRAFTN + '</span> 字（写完先核实，再给你看）' : PHASE === 'verify' ? '写好了，正在核实史实与制度，拿不准的联网去查' : PHASE === 'ledger' ? '核实好了，账房正在记账' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '裁判在按你的身份、钱粮、人手和制度裁定这一步' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
   const keep = { said: $('#said') ? $('#said').value : '', span: $('#span') ? $('#span').value : 'auto' };
   $('#app').innerHTML = `<div class="game">
     <div class="chat">
@@ -1870,7 +1886,7 @@ function pane(tab) {
       ${LC.length ? `<div class="h"><span class="seal">人</span>此时此地的真人<span class="note">从查证里认出来的，剧情里可能遇到</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此时身份</th><th>出处</th></tr>${LC.map(x => `<tr><td><b>${esc(x.name)}</b>${x.y ? `<div class="muted">${esc(x.y)}年前后</div>` : ''}</td><td>${esc(x.role)}</td><td class="muted">${esc(x.note)}</td></tr>`).join('')}</table></div>` : ''}
       ${arr(s.almanac).length ? `<div class="h"><span class="seal">志</span>年代志<span class="note">A 内置史料 · B 检索资料 · C 推断（不当史实）</span></div>${ALM_CATS.map(c => { const xs = arr(s.almanac).filter(x => x.cat === c); return xs.length ? `<div class="h" style="font-size:14px">${c}</div><div class="list">${xs.slice().reverse().map(x => `<div><span class="badge ${x.grade === 'A' ? 'b-done' : x.grade === 'C' ? 'b-doing' : 'b-todo'}" title="A 内置史料 · B 检索资料 · C 推断">${esc(x.grade || 'B')}</span> ${esc(x.text)}${x.src ? `<span class="muted">（${esc(x.src)}）</span>` : ''}</div>`).join('')}</div>` : ''; }).join('')}` : ''}
       <div class="h"><span class="seal">查</span>查到的资料<span class="note">新的在上面</span></div>
-      <div class="list">${R.map(x => `<div><span class="when">第${x.turn}回合</span><b>${esc(x.q)}</b><div class="muted">${esc(cut(x.text, 400))}</div>${arr(x.links).length ? `<div style="font-size:12px">出处：${x.links.map(l => `<a href="${esc(l.u)}" target="_blank" rel="noopener" style="color:var(--qing)">${esc(l.t)}</a>`).join(' · ')}</div>` : ''}</div>`).join('') || '<div class="muted">还没有。</div>'}</div>`;
+      <div class="list">${R.map(x => `<div><span class="when">第${x.turn}回合</span><b>${esc(x.q)}</b><div class="muted">${esc(cut(x.text, x.wiki ? 600 : 400))}</div>${arr(x.links).length ? `<div style="font-size:12px">出处：${x.links.map(l => `<a href="${esc(l.u)}" target="_blank" rel="noopener" style="color:var(--qing)">${esc(l.t)}</a>`).join(' · ')}</div>` : ''}</div>`).join('') || '<div class="muted">还没有。</div>'}</div>`;
   }
   if (tab === 'world') {
     const w = s.world, badge = st => st && st !== '照史' ? `<span class="badge ${st === '新出' ? 'b-doing' : 'b-bad'}">${esc(st)}</span> ` : '';
@@ -1941,8 +1957,9 @@ async function startGame(sentence, have, havePre) {
   try {
     if (!st && !pre && canSearch()) {
       PHASE = 'search'; render();
-      pre = { research: [], almanac: [], turn: 0, clock: { y: 0, m: 1, d: 1, yearLabel: '' }, place: { full: '' } };
-      looked = await doLookups(pre, openingQueries(sentence));
+      pre = { research: [], almanac: [], wikiDone: [], turn: 0, clock: { y: 0, m: 1, d: 1, yearLabel: '' }, place: { full: '' } };
+      const oq = openingQueries(sentence);
+      [looked] = await Promise.all([doLookups(pre, oq), wikiRead(pre, [sentence.replace(/^(我想当|当|做)/, '').replace(/的.*$/, ''), ...oq.slice(2, 4).map(q => q.split(/\s+/)[0])])]);
       pre.place = { full: '' }; pre.title = sentence;
       if (arr(pre.research).length) { PHASE = 'digest'; render(); try { await digestResearch(pre); } catch (e) { if (e && e.code === 'cancelled') throw e; } }
       PHASE = ''; render();
@@ -2018,9 +2035,12 @@ async function send(said, span, note, resume) {
       looked = lk; ruling = rl;
       if (ruling && SETTINGS.ruling === false) ruling = { steps: [], risks: [], alt: '', search: ruling.search };
       const more = canSearch() && ruling ? arr(ruling.search).filter(q => !arr(S.searchedQ).includes(q)) : [];
-      if (more.length) {
+      // 维基深读：这一回牵涉的地方、人物、事件、制度，各读一篇条目正文
+      const figs = HALL(S).flatMap(h => arr(h.figures)).filter(f => f.name.length >= 2 && String(said || '').includes(f.name)).map(f => f.name).slice(0, 2);
+      const wq = canSearch() ? arr(ruling && ruling.places).slice(0, 2).concat(figs, arr(ruling && ruling.search).slice(0, 2).map(q => q.split(/\s+/)[0])) : [];
+      if (more.length || wq.length) {
         PHASE = 'search2'; render();
-        const lk2 = await doLookups(S, more);
+        const [lk2] = await Promise.all([more.length ? doLookups(S, more) : Promise.resolve(null), wq.length ? wikiRead(S, wq) : Promise.resolve([])]);
         if (lk2) looked = { shown: arr(looked && looked.shown).concat(arr(lk2.shown).map(x => ({ ...x, ai: true }))), err: (looked && looked.err) || lk2.err, provider: lk2.provider };
       }
       // 玩家说到的地方地图上还没有：到历史地名库里查出来补上，好算里程和沿途
