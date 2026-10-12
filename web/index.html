@@ -901,7 +901,9 @@ async function doLookups(s, queries) {
   if (r.status) LOOKST = r.status;
   // 连着两轮一条都没搜到（多半是维基连不上、Key 不对）：这次先不查了，免得每回合白等
   const gotAny = arr(r.results).some(x => arr(x.items).length);
-  if (arr(r.results).length && !gotAny) { if (++SEARCH_DOWN >= 2) SEARCH_OFF = (errs[0] || '一条都没搜到').replace(/^[^：]*：/, ''); } else if (gotAny) SEARCH_DOWN = 0;
+  // 只有真的连不上（每一条都报错）才算一次失败；没搜到结果不算
+  const allErr = arr(r.results).length && arr(r.results).every(x => x.error && !arr(x.items).length);
+  if (allErr) { if (++SEARCH_DOWN >= 2) SEARCH_OFF = (errs[0] || '连不上搜索服务').replace(/^[^：]*：/, ''); } else if (gotAny) SEARCH_DOWN = 0;
   return { shown, err: errs.length && !shown.length ? errs[0] : '', provider: r.provider };
 }
 /** 深读维基百科：找最相关的中文条目读正文，存进资料（比搜索摘要细得多） */
@@ -1694,12 +1696,12 @@ let KEYMSG = '', KEY_OPEN = false;
 function keyBox() {
   const open = !KEY.has || KEY_OPEN;
   return `<div class="h"><span class="seal">钥</span>DeepSeek Key<span class="note">只存在你自己电脑上；剧情用你自己的 DeepSeek 额度来写</span></div>
-    ${KEY.has && !KEY_OPEN ? `<div class="row" style="margin-top:0"><span class="savest">✓ 已接上 DeepSeek（Key 尾号 ${esc(KEY.tail)}，型号 ${esc(KEY.model)}）</span><button class="link" id="bKeyOpen">换 Key</button><button class="link" id="bNet">检查网络</button></div>` : ''}
+    ${KEY.has && !KEY_OPEN ? `<div class="row" style="margin-top:0"><span class="savest">✓ 已接上 DeepSeek（Key 尾号 ${esc(KEY.tail)}，型号 ${esc(KEY.model)}）</span><button class="link" id="bKeyOpen">换 Key</button><button class="link" id="bNet">检查网络</button><button class="link" id="bSelfTest2">联网自检</button></div><div id="selfBox2"></div>` : ''}
     ${open ? `<div class="howto" style="grid-template-columns:1fr"><div>
       <b>${KEY.has ? '换一个 Key' : '第一次玩：先粘贴 DeepSeek 的 Key'}</b>
       <div class="row"><input id="kIn" type="password" autocomplete="off" placeholder="sk-……" class="grow"><input id="kModel" placeholder="型号，留空用 deepseek-v4-pro" style="width:16em"><button class="main" id="bKeySave">保存</button></div>
       <div class="muted" style="margin-top:6px">没有 Key？去 platform.deepseek.com 注册，在「API keys」里生成一个，充几块钱就能玩很久。</div>
-      <div class="row"><button id="bNet">检查网络</button>${KEY.has ? '<button class="link" id="bKeyClose">不换了</button>' : ''}</div>
+      <div class="row"><button id="bNet">检查网络</button><button id="bSelfTest2">联网自检（真实试一遍）</button>${KEY.has ? '<button class="link" id="bKeyClose">不换了</button>' : ''}</div><div id="selfBox2"></div>
     </div></div>` : ''}
     <div class="howto" style="grid-template-columns:1fr;margin-top:8px"><div>
       <b>联网查证（每回合先搜一搜再写）</b> ${KEY.bocha ? '<span class="savest">✓ 已接上博查搜索</span>' : '<span class="muted">现在用维基百科（国内多半连不上）；填博查 Key 更稳</span>'}
@@ -1945,6 +1947,9 @@ function pane(tab) {
     ${MODE === 'local' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sSearch" style="width:auto" ${SETTINGS.search !== false ? 'checked' : ''}>每回合先联网查证（搜这一回涉及的真人、事件、年份；用${KEY.bocha ? '博查' : '维基百科，国内多半连不上，建议在首页填博查 Key'}）</label>` : '<p class="muted" style="font-size:13px">联网查证只在桌面版里有（用你自己的博查 Key）。</p>'}
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sRuling" style="width:auto" ${SETTINGS.ruling !== false ? 'checked' : ''}>行动裁定（写之前先按身份、权限、钱粮、人手和制度裁定你这一步能不能办；多一次短调用）</label>
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sShowWork" style="width:auto" ${SETTINGS.showWork ? 'checked' : ''}>显示幕后过程（裁定、查证；平时不用开）</label>
+    ${MODE === 'local' ? `<div class="h"><span class="seal">检</span>联网自检</div>
+    <p class="muted" style="font-size:13px">用真实的请求把写剧情（DeepSeek）、搜索、维基百科读条目、历史地名库各试一遍，看你这台电脑上哪个通、拿到了什么。</p>
+    <div class="row"><button id="bSelfTest">开始自检</button><span class="muted" id="selfMsg"></span></div><div id="selfBox"></div>` : ''}
     <div class="h"><span class="seal">枝</span>分支存档</div>
     <p class="muted" style="font-size:13px">把这一局此刻的样子另存一份，再走另一条路；原来那份不动，首页「接着玩」里两份都在。</p>
     <div class="row"><button id="bBranch" ${BUSY ? 'disabled' : ''}>另存为分支，接着玩分支</button><span class="muted" id="branchMsg"></span></div>
@@ -2243,6 +2248,15 @@ document.addEventListener('click', async e => {
     catch (e) { if (!(e && e.code === 'cancelled')) TICKMSG = '没推演成：' + errText(e); }
     finally { PHASE = ''; TURN = null; setBusy(false); }
     return;
+  }
+  if (t.id === 'bSelfTest' || t.id === 'bSelfTest2') {
+    const box = t.id === 'bSelfTest' ? $('#selfBox') : $('#selfBox2'); t.disabled = true; t.textContent = '自检中（半分钟内）…';
+    try {
+      const r = await api('/api/selftest');
+      box.innerHTML = `<div class="list">${arr(r.results).map(x => `<div><b style="color:var(--${x.ok ? 'good' : 'zhu'})">${x.ok ? '✓' : '✗'} ${esc(x.name)}</b> <span class="muted">${esc(x.detail)}（${x.ms} 毫秒）</span></div>`).join('')}</div>`;
+      if (arr(r.results).some(x => /搜索|维基/.test(x.name) && x.ok)) { SEARCH_OFF = ''; SEARCH_DOWN = 0; }
+    } catch (e) { box.textContent = '游戏服务没有回应：' + (e.message || e); }
+    t.disabled = false; t.textContent = '再自检一次'; return;
   }
   if (t.id === 'bBranch') {
     if (BUSY || !S) return;

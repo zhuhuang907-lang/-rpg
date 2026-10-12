@@ -310,10 +310,18 @@ const routes = {
     const isBocha = cfg.provider === 'bocha';
     const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
     const GOOD = /baike\.baidu|wikipedia|baike\.sogou|ctext|guoxue|gushiwen|zhonghuadiancang|shidianguji|cnki|cass|historychina|zgdsw|dpm\.org|ndlib|chinaknowledge|douban\.com\/note|zhihu/;
-    const one = q => Promise.race([
+    const once = q => Promise.race([
       search.search(q, isBocha ? { noFallback: true } : {}).catch(e => ({ query: q, results: [], error: String(e && e.message || e) })),
       new Promise(r => setTimeout(() => r({ query: q, results: [], error: `超时（${isBocha ? 20 : 8} 秒没回）` }), isBocha ? 20000 : 8000)),
     ]);
+    // 没搜到（不是出错）：把查询改短再搜，维基这类搜索框只认简单的词（「扬州府 乾隆二十二年 知府」→「扬州府 知府」→「扬州府」）
+    const one = async q => {
+      let r = await once(q);
+      const toks = q.split(/\s+/).filter(Boolean);
+      const tries = toks.length > 2 ? [toks[0] + ' ' + toks[toks.length - 1], toks[0]] : toks.length === 2 ? [toks[0]] : [];
+      for (const q2 of tries) { if ((r.results || []).length || r.error) break; r = await once(q2); }
+      return r;
+    };
     const rs = [];
     const netErr = r => !(r.results || []).length && /超时|ENOTFOUND|ECONN|fetch failed|timeout|abort|socket|network/i.test(String(r.error || ''));
     for (let i = 0; i < qs.length; i += 3) {
@@ -350,6 +358,19 @@ const routes = {
     return { ok: true, status: j.status, text: j.text, error: j.error, truncated: !!j.truncated };
   },
   async 'POST /api/llm-stop'(body) { const j = LLM_JOBS.get((body || {}).job); if (j) j.status = 'cancelled'; return { ok: true }; },
+  /* 联网自检：用真实请求把写剧情、搜索、维基、历史地名库各试一遍，告诉玩家哪个通、拿到了什么 */
+  async 'GET /api/selftest'() {
+    const out = [];
+    const time = async (name, f) => { const t0 = Date.now(); try { const r = await f(); out.push({ name, ok: !!r.ok, detail: String(r.detail || '').slice(0, 160), ms: Date.now() - t0 }); } catch (e) { out.push({ name, ok: false, detail: String(e && e.message || e).slice(0, 160), ms: Date.now() - t0 }); } };
+    const cfg = await search.loadConfig();
+    await Promise.all([
+      time('DeepSeek 写剧情', async () => { const r = await engine.chatCall({ messages: [{ role: 'user', content: '只回答两个字：正常' }], maxTokens: 20, temperature: 0, json: false }); return { ok: /\S/.test(r.text), detail: '回答：' + r.text.trim().slice(0, 20) }; }),
+      time(`搜索（${cfg.provider === 'bocha' ? '博查' : cfg.provider === 'wikipedia' ? '维基百科搜索' : cfg.provider}）`, async () => { const r = await routes['POST /api/lookup']({ queries: ['安禄山 范阳'] }); const x = (r.results || [])[0] || {}; return { ok: (x.items || []).length > 0, detail: (x.items || []).length ? `搜「安禄山 范阳」得 ${(x.items || []).length} 条：${x.items[0].title}` : (x.error || '一条都没搜到') }; }),
+      time('维基百科读条目', async () => { const r = await routes['POST /api/wiki']({ queries: ['安史之乱'] }); const x = (r.results || [])[0] || {}; return { ok: !!x.text, detail: x.text ? `读到《${x.title}》${x.text.length} 字：${x.text.slice(0, 40)}…` : (x.error || '没读到') }; }),
+      time('历史地名库（CHGIS）', async () => { const r = await routes['GET /api/tgaz'](null, new URLSearchParams({ n: '扬州', yr: '1757' })); return { ok: r.ok && (r.results || []).length > 0, detail: r.ok ? `查「扬州」1757年得 ${(r.results || []).length} 处${(r.results || [])[0] ? '：' + r.results[0].name + '（属' + (r.results[0].parent || '?') + '）' : ''}；来自 ${r.base || ''}` : r.why }; }),
+    ]);
+    return { ok: true, results: out };
+  },
   /* 深读维基百科：每条查询找最相关的一篇中文条目，取正文（简体），给写戏与核实当材料；查过的存本机 */
   async 'POST /api/wiki'(body) {
     const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 40)).filter(Boolean).slice(0, 6);
