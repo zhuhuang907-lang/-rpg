@@ -270,7 +270,7 @@ function storyRules() {
 21. 晋升照本朝的规矩和时间：看出身、资历与任期、考课、上司与举荐、空缺、派系与时局、交情，要花钱花时间托门路；越级要有缘由，也招人忌。降级、罢官、贬谪、丁忧、致仕、坐罪都会发生。任免升降在正文里写明白（什么官、几品、管什么）。
 
 六、史线与地理
-22. 【史线】是这一年前后真实的天下大势，以它为准，不编史书没有的大事；本局被改写过的以【被改写的历史】为准。时间过去时，史书上这段时间的大事按路程与身份迟到、可能走样后传到主角耳朵里。小人物见不到帝王将相；不把无关的真人硬扯到主角身边；虚构人物不与史载真人同名。真人此时的官职、年龄、生死、所在地必须对。
+22. 【史线】是这一年前后真实的天下大势，以它为准，不编史书没有的大事；本局被改写过的以【被改写的历史】为准。时间过去时，史书上这段时间的大事按路程与身份迟到、可能走样后传到主角耳朵里。小人物见不到帝王将相；不把无关的真人硬扯到主角身边；虚构人物不与史载真人同名。真人此时的官职、年龄、生死、所在地必须对，以【要紧人物】为准。【将要发生】里标「已变」「新出」的，是本局因果推演出的新走向，照它写；【本局的连锁变化】里的事要在合适的时候让主角看到、听到、受到影响。
 23. 一律用当时的地名与隶属，【地理册】里的地方照它，前后不能矛盾。头一次去或提到一个地方，顺带写出它在哪个方向、多远、要走几天。路程按真实里程和走法：步行日行五六十里，骑马百里上下，驿马急递三四百里，漕船顺水日行百里左右、逆水减半，山路雨雪更慢。
 
 七、文风
@@ -298,7 +298,7 @@ function ledgerRules() {
 8. powers / territory / forces：势力、主角的地盘与兵马有变化时整组给出（兵额、存粮石数、户口、民心 0–100、月赋都写数字）。succession：只在主角死去时填。career / careerEvents：主角的官职、品级、差遣、称号、职权、上司属下、考课、可能的下一步有变化时给出；任免升降考课等记 careerEvents。statusChanges：功名、爵位、健康、名望等的变化。
 9. gmNotes：正文后【幕后】里写的真相，以及你看出的伏笔（玩家看不到）；gmNotesDone：已经浮出或了结的（开头几个字）。
 10. hints：三到五条，玩家接下来可以做的事或可以问的问题，一句一条，贴着眼下的局面，有戏里的也有戏外的。
-11. turnSummary：本回合事实摘要，120 字内。
+11. turnSummary：本回合事实摘要，120 字内。worldShift：玩家这回做的事若可能波及更大的局面（杀了或救了要紧人物、占了一地、改了一项大政、截了一笔军饷、结交或得罪了权要……），一句话写出来，程序会据此推演天下；小事留空。
 
 史实核查（fixes）：逐句核对正文，只找确凿的硬伤——本朝本年不该有的官名、衙门、地名或隶属；此时已死或尚未出生、不在此地、不任此职的真实人物；年号、干支、节令错误；本朝还没有的器物、作物、制度；离谱的物价或钱粮单位；现代词语。不改文风、不改虚构人物、不改情节，拿不准的不算。每处给出原文里错的那几个字（原样摘出，十二字以内，必须能在正文里找到）和改成什么。
 
@@ -325,6 +325,7 @@ function ledgerRules() {
 "gmNotes":[""],"gmNotesDone":[""],
 "hints":[""],
 "fixes":[{"wrong":"原文","right":"改成","why":""}],
+"worldShift":"玩家这回的作为可能波及天下大势、改变史书走向的地方，一句话；没有就空",
 "turnSummary":""}`;
 }
 
@@ -434,6 +435,8 @@ function migrate(s) {
     for (const k of ['deeds', 'powers', 'territory', 'forces', 'chronicle', 'summaries', 'orders', 'gmNotes', 'history', 'statusLog', 'prices']) if (!Array.isArray(s[k])) s[k] = [];
     if (!s.money) s.money = { unit: '', cash: null, hist: [] };
     if (!Array.isArray(s.careerLog)) s.careerLog = [];
+    if (!Array.isArray(s.figures)) s.figures = [];
+    if (s.world && !Array.isArray(s.world.ripples)) s.world.ripples = [];
     return s;
   }
   const n = { ...s, v: 2, chat: [], summaries: [], world: s.world || { overview: '', events: [], upcoming: [] }, places: s.places || {}, estate: s.estate || { cash: '', assets: [], income: [], expense: [], projects: [] }, chronicle: arr(s.chronicle) };
@@ -528,7 +531,38 @@ async function callClaude(input, onReply, extra, tier) {
   const opts = { signal: CTL.signal, cache: false, modelTier: tier || SETTINGS.tier };
   if (SETTINGS.tier !== 'complex' && MODE === 'claude') opts.effort = 'low';
   const plain = extra && extra.json === false;
-  return SAMPLE(input, { ...opts, ...(MODE === 'local' ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
+  const kind = (extra && extra.kind) || (plain ? '写戏' : '记账');
+  try {
+    const r = await SAMPLE(input, { ...opts, ...(MODE === 'local' ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
+    logRaw(kind, r && r.text, r && r.truncated);
+    return r;
+  } catch (e) { logRaw(kind, (e && e.text) || '', false, (e && (e.code + ' ' + (e.message || ''))) || String(e)); throw e; }
+}
+/** 问题报告用：最近几次 AI 原样的输出与出错 */
+function logRaw(kind, text, truncated, err) {
+  try {
+    const L = JSON.parse(lsGet('hrpg:raw') || '[]');
+    L.push({ at: new Date().toLocaleString(), kind, len: String(text || '').length, truncated: !!truncated, err: err ? String(err).slice(0, 300) : '', head: String(text || '').slice(0, 1200), tail: String(text || '').length > 1600 ? String(text).slice(-300) : '' });
+    lsSet('hrpg:raw', JSON.stringify(L.slice(-8)));
+  } catch (_) { /* 记不下就算了 */ }
+}
+const PAGE_ERRS = [];
+window.addEventListener('error', e => { PAGE_ERRS.push(String(e.message || e.error || '').slice(0, 200)); });
+window.addEventListener('unhandledrejection', e => { PAGE_ERRS.push('promise: ' + String((e.reason && (e.reason.message || e.reason.code)) || e.reason).slice(0, 200)); });
+function problemReport() {
+  const s = S, L = [];
+  L.push(`【历史模拟RPG 问题报告】${new Date().toLocaleString()}`);
+  L.push(`运行方式：${MODE === 'local' ? '桌面版 DeepSeek（型号 ' + (KEY.model || '?') + '）' : MODE === 'claude' ? 'claude.ai 网页版' : MODE}；浏览器：${navigator.userAgent.slice(0, 120)}`);
+  if (s) {
+    L.push(`存档：${s.title}；${timeText(s.clock)}；第 ${s.turn} 回合；存档大小 ${Math.round(bytes(JSON.stringify(s)) / 1024)}KB`);
+    L.push(`现钱 ${s.money && s.money.cash}；人物 ${Object.keys(s.people || {}).length}；史线将来 ${arr(s.world && s.world.upcoming).length} 条；上次推演 ${s.world && s.world.tickAt ? s.world.tickAt.label : '无'}`);
+    L.push('—— 最近的对话 ——');
+    for (const c of arr(s.chat).slice(-4)) L.push(`[${c.role === 'me' ? '玩家' : c.kind === 'talk' ? 'GM戏外' : 'GM'}] ${cut(c.text, 500)}${c.extra && c.extra.salvaged ? '（账没记上）' : ''}`);
+  }
+  if (ERRMSG) L.push('页面上的错误提示：' + ERRMSG);
+  if (PAGE_ERRS.length) L.push('页面脚本出错：' + PAGE_ERRS.slice(-5).join(' | '));
+  try { const R = JSON.parse(lsGet('hrpg:raw') || '[]'); L.push('—— 最近几次 AI 原样输出 ——'); for (const r of R) L.push(`[${r.at} ${r.kind} ${r.len}字${r.truncated ? ' 被截断' : ''}${r.err ? ' 出错:' + r.err : ''}]\n${r.head}${r.tail ? '\n……\n' + r.tail : ''}`); } catch (_) { /* 无 */ }
+  return L.join('\n');
 }
 
 /* ========== 官制：玩家给框架，AI 按本局年代核对改正，游戏照改正后的来 ========== */
@@ -579,6 +613,79 @@ async function buildInst(s) {
   finally { INSTING = false; render(); }
 }
 
+/* ========== 天下推演：史书的惯性 + 本局的变化 → 改写将来、更新人物与大势 ========== */
+const ymOf = c => c.y * 12 + c.m;
+function needTick(s, d) {
+  const w = s.world || {}, last = w.tickAt;
+  if (!last) return s.turn >= 1;
+  if (ymOf(s.clock) - last.ym >= 6) return 'time';
+  if (arr(d && d.historyChanges).length) return 'history';
+  if (d && String(d.worldShift || '').trim().length > 3) return 'shift';
+  if (arr(w.upcoming).length < 4 && s.turn - last.turn >= 3) return 'few';
+  return false;
+}
+function worldInput(s) {
+  const w = s.world, p = s.protagonist;
+  const shifts = arr(s.deeds).slice(-20).map(x => `· 第${x.turn}回合（${x.when || ''}）：${x.what}（${x.effect || ''}${x.later ? '；可能：' + x.later : ''}）`).join('\n');
+  return `你是一位通晓历代史事、深明因果的史家，替一局历史模拟游戏推演天下大势。现在是${timeText(s.clock)}。主角：${p.name}，${p.role}，在${s.place.full}（${s.place.polity || ''}）。上次推演：${w.tickAt ? w.tickAt.label : '（这是第一次）'}。
+
+推演的道理：
+1. 史书有惯性：本局没有动到的地方，一切照史书发生——时间、地点、人物、结局都照史实，不要因为「要有变化」而改。
+2. 动到了才变，变化顺着因果走：主角的作为（下面列着）、被改写的历史、本局的势力格局，会沿着人事、钱粮、军情、消息一层层传开；传得多远、多快、多大，与事情的分量和主角的地位相称——小民的小事很少惊动朝廷，杀掉或救下一个要紧人物、占据一地、截断一条粮道、改了一项大政，才会改写一方或天下的走向。消息传到要时日，别人做出反应也要时日。
+3. 大势难改，人事易变：财政、天灾、边患、土地兼并、军制这类根子上的原因还在，史书上的大事即使换了人、换了时间、换了地点，也多半会以别的样子发生（比如领头的人没了，会有别人顶上）；只有根子被动了，大势才会真正转向。
+4. 别人也在动：各方势力、朝中各派、真实人物都照自己的利害对本局的变化作出反应——警觉、拉拢、打压、趁乱、观望。
+5. 已经发生的不能撤回；玩家造成的变化不能被「拉回」史书原样。新出的事必须有本局的因可循，不凭空造。
+
+【天下大势（上次写的）】${w.overview || ''}
+【已经发生（近来）】
+${arr(w.events).slice(-25).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}${x.changed ? '（本局）' : ''}`).join('\n') || '无'}
+【原先排着将要发生的】
+${arr(w.upcoming).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}（${x.status || '照史'}${x.why ? '：' + x.why : ''}）`).join('\n') || '无'}
+【被改写的历史】
+${arr(s.history).map(h => `· ${h.event} → ${h.now}（因${h.cause}）`).join('\n') || '无'}
+【主角近来的作为】
+${shifts || '无'}
+【已有的连锁变化】
+${arr(w.ripples).slice(-10).map(r => `· ${r.cause} → ${r.effect}`).join('\n') || '无'}
+【各方势力】${arr(s.powers).map(x => `${x.name}（${x.leader || ''}，据${x.seat || ''}，兵${x.troops || '？'}，${x.note || ''}）`).join('；') || '无'}
+${arr(s.territory).length ? '【主角的地盘】' + s.territory.map(x => `${x.place}（户${x.pop || '？'}，兵${x.troops || '？'}）`).join('；') + '\n' : ''}${arr(s.forces).length ? '【主角的兵马】' + s.forces.map(x => `${x.name}（${x.troops || '？'}人，在${x.at || '？'}）`).join('；') + '\n' : ''}【要紧人物（上次记的）】${arr(s.figures).map(f => `${f.name}（${f.post || ''}${f.alive === false ? '，已故' : ''}）`).join('；') || '无'}
+【最近的经过】
+${arr(s.summaries).slice(-8).map(x => `第${x.turn}回合（${x.when}）：${x.text}`).join('\n') || '无'}
+
+请给出：
+- overview：此刻的天下大势，四到六句（在位的君主与年号、当权的人、财政与民生、边事与战事、各方势力、本地局势），写进本局已经发生的变化。
+- upcoming：从此刻起之后约五年里将要发生的大事，十到十六条，按时间先后。照史书的 status 写「照史」，why 写一句史书依据；因本局变化而改了样子、时间、结局的写「已变」，新冒出来的写「新出」，why 写清因果链（因为什么 → 所以）。
+- figures：与主角和此时局面最相关的十到十六个真实人物：此时的官职或身份、年龄、所在、对朝局或对主角的态度、生死（alive）；按史实，被本局改变的照本局。
+- ripples：这次推演新看出来的、由主角的作为引起的连锁变化（cause 是主角的哪件事或本局的哪个变化，effect 是它波及了什么，when 是什么时候显现）；没有就给 []。
+- powers：各方势力此刻的样子（三到八个，整组给出），没有变化可以省略。
+只输出一个 JSON 对象，不加代码块：
+{"overview":"","upcoming":[{"y":0,"m":0,"text":"","status":"照史/已变/新出","why":""}],"figures":[{"name":"","post":"","age":0,"where":"","stance":"","alive":true,"note":""}],"ripples":[{"cause":"","effect":"","when":""}],"powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}]}`;
+}
+/** 推演一次：成功就替换将来的史线、人物、大势，并把有变化的列出来 */
+async function worldTick(s) {
+  const { text } = await callClaude(worldInput(s), null, { maxTokens: 8000, temperature: 0.4, kind: '推演' });
+  const d = parseJSON(text);
+  if (!d || !Array.isArray(d.upcoming)) throw { code: 'bad_json' };
+  const w = s.world, nowYM = ymOf(s.clock), old = arr(w.upcoming);
+  const up = d.upcoming.filter(u => u && u.text).map(u => ({ y: num(u.y) ?? s.clock.y, m: Math.min(12, Math.max(0, num(u.m) || 0)), text: one(u.text, 100), status: /变/.test(u.status || '') ? '已变' : /新/.test(u.status || '') ? '新出' : '照史', why: one(u.why, 100) }))
+    .filter(u => (u.m ? u.y * 12 + u.m : u.y * 12 + 12) > nowYM).sort((a, b) => a.y - b.y || a.m - b.m).slice(0, 20);
+  const report = [];
+  for (const u of up) if (u.status !== '照史' && !old.some(o => o.status === u.status && one(o.text, 10) === one(u.text, 10))) report.push({ text: `${u.y}年${u.m ? u.m + '月' : ''}：${u.text}`, status: u.status, why: u.why });
+  for (const o of old) if ((!o.status || o.status === '照史') && !up.some(u => one(u.text, 8) === one(o.text, 8)) && (o.m ? o.y * 12 + o.m : o.y * 12 + 12) > nowYM + 1) {
+    const alt = up.find(u => u.status !== '照史' && u.y >= o.y - 1 && u.y <= o.y + 2);
+    if (!alt) report.push({ text: `${o.y}年${o.m ? o.m + '月' : ''}：${o.text}`, status: '不再照史', why: '' });
+  }
+  if (up.length) w.upcoming = up;
+  if (d.overview) w.overview = cut(d.overview, 700);
+  if (Array.isArray(d.figures) && d.figures.length) s.figures = d.figures.filter(f => f && f.name).slice(0, 18).map(f => ({ name: one(f.name, 10), post: one(f.post, 40), age: num(f.age), where: one(f.where, 20), stance: one(f.stance, 40), alive: f.alive !== false, note: one(f.note, 60) }));
+  const rp = arr(d.ripples).filter(r => r && r.cause && r.effect && !arr(w.ripples).some(o => one(o.effect, 12) === one(r.effect, 12))).slice(0, 6).map(r => ({ turn: s.turn, cause: one(r.cause, 60), effect: one(r.effect, 100), when: one(r.when, 20) }));
+  w.ripples = arr(w.ripples).concat(rp).slice(-40);
+  const rows = (a, n) => a.filter(x => x && typeof x === 'object').slice(0, n).map(x => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, one(v, 60)])));
+  if (Array.isArray(d.powers) && d.powers.length) s.powers = rows(d.powers, 16).filter(x => x.name);
+  w.tickAt = { ym: nowYM, turn: s.turn, label: timeText(s.clock) };
+  return { changes: report.slice(0, 8), ripples: rp };
+}
+
 /* ========== 账册 → 给 AI 的材料 ========== */
 function blocks(s) {
   const p = s.protagonist, c = s.clock, L = [], id = IDM[s.idm] || IDM.commoner;
@@ -604,7 +711,7 @@ function blocks(s) {
   if (od.length) L.push('【差事：交代下去还没办完的（到时必须写结果）】\n' + od.map(o => `· 第${o.turn}回合交代 ${o.who}：${o.what}（${o.status}${o.result ? '，' + o.result : ''}）`).join('\n'));
   const w = s.world || {};
   L.push('【史线（以此为准）】' + (w.overview || '（开局时补全）') + (arr(w.events).length ? '\n已经发生：\n' + w.events.slice(-24).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}${x.changed ? '（本局实际如此）' : ''}`).join('\n') : '')
-    + (arr(w.upcoming).length ? '\n按史书将要发生（书中人不知道）：\n' + w.upcoming.slice(0, 12).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}`).join('\n') : '\n按史书将要发生：已用完，请在 worldUpcoming 里补上之后五年的大事'));
+    + (arr(w.upcoming).length ? '\n将要发生（书中人不知道；照史=照史书，已变/新出=因本局的变化）：\n' + w.upcoming.slice(0, 14).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}（${x.status || '照史'}${x.why && x.status && x.status !== '照史' ? '：' + x.why : ''}）`).join('\n') : '\n按史书将要发生：已用完，请在 worldUpcoming 里补上之后五年的大事'));
   instBlocks(s, L);
   const pw = arr(s.powers), tr = arr(s.territory), fc = arr(s.forces);
   L.push('【势力（以此为准；有变化在 powers / territory / forces 里整体给出）】\n天下各方：' + (pw.length ? pw.map(x => `${x.name}（${x.leader || ''}，据${x.seat || ''}${x.land ? '，' + x.land : ''}，兵${x.troops || '？'}，对主角${x.stance || '？'}${x.note ? '，' + x.note : ''}）`).join('；') : '（下一回合给出此时天下的主要势力）')
@@ -612,6 +719,8 @@ function blocks(s) {
     + (fc.length ? '\n主角的兵马：' + fc.map(x => `${x.name || ''}（${x.leader || ''}统领，${x.troops || ''}，${x.quality || ''}，粮${x.supply || '？'}，在${x.at || '？'}，${x.status || ''}）`).join('；') : ''));
   const dd = arr(s.deeds).filter(x => !x.done).slice(-15);
   if (dd.length) L.push('【主角的作为（还可能有后续的；后续真来了在正文写出并记 deedsDone，也可能就此无事）】\n' + dd.map(x => `· 第${x.turn}回合：${x.what}（${x.effect || ''}${x.later ? '；可能：' + x.later : ''}）`).join('\n'));
+  if (arr(s.figures).length) L.push('【要紧人物（真人；此时的官职、所在、生死以此为准）】\n' + s.figures.map(f => `· ${f.name}：${f.post || ''}${f.age ? '，' + f.age + '岁' : ''}${f.where ? '，在' + f.where : ''}${f.alive === false ? '，已故' : ''}${f.stance ? '，' + f.stance : ''}${f.note ? '；' + f.note : ''}`).join('\n'));
+  if (arr(w.ripples).length) L.push('【本局的连锁变化（玩家的作为波及天下的经过）】\n' + w.ripples.slice(-10).map(r => `· ${r.when || ''}${r.cause} → ${r.effect}`).join('\n'));
   if (arr(s.history).length) L.push('【被改写的历史（以此为准，不再照史书发生）】\n' + s.history.map(h => `· ${h.event} → ${h.now}（因${h.cause}）`).join('\n'));
   const pl = Object.entries(s.places || {});
   if (pl.length) L.push('【地理册（以此为准，前后不能矛盾）】\n' + pl.slice(-40).map(([k, v]) => `· ${k}：今${v.now || '？'}，属${v.belong || '？'}；${v.from || ''}${v.note ? '；' + v.note : ''}`).join('\n'));
@@ -775,7 +884,17 @@ function applyReply(s, d, said) {
       const nd = CAL.addDays(s.clock, days), years = Math.max(0, nd.y - s.clock.y);
       Object.assign(s.clock, nd);
       if (years) { if (s.protagonist.age != null) s.protagonist.age += years; for (const m of s.household) if (m.age != null && !m.dead) m.age += years; }
-      s.world.upcoming = s.world.upcoming.filter(u => !(u.y < s.clock.y - 1));
+    }
+    // 到了日子的史线：照它发生（不再悄悄丢掉）；被改写的、新出的照本局的样子
+    const nowYM = s.clock.y * 12 + s.clock.m;
+    const due = s.world.upcoming.filter(u => (u.m ? u.y * 12 + u.m : u.y * 12 + 12) <= nowYM);
+    if (due.length) {
+      s.world.upcoming = s.world.upcoming.filter(u => !due.includes(u));
+      for (const u of due) {
+        if (s.world.events.some(e => one(e.text, 8) === one(u.text, 8))) continue;
+        const r = { y: u.y, m: u.m, text: u.text, changed: !!(u.status && u.status !== '照史') };
+        s.world.events.push(r); news.push(r);
+      }
     }
     if (d.yearLabel) s.clock.yearLabel = one(d.yearLabel, 16);
     // 过了几个月就按每月进项开销结几次
@@ -837,7 +956,7 @@ function applyReply(s, d, said) {
     const k = one(p.name, 16), o = s.places[k] || {};
     s.places[k] = { now: one(p.now || o.now, 30), belong: one(p.belong || o.belong, 30), from: one(p.from || o.from, 60), note: one(p.note || o.note, 60) };
   }
-  for (const u of arr(d.worldUpcoming)) if (u && u.text && !s.world.upcoming.some(x => x.text === one(u.text, 100))) s.world.upcoming.push({ y: num(u.y) ?? s.clock.y, m: num(u.m) || 0, text: one(u.text, 100) });
+  for (const u of arr(d.worldUpcoming)) if (u && u.text && !s.world.upcoming.some(x => x.text === one(u.text, 100))) s.world.upcoming.push({ y: num(u.y) ?? s.clock.y, m: num(u.m) || 0, text: one(u.text, 100), status: /变|新/.test(u.status || '') ? one(u.status, 4) : '照史', why: one(u.why, 80) });
   s.world.upcoming.sort((a, b) => a.y - b.y || a.m - b.m); s.world.upcoming = s.world.upcoming.slice(0, 30);
   if (String(said || '').trim()) s.chat.push({ role: 'me', text: String(said).trim(), turn: s.turn });
   s.chat.push({ role: 'gm', kind: play ? 'play' : 'talk', text: String(d.reply || d.scene || '').trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null,
@@ -857,7 +976,7 @@ function newSave(p) {
     world: { overview: '', events: [], upcoming: [] }, places: {}, estate: { cash: '', assets: [], income: [], expense: [], projects: [] },
     deeds: [], powers: [], territory: [], forces: [],
     money: { unit: one(p.unit, 4) || '两', cash: N0(p.cash), hist: [] }, prices: [],
-    inst: null, career: null, careerLog: [],
+    inst: null, career: null, careerLog: [], figures: [],
     chat: [], prev: null,
   };
 }
@@ -930,6 +1049,10 @@ function extrasHtml(x) {
   if (arr(x.rums).length) parts.push(`<div class="ex"><div class="eh">风声</div>${x.rums.map(r => `<div>${esc(r)}</div>`).join('')}</div>`);
   if (arr(x.life).length) parts.push(`<div class="ex life"><div class="eh">这段日子里</div>${x.life.map(r => `<div>${r.who ? `<b>${esc(r.who)}</b>：` : ''}${esc(r.what)}</div>`).join('')}</div>`);
   if (arr(x.news).length) parts.push(`<div class="ex news"><div class="eh">天下事<span>按史书此时发生的</span></div>${x.news.map(r => `<div>${esc(r.y)}年${r.m ? r.m + '月' : ''}：${esc(r.text)}${r.changed ? ' <span class="mine">（本局）</span>' : ''}</div>`).join('')}</div>`);
+  if (x.worldTick) {
+    const wt = x.worldTick;
+    parts.push(`<div class="ex news"><div class="eh">天下推演<span>史书的走向 + 你造成的变化</span></div>${arr(wt.ripples).map(r => `<div><b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`).join('')}${arr(wt.changes).map(c => `<div><span class="badge ${c.status === '新出' ? 'b-doing' : 'b-bad'}">${esc(c.status)}</span> ${esc(c.text)}${c.why ? `<div class="muted">${esc(c.why)}</div>` : ''}</div>`).join('')}</div>`);
+  }
   if (x.moved) parts.push(`<div class="ex"><div class="eh">搬到了</div><div>${esc(x.moved)}</div></div>`);
   if (x.salvaged) parts.push(`<div class="ex"><div class="eh">提醒</div><div>这一回的正文留下了，但账房没记上账（钱粮、人物、时间都还是上一回的）。${x.salvagedBtn === false ? '' : '<button class="link" id="bSettle">补记这回的账</button>'}</div></div>`);
   if (x.succession) parts.push(`<div class="ex news"><div class="eh">传承</div><div>${esc(x.succession)}</div></div>`);
@@ -952,7 +1075,7 @@ function renderGame() {
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '写好了，账房正在记账、核史实' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM ? `<div class="text ${PHASE === 'ledger' ? '' : 'caret'}" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '写好了，账房正在记账、核史实' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM ? `<div class="text ${PHASE === 'ledger' ? '' : 'caret'}" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
   const keep = { said: $('#said') ? $('#said').value : '', span: $('#span') ? $('#span').value : 'auto' };
   $('#app').innerHTML = `<div class="game">
     <div class="chat">
@@ -1057,13 +1180,16 @@ function pane(tab) {
       <div class="muted" style="font-size:12px">资料只存在这个浏览器里。换了朝代（比如改朝换代、搬到别国）后再整理一次。</div>`;
   }
   if (tab === 'world') {
-    const w = s.world;
-    return `<div class="h" style="margin-top:6px"><span class="seal">势</span>天下大势</div><div class="overview">${esc(w.overview || '开场后出现。')}</div>
-      <div class="h"><span class="seal">史</span>已经发生<span class="note">红字是被你改变的</span></div>
+    const w = s.world, badge = st => st && st !== '照史' ? `<span class="badge ${st === '新出' ? 'b-doing' : 'b-bad'}">${esc(st)}</span> ` : '';
+    return `<div class="h" style="margin-top:6px"><span class="seal">势</span>天下大势<span class="note">${w.tickAt ? '推演于' + esc(w.tickAt.label) : '开场时写的'}</span></div><div class="overview">${esc(w.overview || '开场后出现。')}</div>
+      <div class="row" style="margin-top:4px"><button id="bTick" ${BUSY || !SAMPLE ? 'disabled' : ''}>现在推演一次天下大势</button><span class="muted" style="font-size:12px">${esc(TICKMSG || '每过半年、或你做了波及天下的事，会自动推演')}</span></div>
+      ${arr(w.ripples).length ? `<div class="h"><span class="seal">果</span>你引起的连锁变化</div><div class="list">${w.ripples.slice().reverse().map(r => `<div><span class="when">第${r.turn}回合</span><b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`).join('')}</div>` : ''}
+      <div class="h"><span class="seal">后</span>将要发生<span class="note">你知道，书中人不知道；红的是被本局改了的</span></div>
+      <div class="list">${w.upcoming.map(x => `<div><span class="when">${esc(x.y)}年${x.m ? x.m + '月' : ''}</span>${badge(x.status)}${esc(x.text)}${x.why && x.status && x.status !== '照史' ? `<div class="muted">${esc(x.why)}</div>` : ''}</div>`).join('') || '<div class="muted">下一回合会补上。</div>'}</div>
+      ${arr(s.figures).length ? `<div class="h"><span class="seal">人</span>要紧人物<span class="note">真人此时的官职、所在、生死</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>官职身份</th><th>在</th><th>态度</th></tr>${s.figures.map(f => `<tr><td><b>${esc(f.name)}</b>${f.age ? `<div class="muted">${esc(f.age)}岁</div>` : ''}${f.alive === false ? '<div class="muted">已故</div>' : ''}</td><td>${esc(f.post)}${f.note ? `<div class="muted">${esc(f.note)}</div>` : ''}</td><td>${esc(f.where)}</td><td>${esc(f.stance)}</td></tr>`).join('')}</table></div>` : ''}
+      <div class="h"><span class="seal">史</span>已经发生<span class="note">红字是被本局改变的</span></div>
       <div class="list">${w.events.slice().reverse().map(x => `<div><span class="when">${esc(x.y)}年${x.m ? x.m + '月' : ''}</span><span class="${x.changed ? 'mine' : ''}">${esc(x.text)}</span></div>`).join('') || '<div class="muted">无</div>'}</div>
-      <div class="h"><span class="seal">后</span>按史书将要发生<span class="note">你知道，书中人不知道；你可以去改变它</span></div>
-      <div class="list">${w.upcoming.map(x => `<div><span class="when">${esc(x.y)}年${x.m ? x.m + '月' : ''}</span>${esc(x.text)}</div>`).join('') || '<div class="muted">下一回合会补上。</div>'}</div>
-      ${arr(s.history).length ? `<div class="h"><span class="seal">改</span>被你改写的历史</div><div class="list">${s.history.map(h => `<div><span class="when">第${h.turn}回合</span>${esc(h.event)} → <span class="mine">${esc(h.now)}</span></div>`).join('')}</div>` : ''}`;
+      ${arr(s.history).length ? `<div class="h"><span class="seal">改</span>被你改写的历史</div><div class="list">${s.history.map(h => `<div><span class="when">第${h.turn}回合</span>${esc(h.event)} → <span class="mine">${esc(h.now)}</span>${h.cause ? `<span class="muted">（因${esc(h.cause)}）</span>` : ''}</div>`).join('')}</div>` : ''}`;
   }
   if (tab === 'geo') {
     const pl = Object.entries(s.places);
@@ -1086,7 +1212,12 @@ function pane(tab) {
   return `<div class="h" style="margin-top:6px"><span class="seal">设</span>设置</div>
     <label class="muted" for="sLen">戏里每回正文多长</label>
     <select id="sLen">${[['short', '短（三四百字）'], ['normal', '标准（六百到一千字）'], ['long', '长（一千到一千六百字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
-    <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sCheck" style="width:auto" ${SETTINGS.check !== false ? 'checked' : ''}>每回写完再核一遍史实（多一次调用、多几秒到半分钟；改了什么会列出来）</label>
+    <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sCheck" style="width:auto" ${SETTINGS.check !== false ? 'checked' : ''}>账房记账时顺带核史实，确凿的错处自动改正（改了什么会列出来）</label>
+    <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sWorld" style="width:auto" ${SETTINGS.world !== false ? 'checked' : ''}>天下大势自动推演（每过半年、或你做了波及天下的事时，多一次调用，推演史书的走向和你造成的变化）</label>
+    <div class="h"><span class="seal">报</span>遇到 bug</div>
+    <p class="muted" style="font-size:13px">点下面的按钮，会把这一局最近的情况和 AI 的原样输出整理成一段文字并复制下来（不含你的 Key），直接粘贴给我，我照着修。</p>
+    <div class="row"><button id="bReport">复制问题报告</button><span class="muted" id="reportMsg"></span></div>
+    <textarea id="reportBox" rows="6" hidden readonly></textarea>
     ${MODE === 'local' ? `<p class="muted" style="font-size:13px">剧情用你自己的 DeepSeek Key（尾号 ${esc(KEY.tail)}）来写。换 Key：点右上「换一局」回到首页。<br>想用以前的界面：<a href="/classic.html" style="color:var(--qing)">旧版界面</a></p>` : `
     <label class="muted" for="sTier" style="display:block;margin-top:10px">用哪档 AI</label>
     <select id="sTier">${[['default', '标准（快一些）'], ['complex', '最强（更细更准，但更慢、更费额度）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.tier === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
@@ -1094,7 +1225,7 @@ function pane(tab) {
 }
 
 /* ========== 动作 ========== */
-let PHASE = '';
+let PHASE = '', TICKMSG = '';
 async function startGame(sentence, have) {
   sentence = String(sentence || '').trim(); if (!sentence || BUSY) return;
   ERRMSG = ''; STREAM = ''; PHASE = '';
@@ -1161,6 +1292,12 @@ async function send(said, span, note, resume) {
       const g = S.chat[S.chat.length - 1];
       if (fx.done.length) g.extra = Object.assign(g.extra || {}, { fixes: fx.done });
       if (!ok) { g.extra = Object.assign(g.extra || {}, { salvaged: true }); g.unsettled = { said, span, hidden: st.hidden }; }
+      if (ok && SETTINGS.world !== false && needTick(S, d)) {
+        lsSet('hrpg:pending', null);
+        PHASE = 'world'; render();
+        try { const r = await worldTick(S); if (r.changes.length || r.ripples.length) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }
+        catch (e) { if (e && e.code === 'cancelled') { /* 停下只停推演，这一回照样留下 */ } }
+      }
     }
     S.prev = before;
     LAST_ACTION = null;
@@ -1243,6 +1380,20 @@ document.addEventListener('click', async e => {
     buildInst(S); return;
   }
   if (t.id === 'bSettle') { settleLast(); return; }
+  if (t.id === 'bTick') {
+    if (BUSY || !S) return;
+    TICKMSG = ''; ERRMSG = ''; PHASE = 'world'; setBusy(true);
+    try { const r = await worldTick(S); TICKMSG = `✓ 推演好了${r.changes.length ? '，有 ' + r.changes.length + ' 处走向变了' : '，大势照史书走'}`; await store.save(S); }
+    catch (e) { if (!(e && e.code === 'cancelled')) TICKMSG = '没推演成：' + errText(e); }
+    finally { PHASE = ''; setBusy(false); }
+    return;
+  }
+  if (t.id === 'bReport') {
+    const txt = problemReport();
+    const box = $('#reportBox'); if (box) { box.hidden = false; box.value = txt; box.select(); }
+    try { await navigator.clipboard.writeText(txt); $('#reportMsg').textContent = '已复制。直接粘贴给我（Claude）就行。'; } catch (_) { $('#reportMsg').textContent = '没能自动复制：下面框里的字已选中，按 Ctrl+C 复制。'; }
+    return;
+  }
   if (t.id === 'bCopyGeo') {
     const txt = Object.entries(S.places).map(([k, v]) => `${k}\t今${v.now}\t属${v.belong}\t${v.from}${v.note ? '\t' + v.note : ''}`).join('\n');
     try { await navigator.clipboard.writeText(`主角现在在：${S.place.full}（${timeText(S.clock)}）\n` + txt); $('#copyMsg').textContent = '已复制，可以直接粘贴给做地图的 AI。'; }
@@ -1252,6 +1403,7 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'sLen') { SETTINGS.len = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
+  if (e.target.id === 'sWorld') { SETTINGS.world = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
   if (e.target.id === 'sCheck') { SETTINGS.check = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
   if (e.target.id === 'sTier') { SETTINGS.tier = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
 });
