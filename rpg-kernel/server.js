@@ -299,6 +299,21 @@ const routes = {
     for (const [k, j] of LLM_JOBS) if (Date.now() - j.at > 3600e3) LLM_JOBS.delete(k);
     return { ok: true, job: id };
   },
+  /* 每回合联网查证：几条搜索并行跑，各取前三条摘要；单条超时不拖累整回合 */
+  async 'POST /api/lookup'(body) {
+    const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean).slice(0, 6);
+    if (!qs.length) return { ok: true, results: [] };
+    const cfg = await search.loadConfig();
+    const one = q => Promise.race([
+      search.search(q).catch(e => ({ query: q, results: [], error: String(e && e.message || e) })),
+      new Promise(r => setTimeout(() => r({ query: q, results: [], error: '超时' }), 15000)),
+    ]);
+    const rs = await Promise.all(qs.map(one));
+    return {
+      ok: true, provider: cfg.provider,
+      results: rs.map((r, i) => ({ q: qs[i], provider: r.provider || cfg.provider, error: r.error || '', items: (r.results || []).slice(0, 3).map(h => ({ title: String(h.title || '').slice(0, 60), url: String(h.url || ''), snippet: String(h.snippet || '').replace(/\s+/g, ' ').slice(0, 320) })) })),
+    };
+  },
   async 'POST /api/llm-job'(body) {
     const j = LLM_JOBS.get((body || {}).job);
     if (!j) return { ok: false, why: '任务不存在或已过期' };

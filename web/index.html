@@ -300,7 +300,8 @@ function ledgerRules() {
 9. gmNotes：正文后【幕后】里写的真相，以及你看出的伏笔（玩家看不到）；gmNotesDone：已经浮出或了结的（开头几个字）。
 10. hints：三到五条，玩家接下来可以做的事或可以问的问题，一句一条，贴着眼下的局面，有戏里的也有戏外的。
 11. canon：本回合新确立、以后必须一直成立的事实（身份名分、婚姻亲属、产权契约、承诺约定、结下的恩怨、谁知道了什么秘密、主角立下的规矩），一句一条，没有就 []；canonDone：已经不再成立的（开头几个字）。
-12. turnSummary：本回合事实摘要，120 字内。worldShift：玩家这回做的事若可能波及更大的局面（杀了或救了要紧人物、占了一地、改了一项大政、截了一笔军饷、结交或得罪了权要……），一句话写出来，程序会据此推演天下；小事留空。
+12. lookups：下一回合写之前值得联网查证的，三条以内，写成搜索词（真人此时的官职去向、某件事的时间与经过、某地此时的隶属与名称、某制度或物价此时的样子），如「海瑞 万历十三年」「明代 苏州府 织造局」；没有就 []。
+13. turnSummary：本回合事实摘要，120 字内。worldShift：玩家这回做的事若可能波及更大的局面（杀了或救了要紧人物、占了一地、改了一项大政、截了一笔军饷、结交或得罪了权要……），一句话写出来，程序会据此推演天下；小事留空。
 
 史实核查（fixes）：逐句核对正文，只找确凿的硬伤——本朝本年不该有的官名、衙门、地名或隶属；此时已死或尚未出生、不在此地、不任此职的真实人物；年号、干支、节令错误；本朝还没有的器物、作物、制度；离谱的物价或钱粮单位；现代词语。不改文风、不改虚构人物、不改情节，拿不准的不算。每处给出原文里错的那几个字（原样摘出，十二字以内，必须能在正文里找到）和改成什么。
 
@@ -328,6 +329,7 @@ function ledgerRules() {
 "hints":[""],
 "fixes":[{"wrong":"原文","right":"改成","why":""}],
 "canon":[""],"canonDone":[""],
+"lookups":["下一回合写之前该联网查证的搜索词"],
 "worldShift":"玩家这回的作为可能波及天下大势、改变史书走向的地方，一句话；没有就空",
 "turnSummary":""}`;
 }
@@ -562,6 +564,7 @@ function problemReport() {
   if (s) {
     L.push(`存档：${s.title}；${timeText(s.clock)}；第 ${s.turn} 回合；存档大小 ${Math.round(bytes(JSON.stringify(s)) / 1024)}KB`);
     L.push(`现钱 ${s.money && s.money.cash}；人物 ${Object.keys(s.people || {}).length}；史线将来 ${arr(s.world && s.world.upcoming).length} 条；上次推演 ${s.world && s.world.tickAt ? s.world.tickAt.label : '无'}`);
+    L.push('联网查证：' + (MODE === 'local' ? (SETTINGS.search === false ? '关' : (KEY.bocha ? '博查' : '维基')) : '无') + '；资料 ' + arr(s.research).length + ' 条；最近查：' + arr(s.research).slice(-3).map(x => x.q).join('、'));
     L.push('—— 最近的对话 ——');
     for (const c of arr(s.chat).slice(-4)) L.push(`[${c.role === 'me' ? '玩家' : c.kind === 'talk' ? 'GM戏外' : 'GM'}] ${cut(c.text, 500)}${c.extra && c.extra.salvaged ? '（账没记上）' : ''}`);
   }
@@ -712,6 +715,43 @@ function mentionedFigures(s, text) {
   return out.length ? '【正文提到的真人（内置史料）】' + out.join('；') : '';
 }
 
+/* ========== 联网查证：每回合写之前先搜，搜到的留着，越玩越多 ========== */
+const canSearch = () => MODE === 'local' && SETTINGS.search !== false;
+function lookupQueries(s, said, extra) {
+  const q = [], add = x => { x = String(x || '').trim(); if (x && x.length >= 2 && !q.includes(x)) q.push(x); };
+  for (const x of arr(extra)) add(x);
+  for (const x of arr(s && s.lookups).slice(0, 3)) add(x);
+  if (s) {
+    const yl = s.clock.yearLabel || (s.clock.y + '年');
+    const txt = String(said || '') + (arr(s.chat).slice(-1)[0] || {}).text;
+    const seen = new Set();
+    for (const h of HIST) for (const f of h.figures) if (f.name.length >= 2 && !seen.has(f.name) && String(said || '').includes(f.name)) { seen.add(f.name); add(`${f.name} ${yl}`); }
+    if (!arr(s.searchedYears).includes(s.clock.y)) { add(`${yl} ${s.place.polity || ''} 大事`); s.searchedYears = arr(s.searchedYears).concat([s.clock.y]).slice(-40); }
+    if (!hasHist(s) && txt) { /* 没有内置史料的时期：账房列的查证词就是主要来源 */ }
+  }
+  return q.slice(0, 5);
+}
+/** 搜一轮，结果存进 s.research（每条留标题和摘要）；返回给这一回显示用的清单 */
+async function doLookups(s, queries) {
+  if (!queries.length) return null;
+  let r;
+  try { r = await api('/api/lookup', { queries }); } catch (e) { return { err: '游戏服务没有回应' }; }
+  const shown = [], errs = [];
+  for (const x of arr(r.results)) {
+    if (x.error && !arr(x.items).length) { errs.push(`${x.q}：${x.error}`); continue; }
+    const text = arr(x.items).map(i => `${i.title}：${i.snippet}`).join(' / ');
+    if (s && text) { s.research = arr(s.research).filter(o => o.q !== x.q).concat([{ q: x.q, turn: s.turn, y: s.clock.y, text: cut(text, 700) }]).slice(-24); }
+    shown.push({ q: x.q, titles: arr(x.items).map(i => i.title).slice(0, 3) });
+  }
+  return { shown, err: errs.length && !shown.length ? errs[0] : '', provider: r.provider };
+}
+function researchBlock(s, extraText) {
+  const R = arr(s && s.research).slice(-12);
+  const extra = extraText ? '\n' + extraText : '';
+  if (!R.length && !extra) return '';
+  return '【联网查到的资料（搜索结果摘要，可信度不一：与内置史料冲突以内置史料为准；与你的记忆冲突时以这里为准；没查到的不要硬编）】\n' + R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') + extra;
+}
+
 /* ========== 天下推演：史书的惯性 + 本局的变化 → 改写将来、更新人物与大势 ========== */
 const ymOf = c => c.y * 12 + c.m;
 function needTick(s, d) {
@@ -749,6 +789,7 @@ ${shifts || '无'}
 ${arr(w.ripples).slice(-10).map(r => `· ${r.cause} → ${r.effect}`).join('\n') || '无'}
 【各方势力】${arr(s.powers).map(x => `${x.name}（${x.leader || ''}，据${x.seat || ''}，兵${x.troops || '？'}，${x.note || ''}）`).join('；') || '无'}
 ${arr(s.territory).length ? '【主角的地盘】' + s.territory.map(x => `${x.place}（户${x.pop || '？'}，兵${x.troops || '？'}）`).join('；') + '\n' : ''}${arr(s.forces).length ? '【主角的兵马】' + s.forces.map(x => `${x.name}（${x.troops || '？'}人，在${x.at || '？'}）`).join('；') + '\n' : ''}【要紧人物（上次记的）】${arr(s.figures).map(f => `${f.name}（${f.post || ''}${f.alive === false ? '，已故' : ''}）`).join('；') || '无'}
+${researchBlock(s)}
 【最近的经过】
 ${arr(s.summaries).slice(-8).map(x => `第${x.turn}回合（${x.when}）：${x.text}`).join('\n') || '无'}
 
@@ -848,6 +889,7 @@ function blocks(s) {
   if (od.length) L.push('【差事：交代下去还没办完的（到时必须写结果）】\n' + od.map(o => `· 第${o.turn}回合交代 ${o.who}：${o.what}（${o.status}${o.result ? '，' + o.result : ''}）`).join('\n'));
   const w = s.world || {};
   const hb = histBlock(s); if (hb) L.push(hb);
+  const rb = researchBlock(s); if (rb) L.push(rb);
   if (arr(s.canon).length) L.push('【定本（本局已经确立、以后一直成立的事；不得前后矛盾）】\n' + s.canon.map(c => `· ${c.text}`).join('\n'));
   if (arr(s.chapters).length) L.push('【前几章（较早的经过）】\n' + s.chapters.map(c => `${c.from}至${c.to}：${c.text}`).join('\n'));
   L.push('【史线（以此为准）】' + (w.overview || '（开局时补全）') + (arr(w.events).length ? '\n已经发生：\n' + w.events.slice(-24).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}${x.changed ? '（本局实际如此）' : ''}`).join('\n') : '')
@@ -1063,6 +1105,7 @@ function applyReply(s, d, said) {
     for (const x of arr(d.canonDone)) s.canon = arr(s.canon).filter(c => !String(c.text).startsWith(String(x).slice(0, 6)));
     for (const x of arr(d.canon).slice(0, 6)) if (x && String(x).trim().length > 3 && !arr(s.canon).some(c => c.text === one(x, 80))) s.canon = arr(s.canon).concat([{ turn: s.turn, text: one(x, 80) }]);
     s.canon = arr(s.canon).slice(-80);
+    if (Array.isArray(d.lookups)) s.lookups = d.lookups.map(x => one(x, 40)).filter(Boolean).slice(0, 3);
     // 过了几个月就按每月进项开销结几次
     const months = Math.max(0, (s.clock.y * 12 + s.clock.m) - (beforeYM.y * 12 + beforeYM.m));
     const inc = arr(s.estate.income).reduce((a, x) => a + (N0(x.amount) || 0), 0), exp = arr(s.estate.expense).reduce((a, x) => a + (N0(x.amount) || 0), 0);
@@ -1172,9 +1215,13 @@ function keyBox() {
       <div class="muted" style="margin-top:6px">没有 Key？去 platform.deepseek.com 注册，在「API keys」里生成一个，充几块钱就能玩很久。</div>
       <div class="row"><button id="bNet">检查网络</button>${KEY.has ? '<button class="link" id="bKeyClose">不换了</button>' : ''}</div>
     </div></div>` : ''}
+    <div class="howto" style="grid-template-columns:1fr;margin-top:8px"><div>
+      <b>联网查证（每回合先搜一搜再写）</b> ${KEY.bocha ? '<span class="savest">✓ 已接上博查搜索</span>' : '<span class="muted">现在用维基百科（国内多半连不上）；填博查 Key 更稳</span>'}
+      <div class="row"><input id="bIn" type="password" autocomplete="off" placeholder="博查 API Key（open.bochaai.com 申请，按次计费、很便宜）" class="grow"><button id="bBochaSave">保存</button></div>
+    </div></div>
     ${KEYMSG ? `<div class="${/✓/.test(KEYMSG) ? 'banner' : 'err'}">${esc(KEYMSG)}</div>` : ''}`;
 }
-async function refreshKey() { try { const q = await api('/api/quick-status'); KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '' }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
+async function refreshKey() { try { const q = await api('/api/quick-status'); KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '', search: q.search || '', bocha: !!q.hasBocha }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
 async function renderStart() {
   $('#app').innerHTML = `<section class="start">
     <div class="hero"><h1>你想当谁？</h1>
@@ -1182,7 +1229,7 @@ async function renderStart() {
       <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off"><button class="main" id="bStart" ${BUSY || !SAMPLE || (MODE === 'local' && !KEY.has) ? 'disabled' : ''}>开始</button></form>
       <div class="examples">${EXAMPLES.map(x => `<button class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
     </div>
-    ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '开场写好了，正在立账册' : '正在把你落到历史里、写开场'}……已 <span id="secs">0</span> 秒（一般一两分钟）<button class="link" id="bStop">停下</button></div>
+    ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '开场写好了，正在立账册' : PHASE === 'search' ? '先联网查一查这个年代' : '正在把你落到历史里、写开场'}……已 <span id="secs">0</span> 秒（一般一两分钟）<button class="link" id="bStop">停下</button></div>
       ${STREAM ? `<div class="msg gm"><div class="text ${PHASE === 'ledger' ? '' : 'caret'}">${esc(STREAM)}</div></div>` : ''}` : ''}
     ${ERRMSG ? `<div class="err">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''}</div>` : ''}
     ${MODE === 'local' ? keyBox() : ''}
@@ -1215,6 +1262,10 @@ function extrasHtml(x) {
   if (arr(x.rums).length) parts.push(`<div class="ex"><div class="eh">风声</div>${x.rums.map(r => `<div>${esc(r)}</div>`).join('')}</div>`);
   if (arr(x.life).length) parts.push(`<div class="ex life"><div class="eh">这段日子里</div>${x.life.map(r => `<div>${r.who ? `<b>${esc(r.who)}</b>：` : ''}${esc(r.what)}</div>`).join('')}</div>`);
   if (arr(x.news).length) parts.push(`<div class="ex news"><div class="eh">天下事<span>按史书此时发生的</span></div>${x.news.map(r => `<div>${esc(r.y)}年${r.m ? r.m + '月' : ''}：${esc(r.text)}${r.changed ? ' <span class="mine">（本局）</span>' : ''}</div>`).join('')}</div>`);
+  if (x.looked) {
+    const lk = x.looked;
+    parts.push(`<div class="ex"><div class="eh">联网查证<span>写之前先搜的</span></div>${lk.err ? `<div class="muted">没查成：${esc(lk.err)}${KEY.bocha ? '' : '（国内连不上维基百科时，在首页填博查 Key）'}</div>` : ''}${arr(lk.shown).map(q => `<div><b>${esc(q.q)}</b>${q.titles.length ? `<span class="muted">：${esc(q.titles.join('；'))}</span>` : '<span class="muted">：没搜到</span>'}</div>`).join('')}</div>`);
+  }
   if (x.worldTick) {
     const wt = x.worldTick;
     parts.push(`<div class="ex news"><div class="eh">天下推演<span>史书的走向 + 你造成的变化</span></div>${arr(wt.ripples).map(r => `<div><b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`).join('')}${arr(wt.changes).map(c => `<div><span class="badge ${c.status === '新出' ? 'b-doing' : 'b-bad'}">${esc(c.status)}</span> ${esc(c.text)}${c.why ? `<div class="muted">${esc(c.why)}</div>` : ''}</div>`).join('')}</div>`);
@@ -1241,7 +1292,7 @@ function renderGame() {
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '写好了，账房正在记账、核史实' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM ? `<div class="text ${PHASE === 'ledger' ? '' : 'caret'}" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '写好了，账房正在记账、核史实' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? '先联网查证这一回涉及的人和事' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM ? `<div class="text ${PHASE === 'ledger' ? '' : 'caret'}" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
   const keep = { said: $('#said') ? $('#said').value : '', span: $('#span') ? $('#span').value : 'auto' };
   $('#app').innerHTML = `<div class="game">
     <div class="chat">
@@ -1383,6 +1434,7 @@ function pane(tab) {
     <select id="sLen">${[['short', '短（三四百字）'], ['normal', '标准（六百到一千字）'], ['long', '长（一千到一千六百字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sCheck" style="width:auto" ${SETTINGS.check !== false ? 'checked' : ''}>账房记账时顺带核史实，确凿的错处自动改正（改了什么会列出来）</label>
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sWorld" style="width:auto" ${SETTINGS.world !== false ? 'checked' : ''}>天下大势自动推演（每过半年、或你做了波及天下的事时，多一次调用，推演史书的走向和你造成的变化）</label>
+    ${MODE === 'local' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sSearch" style="width:auto" ${SETTINGS.search !== false ? 'checked' : ''}>每回合先联网查证（搜这一回涉及的真人、事件、年份；用${KEY.bocha ? '博查' : '维基百科，国内多半连不上，建议在首页填博查 Key'}）</label>` : '<p class="muted" style="font-size:13px">联网查证只在桌面版里有（用你自己的博查 Key）。</p>'}
     <div class="h"><span class="seal">报</span>遇到 bug</div>
     <p class="muted" style="font-size:13px">点下面的按钮，会把这一局最近的情况和 AI 的原样输出整理成一段文字并复制下来（不含你的 Key），直接粘贴给我，我照着修。</p>
     <div class="row"><button id="bReport">复制问题报告</button><span class="muted" id="reportMsg"></span></div>
@@ -1399,10 +1451,16 @@ async function startGame(sentence, have) {
   sentence = String(sentence || '').trim(); if (!sentence || BUSY) return;
   ERRMSG = ''; STREAM = ''; PHASE = '';
   setBusy(true);
-  let st = have || null;
+  let st = have || null, looked = null, pre = null;
   try {
+    if (!st && canSearch()) {
+      PHASE = 'search'; render();
+      pre = { research: [], turn: 0, clock: { y: 0 } };
+      looked = await doLookups(pre, [sentence, sentence.replace(/的.*$/, '') + ' 历史']);
+      PHASE = ''; render();
+    }
     if (!st) {
-      const { text } = await callClaude(openingStoryInput(sentence), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); }, { json: false, temperature: 0.9, maxTokens: 6000 });
+      const { text } = await callClaude(openingStoryInput(sentence) + (pre && pre.research.length ? '\n\n' + researchBlock(pre) : ''), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); }, { json: false, temperature: 0.9, maxTokens: 6000 });
       st = splitStory(text);
       if (st.text.length < 40) throw { code: 'empty_completion' };
     }
@@ -1424,6 +1482,8 @@ async function startGame(sentence, have) {
     Object.assign(d, { reply: fx.text, mode: 'play', elapsedDays: 0, ledger: [] });
     applyReply(s, d, '');
     if (fx.done.length) { const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { fixes: fx.done }); }
+    if (pre) s.research = pre.research;
+    if (looked) { const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { looked }); }
     S = s; VIEW = 'game'; LAST_ACTION = null; TAB = 'board';
     await store.save(S);
   } catch (e) {
@@ -1441,8 +1501,13 @@ async function send(said, span, note, resume) {
   if ($('#said')) $('#said').value = '';
   setBusy(true);
   const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), ...o }));
-  let st = resume && resume.story ? resume.story : null;
+  let st = resume && resume.story ? resume.story : null, looked = null;
   try {
+    if (!st && canSearch() && !resume) {
+      PHASE = 'search'; render();
+      looked = await doLookups(S, lookupQueries(S, said));
+      PHASE = ''; render();
+    }
     if (!st) {
       const { text } = await callClaude(storyInput(S, said, span, note), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); },
         { json: false, temperature: 0.9, maxTokens: 6000, resumeJob: resume && resume.job, onJob: job => pend({ job }) });
@@ -1464,6 +1529,7 @@ async function send(said, span, note, resume) {
       if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
       applyReply(S, Object.assign(d, { reply: fx.text, mode: 'play' }), said);
       const g = S.chat[S.chat.length - 1];
+      if (looked) g.extra = Object.assign(g.extra || {}, { looked });
       if (fx.done.length) g.extra = Object.assign(g.extra || {}, { fixes: fx.done });
       if (!ok) { g.extra = Object.assign(g.extra || {}, { salvaged: true }); g.unsettled = { said, span, hidden: st.hidden }; }
       if (ok && arr(S.summaries).length > 60) { PHASE = 'memory'; render(); await compactMemory(S); }
@@ -1516,6 +1582,16 @@ document.addEventListener('click', async e => {
       else if (r.test && r.test.ok) { KEYMSG = `✓ 已保存，试连成功（${r.test.model || ''}）`; KEY_OPEN = false; }
       else KEYMSG = '已保存，但试连没通：' + ((r.test && r.test.why) || '') + '。点「检查网络」看看卡在哪。';
     } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
+    render(); return;
+  }
+  if (t.id === 'bBochaSave') {
+    const k = $('#bIn').value.trim(); if (!k) { $('#bIn').focus(); return; }
+    t.disabled = true; t.textContent = '保存中…'; KEYMSG = '';
+    try {
+      const r = await api('/api/quick-key', { bochaKey: k });
+      await refreshKey();
+      KEYMSG = r.bocha && r.bocha.ok ? `✓ 博查已保存，试搜成功（${r.bocha.count} 条）` : '博查 Key 已保存，但试搜没通：' + ((r.bocha && r.bocha.why) || r.why || '');
+    } catch (e) { KEYMSG = '没保存上：' + (e.message || e); }
     render(); return;
   }
   if (t.id === 'bNet') {
@@ -1578,6 +1654,7 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'sLen') { SETTINGS.len = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
+  if (e.target.id === 'sSearch') { SETTINGS.search = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
   if (e.target.id === 'sWorld') { SETTINGS.world = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
   if (e.target.id === 'sCheck') { SETTINGS.check = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
   if (e.target.id === 'sTier') { SETTINGS.tier = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
