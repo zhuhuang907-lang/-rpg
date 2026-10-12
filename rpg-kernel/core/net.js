@@ -28,21 +28,21 @@ function explain(e, host) {
   err.cause = e; err.netError = true;
   return err;
 }
-/* 连不上的站点记 3 分钟：在国内维基常常直接连不上，每个请求都要等到超时，
-   开一局要查几十次，就成了「生成半天啥都没有」。记住后同一站点立即失败，走兜底。
-   只记「连接层」失败（域名、拒绝、重置、证书、代理、连接超时）；
-   读响应超时（模型写长文写得慢）不记，免得把 DeepSeek 误判成连不上。 */
+/* 连不上的站点暂时记一下：在国内维基常常直接连不上，每个请求都要等到超时，
+   开一局要查几十次，就成了「生成半天啥都没有」。
+   但网络偶尔抖一下很常见：只有接连两次连不上才记，记 90 秒；连接中途被断（ECONNRESET）不算。
+   写剧情的模型（DeepSeek）从不记——它连不上就重试，不能因为抖了一次就几分钟都不让写。 */
 const DOWN = new Map();
-const CONNECT_FAIL = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|EPIPE|CERT|SELF_SIGNED|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER|ERR_TLS|UND_ERR_CONNECT_TIMEOUT|EACCES|EPERM|cancel|tunnel|proxy/i;
+const CONNECT_FAIL = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|CERT|SELF_SIGNED|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER|ERR_TLS|UND_ERR_CONNECT_TIMEOUT|EACCES|EPERM|tunnel/i;
 /** fetch 包一层：网络层失败时给出中文原因 */
 async function fetchX(url, opts, { noFastFail = false } = {}) {
   let host = ''; try { host = new URL(url).host; } catch (_) { /* 忽略 */ }
   const d = DOWN.get(host);
-  if (!noFastFail && d && d.until > Date.now()) { const err = new Error(d.msg + '（几分钟内不再重试）'); err.netError = true; err.fastFail = true; throw err; }
+  if (!noFastFail && d && d.n >= 2 && d.until > Date.now()) { const err = new Error(d.msg + '（刚才接连连不上，一分钟后再试）'); err.netError = true; err.fastFail = true; throw err; }
   try { const r = await fetch(url, opts); DOWN.delete(host); return r; }
   catch (e) {
     const err = explain(e, host);
-    if (host && CONNECT_FAIL.test(causeCode(e))) DOWN.set(host, { until: Date.now() + 3 * 60 * 1000, msg: err.message });
+    if (host && !noFastFail && CONNECT_FAIL.test(causeCode(e))) { const o = DOWN.get(host); DOWN.set(host, { n: (o && o.until > Date.now() ? o.n : 0) + 1, until: Date.now() + 90 * 1000, msg: err.message }); }
     throw err;
   }
 }
