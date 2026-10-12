@@ -489,7 +489,7 @@ function migrate(s) {
 }
 
 /* ========== 调 Claude ========== */
-let CTL = null, BUSY = false, LAST_ACTION = null;
+let CTL = null, TURN = null, BUSY = false, LAST_ACTION = null;
 const ERR = {
   not_granted: '你还没允许这个页面使用 Claude。刷新页面后再发一次，在弹出的确认框里点「允许」。',
   sampling_disabled: '这个账号暂时用不了 Claude。',
@@ -562,7 +562,10 @@ function partial(text) {
 async function callClaude(input, onReply, extra, tier) {
   if (MODE === 'local' && !KEY.has) throw { code: 'no_key', message: '还没填 DeepSeek 的 Key：在首页把 Key 粘贴进去点「保存」' };
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
+  const det = extra && extra.detached;
+  if (!det && TURN && TURN.signal.aborted) throw { code: 'cancelled' };
   CTL = new AbortController();
+  if (TURN && !det) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); }
   const opts = { signal: CTL.signal, cache: false, modelTier: tier || SETTINGS.tier };
   if (SETTINGS.tier !== 'complex' && MODE === 'claude') opts.effort = 'low';
   const plain = extra && extra.json === false;
@@ -634,7 +637,7 @@ async function buildInst(s) {
   if (INSTING || !s) return;
   INSTING = true; INSTMSG = ''; render();
   try {
-    const { text } = await callClaude(instInput(s, lsGet(KB_KEY) || ''), null, { maxTokens: 7000 });
+    const { text } = await callClaude(instInput(s, lsGet(KB_KEY) || ''), null, { maxTokens: 7000, detached: true });
     const d = parseJSON(text);
     if (!d || !Array.isArray(d.ladder)) throw { code: 'bad_json' };
     const o = v => one(v, 80);
@@ -843,7 +846,8 @@ ${R.map(x => `· 查「${x.q}」：${x.text}`).join('\n')}
 }
 
 /* ========== 联网查证：每回合写之前先搜，搜到的留着，越玩越多 ========== */
-const canSearch = () => MODE === 'local' && SETTINGS.search !== false;
+let SEARCH_DOWN = 0, SEARCH_OFF = '';
+const canSearch = () => MODE === 'local' && SETTINGS.search !== false && !SEARCH_OFF;
 /** 像身在那个年代：每回换着方向搜一两样——本地的官、本地的事、天下的消息、本行的行情、同乡与在本地的真人、快要发生的事里的人 */
 function ambientQueries(s) {
   const yl = s.clock.yearLabel || (s.clock.y + '年'), dy = (s.place.polity || '') + (/[代朝]$/.test(s.place.polity || '') ? '' : '代');
@@ -889,9 +893,9 @@ function lookupQueries(s, said, extra) {
 async function doLookups(s, queries) {
   if (!queries.length) return null;
   let r;
-  const sig = CTL && CTL.signal;
+  const sig = (TURN && TURN.signal) || (CTL && CTL.signal);
   try { r = await Promise.race([api('/api/lookup', { queries }), new Promise((_, rej) => { if (sig) { if (sig.aborted) rej({ code: 'cancelled' }); sig.addEventListener('abort', () => rej({ code: 'cancelled' }), { once: true }); } })]); }
-  catch (e) { if (e && e.code === 'cancelled') throw e; return { err: '游戏服务没有回应' }; }
+  catch (e) { if (e && e.code === 'cancelled') throw e; if (++SEARCH_DOWN >= 2) SEARCH_OFF = '游戏服务没有回应'; return { err: '游戏服务没有回应' }; }
   const shown = [], errs = [];
   for (const x of arr(r.results)) {
     if (x.error && !arr(x.items).length) { errs.push(`${x.q}：${x.error}`); continue; }
@@ -901,6 +905,9 @@ async function doLookups(s, queries) {
     if (s && arr(x.items).length) { s.searchedQ = arr(s.searchedQ).concat([x.q]).slice(-300); if (/大事$/.test(x.q) && s.clock && !arr(s.searchedYears).includes(s.clock.y)) s.searchedYears = arr(s.searchedYears).concat([s.clock.y]).slice(-40); }
   }
   if (r.status) LOOKST = r.status;
+  // 连着两轮一条都没搜到（多半是维基连不上、Key 不对）：这次先不查了，免得每回合白等
+  const gotAny = arr(r.results).some(x => arr(x.items).length);
+  if (arr(r.results).length && !gotAny) { if (++SEARCH_DOWN >= 2) SEARCH_OFF = (errs[0] || '一条都没搜到').replace(/^[^：]*：/, ''); } else if (gotAny) SEARCH_DOWN = 0;
   return { shown, err: errs.length && !shown.length ? errs[0] : '', provider: r.provider };
 }
 function researchBlock(s, extraText, localsOnly) {
@@ -958,7 +965,7 @@ events 三十到六十条，只收 ${from}–${to} 年的；figures 二十到四
 }
 async function ensureHistPack(s) {
   const need = packNeed(s); if (!need) return null;
-  PHASE = 'histbuild'; CTL = new AbortController(); render();
+  PHASE = 'histbuild'; render();
   try { const p = await buildHistPack(s, need.from, need.to); s.hbFail = null; HBMSG = `✓ 已建 ${p.title}：${p.events.length} 件事、${p.figures.length} 位人物`; return p; }
   catch (e) { if (e && e.code === 'cancelled') throw e; HBMSG = '这次没建成：' + errText(e); s.hbFail = s.turn; return null; }
   finally { PHASE = ''; }
@@ -1168,7 +1175,8 @@ function pushUser(turns, content) {
 }
 /** 写戏：规则 + 账册当第一句，然后是最近的对话，最后是玩家这回说的话；只要正文 */
 function storyInput(s, said, span, note, sys, ruling) {
-  const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true));
+  const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
+  const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料') : ''));
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、家业与账目、家里与身边人的变化、季节年景与市面、传来的消息），其余带过但交代清楚。` : '';
   const what = String(said || '').trim() ? `【玩家这回说】\n${said}` : '【玩家这回没说话】就按他的身份和处境往下过一段日子（一般几天到一旬，在打仗就写这几日的军中与敌情），有事找上门就停在那里。';
   return pushUser(turns, what + modernNote(said) + (ruling ? '\n' + rulingText(ruling) : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + '\n\n照规则写正文。');
@@ -1440,7 +1448,7 @@ setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = 
 
 function render() {
   $('#bHome').hidden = VIEW !== 'game';
-  $('#statusLine').innerHTML = VIEW === 'game' && S ? `<b>${esc(S.protagonist.name)}</b> · ${esc(timeText(S.clock))} · ${esc(S.place.full)}${S.estate && S.estate.cash ? ' · 现钱 ' + esc(S.estate.cash) : ''}${canSearch() ? (LOOKST ? (LOOKST.okN ? ` · <span title="上一回查了 ${LOOKST.total} 条，${LOOKST.okN} 条有结果">查证 ✓${LOOKST.okN}/${LOOKST.total}</span>` : ` · <span style="color:var(--zhu)" title="${esc(LOOKST.err || '')}">查证没成：${esc(cut(LOOKST.err || '没有结果', 30))}</span>`) : '') : ''}` : '';
+  $('#statusLine').innerHTML = VIEW === 'game' && S ? `<b>${esc(S.protagonist.name)}</b> · ${esc(timeText(S.clock))} · ${esc(S.place.full)}${S.estate && S.estate.cash ? ' · 现钱 ' + esc(S.estate.cash) : ''}${SEARCH_OFF && MODE === 'local' && SETTINGS.search !== false ? ` · <span style="color:var(--zhu)" title="${esc(SEARCH_OFF)}">联网查证连不上，本次先不查了（填博查 Key 或在设置里重新勾选后再试）</span>` : ''}${canSearch() ? (LOOKST ? (LOOKST.okN ? ` · <span title="上一回查了 ${LOOKST.total} 条，${LOOKST.okN} 条有结果">查证 ✓${LOOKST.okN}/${LOOKST.total}</span>` : ` · <span style="color:var(--zhu)" title="${esc(LOOKST.err || '')}">查证没成：${esc(cut(LOOKST.err || '没有结果', 30))}</span>`) : '') : ''}` : '';
   $('#notice').innerHTML = !READY ? '' : MODE === 'none' ? (location.protocol === 'file:' ? '<div class="err"><b>这样打开用不了。</b>你双击的是游戏里的网页文件。请关掉它，双击桌面上的「历史模拟RPG」图标。</div>' : '<div class="err">游戏服务没有在运行：启动游戏的小窗口是不是被关掉了？重新双击桌面上的「历史模拟RPG」。</div>') : '';
   if (VIEW === 'start') return renderStart();
   renderGame();
@@ -1712,11 +1720,11 @@ let PHASE = '', TICKMSG = '', LOOKST = null;
 async function startGame(sentence, have, havePre) {
   sentence = String(sentence || '').trim(); if (!sentence || BUSY) return;
   ERRMSG = ''; STREAM = ''; PHASE = '';
-  CTL = new AbortController();
+  CTL = new AbortController(); TURN = CTL;
   setBusy(true);
   let st = have || null, looked = null, pre = havePre || null;
   try {
-    if (!st && canSearch()) {
+    if (!st && !pre && canSearch()) {
       PHASE = 'search'; render();
       pre = { research: [], almanac: [], turn: 0, clock: { y: 0, m: 1, d: 1, yearLabel: '' }, place: { full: '' } };
       looked = await doLookups(pre, openingQueries(sentence));
@@ -1758,10 +1766,10 @@ async function startGame(sentence, have, havePre) {
     await store.save(S);
   } catch (e) {
     if (!(e && e.code === 'cancelled')) ERRMSG = errText(e) + (st ? '（开场已经写好了，再试只补账册）' : '');
-    if (!st) LAST_ACTION = () => startGame(sentence);
+    if (!st) LAST_ACTION = () => startGame(sentence, null, pre);
   }
-  finally { STREAM = ''; PHASE = ''; setBusy(false); }
-  if (S && VIEW === 'game' && packNeed(S)) { setBusy(true); try { await ensureHistPack(S); await store.save(S); } catch (_) { /* 下回合再建 */ } finally { setBusy(false); } }
+  finally { STREAM = ''; PHASE = ''; TURN = null; setBusy(false); }
+  if (S && VIEW === 'game' && packNeed(S)) { CTL = new AbortController(); TURN = CTL; setBusy(true); try { await ensureHistPack(S); await store.save(S); } catch (_) { /* 下回合再建 */ } finally { TURN = null; setBusy(false); } }
   if (S && !S.inst && VIEW === 'game') buildInst(S);
 }
 /** 一回合：先写正文（边写边显示），再交给账房记账核史实。账没记上，正文也留下，可以补记 */
@@ -1772,7 +1780,7 @@ async function send(said, span, note, resume) {
   LAST_ACTION = () => { if (orig) S = restorePrev(orig); send(said, span, note, resume && (resume.story || orig) ? { story: resume.story, orig, ruling: resume.ruling } : undefined); };
   const before = clone(S); before.prev = null;
   if ($('#said')) $('#said').value = '';
-  CTL = new AbortController();
+  CTL = new AbortController(); TURN = CTL;
   setBusy(true);
   const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), baseTurn: S.turn, baseChat: S.chat.length, redo: !!orig, ...o }));
   let st = resume && resume.story ? resume.story : null, looked = null, ruling = (resume && resume.ruling) || null;
@@ -1809,7 +1817,7 @@ async function send(said, span, note, resume) {
     }
     if (st.talk) {
       lsSet('hrpg:pending', null);
-      applyReply(S, { reply: st.text, mode: 'talk' }, said);
+      applyReply(S, { reply: st.text, mode: 'talk' }, said); PENDING_SAID = '';
     } else {
       pend({ story: st, ruling });
       STREAM = st.text; PHASE = 'ledger'; render();
@@ -1822,7 +1830,7 @@ async function send(said, span, note, resume) {
       d = d || { elapsedDays: 0 };
       const fx = applyFixes(st.text, d.fixes);
       if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
-      applyReply(S, Object.assign(d, { reply: fx.text, mode: 'play' }), said);
+      applyReply(S, Object.assign(d, { reply: fx.text, mode: 'play' }), said); PENDING_SAID = '';
       const g = S.chat[S.chat.length - 1];
       if (looked) g.extra = Object.assign(g.extra || {}, { looked });
       if (ruling) g.extra = Object.assign(g.extra || {}, { ruling });
@@ -1849,12 +1857,15 @@ async function send(said, span, note, resume) {
   } catch (e) {
     lsSet('hrpg:pending', null);
     if (!(e && e.code === 'cancelled')) ERRMSG = errText(e);
+    const keepR = S.research, keepQ = S.searchedQ, keepY = S.searchedYears;  // 查到的资料不算这一回的账，留着给再试一次用
     if (orig) S = orig;  // 重写或补记没成：原来那一回照旧留着
     else { const keepPrev = S.prev; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, before, { prev: keepPrev }); }
+    if (!orig) { S.research = keepR; S.searchedQ = keepQ; S.searchedYears = keepY; }
+    if (ruling && !st) LAST_ACTION = () => { if (orig) S = restorePrev(orig); send(said, span, note, { ruling, orig }); };
     if (INST_CACHE && INST_CACHE.id === S.id && !S.inst) S.inst = INST_CACHE.inst;
     setTimeout(() => { if ($('#said') && !$('#said').value) $('#said').value = said || ''; }, 0);
   } finally {
-    STREAM = ''; PHASE = ''; PENDING_SAID = ''; setBusy(false);
+    STREAM = ''; PHASE = ''; PENDING_SAID = ''; TURN = null; setBusy(false);
     const all = document.querySelectorAll('.chat .msg'); const last = all[all.length - 1]; if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
@@ -1880,7 +1891,7 @@ document.addEventListener('click', async e => {
   const t = e.target.closest('button'); if (!t) return;
   const ds = t.dataset;
   if (ds.ex) { $('#qText').value = ds.ex; return; }
-  if (t.id === 'bStop') { CTL && CTL.abort(); return; }
+  if (t.id === 'bStop') { TURN && TURN.abort(); CTL && CTL.abort(); return; }
   if (t.id === 'bKeyOpen') { KEY_OPEN = true; render(); return; }
   if (t.id === 'bKeyClose') { KEY_OPEN = false; KEYMSG = ''; render(); return; }
   if (t.id === 'bKeySave') {
@@ -1902,6 +1913,7 @@ document.addEventListener('click', async e => {
     try {
       const r = await api('/api/quick-key', { bochaKey: k });
       await refreshKey();
+      if (r.bocha && r.bocha.ok) { SEARCH_OFF = ''; SEARCH_DOWN = 0; }
       KEYMSG = r.bocha && r.bocha.ok ? `✓ 博查已保存，试搜成功（${r.bocha.count} 条）` : '博查 Key 已保存，但试搜没通：' + ((r.bocha && r.bocha.why) || r.why || '');
     } catch (e) { KEYMSG = '没保存上：' + (e.message || e); }
     render(); return;
@@ -1948,18 +1960,18 @@ document.addEventListener('click', async e => {
     if (BUSY || !S) return;
     const y = S.clock.y, cov = RUNHIST.find(h => y >= h.range[0] && y <= h.range[1]);
     const from = cov ? cov.range[0] : y - 3;
-    CTL = new AbortController(); setBusy(true); PHASE = 'histbuild';
+    CTL = new AbortController(); TURN = CTL; setBusy(true); PHASE = 'histbuild';
     try { const p = await buildHistPack(S, from, from + 11, true); HBMSG = `✓ 已建 ${p.title}：${p.events.length} 件事、${p.figures.length} 位人物`; await store.save(S); }
     catch (e) { if (!(e && e.code === 'cancelled')) HBMSG = '没建成：' + errText(e); }
-    finally { PHASE = ''; setBusy(false); }
+    finally { PHASE = ''; TURN = null; setBusy(false); }
     return;
   }
   if (t.id === 'bTick') {
     if (BUSY || !S) return;
-    TICKMSG = ''; ERRMSG = ''; PHASE = 'world'; setBusy(true);
+    TICKMSG = ''; ERRMSG = ''; PHASE = 'world'; CTL = new AbortController(); TURN = CTL; setBusy(true);
     try { const r = await worldTick(S); TICKMSG = `✓ 推演好了${r.changes.length ? '，有 ' + r.changes.length + ' 处走向变了' : '，大势照史书走'}`; await store.save(S); }
     catch (e) { if (!(e && e.code === 'cancelled')) TICKMSG = '没推演成：' + errText(e); }
-    finally { PHASE = ''; setBusy(false); }
+    finally { PHASE = ''; TURN = null; setBusy(false); }
     return;
   }
   if (t.id === 'bBranch') {
@@ -1988,7 +2000,7 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'sLen') { SETTINGS.len = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
-  if (e.target.id === 'sSearch') { SETTINGS.search = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
+  if (e.target.id === 'sSearch') { SEARCH_OFF = ''; SEARCH_DOWN = 0; SETTINGS.search = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
   if (e.target.id === 'sRuling') { SETTINGS.ruling = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
   if (e.target.id === 'sWorld') { SETTINGS.world = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
   if (e.target.id === 'sCheck') { SETTINGS.check = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
