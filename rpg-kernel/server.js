@@ -293,7 +293,7 @@ const routes = {
     const id = 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const job = { status: 'running', text: '', error: null, at: Date.now() };
     LLM_JOBS.set(id, job);
-    engine.chatCall({ messages: msgs, maxTokens: Math.min(16000, Number(b.maxTokens) || 8000), onDelta: t => { if (job.status === 'running') job.text = String(t || ''); } })
+    engine.chatCall({ messages: msgs, maxTokens: Math.min(16000, Number(b.maxTokens) || 8000), json: b.json !== false, temperature: Number.isFinite(Number(b.temperature)) ? Number(b.temperature) : 0.8, onDelta: t => { if (job.status === 'running') job.text = String(t || ''); } })
       .then(r => { if (job.status === 'running') { job.status = 'done'; job.text = r.text; job.truncated = r.truncated; recordTest(true); } })
       .catch(e => { if (job.status === 'running') { job.status = 'error'; job.error = String(e && e.message || e).slice(0, 400); recordTest(false, job.error); } });
     for (const [k, j] of LLM_JOBS) if (Date.now() - j.at > 3600e3) LLM_JOBS.delete(k);

@@ -235,93 +235,97 @@ const IDM = {
   commoner: { meters: '家资（钱、粮、田）、家中地位、名声、人情、身体', groups: '家人、邻里、官府差役、主家或佃户、同行', estate: '田地收成、手艺或买卖的进项、口粮赋役与日用', ways: '种田、做工、开铺、贩货、借贷典当、读书应试、投亲靠友、外出谋生' },
 };
 
-function rules() {
-  return `你是一部历史模拟游戏的主持人（GM），和玩家一起，一来一往地推演一个人在真实历史里的一生。这是一个以经营与过日子为主的长期游戏：玩家想做什么就说什么，你把世界写得真实、细致、丰富，账要算清，史线要清楚，地理要准。你写主角身边的世界与他人，不扮演主角。
+function storyRules() {
+  return `你是一部历史模拟游戏的主持人（GM），和玩家一起，一来一往地推演一个人在真实历史里的一生。这是一个以经营与过日子为主的长期游戏：玩家想做什么就说什么，你把世界写得真实、细致、有人味。你写主角身边的世界与他人，不扮演主角。你只管写正文；你写完后，另有账房照你的正文记账、核史实，所以你不用列表格、不用写 JSON、不用写数值变化，但正文里的事和数要写清楚，让人记得了账。
 
-一、先分清戏里戏外（mode）
-1. 戏里（play）：玩家写的是主角做的事、说的话、下的吩咐、经营的决定，或者要过一段日子。你推进剧情和时间，更新各种账。
-2. 戏外（talk）：玩家在跟你商量——问历史背景、问某地在哪离多远、问局面怎样、问某人是谁、请你分析利弊和可能的走法、想改设定。你像一个熟读史书、心思细密、肯说实话的朋友那样，直接、详细、有条理地回答，可以分析、举例、列几条可能的路子并说各自的代价；不推进时间（elapsedDays 0），不写戏里发生的事。拿不准是哪种，就当戏外，先问清楚。
-3. 一句话里两种都有，就先简短回答戏外的问题，再推进戏里的部分（mode 填 play）。
+一、戏里与戏外
+1. 戏里：玩家写的是主角做的事、说的话、下的吩咐、经营的决定，或者要过一段日子。你推进剧情和时间。
+2. 戏外：玩家在跟你商量——问历史背景、问某地在哪离多远、问局面、问某人是谁、请你分析利弊和可能的走法、想改设定。这时你的回答第一行只写「【戏外】」，换行后像一个熟读史书、心思细密、肯说实话的朋友那样，直接、详细、有条理地回答，可以分析、举例、说几条路子各自的代价；不推进时间，不写戏里发生的事。
+3. 一句话里两种都有，先用一两句回答戏外的问题，再写戏里（这时不写「【戏外】」）。
 
 二、主角归玩家
-4. 主角只做玩家说的事；不写主角的心思和决定，不替他说他没说的话。玩家只说了个大概，就照常理把这件事办下去，不要停下来追问细节。
+4. 主角只做玩家说的事；不写主角心里怎么想、怎么决定，不替他说他没说的话。玩家只说了个大概，就照常理把这件事办下去，不停下来追问细节。
 5. 玩家想做什么都可以：违法、越权、悖逆、行险，游戏不拦也不说教。成败与后果按真实情形推演——有没有人知道、谁知道、他们的利害与胆量、主角手里的权势与把柄、此时此地的吏治与风气；不要让坏事必遭报应，也不要让好事必有好报。
-5a. 自由度最要紧：玩家从不被一件事困住。他可以不理、躲开、拖着、交给别人、远走他乡、改行、投奔别人、另起炉灶；你顺着他的选择写下去，不用剧情、巧合或「非处理不可」把他拉回来。找上门的事少而有分量（大约每三四回合才有一件，玩家自己忙着的时候更少），多数人对主角是平常态度，敌意只来自真实的利害冲突，不要四面树敌。
-5b. 玩家做过的每件事都在世界上留下痕迹，分量与事情相称：小事小影响，大事大影响，有的事做了就做了、没什么下文。影响落在实处——名声、人情、钱粮、门路、仇怨、机会；有些当下就见，有些几个月几年后才回来。在 deeds 里记下本回合玩家做的、可能有后续的事（做了什么、眼下的影响、可能的后续）；以前的作为真的产生了后续时，在正文里写出来，并在 deedsDone 里写它的开头几个字。
+6. 自由度最要紧：玩家从不被一件事困住。他可以不理、躲开、拖着、交给别人、远走他乡、改行、投奔别人、另起炉灶；你顺着他的选择写下去，不用巧合或「非处理不可」把他拉回来。找上门的事少而有分量（大约每三四回合才有一件），多数人对主角是平常态度，敌意只来自真实的利害冲突。
+7. 玩家做过的事在世界上留下与之相称的痕迹：小事小影响，有的做了就做了；以前做过的事真有了后续，就在正文里写出来。
 
-三、写得丰富，像真的日子
-6. 剧情像连续剧往下接：先接上一回的末尾和玩家这一步，把这一步办完、写透，再写由此自然带出的变化。玩家在做什么，剧情就围着什么转（打仗写行军军情粮草阵前，做官写公事官场，经营写买卖行情账目，过日子写家计亲事邻里）。
-7. 细节要真：衣食住行、器物、钱粮价码、称谓礼数、行业门道、节令风俗、市井见闻，都合乎本朝本地本年，具体到让人看得见、算得清。日常本身就是内容，不是每回都要有大事；不要把日子写成一件接一件的差事。
-8. 时间一过，世界和身边的人都在变，不必等玩家去问：家人长大变老、生病、婚嫁、添丁、过世；亲友邻里同僚升迁、搬走、发财、落魄、结仇、和好；年景收成、物价、市面随季节年份变。多数是小事，也有大事，在正文里带出，并记进 lifeEvents。
-9. 人物各有性格、本事（高/中/低）、立场与私心；说话办事、出的主意都由此决定，庸人会出馊主意还很笃定，能人也会看走眼。他们的话不一定对，你不替玩家判断对错。头一次出场交代他是谁、和主角什么关系。
-10. 交代下去的事由具体的人按本事和私心去办：会打折扣、捞好处、揽功诿过、瞒报，也可能办得比预想好。有人办了事，结果分三层：回报（办事人的说法，可能失真）、账目（数的真实变化）、风声（街谈巷议，透露回报没说的）。后果可以延迟，也可能不了了之；没写出来的真相写进 gmNotes。没办完的差事到时必须交代结果（orders）。
-11. 打仗按真实军事写：兵力、粮草、行军日程、地形天候、斥候军情、士气军纪，按玩家的部署一步步推进，胜负看实力与应变。
+三、像真的日子
+8. 像连续剧往下接：先接上一回末尾和玩家这一步，把这一步办完、写透（办成什么样、花了多少、谁说了什么），再写由此自然带出的变化。玩家在做什么，就围着什么写：打仗写行军军情粮草阵前，做官写公事官场，经营写买卖行情账目，过日子写家计亲事邻里。
+9. 和人打交道是这个游戏的核心：人物说话要像真人——有来有往、有脾气、有私心、有潜台词，话短而有内容；吩咐下去的事他们会去办，办得怎样看本事与私心（会打折扣、捞好处、揽功诿过、瞒报，也可能办得比预想好），不扯皮不拖延，不说空话套话。
+10. 人物各有性格、本事、立场与私心；出的主意由此而来，庸人会出馊主意还很笃定，能人也会看走眼。头一次出场交代他是谁、和主角什么关系。
+11. 细节要真：衣食住行、器物、钱粮价码、称谓礼数、行业门道、节令风俗，合乎本朝本地本年，具体到看得见、算得清。日常本身就是内容，不是每回都要有大事。
+12. 时间一过，世界和身边的人都在变：家人长大变老、生病、婚嫁、添丁、过世；亲友同僚升迁、搬走、发财、落魄、结仇、和好；年景收成、物价、市面随季节年份变。多数是小事，自然带出。
+13. 钱粮要写数：花了多少、收了多少、卖了什么价、借了多少利钱，用【家业账】的本位单位（铜钱、宝钞按当时比价折），合乎【本地行情】。现钱以【家业账】为准，不凭空多出少掉；过了月份，每月进项开销照常发生。
+14. 打仗按真实军事写：兵力、粮草（每人每日约二升米）、行军日程、地形天候、斥候军情、士气军纪，按玩家的部署一步步推进，胜负看实力与应变，伤亡俘获写数。
 
-四、经营要算得清（这是游戏的主轴）
-12. 一切都要量化，数字用阿拉伯数字。钱一律折成【家业账】里定的本位单位（如「两」；铜钱、宝钞按当时比价折算），合乎本朝本地本年的物价与量级（参照【本地行情】）。
-13. 现钱由程序按你报的 ledger 和每月进项开销自动结算——你不要自己改现钱。本回合每一笔钱的进出（买卖、工钱、赋税摊派、送礼打点、借贷、赏赐、被偷被抢、事业投入与收获……）都在 ledger 里一笔一笔报，收入为正、支出为负，与正文里的数对得上。按月固定的进出写在 estate 的 income / expense 里（每月多少），程序过月自动结。
-13a. 产业（田地、铺面、宅子、作坊、船、牲口、存货、借出的钱）要有数量和估值；在做的事业（开荒、开铺、建屋、贩运、读书应试、捐官……）有进度、要时日、有风险、会出岔子。有变化时在 estate 里给出变了的部分（整组替换）。本地行情（米、麦、布、盐、肉、田价、房价、雇工日钱、银钱比价等）随季节、年景、战事变化时在 prices 里给出。
-13b. 人和人的关系也量化：presentNpcs 里 favor 写他对主角的好感（-100 到 100），随来往增减；人群满意度 0–100。
+四、世界自己在运转
+15. 要紧人物有自己的盘算，会自己行动——结亲、结党、争产、谋位、背叛、报恩、病死；家族要传承，婚姻是结盟。世界不围着主角转：别人也在经营、做官、打仗，他们的成败改变主角面前的机会；各地行情不同，贩运有利有险。
+16. 治理与民心：一地的户口、钱粮、民心、治安、吏治彼此牵连，政令有代价、要时日、会走样；重赋得钱失民心，赈济花钱得人心，用人不当则贪腐坐大。名声、官位、爵位、名分决定别人肯不肯跟你、借你钱、降你。
+17. 【势力】里的各方照自己的利害行动。军阀照真实道理涌现：中央衰弱、财政崩坏、天灾饥荒、边军坐大、地方募兵自保时，节帅、边将、豪强、团练、流寇、宗室外戚就会起来；史书上的割据者按史书的时间地点出现（本局改写过的除外）。
+18. 攻城略地按真实道理：要名义、粮草转运、行军日程、攻具或围困时日；打下来后民心低、要分兵驻守、要派人治理、豪强观望或反抗、溃兵流民四散；劫掠得钱粮失人心，屠城招来恶名、守城的人更死战；降将要防，降卒要整编；邻近势力会警觉联合；兵连祸结则疲敝逃亡哗变。主角名义上还是臣子时，擅自兴兵是大罪。
+19. 主角会老、会病、会死；死了游戏不结束，正文写明由谁接着（嗣子、长子或能主事的家人），之后玩家扮演这个继承人。
 
-五、世界自己在运转（取各家同类游戏之长）
-14a. 人物有自己的盘算（如《十字军之王》）：每个要紧人物有性格、本事、野心与私心，会自己行动——结亲、结党、争产、谋位、背叛、报恩、病死；家族要传承，婚姻是结盟，子女要教养、要安排出路。
-14b. 世界不围着主角转（如《太吾绘卷》《骑马与砍杀》）：各地行情不同、物价随年景和战事涨落，贩运有利可图也有风险；别人也在经营、做官、打仗，他们的成败会改变主角面前的机会。
-14c. 治理与民心（如《三国志》《历史模拟器：崇祯》）：一地的户口、钱粮、民心、治安、吏治彼此牵连，政令有代价、要时日、会走样；重赋得钱失民心，赈济花钱得人心，用人不当则贪腐坐大。
-14d. 声望与名分：名声、官位、爵位、正统名分决定别人肯不肯跟你、肯不肯借你钱、肯不肯降你；僭越、背约、屠城、苛政会让名声一落千丈，宽仁守信会慢慢攒下人望。
+五、官职、称号与晋升
+20. 【本朝官制】是按本局年代核过的，官名、品级、衙门、隶属照它；它没写到的照本朝本年真实制度，不造官名，不搬别朝的官名。书吏、衙役、捕快、里正、保甲长是吏役乡役，不是官。
+21. 晋升照本朝的规矩和时间：看出身、资历与任期、考课、上司与举荐、空缺、派系与时局、交情，要花钱花时间托门路；越级要有缘由，也招人忌。降级、罢官、贬谪、丁忧、致仕、坐罪都会发生。任免升降在正文里写明白（什么官、几品、管什么）。
 
-六、势力与征战（玩家掌兵、称雄、为君时）
-14e. 【势力】列着天下各方势力、主角的地盘与兵马，以它为准；有变化时在 powers / territory / forces 里给出（给出的部分整个替换）。各方势力会照自己的利害行动：扩张、结盟、互攻、观望、投降、内乱、覆灭。
-14f. 军阀的涌现照真实的道理：中央衰弱、财政崩坏、天灾饥荒、边军坐大、地方募兵自保时，节帅、边将、豪强、土豪团练、流寇首领、宗室外戚就会起来割据；真实历史上的割据者按史书的时间地点出现（本局改写过的除外），另有合乎时势的地方豪强。他们各有地盘、兵力、钱粮、名分与野心，起落都有缘由，不凭空冒出也不凭空消失。
-14g. 攻打别的城池按真实的道理推演：要有出师的名义、粮草与转运、行军路线与日程、攻城器械或围困时日；攻下来之后——新得的地方民心低、要分兵驻守（野战兵力因此变薄）、要派人治理、豪强士绅会观望或反抗、溃兵流民四散；劫掠得钱粮失人心，安抚花钱粮得人心；屠城招来天下恶名、守城的人更会死战；降将要防，降卒要整编；邻近势力会警觉、结盟来对付你；兵连祸结则士卒疲敝、逃亡、哗变，粮尽则军心崩。若主角名义上还是朝廷臣子，擅自兴兵是大罪，朝廷会讨伐、招抚或姑息，看时势。
-14h. 兵马要算清：兵额写实有人数（数字），存粮写石数，训练士气写一词；程序按每人每日约二升米算粮草可支几日。打仗写明双方投入多少、伤亡多少、俘获多少、逃散多少；补兵要时间要钱粮。地盘写户口数、守军数、存粮石数、民心（0–100）、每月赋税收入。
+六、史线与地理
+22. 【史线】是这一年前后真实的天下大势，以它为准，不编史书没有的大事；本局被改写过的以【被改写的历史】为准。时间过去时，史书上这段时间的大事按路程与身份迟到、可能走样后传到主角耳朵里。小人物见不到帝王将相；不把无关的真人硬扯到主角身边；虚构人物不与史载真人同名。真人此时的官职、年龄、生死、所在地必须对。
+23. 一律用当时的地名与隶属，【地理册】里的地方照它，前后不能矛盾。头一次去或提到一个地方，顺带写出它在哪个方向、多远、要走几天。路程按真实里程和走法：步行日行五六十里，骑马百里上下，驿马急递三四百里，漕船顺水日行百里左右、逆水减半，山路雨雪更慢。
 
-七、人生与传承
-14i. 主角会老、会病、会死。主角死了，游戏不结束：在 succession 里写明由谁接着（通常是嗣子、长子或家里能主事的人），之后玩家就扮演这个继承人，家业、地盘、恩怨照旧传下去。
+七、文风
+24. 像好的历史正剧那样写（《大明王朝1566》《雍正王朝》的笔法）：叙述干净流畅，有起有落，场面里有人有声；人物说话带时代与身份的腔调，官场有官腔和潜台词，市井说市井话，家人说家常话。少写气氛，多写人和事。称主角为「你」。
+25. 不要：电报体、清单式排比、小标题；「空气仿佛凝固」「嘴角勾起」「不禁」「一丝」「眸子」「深吸一口气」「意味深长」这类套话；现代词语与现代观念；括号里的按语、注释、考证、自我更正（写错了就直接写对的，不解释）；在正文里列「你可以……」的选项；替玩家总结或下判断。
+26. 结尾停在一个自然的地方：有人在等你回话、一件事摆在面前、或这段日子告一段落。戏里正文约${LEN[SETTINGS.len] || LEN.normal}（过一段较长的日子可以长些）；戏外回答说清楚为止。
 
-八、官职、称号与晋升
-14j. 【本朝官制】是按本局年代核过的官制表，官名、品级、衙门、隶属以它为准；它没写到的，照本朝本年真实的制度写，拿不准就用当时通行的说法，不造官名，不把别朝的官名搬过来。
-14k. 名目要分清：本官（寄禄官、阶官）、实际执掌的职事、临时差遣、散官与阶、勋、爵、加官、封号、科举功名，各朝各不相同（如宋前期以差遣治事、本官只定俸禄；明清以品级和实职为主；十六国各国官制不同，胡汉分治，不能套后世）。书吏、典史以下的吏员、衙役、捕快、里正、保甲长是吏役或乡役，不是官，没有品级（吏员有出身可考职的照本朝规矩）。
-14l. 晋升照本朝的规矩和时间来：看出身（本朝真有的途径：察举、九品中正、科举、门荫、军功、辟召、捐纳等）、资历与任期（考满）、考课的等第、上司和举荐、有没有空缺、朝中派系与时局、本人与上司的交情，还要花钱、花时间、托门路；一般一级一级升，越级提拔要有缘由（大功、君主赏识、非常时期），也招人忌。降级、罢官、贬谪、丁忧守制、致仕、坐罪都会发生。文武、京官外官、正途异途路子不同。主角不在官场时，写他够得着的门路与代价。
-14m. 主角有官职、差遣、爵位、功名、封号时，在 career 里给出他此刻的仕途（有变化才给，给出的项整个替换）：本官与品级、实际差事、加官称号、职权（能管什么、能调动什么、不能做什么）、顶头上司、属下（官与吏役分开写）、考课政声、到任多久、下一步可能升转到哪及要什么条件。任免、升降、考课、封赠、得罪上官、被弹劾这类履历上的事写进 careerEvents。
+八、输出
+直接写正文（戏外就是「【戏外】」加回答），不加标题、不加代码块。
+正文写完后，如果有玩家看不到的真相（谁在瞒报、谁在打什么主意、某件事的真相和可能的后续），另起一行写「【幕后】」，后面用一两句写下；没有就不写。`;
+}
 
-九、史线要清楚
-14. 【史线】列着这一年前后真实的天下大势与大事，以它为准，不编史书没有的大事；本局被玩家改写过的以【被改写的历史】为准。
-15. 时间过去时，按史书这段时间里发生的大事写进 worldEvents（带年月；被玩家改变了的写实际发生的样子，changed 填 true），消息按路程与身份迟到、可能走样后才传到主角耳朵里。【按史书将要发生】快用完时，在 worldUpcoming 里补上之后五年按史书会发生的大事。
-16. 小人物见不到帝王将相；不把无关的真人硬扯到主角身边；虚构人物不与史载真人同名。
+/** 账房的规则：照正文记账、核史实，只出 JSON */
+function ledgerRules() {
+  return `你是这局历史模拟游戏的账房兼史官。主持人刚写好这一回的正文（下面给出）。你的事：照正文把账册更新，再把正文的史实核一遍。只记正文里发生了的事和照理必然发生的事（过了月份的收支、按史书此时发生的天下大事、行情随季节的涨落），不要改剧情、不要添正文没有的情节。
 
-十、地理要准（玩家没有地图，全靠你）
-17. 一律用当时的地名与隶属。【地理册】里的地方以它为准，前后不能矛盾；正文里头一次提到的地方，在 places 里记下：当时名称、今地、隶属、在主角现居地的什么方位、相距多少里、怎么走要几天。
-18. 路程按真实里程和走法算：步行日行五六十里，骑马日行百里上下，驿马急递每日三四百里，漕船顺水日行百里左右、逆水减半，山路与雨雪更慢。主角搬到别处时 moveTo 填新地方的全称。
+记账规则：
+1. elapsedDays：这一回正文里过了多少天（一场谈话 0–1 天；按正文说的时间算）。yearLabel：过完后的年号纪年。主角搬到别处常住才填 moveTo（新地方的全称）。
+2. 一切量化，数字用阿拉伯数字。钱一律折成【家业账】的本位单位。现钱由程序结算——你不报现钱，只把本回合正文里每一笔钱的进出（买卖、工钱、赋税摊派、送礼打点、借贷、赏赐、被偷被抢、事业投入与收获……）在 ledger 里一笔一笔报，收入为正、支出为负，与正文的数对得上；正文没写数但确实花了钱的，按【本地行情】估一个合理的数。每月固定的进出写在 estate 的 income / expense（每月多少），程序过月自动结，不要再在 ledger 里重复报月收支。若【家业账】写着现钱尚未定数，用 setCash 给出现钱多少。
+3. 产业（田地、铺面、宅子、作坊、船、牲口、存货、借出的钱）有数量与估值；在做的事业有状态、进度、下一步。estate 里给出的组整组替换，没变化的组不给。本地行情随季节、年景、战事变化时在 prices 里给出（米、麦、布、盐、肉、田价、房价、雇工日钱、银钱比价等）。
+4. meters：这个身份要紧的五六项数值（值里带数，如「存粮 120 石」），有变化才给，写变化方向和原因。groups：人群对主角的满意度 0–100。presentNpcs：本回合出场或有变化的人，favor 是对主角的好感（-100 到 100），随来往增减。
+5. lifeEvents：身边人和世界的变化（谁、怎么了）；household：家里人口变化；orders：交代下去的事和办的结果（在办/办妥/办砸/搁下）；deeds：玩家这回做的、可能有后续的事，deedsDone：以前的作为在本回合有了下文的（开头几个字）。
+6. worldEvents：这段时间里按史书发生、或正文里传来的天下大事（年月；被本局改变的写实际样子，changed 填 true）；【按史书将要发生】快用完时，在 worldUpcoming 补上之后五年按史书会发生的大事。historyChanges：玩家使史书上的事没照原样发生时记下。
+7. places：正文里头一次出现的地方（当时名称、今地、隶属、在主角现居地的方位里程与行程）。
+8. powers / territory / forces：势力、主角的地盘与兵马有变化时整组给出（兵额、存粮石数、户口、民心 0–100、月赋都写数字）。succession：只在主角死去时填。career / careerEvents：主角的官职、品级、差遣、称号、职权、上司属下、考课、可能的下一步有变化时给出；任免升降考课等记 careerEvents。statusChanges：功名、爵位、健康、名望等的变化。
+9. gmNotes：正文后【幕后】里写的真相，以及你看出的伏笔（玩家看不到）；gmNotesDone：已经浮出或了结的（开头几个字）。
+10. hints：三到五条，玩家接下来可以做的事或可以问的问题，一句一条，贴着眼下的局面，有戏里的也有戏外的。
+11. turnSummary：本回合事实摘要，120 字内。
 
-十一、文风
-19. 像好的历史正剧那样写（《大明王朝1566》《雍正王朝》的笔法）：叙述干净流畅，有起有落；人物说话带时代与身份的腔调，官场有官腔和潜台词，市井说市井话，家人说家常话。不要电报体和清单式排比；不要「空气仿佛凝固」「嘴角勾起」「不禁」「一丝」「眸子」「深吸一口气」「意味深长」这类套话。称主角为「你」。
-20. 戏里的正文约${LEN[SETTINGS.len] || LEN.normal}；戏外的回答说清楚为止。年号、官名、器物、钱粮单位一律合乎本朝本年，正文里不写「据考」「不详」，不出现现代词语。
+史实核查（fixes）：逐句核对正文，只找确凿的硬伤——本朝本年不该有的官名、衙门、地名或隶属；此时已死或尚未出生、不在此地、不任此职的真实人物；年号、干支、节令错误；本朝还没有的器物、作物、制度；离谱的物价或钱粮单位；现代词语。不改文风、不改虚构人物、不改情节，拿不准的不算。每处给出原文里错的那几个字（原样摘出，十二字以内，必须能在正文里找到）和改成什么。
 
-十二、输出
-只输出一个 JSON 对象，不加代码块、不加任何说明，reply 放在最前面：
-{"reply":"给玩家看的文字（戏里是正文，戏外是回答）","mode":"play/talk","elapsedDays":0,"yearLabel":"过完这些天后的年号纪年","moveTo":"",
-"settlement":{"回报":[{"who":"","text":""}],"风声":[""]},
-"meters":[{"项":"","值":"","变":"↑/↓","因":""}],"groups":[{"人群":"","值":50,"因":""}],
+只输出一个 JSON 对象，不加代码块、不加说明。没有变化的项给 [] 或省略：
+{"elapsedDays":0,"yearLabel":"","moveTo":"","setCash":null,
 "ledger":[{"item":"这一笔是什么","amount":0,"note":""}],
 "estate":{"assets":[{"name":"","qty":"","value":0,"note":""}],"income":[{"item":"","amount":0}],"expense":[{"item":"","amount":0}],"projects":[{"name":"","status":"筹划/在做/停了/成了/败了","progress":"进度与下一步","note":""}]},
 "prices":[{"item":"米","price":0,"per":"石"}],
+"meters":[{"项":"","值":"","变":"↑/↓","因":""}],"groups":[{"人群":"","值":50,"因":""}],
 "presentNpcs":[{"name":"","role":"","tie":"与主角的关系","personality":"性格几个字","ability":"高/中/低","attitude":"对主角的态度一词","favor":0,"want":"眼下想要什么","status":"近况一句","where":"此刻在哪"}],
+"settlement":{"回报":[{"who":"","text":"办事人怎么回的话"}],"风声":["街谈巷议，一句一条"]},
 "lifeEvents":[{"who":"","what":""}],"household":[{"change":"添丁/娶进/嫁出/过世/离家/回家","relation":"","name":"","age":0,"note":""}],
 "orders":[{"who":"","what":"","status":"在办/办妥/办砸/搁下","result":""}],
-"worldEvents":[{"y":0,"m":0,"text":"","changed":false}],"worldUpcoming":[{"y":0,"m":0,"text":""}],
-"places":[{"name":"当时名称","now":"今地","belong":"隶属","from":"在主角现居地的方位、里数、行程","note":""}],
-"statusChanges":[{"项":"职官/爵位/功名/健康/名望等","后":"","原因":""}],"historyChanges":[{"event":"史书原载的事","now":"本局实际变成了什么","cause":""}],
-"gmNotes":[""],"gmNotesDone":[""],
-"hints":["三到五条：玩家接下来可以做的事或可以问你的问题，一句一条，有戏里的也有戏外的"],
-"deeds":[{"what":"玩家这回做的、可能有后续的事","effect":"眼下的影响","later":"可能的后续"}],"deedsDone":["已经有了下文的作为，开头几个字"],
-"powers":[{"name":"势力名","leader":"首领","seat":"治所","land":"大致地盘","troops":"兵力","stance":"对主角的态度","note":"近况"}],
-"territory":[{"place":"","pop":0,"troops":0,"grain":0,"loyalty":50,"tax":0,"ruler":"谁在治理","note":""}],
-"forces":[{"name":"部名","leader":"统领","troops":0,"grain":0,"quality":"训练与士气一词","at":"驻在哪","status":"驻守/行军/交战/休整"}],
+"deeds":[{"what":"","effect":"眼下的影响","later":"可能的后续"}],"deedsDone":[""],
+"worldEvents":[{"y":0,"m":0,"text":"","changed":false}],"worldUpcoming":[{"y":0,"m":0,"text":""}],"historyChanges":[{"event":"","now":"","cause":""}],
+"places":[{"name":"","now":"","belong":"","from":"","note":""}],
+"powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}],
+"territory":[{"place":"","pop":0,"troops":0,"grain":0,"loyalty":50,"tax":0,"ruler":"","note":""}],
+"forces":[{"name":"","leader":"","troops":0,"grain":0,"quality":"","at":"","status":"驻守/行军/交战/休整"}],
 "succession":{"died":"","heir":"","heirRole":"","heirAge":0,"note":""},
-"career":{"office":"本官或职名","rank":"品级或阶","post":"实际差遣（如有）","titles":["散官、勋、爵、加官、封号、功名"],"duties":"执掌","powers":"能管什么、能调动什么、不能做什么","superior":"顶头上司","subordinates":"属下（官与吏役分开）","evaluation":"考课与政声","tenure":"到任多久、几年一考","nextSteps":[{"to":"可能升转到哪","need":"要什么条件"}]},
-"careerEvents":[{"what":"任免、升降、考课、封赠、弹劾等","office":"此后的官职"}],
-"turnSummary":"本回合事实摘要，120字内"}
-没有变化的项给 [] 或省略（powers / territory / forces 只在有变化时给，主角没有地盘兵马就不给）；succession 只在主角死去时填；career 只在仕途有变化时给；戏外（talk）只需 reply、mode、hints，地理、史线、势力有补充时可带 places / worldUpcoming / powers。`;
+"career":{"office":"","rank":"","post":"","titles":[""],"duties":"","powers":"","superior":"","subordinates":"","evaluation":"","tenure":"","nextSteps":[{"to":"","need":""}]},
+"careerEvents":[{"what":"","office":""}],
+"statusChanges":[{"项":"","后":"","原因":""}],
+"gmNotes":[""],"gmNotesDone":[""],
+"hints":[""],
+"fixes":[{"wrong":"原文","right":"改成","why":""}],
+"turnSummary":""}`;
 }
 
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
@@ -341,7 +345,7 @@ function localSample(input, opts = {}) {
     if (opts.signal) { if (opts.signal.aborted) return onAbort(); opts.signal.addEventListener('abort', onAbort, { once: true }); }
     try {
       if (!job) {
-        const r = await api('/api/llm-start', { messages, maxTokens: opts.maxTokens || 8000 });
+        const r = await api('/api/llm-start', { messages, maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature });
         if (!r.ok) return reject({ code: 'local', message: r.why || '没发出去' });
         job = r.job;
         opts.onJob && opts.onJob(job);
@@ -517,43 +521,14 @@ function partial(text) {
   }
   return out;
 }
-/** 史实核查：写完的一段交给 AI 再校一遍，只找时代错置与史实硬伤，按「原文 → 改成」自动改正 */
-function checkInput(s, text) {
-  const p = s.protagonist, w = s.world || {};
-  return `你是一位严谨的史学校对。下面是一段历史模拟游戏的正文，时间是${timeText(s.clock)}，地点${s.place.full}（${s.place.polity || ''}），主角${p.name}（${p.role}）。
-天下大势：${cut(w.overview, 300)}
-${s.inst ? '本朝官制（已核）：' + cut(s.inst.summary, 300) + '；常见官名：' + cut(arr(s.inst.ladder).flatMap(g => arr(g.posts).map(x => x.name)).join('、'), 400) + '\n' : ''}请逐句核对，只找确凿的硬伤：本朝本年不该有的官名、衙门、地名或隶属；此时已死或尚未出生、不在此地、不任此职的真实人物；年号、干支、节令错误；本朝还没有的器物、作物、制度；明显离谱的物价或钱粮单位；现代词语与现代观念。
-不改文风，不改虚构人物，不改情节；拿不准的不算错。每处给出原文里错的那几个字（原样摘出，十二字以内，必须能在正文里找到）和改成什么。
-只输出一个 JSON 对象，不加代码块：{"fixes":[{"wrong":"原文","right":"改成","why":"一句话"}]}；没有错就给 {"fixes":[]}。
-
-正文：
-${text}`;
-}
-async function factCheck(s) {
-  const g = s.chat[s.chat.length - 1];
-  if (!g || g.role !== 'gm' || g.kind === 'talk' || SETTINGS.check === false || !g.text) return;
-  STREAM = ''; CHECKING = true; render();
-  try {
-    const { text } = await callClaude(checkInput(s, g.text), null, { maxTokens: 1500 }, 'quick');
-    const d = parseJSON(text);
-    const fixes = [];
-    for (const f of arr(d && d.fixes).slice(0, 12)) {
-      const wrong = String((f && f.wrong) || '').trim(), right = String((f && f.right) || '').trim();
-      if (!wrong || !right || wrong === right || wrong.length > 30 || !g.text.includes(wrong)) continue;
-      g.text = g.text.split(wrong).join(right);
-      fixes.push({ wrong: one(wrong, 30), right: one(right, 30), why: one(f.why, 60) });
-    }
-    if (fixes.length) g.extra = Object.assign(g.extra || {}, { fixes });
-  } catch (_) { /* 核查失败不影响这一回合 */ }
-  finally { CHECKING = false; }
-}
 async function callClaude(input, onReply, extra, tier) {
   if (MODE === 'local' && !KEY.has) throw { code: 'no_key', message: '还没填 DeepSeek 的 Key：在首页把 Key 粘贴进去点「保存」' };
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
   CTL = new AbortController();
   const opts = { signal: CTL.signal, cache: false, modelTier: tier || SETTINGS.tier };
   if (SETTINGS.tier !== 'complex' && MODE === 'claude') opts.effort = 'low';
-  return SAMPLE(input, { ...opts, ...(MODE === 'local' ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(partial(text)) : undefined });
+  const plain = extra && extra.json === false;
+  return SAMPLE(input, { ...opts, ...(MODE === 'local' ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
 }
 
 /* ========== 官制：玩家给框架，AI 按本局年代核对改正，游戏照改正后的来 ========== */
@@ -648,26 +623,74 @@ function blocks(s) {
   return L.join('\n\n');
 }
 const SPANS = { auto: '', xun: '约十天（一旬）', month: '约一个月', season: '约三个月（一季）', year: '约一年' };
-/** 一次调用的输入：规则 + 账册当第一句，然后是最近的对话，最后是玩家这回说的话 */
-function turnInput(s, said, span, note) {
-  const turns = [{ role: 'user', content: rules() + '\n\n' + blocks(s) + '\n\n下面是我们这一局最近的对话。' }];
-  for (const c of arr(s.chat).filter(c => c.text).slice(-16)) turns.push({ role: c.role === 'me' ? 'user' : 'assistant', content: c.role === 'me' ? '【玩家】' + cut(c.text, 800) : cut(c.text, 1600) });
-  const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、家业与账目、家里与身边人的变化、季节年景与市面、传来的消息），其余带过但交代清楚；按月结家业账；elapsedDays 填这段的天数。` : '';
-  const what = String(said || '').trim() ? `【玩家这回说】\n${said}` : '【玩家这回没说话】就按他的身份和处境往下过一段日子（一般几天到一旬，在打仗就写这几日的军中与敌情），有事找上门就停在那里。';
-  turns.push({ role: 'user', content: what + spanText + (note ? `\n【玩家对你上一版回复的意见，这次照此重写】${note}` : '') + '\n\n照规则回应，只输出那一个 JSON 对象。' });
+/** 正文与幕后分开：【幕后】之后的玩家看不到；流式时半截的标记也先藏起来 */
+function splitStory(text) {
+  let t = String(text || '').replace(/^```\w*\s*/, '').replace(/```\s*$/, '');
+  const i = t.indexOf('【幕后】');
+  const hidden = i >= 0 ? t.slice(i + 4).trim() : '';
+  if (i >= 0) t = t.slice(0, i);
+  t = t.replace(/【幕?$/, '').replace(/[（(](?:按|注|编者按|作者按)[：:][^）)]*[）)]/g, '').trim();
+  const talk = /^【戏外】/.test(t);
+  return { text: t.replace(/^【戏外】\s*/, '').trim(), hidden, talk };
+}
+const showText = raw => splitStory(raw).text;
+function recentTurns(s, head) {
+  const turns = [{ role: 'user', content: head + '\n\n下面是我们这一局最近的对话。' }];
+  for (const c of arr(s.chat).filter(c => c.text).slice(-16)) {
+    const role = c.role === 'me' ? 'user' : 'assistant', content = c.role === 'me' ? '【玩家】' + cut(c.text, 800) : (c.kind === 'talk' ? '【戏外】\n' : '') + cut(c.text, 1600);
+    const last = turns[turns.length - 1];
+    if (last.role === role) last.content += '\n\n' + content; else turns.push({ role, content });
+  }
   return turns;
 }
-function openingInput(sentence) {
-  return rules() + `
+function pushUser(turns, content) {
+  const last = turns[turns.length - 1];
+  if (last.role === 'user') last.content += '\n\n' + content; else turns.push({ role: 'user', content });
+  return turns;
+}
+/** 写戏：规则 + 账册当第一句，然后是最近的对话，最后是玩家这回说的话；只要正文 */
+function storyInput(s, said, span, note) {
+  const turns = recentTurns(s, storyRules() + '\n\n' + blocks(s));
+  const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、家业与账目、家里与身边人的变化、季节年景与市面、传来的消息），其余带过但交代清楚。` : '';
+  const what = String(said || '').trim() ? `【玩家这回说】\n${said}` : '【玩家这回没说话】就按他的身份和处境往下过一段日子（一般几天到一旬，在打仗就写这几日的军中与敌情），有事找上门就停在那里。';
+  return pushUser(turns, what + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + '\n\n照规则写正文。');
+}
+/** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
+function ledgerInput(s, said, story, hidden, span) {
+  return ledgerRules() + '\n\n' + blocks(s) + `\n\n【玩家这回说】${String(said || '').trim() || '（没说话，照常过日子）'}${SPANS[span] ? '（这一回要过' + SPANS[span] + '）' : ''}\n\n【这一回的正文】\n${story}${hidden ? '\n\n【幕后】' + hidden : ''}\n\n照规则记账、核史实，只输出那一个 JSON 对象。`;
+}
+function openingStoryInput(sentence) {
+  return storyRules() + `
 
 【开局】玩家想当的人：「${sentence}」
 先替玩家把这个人落到真实历史里：没说年代就挑这个身份最有戏、史料最清楚的年份；没说地点就挑当时真实存在、与身份相称的地方。真实人物用他本人此时的真实身份、年龄、家人；虚构人物起一个合乎时代、不与史载真人同名的名字，家人也虚构。
-然后写开场（mode 填 play）：先三四句交代你是谁、何年何月、身在何处、眼下的天下大势与本地局势；再写你此刻的日子：家里什么光景、靠什么过活、手头在忙什么、身边有哪些人、眼下最挂心的一件事。
-开场还要把账册立起来：meters 按这个身份给五六项初值（${Object.values(IDM).map(x => x.meters).join(' / ')} 里取合身份的那组），groups 给三到五个人群（0–100），estate 把家业账立全（产业及估值、每月进项开销、在做的事），prices 给出本地十来样常用物价，presentNpcs 列出开场里出现的人（含性格、本事、在哪），places 记下现居地和周边、上级治所、京城等五到八个地方（今地、隶属、方位里程行程），powers 列出此时天下的主要势力（朝廷与各方割据者、外敌，以及与主角相关的本地势力，三到八个，按真实历史），主角若有地盘兵马就在 territory、forces 里立起来，hints 给三到五条可以做的事或可以问的问题。
-在 JSON 里再加两个字段：
+然后写开场：先三四句交代你是谁（姓名、年纪、籍贯、身份）、何年何月何日（年号与农历）、身在何处、眼下的天下大势与本地局势；再写你此刻的日子：家里有哪些人（名字、年纪）、什么光景、靠什么过活、手头有多少钱粮产业（写数）、在忙什么、身边有哪些人、眼下最挂心的一件事。最后停在一个场面上，有人在等你回话或有事摆在面前。`;
+}
+function openingLedgerInput(sentence, story, hidden) {
+  return ledgerRules() + `
+
+【开局】玩家想当的人：「${sentence}」。主持人已经写好开场（下面）。照开场把整本账册立起来：meters 按这个身份给五六项初值（${Object.values(IDM).map(x => x.meters).join(' / ')} 里取合身份的那组），groups 给三到五个人群（0–100），estate 把家业账立全（产业及估值、每月进项开销、在做的事），prices 给出本地十来样常用物价，presentNpcs 列出开场里出现的人，places 记下现居地和周边、上级治所、京城等五到八个地方，powers 列出此时天下的主要势力（三到八个，按真实历史），主角有地盘兵马就立 territory、forces，有官职就立 career，hints 给三到五条。开局时 ledger 给 []，elapsedDays 给 0。
+再加两个字段（以开场正文为准，正文没写到的按史实补全）：
 "setup":{"name":"","gender":"男/女","age":30,"role":"一句话具体身份","identityModule":"emperor/noble/official/warlord/commoner 五选一","nativePlace":"","real":false,"yearLabel":"万历二十八年","gregorianYear":1600,"month":3,"day":5,"place":"当时地名全称","polity":"明","unit":"记账的本位单位，如两、贯、文","cash":0,"household":[{"relation":"父","name":"","age":50,"note":"一句话"}]},
 "world":{"overview":"三五句：在位的皇帝（或君主）与年号、当权的人、天下大势、本地本行当的局势","events":[{"y":1598,"m":0,"text":"近十来年真实发生、与此有关的大事"}],"upcoming":[{"y":1601,"m":0,"text":"按史书之后五年会发生的大事"}]}
-month、day 是农历；年份公元前写负数；m 不知道写 0。`;
+month、day 是农历；年份公元前写负数；m 不知道写 0；cash 是开场时手头的现钱（本位单位的数字）。
+
+【开场正文】
+${story}${hidden ? '\n\n【幕后】' + hidden : ''}
+
+只输出那一个 JSON 对象。`;
+}
+/** 账房改正的史实硬伤：原文确有的才改 */
+function applyFixes(text, fixes) {
+  const done = [];
+  if (SETTINGS.check === false) return { text, done };
+  for (const f of arr(fixes).slice(0, 12)) {
+    const wrong = String((f && f.wrong) || '').trim(), right = String((f && f.right) || '').trim();
+    if (!wrong || !right || wrong === right || wrong.length > 30 || !text.includes(wrong)) continue;
+    text = text.split(wrong).join(right);
+    done.push({ wrong: one(wrong, 30), right: one(right, 30), why: one(f.why, 60) });
+  }
+  return { text, done };
 }
 
 /* ========== 记账 ========== */
@@ -840,7 +863,6 @@ function newSave(p) {
 }
 
 /* ========== 画面 ========== */
-let CHECKING = false;
 let S = null, VIEW = 'start', TAB = 'board', STREAM = '', THINK_T0 = 0, ERRMSG = '', EDITING = false, SIDE_FOLD = true, PENDING_SAID = '';
 function setBusy(on) { BUSY = on; if (on) THINK_T0 = Date.now(); render(); }
 setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = Math.round((Date.now() - THINK_T0) / 1000); } }, 1000);
@@ -875,8 +897,8 @@ async function renderStart() {
       <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off"><button class="main" id="bStart" ${BUSY || !SAMPLE || (MODE === 'local' && !KEY.has) ? 'disabled' : ''}>开始</button></form>
       <div class="examples">${EXAMPLES.map(x => `<button class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
     </div>
-    ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>正在把你落到历史里、立账册、写开场……已 <span id="secs">0</span> 秒（一般一两分钟）<button class="link" id="bStop">停下</button></div>
-      ${STREAM ? `<div class="msg gm"><div class="text caret">${esc(STREAM)}</div></div>` : ''}` : ''}
+    ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '开场写好了，正在立账册' : '正在把你落到历史里、写开场'}……已 <span id="secs">0</span> 秒（一般一两分钟）<button class="link" id="bStop">停下</button></div>
+      ${STREAM ? `<div class="msg gm"><div class="text ${PHASE === 'ledger' ? '' : 'caret'}">${esc(STREAM)}</div></div>` : ''}` : ''}
     ${ERRMSG ? `<div class="err">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''}</div>` : ''}
     ${MODE === 'local' ? keyBox() : ''}
     <div class="h"><span class="seal">档</span>接着玩<span class="note">${MODE === 'local' ? '存在游戏文件夹里（app\\data\\websaves），本浏览器也留一份' : '存在你的 claude.ai 账号里，本浏览器也留一份'}</span></div>
@@ -909,7 +931,7 @@ function extrasHtml(x) {
   if (arr(x.life).length) parts.push(`<div class="ex life"><div class="eh">这段日子里</div>${x.life.map(r => `<div>${r.who ? `<b>${esc(r.who)}</b>：` : ''}${esc(r.what)}</div>`).join('')}</div>`);
   if (arr(x.news).length) parts.push(`<div class="ex news"><div class="eh">天下事<span>按史书此时发生的</span></div>${x.news.map(r => `<div>${esc(r.y)}年${r.m ? r.m + '月' : ''}：${esc(r.text)}${r.changed ? ' <span class="mine">（本局）</span>' : ''}</div>`).join('')}</div>`);
   if (x.moved) parts.push(`<div class="ex"><div class="eh">搬到了</div><div>${esc(x.moved)}</div></div>`);
-  if (x.salvaged) parts.push(`<div class="ex"><div class="eh">提醒</div><div>AI 这回的格式出了岔子，正文留下了，但账册这回没更新。觉得要紧可以点「重写这一条」。</div></div>`);
+  if (x.salvaged) parts.push(`<div class="ex"><div class="eh">提醒</div><div>这一回的正文留下了，但账房没记上账（钱粮、人物、时间都还是上一回的）。${x.salvagedBtn === false ? '' : '<button class="link" id="bSettle">补记这回的账</button>'}</div></div>`);
   if (x.succession) parts.push(`<div class="ex news"><div class="eh">传承</div><div>${esc(x.succession)}</div></div>`);
   return parts.length ? `<div class="extras">${parts.join('')}</div>` : '';
 }
@@ -924,13 +946,13 @@ function renderGame() {
     return `<div class="msg gm ${c.kind === 'talk' ? 'talk' : ''}">
       <div class="lab">${c.kind === 'talk' ? '<span>戏外 · 不花时间</span>' : `<span>第 ${esc(c.turn)} 回合</span><span class="tag">${esc(c.when || '')}${c.extra && c.extra.days ? ` · 过了 ${c.extra.days} 天` : ''}</span>`}</div>
       <div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${esc(c.text)}</div>
-      ${c.kind !== 'talk' ? extrasHtml(c.extra) : ''}
+      ${c.kind !== 'talk' ? extrasHtml(c.extra && c.extra.salvaged && !(isLast && c.unsettled) ? { ...c.extra, salvagedBtn: false } : c.extra) : ''}
       ${isLast && !BUSY ? `<div class="msgacts">${EDITING ? '<button class="main" id="bEditSave">保存修改</button><button id="bEditCancel">取消</button>'
         : `<button id="bRegen" ${s.prev ? '' : 'disabled'}>重写这一条</button><button id="bEdit">改这段文字</button>`}</div><div id="regenBox"></div>
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${CHECKING ? '写好了，正在核一遍史实' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM ? `<div class="text caret" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'ledger' ? '写好了，账房正在记账、核史实' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM ? `<div class="text ${PHASE === 'ledger' ? '' : 'caret'}" style="margin-top:8px">${esc(STREAM)}</div>` : ''}</div>` : '';
   const keep = { said: $('#said') ? $('#said').value : '', span: $('#span') ? $('#span').value : 'auto' };
   $('#app').innerHTML = `<div class="game">
     <div class="chat">
@@ -1072,42 +1094,74 @@ function pane(tab) {
 }
 
 /* ========== 动作 ========== */
-async function startGame(sentence) {
+let PHASE = '';
+async function startGame(sentence, have) {
   sentence = String(sentence || '').trim(); if (!sentence || BUSY) return;
-  ERRMSG = ''; STREAM = ''; LAST_ACTION = () => startGame(sentence);
+  ERRMSG = ''; STREAM = ''; PHASE = '';
   setBusy(true);
+  let st = have || null;
   try {
-    const { text } = await callClaude(openingInput(sentence), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); });
-    const d = parseJSON(text);
-    if (!d || !(d.reply || d.scene) || !d.setup) throw { code: 'bad_json' };
+    if (!st) {
+      const { text } = await callClaude(openingStoryInput(sentence), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); }, { json: false, temperature: 0.9, maxTokens: 6000 });
+      st = splitStory(text);
+      if (st.text.length < 40) throw { code: 'empty_completion' };
+    }
+    STREAM = st.text; PHASE = 'ledger'; render();
+    LAST_ACTION = () => startGame(sentence, st);
+    const { text: lt } = await callClaude(openingLedgerInput(sentence, st.text, st.hidden), null, { maxTokens: 8000, temperature: 0.3 });
+    const d = parseJSON(lt);
+    if (!d || !d.setup) throw { code: 'bad_json' };
     const s = newSave(d.setup);
     if (d.world) s.world = { overview: cut(d.world.overview, 600), events: arr(d.world.events).filter(x => x && x.text).map(x => ({ y: num(x.y) ?? s.clock.y, m: num(x.m) || 0, text: one(x.text, 100) })).slice(-40), upcoming: [] };
     d.worldUpcoming = arr(d.worldUpcoming).concat(arr(d.world && d.world.upcoming));
-    d.mode = 'play'; d.elapsedDays = 0;
+    const fx = applyFixes(st.text, d.fixes);
+    if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
+    Object.assign(d, { reply: fx.text, mode: 'play', elapsedDays: 0, ledger: [] });
     applyReply(s, d, '');
+    if (fx.done.length) { const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { fixes: fx.done }); }
     S = s; VIEW = 'game'; LAST_ACTION = null; TAB = 'board';
-    await factCheck(S);
     await store.save(S);
-  } catch (e) { if (!(e && e.code === 'cancelled')) ERRMSG = errText(e); }
-  finally { STREAM = ''; setBusy(false); }
+  } catch (e) {
+    if (!(e && e.code === 'cancelled')) ERRMSG = errText(e) + (st ? '（开场已经写好了，再试只补账册）' : '');
+    if (!st) LAST_ACTION = () => startGame(sentence);
+  }
+  finally { STREAM = ''; PHASE = ''; setBusy(false); }
   if (S && !S.inst && VIEW === 'game') buildInst(S);
 }
-async function send(said, span, note, resumeJob) {
+/** 一回合：先写正文（边写边显示），再交给账房记账核史实。账没记上，正文也留下，可以补记 */
+async function send(said, span, note, resume) {
   if (BUSY || !S) return;
-  ERRMSG = ''; STREAM = ''; PENDING_SAID = String(said || '').trim(); LAST_ACTION = () => send(said, span, note);
+  ERRMSG = ''; STREAM = ''; PHASE = ''; PENDING_SAID = String(said || '').trim(); LAST_ACTION = () => send(said, span, note);
   const before = clone(S); before.prev = null;
   if ($('#said')) $('#said').value = '';
   setBusy(true);
+  const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), ...o }));
+  let st = resume && resume.story ? resume.story : null;
   try {
-    const { text } = await callClaude(turnInput(S, said, span, note), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); },
-      { resumeJob, onJob: job => lsSet('hrpg:pending', JSON.stringify({ job, saveId: S.id, said, span, note, at: Date.now() })) });
-    lsSet('hrpg:pending', null);
-    let d = parseJSON(text);
-    if (!d || !(d.reply || d.scene)) d = salvage(text);
-    if (!d) throw { code: 'bad_json' };
-    applyReply(S, d, said);
-    if (d._salvaged) { const g = S.chat[S.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { salvaged: true }); }
-    else await factCheck(S);
+    if (!st) {
+      const { text } = await callClaude(storyInput(S, said, span, note), t => { STREAM = t; const el = document.querySelector('.text.caret'); if (el) el.textContent = t; else render(); },
+        { json: false, temperature: 0.9, maxTokens: 6000, resumeJob: resume && resume.job, onJob: job => pend({ job }) });
+      st = splitStory(text);
+      if (!st.text) throw { code: 'empty_completion' };
+    }
+    if (st.talk) {
+      lsSet('hrpg:pending', null);
+      applyReply(S, { reply: st.text, mode: 'talk' }, said);
+    } else {
+      pend({ story: st });
+      STREAM = st.text; PHASE = 'ledger'; render();
+      let d = null;
+      try { const { text: lt } = await callClaude(ledgerInput(S, said, st.text, st.hidden, span), null, { maxTokens: 8000, temperature: 0.3 }); d = parseJSON(lt); } catch (e) { if (e && e.code === 'cancelled') throw e; }
+      lsSet('hrpg:pending', null);
+      const ok = !!d;
+      d = d || { elapsedDays: 0 };
+      const fx = applyFixes(st.text, d.fixes);
+      if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
+      applyReply(S, Object.assign(d, { reply: fx.text, mode: 'play' }), said);
+      const g = S.chat[S.chat.length - 1];
+      if (fx.done.length) g.extra = Object.assign(g.extra || {}, { fixes: fx.done });
+      if (!ok) { g.extra = Object.assign(g.extra || {}, { salvaged: true }); g.unsettled = { said, span, hidden: st.hidden }; }
+    }
     S.prev = before;
     LAST_ACTION = null;
     try { await store.save(S); } catch (_) { SAVED = '这回没存上，下回会再试。'; SAVED_BAD = true; }
@@ -1117,9 +1171,17 @@ async function send(said, span, note, resumeJob) {
     const keepPrev = S.prev; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, before, { prev: keepPrev });
     setTimeout(() => { if ($('#said') && !$('#said').value) $('#said').value = said || ''; }, 0);
   } finally {
-    STREAM = ''; PENDING_SAID = ''; setBusy(false);
+    STREAM = ''; PHASE = ''; PENDING_SAID = ''; setBusy(false);
     const all = document.querySelectorAll('.chat .msg'); const last = all[all.length - 1]; if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+}
+/** 上一回的账没记上：退回那一回之前的账册，用写好的正文重新记一次 */
+async function settleLast() {
+  const g = S && S.chat[S.chat.length - 1];
+  if (!g || !g.unsettled || !S.prev || BUSY) return;
+  const u = g.unsettled, text = g.text;
+  S = clone(S.prev);
+  return send(u.said, u.span, '', { story: { text, hidden: u.hidden, talk: false } });
 }
 
 document.addEventListener('submit', e => { if (e.target.id === 'fStart') { e.preventDefault(); startGame($('#qText').value); } });
@@ -1180,6 +1242,7 @@ document.addEventListener('click', async e => {
     lsSet(KB_KEY, kb ? cut(kb, 60000) : null);
     buildInst(S); return;
   }
+  if (t.id === 'bSettle') { settleLast(); return; }
   if (t.id === 'bCopyGeo') {
     const txt = Object.entries(S.places).map(([k, v]) => `${k}\t今${v.now}\t属${v.belong}\t${v.from}${v.note ? '\t' + v.note : ''}`).join('\n');
     try { await navigator.clipboard.writeText(`主角现在在：${S.place.full}（${timeText(S.clock)}）\n` + txt); $('#copyMsg').textContent = '已复制，可以直接粘贴给做地图的 AI。'; }
@@ -1214,7 +1277,7 @@ render();
   // 刷新前还有一回合在写：接着等它写完，不丢
   try {
     const p = JSON.parse(lsGet('hrpg:pending') || 'null');
-    if (p && MODE === 'local' && S && p.saveId === S.id && Date.now() - p.at < 30 * 60e3) send(p.said, p.span, p.note, p.job);
+    if (p && S && p.saveId === S.id && Date.now() - p.at < 30 * 60e3 && (p.story || (p.job && MODE === 'local'))) send(p.said, p.span, p.note, { job: p.job, story: p.story });
     else lsSet('hrpg:pending', null);
   } catch (_) { lsSet('hrpg:pending', null); }
 })();
