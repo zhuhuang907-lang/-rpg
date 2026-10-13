@@ -1923,7 +1923,7 @@ async function renderStart() {
       <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off"><button class="main" id="bStart" ${BUSY || !SAMPLE || (MODE === 'local' && !KEY.has) ? 'disabled' : ''}>开始</button></form>
       <div class="examples">${EXAMPLES.map(x => `<button class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
     </div>
-    ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'draft' ? '正在写开场，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '开场写好了，正在对照史料再过一遍' : PHASE === 'ledger' ? '开场核实好了，正在立账册' : PHASE === 'search' ? '先联网把这个年代查一遍（生活、官制、物价、风俗、大事）' : PHASE === 'digest' ? '正在研读查到的资料，整理成年代志' : '正在把你落到历史里、写开场'}……已 <span id="secs">0</span> 秒（一般一两分钟）<button class="link" id="bStop">停下</button></div>
+    ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'search' ? '第 1 步，共 3 步：先联网把这个年代查一遍（人物、官制、物价、风俗、大事）' : PHASE === 'draft' ? '第 2 步，共 3 步：正在写开场，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '第 3 步，共 3 步：开场写好了，正在对照史料再过一遍、立账册' : PHASE === 'ledger' ? '第 3 步，共 3 步：快好了，正在立账册' : '正在把你落到历史里、写开场'}……已 <span id="secs">0</span> 秒（一般一到三分钟）<button class="link" id="bStop">停下</button></div>
       ${STREAM && PHASE === 'ledger' ? `<div class="msg gm"><div class="text">${paras(STREAM)}</div></div>` : feedHtml()}` : ''}
     ${ERRMSG ? `<div class="err">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''} <button class="link" id="bCopyErr">复制出错详情</button><span id="copyErrSt" class="muted"></span></div>` : ''}
     ${MODE === 'local' ? keyBox() : ''}
@@ -2198,7 +2198,6 @@ async function startGame(sentence, have, havePre) {
       const oq = openingQueries(sentence);
       [looked] = await Promise.all([doLookups(pre, oq), wikiRead(pre, [sentence.replace(/^(我想当|当|做)/, '').replace(/的.*$/, ''), ...oq.slice(2, 4).map(q => q.split(/\s+/)[0])])]);
       pre.place = { full: '' }; pre.title = sentence;
-      if (arr(pre.research).length) { PHASE = 'digest'; render(); try { await digestResearch(pre); } catch (e) { if (e && e.code === 'cancelled') throw e; } }
       PHASE = ''; render();
     }
     if (!st) {
@@ -2262,6 +2261,8 @@ function runBg(fn) {
 async function afterTurn(s0, d, g) {
   const live = () => S === s0;
   const step = async (msg, f) => { if (!live()) return false; BGMSG = msg; render(); try { await f(); } catch (e) { /* 下回合再做 */ } return live(); };
+  // 开局查到的资料：开场写完后再慢慢研读成年代志（不挡开场）
+  if (!d && arr(s0.research).length && arr(s0.almanac).length < 5 && !(await step('研读开局查到的资料，整理成年代志', () => digestResearch(s0)))) return;
   if (arr(s0.summaries).length > 60 && !(await step('整理较早的经过', () => compactMemory(s0)))) return;
   if (d && SETTINGS.world !== false && needTick(s0, d) && !(await step('推演天下大势', async () => { const r = await worldTick(s0); if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }))) return;
   if (packNeed(s0) && !(await step('联网整理这几年的史料', () => ensureHistPack(s0)))) return;
