@@ -2499,13 +2499,13 @@ async function quickCall({ system, prompt, temperature = 0.7, maxTokens = 1500 }
 }
 
 /** 聊天式玩法：整段对话交给当前选定的 AI，流式回传 */
-async function chatCall({ messages, system = '', maxTokens = 8000, temperature = 0.8, onDelta, json = true, thinking = false }) {
+async function chatCall({ messages, system = '', maxTokens = 8000, temperature = 0.8, onDelta, json = true, thinking = false, fast = false }) {
   const saved = await loadAdapterConfig();
   const aid = saved.selected || 'deepseek';
   const { adapter, config: cfg0 } = await resolveAdapter(aid, saved.configs?.[aid] || {});
   if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请先在首页填好 DeepSeek 的 Key');
   // 核对史实这类要想清楚的活：这一次打开思考模式（更准，慢一些）
-  const config = thinking ? { ...cfg0, thinking: true } : cfg0;
+  const config = { ...cfg0, ...(thinking ? { thinking: true } : {}), ...(fast ? { fast: true } : {}) };
   // 模型服务一时忙（429 / 5xx / 断线）且还没写出字时，自动再试两次，不让玩家看到报错
   let res, wrote = false;
   const od = onDelta ? t => { wrote = true; onDelta(t); } : undefined;

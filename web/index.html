@@ -376,7 +376,7 @@ function localSample(input, opts = {}) {
     if (opts.signal) { if (opts.signal.aborted) return onAbort(); opts.signal.addEventListener('abort', onAbort, { once: true }); }
     try {
       if (!job) {
-        const r = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking });
+        const r = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast });
         if (!r.ok) return reject({ code: 'local', message: r.why || '没发出去' });
         job = r.job;
         if (stopped) { api('/api/llm-stop', { job }).catch(() => {}); return; }
@@ -869,7 +869,7 @@ ${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).joi
 }
 async function getRuling(s, said) {
   try {
-    const { text } = await callClaude(rulingInput(s, said), null, { maxTokens: 4000, temperature: 0.5, kind: '裁定' }, 'quick');
+    const { text } = await callClaude(rulingInput(s, said), null, { maxTokens: 4000, temperature: 0.5, kind: '裁定', fast: true }, 'quick');
     const d = parseJSON(text);
     if (!d || !Array.isArray(d.steps)) return null;
     const bf = d.brief && typeof d.brief === 'object' ? d.brief : {};
@@ -1391,7 +1391,7 @@ async function compactMemory(s) {
   if (old.length < 30) return;
   let text = '';
   try {
-    const r = await callClaude(`把下面这局历史模拟游戏较早的三十回合经过，压成一段四百字以内的章节摘要：按时间先后，只留事实（谁、何时、在哪、做了什么、结果、钱粮与名位的变化、结下的恩怨与约定），不加评论，不丢要紧的人名地名数目。只输出摘要正文。\n\n主角：${s.protagonist.name}，${s.protagonist.role}\n\n` + old.map(x => `第${x.turn}回合（${x.when}）：${x.text}`).join('\n'), null, { json: false, maxTokens: 1500, temperature: 0.2, kind: '修史' }, 'quick');
+    const r = await callClaude(`把下面这局历史模拟游戏较早的三十回合经过，压成一段四百字以内的章节摘要：按时间先后，只留事实（谁、何时、在哪、做了什么、结果、钱粮与名位的变化、结下的恩怨与约定），不加评论，不丢要紧的人名地名数目。只输出摘要正文。\n\n主角：${s.protagonist.name}，${s.protagonist.role}\n\n` + old.map(x => `第${x.turn}回合（${x.when}）：${x.text}`).join('\n'), null, { json: false, maxTokens: 1500, temperature: 0.2, kind: '修史', fast: true }, 'quick');
     text = cut(String(r.text || '').trim(), 500);
   } catch (e) { if (e && e.code === 'cancelled') return 'cancelled'; }
   if (text.length < 40) text = cut(old.map(x => x.text).join('；'), 500);
