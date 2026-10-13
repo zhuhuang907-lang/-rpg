@@ -489,6 +489,7 @@ function migrate(s) {
     if (s.gazetteer && typeof s.gazetteer !== 'object') s.gazetteer = null;
     if (!Array.isArray(s.chapters)) s.chapters = [];
     if (!s.figOver) s.figOver = {};
+    if (Array.isArray(s.gmNotes)) s.gmNotes = s.gmNotes.filter((n, i, A) => n && A.findIndex(m => m && m.text === n.text) === i);
     if (s.world && !Array.isArray(s.world.ripples)) s.world.ripples = [];
     return s;
   }
@@ -1069,8 +1070,11 @@ function instPoints(s, said, extra, max) {
     const y = s.clock.y, inRange = x => (typeof x.from !== 'number' || x.from <= y) && (typeof x.to !== 'number' || x.to >= y);
     const top = (xs, f, n, ctx, min) => arr(xs).filter(inRange).map(x => [overlap(ctx, f(x)), x]).filter(([k]) => k >= (min || 1)).sort((a, b) => b[0] - a[0]).slice(0, n).map(([, x]) => x);
     const lines = [`${h.title}：${cut(h.summary, 160)}`];
-    if (arr(h.pitfalls).length) lines.push('易错处（不得犯）：' + h.pitfalls.slice(0, 18).join('；'));
-    if (arr(h.address).length) lines.push('称谓：' + h.address.slice(0, 22).map(x => `${x.who}称「${x.term}」`).join('；'));
+    // 易错处、称谓按这一回的事和主角的身份挑最相关的（全塞进去反而把要紧的挤掉）
+    const ctxAll = act + ' ' + who;
+    const rank = (xs, f, n) => arr(xs).map((x, i) => [overlap(ctxAll, f(x)) * 10 - i * 0.01, x]).sort((a, b) => b[0] - a[0]).slice(0, n).map(([, x]) => x);
+    if (arr(h.pitfalls).length) lines.push('易错处（不得犯）：' + rank(h.pitfalls, x => x, 10).join('；'));
+    if (arr(h.address).length) lines.push('称谓：' + rank(h.address, x => x.who + x.term, 10).map(x => `${x.who}称「${x.term}」`).join('；'));
     const lv = /县/.test(who) ? ['县', '府', '乡'] : /府|州/.test(who) ? ['府', '州', '省', '道'] : /省|布政|按察|巡抚|总督/.test(who) ? ['省', '道', '府'] : [];
     const loc = arr(h.local).filter(inRange).filter(x => !lv.length || lv.some(k => String(x.level).includes(k))).slice(0, 4);
     if (loc.length) lines.push('相关衙署：' + loc.map(x => `${x.organ}（${cut(x.head, 30)}；${cut(x.staff, 90)}）`).join('；'));
@@ -1413,7 +1417,9 @@ function blocks(s, forStory) {
     + `\n每月净得：${fmtN(inc - exp, u)}`
     + '\n在做的事业：' + (arr(e.projects).map(x => `${x.name}（${x.status}${x.progress ? '，' + x.progress : ''}）`).join('；') || '无'));
   if (!forStory && arr(s.prices).length) L.push('【本地行情（以此为准，有变化在 prices 里给出）】' + s.prices.map(x => `${x.item} ${fmtN(x.price, u)}/${x.per || ''}`).join('；'));
-  const ms = Object.entries(s.meters || {}), gs = Object.entries(s.groups || {});
+  // 「家资」「现钱」这类数值条以程序结算的现钱为准（账房当初写下的数会过时）
+  const cashNow = mo.cash != null ? fmtN(mo.cash, u) : null;
+  const ms = Object.entries(s.meters || {}).map(([k, v]) => cashNow && /^(家资|现钱|现银|钱财|银钱|积蓄|家财)/.test(k) ? [k === '家资' ? '现钱' : k, { ...v, value: cashNow }] : [k, v]), gs = Object.entries(s.groups || {});
   L.push(ms.length ? '【数值条】' + ms.map(([k, v]) => `${k}：${v.value}`).join('；') + (gs.length ? '\n人群：' + gs.map(([k, v]) => `${k} ${v.value}`).join('；') : '')
     : `【数值条（本回合在 meters、groups 里给出初值）】这个身份看：${id.meters}；人群：${id.groups}。`);
   const P = Object.entries(s.people || {}).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 18);
@@ -1447,7 +1453,7 @@ function blocks(s, forStory) {
   if (arr(s.gmNotes).length) L.push('【仅 GM 知道（玩家看不到；按真实情形决定何时浮出，也可能不了了之）】\n' + s.gmNotes.map(n => `· 第${n.turn}回合：${n.text}`).join('\n'));
   const sums = arr(s.summaries).slice(forStory ? -14 : -30);
   if (sums.length) L.push('【前情提要】\n' + sums.map(x => `第${x.turn}回合（${x.when}）：${x.text}`).join('\n'));
-  L.push(`【这个身份常见的路子（只是参考，玩家怎么做都行）】${id.ways}；家业看：${id.estate}`);
+  if (!forStory) L.push(`【这个身份常见的路子（只是参考，玩家怎么做都行）】${id.ways}；家业看：${id.estate}`);
   return L.join('\n\n');
 }
 const SPANS = { auto: '', xun: '约十天（一旬）', month: '约一个月', season: '约三个月（一季）', year: '约一年' };
@@ -1719,7 +1725,7 @@ function applyReply(s, d, said) {
     }
     s.orders = s.orders.slice(-50);
     for (const t of arr(d.gmNotesDone)) { const pf = String(t || '').trim().slice(0, 8); if (pf.length >= 2) s.gmNotes = s.gmNotes.filter(n => !String(n.text).startsWith(pf)); }
-    for (const t of arr(d.gmNotes)) if (t && String(typeof t === 'string' ? t : JSON.stringify(t)).trim().length > 3) s.gmNotes.push({ turn, text: one(typeof t === 'string' ? t : JSON.stringify(t), 140) });
+    for (const t of arr(d.gmNotes)) if (t && String(typeof t === 'string' ? t : JSON.stringify(t)).trim().length > 3) { const tx = one(typeof t === 'string' ? t : JSON.stringify(t), 140); if (!s.gmNotes.some(n => n.text === tx)) s.gmNotes.push({ turn, text: tx }); }
     s.gmNotes = s.gmNotes.slice(-20);
     for (const c of arr(d.statusChanges)) { const k = one(c && (c.项 || c.item), 12), v = one(c && (c.后 || c.to), 60); if (k && v) { s.status[k] = v; s.statusLog.push({ turn, k, v, why: one(c.原因, 60) }); } }
     s.statusLog = s.statusLog.slice(-60);
