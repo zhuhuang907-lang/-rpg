@@ -89,6 +89,7 @@ textarea{resize:vertical}
 .goal{border:1px solid color-mix(in srgb,var(--qing) 30%,transparent);background:var(--qing-soft);border-radius:999px;padding:3px 10px;font-size:12.5px;color:var(--ink2);text-align:left;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .goal b{color:var(--qing);margin-right:6px;font-weight:600}
 .ex.goal{background:var(--qing-soft)}
+.ex.wide{grid-column:1/-1}
 .book{margin-top:10px;font-size:13px}.book summary{cursor:pointer;color:var(--mute);list-style:none;padding:4px 0}.book summary::before{content:'▸ ';}.book[open] summary::before{content:'▾ '}
 .book .extras{margin-top:6px}
 .fs{display:inline-block;font-size:11px;color:var(--qing);border:1px solid color-mix(in srgb,var(--qing) 35%,transparent);border-radius:4px;padding:0 4px;margin-right:6px;line-height:1.5}
@@ -601,7 +602,10 @@ async function callClaude(input, onReply, extra, tier) {
   if (!det && TURN && TURN.signal.aborted) throw { code: 'cancelled' };
   CTL = new AbortController();
   if (TURN && !det) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); }
-  const opts = { signal: CTL.signal, cache: false, modelTier: tier || SETTINGS.tier };
+  const kind0 = (extra && extra.kind) || '';
+  // 网页版：写正文、推演天下、立真人档案、推演玩家这一步，用最强的档位（内容好坏全看这几步）
+  const strong = MODE === 'claude' && (SETTINGS.tier || 'default') === 'default' && (extra && extra.json === false || /推演|裁定|档案|审校/.test(kind0));
+  const opts = { signal: CTL.signal, cache: false, modelTier: strong ? 'complex' : (tier || SETTINGS.tier) };
   const plain = extra && extra.json === false;
   const kind = (extra && extra.kind) || (plain ? '写戏' : '记账');
   try {
@@ -628,7 +632,7 @@ function problemReport() {
   if (s) {
     L.push(`存档：${s.title}；${timeText(s.clock)}；第 ${s.turn} 回合；存档大小 ${Math.round(bytes(JSON.stringify(s)) / 1024)}KB`);
     L.push(`现钱 ${s.money && s.money.cash}；人物 ${Object.keys(s.people || {}).length}；史线将来 ${arr(s.world && s.world.upcoming).length} 条；上次推演 ${s.world && s.world.tickAt ? s.world.tickAt.label : '无'}`);
-    L.push('联网查证：' + (MODE === 'local' ? (SETTINGS.search === false ? '关' : (KEY.bocha ? '博查' : '维基')) : '无') + '；资料 ' + arr(s.research).length + ' 条；最近查：' + arr(s.research).slice(-3).map(x => x.q).join('、'));
+    L.push('联网查证：' + (MODE === 'local' ? (SETTINGS.search === false ? '关' : (KEY.bocha ? '博查' : '维基')) : MODE === 'claude' ? (SETTINGS.search === false ? '关' : '浏览器直查维基' + (SEARCH_OFF ? '（连不上：' + SEARCH_OFF + '）' : '')) : '无') + '；资料 ' + arr(s.research).length + ' 条；最近查：' + arr(s.research).slice(-3).map(x => x.q).join('、'));
     L.push('—— 最近的对话 ——');
     for (const c of arr(s.chat).slice(-4)) L.push(`[${c.role === 'me' ? '玩家' : c.kind === 'talk' ? 'GM戏外' : 'GM'}] ${cut(c.text, 500)}${c.extra && c.extra.salvaged ? '（账没记上）' : ''}${arr(c.audit).length ? '\n  （内部审校改了：' + c.audit.map(a => a.wrong + '→' + a.right).join('；') + '）' : ''}`);
   }
@@ -960,7 +964,7 @@ function feedAdd(items) { for (const x of items) { if (!x || !x.t) continue; if 
 function feedHtml() { const L = FEED.slice(-7); return `<div id="feed" class="feed">${L.length ? '<div class="fh">这一回翻到的资料</div>' + L.map(f => `<div class="fi"><span class="fs">${esc(f.site || '资料')}</span>${esc(f.t)}</div>`).join('') : ''}</div>`; }
 let SEARCH_OFF_AT = 0;
 // 连不上就先歇五分钟，之后自己再试，不让一次断网关掉整局的查证
-const canSearch = () => { if (SEARCH_OFF && SEARCH_OFF_AT && Date.now() - SEARCH_OFF_AT > 5 * 60 * 1000) { SEARCH_OFF = ''; SEARCH_DOWN = 0; } return MODE === 'local' && SETTINGS.search !== false && !SEARCH_OFF; };
+const canSearch = () => { if (SEARCH_OFF && SEARCH_OFF_AT && Date.now() - SEARCH_OFF_AT > 5 * 60 * 1000) { SEARCH_OFF = ''; SEARCH_DOWN = 0; } return (MODE === 'local' || MODE === 'claude') && SETTINGS.search !== false && !SEARCH_OFF; };
 /** 像身在那个年代：每回换着方向搜一两样——本地的官、本地的事、天下的消息、本行的行情、同乡与在本地的真人、快要发生的事里的人 */
 function ambientQueries(s) {
   const yl = s.clock.yearLabel || (s.clock.y + '年'), dy = (s.place.polity || '') + (/[代朝]$/.test(s.place.polity || '') ? '' : '代');
@@ -1002,12 +1006,48 @@ function lookupQueries(s, said, extra) {
   if (s) for (const x of ambientQueries(s)) add(x);
   return q.slice(0, 8);
 }
+/* 网页版没有游戏服务：在浏览器里直接查中文维基百科（开放跨域接口）；连不上就和桌面版一样自动歇一会儿 */
+const WIKI_API = 'https://zh.wikipedia.org/w/api.php';
+const FICTION_RE = /小说|演义|游戏|电视剧|剧集|影视|动漫|同人|穿越|角色|列表 \(|消歧义/;
+const stripTags = h => String(h || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+async function wfetch(params, ms = 9000) {
+  const u = WIKI_API + '?' + new URLSearchParams({ format: 'json', origin: '*', utf8: '1', ...params });
+  const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
+  try { const r = await fetch(u, { signal: c.signal }); if (!r.ok) throw new Error('维基百科回了 ' + r.status); return await r.json(); } finally { clearTimeout(t); }
+}
+async function browserLookup(queries) {
+  const one1 = async q => {
+    const tries = [q].concat((() => { const t = q.split(/\s+/).filter(Boolean); return t.length > 2 ? [t[0] + ' ' + t[t.length - 1], t[0]] : t.length === 2 ? [t[0]] : []; })());
+    for (const q2 of tries) {
+      try {
+        const j = await wfetch({ action: 'query', list: 'search', srsearch: q2, srlimit: '4', srprop: 'snippet' });
+        const items = arr(j && j.query && j.query.search).filter(x => !FICTION_RE.test(x.title)).map(x => ({ title: x.title, snippet: stripTags(x.snippet), url: 'https://zh.wikipedia.org/wiki/' + encodeURIComponent(x.title) }));
+        if (items.length) return { q, items };
+      } catch (e) { return { q, items: [], error: '连不上维基百科（' + (e.name === 'AbortError' ? '超时' : e.message || '网络') + '）' }; }
+    }
+    return { q, items: [] };
+  };
+  const results = [];
+  for (let i = 0; i < queries.length; i += 3) results.push(...await Promise.all(queries.slice(i, i + 3).map(one1)));
+  return { results, provider: 'wikipedia' };
+}
+async function browserWiki(queries) {
+  const out = [];
+  await Promise.all(queries.map(async q => {
+    try {
+      const j = await wfetch({ action: 'query', generator: 'search', gsrsearch: q, gsrlimit: '1', prop: 'extracts', explaintext: '1', exchars: '4000', variant: 'zh-cn' }, 12000);
+      const pg = Object.values((j && j.query && j.query.pages) || {})[0];
+      if (pg && pg.extract && !FICTION_RE.test(pg.title)) out.push({ title: pg.title, text: pg.extract, url: 'https://zh.wikipedia.org/wiki/' + encodeURIComponent(pg.title) });
+    } catch (_) { /* 这一条读不到就算了 */ }
+  }));
+  return { results: out };
+}
 /** 搜一轮，结果存进 s.research（每条留标题和摘要）；返回给这一回显示用的清单 */
 async function doLookups(s, queries) {
   if (!queries.length) return null;
   let r;
   const sig = (TURN && TURN.signal) || (CTL && CTL.signal);
-  try { r = await Promise.race([api('/api/lookup', { queries }), new Promise((_, rej) => { if (sig) { if (sig.aborted) rej({ code: 'cancelled' }); sig.addEventListener('abort', () => rej({ code: 'cancelled' }), { once: true }); } })]); }
+  try { r = await Promise.race([MODE === 'local' ? api('/api/lookup', { queries }) : browserLookup(queries), new Promise((_, rej) => { if (sig) { if (sig.aborted) rej({ code: 'cancelled' }); sig.addEventListener('abort', () => rej({ code: 'cancelled' }), { once: true }); } })]); }
   catch (e) { if (e && e.code === 'cancelled') throw e; if (++SEARCH_DOWN >= 2) { SEARCH_OFF = '游戏服务没有回应'; SEARCH_OFF_AT = Date.now(); } return { err: '游戏服务没有回应' }; }
   const shown = [], errs = [];
   for (const x of arr(r.results)) {
@@ -1029,8 +1069,8 @@ async function doLookups(s, queries) {
 /** 深读维基百科：找最相关的中文条目读正文，存进资料（比搜索摘要细得多） */
 async function wikiRead(s, queries) {
   const qs = [...new Set(arr(queries).map(q => String(q || '').trim()).filter(q => q.length >= 2))].slice(0, 4);  // 同一条目再读走本机缓存，不花钱
-  if (!qs.length || MODE !== 'local' || SETTINGS.search === false) return [];
-  let r; try { r = await api('/api/wiki', { queries: qs }); } catch (_) { return []; }
+  if (!qs.length || !canSearch()) return [];
+  let r; try { r = MODE === 'local' ? await api('/api/wiki', { queries: qs }) : await browserWiki(qs); } catch (_) { return []; }
   const got = [];
   for (const x of arr(r && r.results)) {
     if (!x || !x.text) continue;
@@ -1302,7 +1342,8 @@ const ymOf = c => c.y * 12 + c.m;
 function needTick(s, d) {
   const w = s.world || {}, last = w.tickAt;
   if (!last) return s.turn >= 1;
-  if (ymOf(s.clock) - last.ym >= 6) return 'time';
+  if (ymOf(s.clock) - last.ym >= 2) return 'time';
+  if (s.turn - last.turn >= 3) return 'turns';
   if (arr(d && d.historyChanges).length) return 'history';
   if (d && String(d.worldShift || '').trim().length > 3) return 'shift';
   if (arr(w.upcoming).length < 4 && s.turn - last.turn >= 3) return 'few';
@@ -1411,7 +1452,7 @@ async function worldTick(s) {
   if (Array.isArray(d.powers) && d.powers.length) s.powers = rows(d.powers, 16).filter(x => x.name);
   if (Array.isArray(d.factions)) { const f = rows(d.factions, 10).filter(x => x.name); if (f.length) s.factions = f; }
   w.tickAt = { ym: nowYM, turn: s.turn, label: timeText(s.clock) };
-  return { changes: report.slice(0, 8), ripples: rp, moves };
+  return { changes: report.slice(0, 8), ripples: rp, moves, overview: cut(d.overview, 220) };
 }
 
 /** 长局不走样：摘要多了，把最早的三十回合压成一章，章节一直带着 */
@@ -2085,9 +2126,12 @@ function extrasHtml(x) {
   if (arr(x.acc).length) book.push(`<div class="ex"><div class="eh">账目<span>实际的数</span></div>${x.acc.map(a => `<div>${esc(a.k)}：${esc(a.from)} → <b>${esc(a.to)}</b>${a.why ? `<span class="muted">（${esc(a.why)}）</span>` : ''}</div>`).join('')}</div>`);
   if (arr(x.rums).length) { sum.push('风声'); book.push(`<div class="ex"><div class="eh">风声</div>${x.rums.map(r => `<div>${esc(r)}</div>`).join('')}</div>`); }
   if (x.worldTick) {
-    const wt = x.worldTick, n = arr(wt.moves).length + arr(wt.ripples).length + arr(wt.changes).length;
-    if (n) sum.push(`天下推演 ${n} 条`);
-    book.push(`<div class="ex news"><div class="eh">天下推演<span>史书的走向、你造成的变化、别人背着你做的事（书中的你未必知道）</span></div>${arr(wt.moves).map(m => `<div><b>${esc(m.name)}</b>：${esc(m.did)}${m.why ? `<span class="muted">（${esc(m.why)}）</span>` : ''}</div>`).join('')}${arr(wt.ripples).map(r => `<div><b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`).join('')}${arr(wt.changes).map(c => `<div><span class="badge ${c.status === '新出' ? 'b-doing' : 'b-bad'}">${esc(c.status)}</span> ${esc(c.text)}${c.why ? `<div class="muted">${esc(c.why)}</div>` : ''}</div>`).join('')}</div>`);
+    // 天下推演摆在外面：这段日子里天下与你周围的变化、别人背着你做的事、你的作为带出的连锁反应
+    const wt = x.worldTick;
+    const rows = arr(wt.changes).map(c => `<div><span class="badge ${c.status === '新出' ? 'b-doing' : 'b-bad'}">${esc(c.status === '新出' ? '本局新出' : c.status === '取消' ? '不会发生了' : '走向变了')}</span> ${esc(c.text)}${c.why ? `<div class="muted">因为：${esc(c.why)}</div>` : ''}</div>`)
+      .concat(arr(wt.ripples).map(r => `<div><span class="badge b-doing">连锁</span> <b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`))
+      .concat(arr(wt.moves).map(m => `<div><span class="badge">动向</span> <b>${esc(m.name)}</b>：${esc(m.did)}${m.why ? `<span class="muted">（${esc(m.why)}）</span>` : ''}${m.plan ? `<div class="muted">接下来：${esc(m.plan)}</div>` : ''}</div>`));
+    if (rows.length || wt.overview) top.push(`<div class="ex news wide"><div class="eh">天下推演<span>这段日子里天下与你周围的变化；「动向」是别人背着你做的，书中的你未必知道</span></div>${wt.overview ? `<div class="muted" style="margin-bottom:4px">${esc(wt.overview)}</div>` : ''}${rows.join('')}</div>`);
   }
   if (SETTINGS.showWork && x.ruling && arr(x.ruling.steps).length) {
     const r = x.ruling;
@@ -2250,7 +2294,7 @@ function pane(tab) {
   }
   if (tab === 'news') {
     const R = arr(s.research).slice().reverse(), LC = arr(s.locals).slice().reverse();
-    return `<div class="h" style="margin-top:6px"><span class="seal">闻</span>见闻<span class="note">${MODE === 'local' ? (SETTINGS.search === false ? '联网查证已关（设置里开）' : '每回合自动联网查到的此时此地的人和事') : '联网查证只在桌面版里有'}</span></div>
+    return `<div class="h" style="margin-top:6px"><span class="seal">闻</span>见闻<span class="note">${MODE === 'local' || MODE === 'claude' ? (SETTINGS.search === false ? '联网查证已关（设置里开）' : '每回合自动联网查到的此时此地的人和事' + (MODE === 'claude' ? '（网页版直接查维基百科）' : '')) : '联网查证只在桌面版里有'}</span></div>
       ${LC.length ? `<div class="h"><span class="seal">人</span>此时此地的真人<span class="note">从查证里认出来的，剧情里可能遇到</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此时身份</th><th>出处</th></tr>${LC.map(x => `<tr><td><b>${esc(x.name)}</b>${x.y ? `<div class="muted">${esc(x.y)}年前后</div>` : ''}</td><td>${esc(x.role)}</td><td class="muted">${esc(x.note)}</td></tr>`).join('')}</table></div>` : ''}
       ${arr(s.almanac).length ? `<div class="h"><span class="seal">志</span>年代志<span class="note">A 内置史料 · B 检索资料 · C 推断（不当史实）</span></div>${ALM_CATS.map(c => { const xs = arr(s.almanac).filter(x => x.cat === c); return xs.length ? `<div class="h" style="font-size:14px">${c}</div><div class="list">${xs.slice().reverse().map(x => `<div><span class="badge ${x.grade === 'A' ? 'b-done' : x.grade === 'C' ? 'b-doing' : 'b-todo'}" title="A 内置史料 · B 检索资料 · C 推断">${esc(x.grade || 'B')}</span> ${esc(x.text)}${x.src ? `<span class="muted">（${esc(x.src)}）</span>` : ''}</div>`).join('')}</div>` : ''; }).join('')}` : ''}
       <div class="h"><span class="seal">查</span>查到的资料<span class="note">新的在上面</span></div>
@@ -2298,7 +2342,7 @@ function pane(tab) {
     <select id="sLen">${[['short', '短（五六百字）'], ['normal', '标准（九百到一千五百字）'], ['long', '长（一千五百到两千五百字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sCheck" style="width:auto" ${SETTINGS.check !== false ? 'checked' : ''}>写好的正文先在内部核实史实与制度（拿不准的联网查），改正后才给你看</label>
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sWorld" style="width:auto" ${SETTINGS.world !== false ? 'checked' : ''}>天下大势自动推演（每过半年、或你做了波及天下的事时，多一次调用，推演史书的走向和你造成的变化）</label>
-    ${MODE === 'local' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sSearch" style="width:auto" ${SETTINGS.search !== false ? 'checked' : ''}>每回合先联网查证（搜这一回涉及的真人、事件、年份；用${KEY.bocha ? '博查 + 维基百科' : '维基百科；在首页填博查 Key 资料更多'}）</label>` : '<p class="muted" style="font-size:13px">联网查证只在桌面版里有（用你自己的博查 Key）。</p>'}
+    ${MODE === 'local' || MODE === 'claude' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sSearch" style="width:auto" ${SETTINGS.search !== false ? 'checked' : ''}>每回合先联网查证（搜这一回涉及的真人、事件、年份；用${MODE === 'claude' ? '维基百科（网页版在浏览器里直接查）' : KEY.bocha ? '博查 + 维基百科' : '维基百科；在首页填博查 Key 资料更多'}）</label>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}` : ''}
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sRuling" style="width:auto" ${SETTINGS.ruling !== false ? 'checked' : ''}>行动裁定（写之前先按身份、权限、钱粮、人手和制度裁定你这一步能不能办；多一次短调用）</label>
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sShowWork" style="width:auto" ${SETTINGS.showWork ? 'checked' : ''}>显示幕后过程（裁定、查证；平时不用开）</label>
     ${MODE === 'local' ? `<div class="h"><span class="seal">检</span>联网自检</div>
