@@ -1184,10 +1184,24 @@ function geoMap(s) {
   const mine = new Set(arr(s.territory).map(t => String(t.place || '').replace(/[县縣州府郡城]$/, '')));
   const been = new Set(Object.keys(s.places || {}).map(k => k.replace(/[县縣州府郡城]$/, '')));
   const key = u => u.name.replace(/[县縣州府郡]$/, '');
-  const dots = g.units.map(u => { const pref = isPref(u), me = u.name === g.here.name, own = mine.has(key(u)), seen = been.has(key(u));
-    return `<circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${me ? 5 : pref ? 3.5 : 2.2}" fill="${me ? 'var(--zhu)' : own ? 'var(--good)' : pref ? 'var(--ink)' : 'var(--muted, #888)'}"><title>${esc(u.name)}${u.parent ? '（属' + esc(u.parent) + '）' : ''}，${dirOf(g.here, u)}约${liOf(hav(g.here, u))}里</title></circle>`
-      + (pref || me || own || seen || u.parent === g.here.parent ? `<text x="${(px(u) + 5).toFixed(1)}" y="${(py(u) + 3).toFixed(1)}" font-size="${me ? 11 : 9}" fill="${me ? 'var(--zhu)' : 'var(--ink)'}">${esc(u.name)}</text>` : ''); }).join('');
-  return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px" role="img" aria-label="县级地图">${dots}</svg><div class="muted" style="font-size:12px">红点你在这里；黑点州府治所；灰点县城；绿点你的地盘。据 CHGIS 历史地名库（${g.y}年前后），共 ${g.units.length} 处。</div>`;
+  // 点：每处都画；字：同一个地方的（府县同城）合成一条，按要紧程度一条条放，放不下（会和已有的字重叠）就不写
+  const pts = g.units.map(u => ({ u, x: px(u), y: py(u), pref: isPref(u), me: u.name === g.here.name, own: mine.has(key(u)), seen: been.has(key(u)), sib: u.parent === g.here.parent }));
+  const dots = pts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.me ? 5 : p.pref ? 3.5 : 2.2}" fill="${p.me ? 'var(--zhu)' : p.own ? 'var(--good)' : p.pref ? 'var(--ink)' : 'var(--muted, #888)'}"><title>${esc(p.u.name)}${p.u.parent ? '（属' + esc(p.u.parent) + '）' : ''}，${dirOf(g.here, p.u)}约${liOf(hav(g.here, p.u))}里</title></circle>`).join('');
+  const groups = [];
+  for (const p of pts) { const gr = groups.find(G => Math.hypot(G.x - p.x, G.y - p.y) < 4); if (gr) gr.ps.push(p); else groups.push({ x: p.x, y: p.y, ps: [p] }); }
+  const rank = p => p.me ? 0 : p.own ? 1 : p.pref ? 2 : p.sib ? 3 : p.seen ? 4 : 5;
+  for (const G of groups) { G.ps.sort((a, b) => rank(a) - rank(b) || (b.pref ? 1 : 0) - (a.pref ? 1 : 0)); G.r = rank(G.ps[0]); G.me = G.ps.some(p => p.me); G.text = G.ps.slice(0, 3).map((p, i) => i ? p.u.name.replace(/[县縣]$/, '') : p.u.name).join('·'); }
+  const boxes = [], labels = [];
+  for (const G of groups.sort((a, b) => a.r - b.r)) {
+    const fs = G.me ? 11 : 9, w = G.text.length * fs + 2, h = fs + 2;
+    for (const [dx, dy] of [[5, 3], [-5 - w, 3], [-w / 2, -6], [-w / 2, fs + 6]]) {
+      const bx = G.x + dx, by = G.y + dy - fs, box = [bx, by, bx + w, by + h];
+      if (bx < 1 || by < 1 || bx + w > W - 1 || by + h > H - 1) continue;
+      if (boxes.some(o => !(box[2] < o[0] || box[0] > o[2] || box[3] < o[1] || box[1] > o[3]))) continue;
+      boxes.push(box); labels.push(`<text x="${(G.x + dx).toFixed(1)}" y="${(G.y + dy).toFixed(1)}" font-size="${fs}" fill="${G.me ? 'var(--zhu)' : 'var(--ink)'}">${esc(G.text)}</text>`); break;
+    }
+  }
+  return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px" role="img" aria-label="县级地图">${dots}${labels.join('')}</svg><div class="muted" style="font-size:12px">红点你在这里；黑点州府治所；灰点县城；绿点你的地盘。据 CHGIS 历史地名库（${g.y}年前后），共 ${g.units.length} 处。</div>`;
 }
 
 /* ========== 本地志：主角所在地方此时的样子（衙署与官员、经济行业、大族、街巷市镇、风俗、本地时事），开局与搬家时查一次 ========== */
@@ -1329,7 +1343,7 @@ async function worldTick(s) {
   if (!d || !Array.isArray(d.upcoming)) throw { code: 'bad_json' };
   const w = s.world, nowYM = ymOf(s.clock), old = arr(w.upcoming);
   const up = d.upcoming.filter(u => u && u.text).map(u => ({ y: num(u.y) ?? s.clock.y, m: Math.min(12, Math.max(0, num(u.m) || 0)), text: one(u.text, 100), status: /变/.test(u.status || '') ? '已变' : /新/.test(u.status || '') ? '新出' : '照史', why: one(u.why, 100) }))
-    .filter(u => evYM(u) > nowYM).sort((a, b) => a.y - b.y || a.m - b.m).slice(0, 20);
+    .filter(u => evYM(u) > nowYM && u.y <= s.clock.y + 10).sort((a, b) => a.y - b.y || a.m - b.m).slice(0, 20);   // 推演只管眼下十年，太远的不算数
   const report = [];
   for (const u of up) if (u.status !== '照史' && !old.some(o => o.status === u.status && one(o.text, 10) === one(u.text, 10))) report.push({ text: `${u.y}年${u.m ? u.m + '月' : ''}：${u.text}`, status: u.status, why: u.why });
   for (const o of old) if ((!o.status || o.status === '照史') && !up.some(u => one(u.text, 8) === one(o.text, 8)) && evYM(o) > nowYM + 1) {
@@ -1350,7 +1364,7 @@ async function worldTick(s) {
       } else if (!key && st === '新出') {
         const x = { y: num(u.y) ?? s.clock.y, m: Math.min(12, Math.max(0, num(u.m) || 0)), text: one(u.text, 100), status: '新出', why: one(u.why, 100), needs: one(u.needs, 80), grade: 'C' };
         x.key = 'n' + x.y + ':' + x.text.slice(0, 14);
-        if (evYM(x) > nowYM && !w.extra.some(o => o.key === x.key)) { w.extra.push(x); report.push({ text: `${x.y}年${x.m ? x.m + '月' : ''}：${x.text}`, status: '新出', why: x.why }); }
+        if (evYM(x) > nowYM && x.y <= s.clock.y + 10 && !w.extra.some(o => o.key === x.key)) { w.extra.push(x); report.push({ text: `${x.y}年${x.m ? x.m + '月' : ''}：${x.text}`, status: '新出', why: x.why }); }
       }
     }
     w.extra = w.extra.filter(x => evYM(x) > nowYM - 12).slice(-30);
