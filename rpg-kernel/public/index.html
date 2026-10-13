@@ -546,7 +546,30 @@ function parseJSON(text) {
     try { return JSON.parse(t.slice(a, b + 1)); } catch (_) { /* 往下修 */ }
     try { return JSON.parse(t.slice(a, b + 1).replace(/,\s*([}\]])/g, '$1')); } catch (_) { /* 往下修 */ }
   }
+  { const bal = balanceJSON(t.slice(a)); if (bal) try { return JSON.parse(bal); } catch (_) { /* 往下修 */ } }
   return repairJSON(t.slice(a)) || fixQuotes(t.slice(a));
+}
+/** 括号对不上（多关了一个「}」后面还接着写、关错了类型、少关了几个）：照着嵌套重排一遍 */
+function balanceJSON(t) {
+  let out = '', inStr = false, esc2 = false; const stack = [];
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) { out += c; if (esc2) esc2 = false; else if (c === '\\') esc2 = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') { inStr = true; out += c; continue; }
+    if (c === '{' || c === '[') { stack.push(c === '{' ? '}' : ']'); out += c; continue; }
+    if (c === '}' || c === ']') {
+      const rest = t.slice(i + 1).trimStart();
+      if (!stack.length) { if (/^,\s*"/.test(rest)) continue; break; }          // 已经关完了，后面却还有字段：这个括号是多的
+      if (stack.length === 1 && /^,\s*"/.test(rest)) continue;                     // 根对象被提前关上了
+      if (c !== stack[stack.length - 1]) { if (stack.includes(c)) { while (stack.length && stack[stack.length - 1] !== c) out += stack.pop(); } else continue; }
+      if (stack.length === 1 && /^,\s*"/.test(rest)) continue;
+      out += stack.pop(); if (!stack.length && !/^,\s*"/.test(rest)) break; continue;
+    }
+    out += c;
+  }
+  if (inStr) out += '"';
+  while (stack.length) out += stack.pop();
+  return out.replace(/,\s*([}\]])/g, '$1');
 }
 /** 正文里的引号没转义（「他说"好"」）：把正文那一段里的引号补上转义再读 */
 function fixQuotes(t) {
@@ -1715,7 +1738,7 @@ ${verifyMaterials(s, said, text)}
 ${text}
 
 只输出一个 JSON 对象：{"major":[{"problem":"哪里说不通（引一句原文）","fix":"应该怎样才合情理"}],"fixes":[{"wrong":"正文里错的那几个字（原样摘出，二十字以内，必须能在正文里找到）","right":"改成","why":"依据"}],"doubts":[{"quote":"正文里拿不准的说法（原样摘出）","query":"联网查证用的搜索词","why":"为什么拿不准"}]}。
-major 只放改几个字解决不了的大毛病：已故或尚未出生的真人以活人出场；真人出现在他此时不可能在的地方（看【真人档案】【内置史料】）；小人物轻易见到高官显贵、没有引荐门路；路程与时日明显说不通；主角说了玩家没说的话、做了玩家没让做的决定；与【定本】或前文明显矛盾。没有就 []，不要为了挑而挑。
+major 只放改几个字解决不了的大毛病：已故或尚未出生的真人以活人出场；真人出现在他此时不可能在的地方（看【真人档案】【内置史料】）；小人物轻易见到高官显贵、没有引荐门路；路程与时日明显说不通；主角说了玩家没说的话、做了玩家没让做的决定；与【定本】或前文明显矛盾。凡是改几个字就能解决的（时辰、称呼、数目、一句话的说法），一律放 fixes，不要放 major；major 只留必须整段重写才能改好的，没有就 []，不要为了挑而挑。
 确定的错字放 fixes；材料不能证实、你也拿不准的具体说法放 doubts（最多六条）；都没有就给空数组。`, null, { maxTokens: 3000, temperature: 0.1, kind: '审校' });
     A = parseJSON(r.text);
   } catch (e) { if (e && e.code === 'cancelled') throw e; return { text, audit }; }
