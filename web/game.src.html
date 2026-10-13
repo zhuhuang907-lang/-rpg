@@ -751,7 +751,7 @@ function syncHist(s) {
     w0.over = {};
   }
   const w = s.world, now = ymOf(s.clock), done = new Set(arr(w.events).map(e => e.key).filter(Boolean));
-  const list = histEvents(s, now, now + 60).filter(e => !done.has(e.key)).map(e => histView(s, e)).filter(e => e.status !== '取消');
+  const list = histEvents(s, now - 1, now + 60).filter(e => !done.has(e.key)).map(e => histView(s, e)).filter(e => e.status !== '取消');
   // 本局推迟了的史事：原定日子已过、改后的日子还没到，也要留在「将要发生」里，到时照改后的样子发生
   const have = new Set(list.map(e => e.key));
   for (const [k, o] of Object.entries(w.over || {})) {
@@ -855,8 +855,11 @@ function histBlock(s) {
   const rs = rulersAt(y, s);
   L.push(histFor(y, s).some(h => h.grade === 'B') && !histFor(y, s).some(h => !h.grade) ? '【联网自建史料（游戏据检索与通行史书整理，B 级；以此为准，与你的记忆不同时照这里）】' : '【内置史料（程序据史书整理，以此为准；与你的记忆不同时照这里）】');
   if (rs.length) L.push('在位：' + rs.map(r => `${r.title && r.title.startsWith(r.polity) ? '' : r.polity}${r.title ? r.title : ''}${r.name}${r.era ? '（' + r.era + NUMZH(r.n) + '年）' : ''}`).join('；'));
-  const past = histEvents(s, now - 30, now).map(e => histView(s, e)).filter(e => e.status !== '取消' && evYM(e) <= now);
+  // 史料只记到月：本月的史事不算「已经发生」，单列出来，正文按真实日子写（日子没到就还没发生）
+  const pastAll = histEvents(s, now - 30, now).map(e => histView(s, e)).filter(e => e.status !== '取消' && evYM(e) <= now);
+  const past = pastAll.filter(e => !(e.m && e.y * 12 + e.m === now)), thisMonth = pastAll.filter(e => e.m && e.y * 12 + e.m === now);
   if (past.length) L.push('近两三年的史事：\n' + past.slice(-14).map(e => `· ${e.y}年${e.m ? e.m + '月' : ''}：${e.text}${e.status !== '照史' ? '（本局：' + e.status + '）' : ''}`).join('\n'));
+  if (thisMonth.length) L.push(`本月之内（照史书在本月某一天发生；此刻是${s.clock.d || ''}日，日子没到就还没发生，书中人也还不知道；正文照史书的真实日子写）：\n` + thisMonth.map(e => `· ${e.text}${e.status !== '照史' ? '（本局：' + e.status + '）' : ''}`).join('\n'));
   const figs = figuresAt(s, y);
   const near = new Set(histEvents(s, now - 36, now + 60).flatMap(e => arr(e.who)));
   const talked = arr(s.chat).slice(-12).map(c => c.text).join('');
@@ -1891,7 +1894,8 @@ function applyReply(s, d, said) {
     }
     // 到了日子的史线：照它发生（不再悄悄丢掉）；被改写的、新出的照本局的样子
     const nowYM = s.clock.y * 12 + s.clock.m;
-    const due = s.world.upcoming.filter(u => evYM(u) <= nowYM);
+    // 到了日子的史线：史料只到月，本月的事等这个月过完才记成「已经发生」（正文里按真实日子写）
+    const due = s.world.upcoming.filter(u => evYM(u) < nowYM || (evYM(u) === nowYM && !u.m));
     if (due.length) {
       s.world.upcoming = s.world.upcoming.filter(u => !due.includes(u));
       for (const u of due) {
@@ -2433,7 +2437,7 @@ async function startGame(sentence, have, havePre, custom) {
     d.worldUpcoming = arr(d.worldUpcoming).concat(arr(d.world && d.world.upcoming));
     if (hasHist(s)) {
       const now = ymOf(s.clock);
-      s.world.events = histEvents(s, now - 120, now).map(e => ({ y: e.y, m: e.m, text: e.text, key: e.key }));
+      s.world.events = histEvents(s, now - 120, now - 1).map(e => ({ y: e.y, m: e.m, text: e.text, key: e.key }));   // 本月的还没算发生
       const el = eraLabel(s, s.clock.y); if (el) s.clock.yearLabel = el;
     }
     const fx = applyFixes(st.text, d.fixes);
