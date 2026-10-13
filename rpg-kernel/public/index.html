@@ -1460,6 +1460,15 @@ function verifyMaterials(s, said, text) {
     fresh.length ? researchBlock({ ...s, research: fresh, locals: [] }) : '', almanacBlock(s)].filter(Boolean).join('\n\n');
 }
 async function verifyText(s, said, text) {
+  // 核实是锦上添花：出任何岔子、或拖得太久（三分钟），都照原稿给玩家，不能让这一回整个作废
+  const orig = text;
+  let timer;
+  const cap = new Promise(res => { timer = setTimeout(() => res({ text: orig, audit: [], timedOut: true }), 180000); });
+  try { return await Promise.race([verifyCore(s, said, text), cap]); }
+  catch (e) { if (e && e.code === 'cancelled') throw e; return { text: orig, audit: [] }; }
+  finally { clearTimeout(timer); }
+}
+async function verifyCore(s, said, text) {
   if (!text || SETTINGS.check === false) return { text, audit: [] };
   const audit = [];
   const head = `你是一位严谨的史学审校。下面是一局历史模拟游戏刚写好、还没给玩家看的一段正文。${s.noTime ? '（这是开场，年代与地点以正文自己交代的为准，核对正文前后是否自洽、与史实是否相符）' : `时间：${timeText(s.clock)}；地点：${s.place.full}（${s.place.polity || ''}）`}；主角：${s.protagonist.name ? s.protagonist.name + '，' : ''}${s.protagonist.role}。
@@ -1475,7 +1484,7 @@ ${verifyMaterials(s, said, text)}
 【正文】
 ${text}
 
-只输出一个 JSON 对象：{"fixes":[{"wrong":"正文里错的那几个字（原样摘出，二十字以内，必须能在正文里找到）","right":"改成","why":"依据"}],"doubts":[{"quote":"正文里拿不准的说法（原样摘出）","query":"联网查证用的搜索词","why":"为什么拿不准"}]}。确定的错放 fixes；材料不能证实、你也拿不准的具体说法放 doubts（最多六条）；都没有就给空数组。`, null, { maxTokens: 3000, temperature: 0.1, kind: '审校', thinking: true });
+只输出一个 JSON 对象：{"fixes":[{"wrong":"正文里错的那几个字（原样摘出，二十字以内，必须能在正文里找到）","right":"改成","why":"依据"}],"doubts":[{"quote":"正文里拿不准的说法（原样摘出）","query":"联网查证用的搜索词","why":"为什么拿不准"}]}。确定的错放 fixes；材料不能证实、你也拿不准的具体说法放 doubts（最多六条）；都没有就给空数组。`, null, { maxTokens: 3000, temperature: 0.1, kind: '审校' });
     A = parseJSON(r.text);
   } catch (e) { if (e && e.code === 'cancelled') throw e; return { text, audit }; }
   const fx1 = applyFixes(text, A && A.fixes); text = fx1.text; audit.push(...fx1.done);
@@ -1500,7 +1509,7 @@ ${ev ? '【查到的资料】\n' + ev : '（这次没有联网资料，只能凭
 【正文】
 ${text}
 
-只输出一个 JSON 对象：{"fixes":[{"wrong":"原样摘出的原文","right":"改成","why":"依据"}]}；都不用改就给 {"fixes":[]}。`, null, { maxTokens: 2500, temperature: 0.1, kind: '审校', thinking: true });
+只输出一个 JSON 对象：{"fixes":[{"wrong":"原样摘出的原文","right":"改成","why":"依据"}]}；都不用改就给 {"fixes":[]}。`, null, { maxTokens: 2500, temperature: 0.1, kind: '审校' });
     const fx2 = applyFixes(text, (parseJSON(r.text) || {}).fixes); text = fx2.text; audit.push(...fx2.done);
   } catch (e) { if (e && e.code === 'cancelled') throw e; }
   return { text, audit };
@@ -1516,7 +1525,7 @@ function applyFixes(text, fixes) {
     if (text.includes(wrong)) text = text.split(wrong).join(right);
     else {
       // 审校摘的原文常常差一个引号、空格或标点：放宽这些再找一遍
-      const re = new RegExp(wrong.replace(/[\s]+/g, '').split('').map(ch => /[「」『』“”‘’"'，,。.：:；;！!？?、]/.test(ch) ? '[「」『』“”‘’"\'，,。.：:；;！!？?、]?' : ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*').join(''));
+      let re; try { re = new RegExp(wrong.replace(/[\s]+/g, '').split('').map(ch => /[「」『』“”‘’"'，,。.：:；;！!？?、]/.test(ch) ? '[「」『』“”‘’"\'，,。.：:；;！!？?、]?' : ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*').join('')); } catch (_) { continue; }
       const m = text.match(re);
       if (!m || m[0].length < 2) continue;
       text = text.split(m[0]).join(right);
@@ -1776,7 +1785,7 @@ async function renderStart() {
     </div>
     ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'draft' ? '正在写开场，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '开场写好了，正在对照史料再过一遍' : PHASE === 'ledger' ? '开场核实好了，正在立账册' : PHASE === 'search' ? '先联网把这个年代查一遍（生活、官制、物价、风俗、大事）' : PHASE === 'digest' ? '正在研读查到的资料，整理成年代志' : '正在把你落到历史里、写开场'}……已 <span id="secs">0</span> 秒（一般一两分钟）<button class="link" id="bStop">停下</button></div>
       ${STREAM && PHASE === 'ledger' ? `<div class="msg gm"><div class="text">${paras(STREAM)}</div></div>` : feedHtml()}` : ''}
-    ${ERRMSG ? `<div class="err">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''}</div>` : ''}
+    ${ERRMSG ? `<div class="err">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''} <button class="link" id="bCopyErr">复制出错详情</button><span id="copyErrSt" class="muted"></span></div>` : ''}
     ${MODE === 'local' ? keyBox() : ''}
     <div class="h"><span class="seal">档</span>接着玩<span class="note">${MODE === 'local' ? '存在游戏文件夹里（app\\data\\websaves），本浏览器也留一份' : '存在你的 claude.ai 账号里，本浏览器也留一份'}</span></div>
     <div class="saves" id="saves"><div class="muted">载入中…</div></div>
@@ -1856,7 +1865,7 @@ function renderGame() {
     <div class="chat">
       ${hidden ? `<div class="earlier">更早的 ${hidden} 条对话已收起（摘要、年谱、账册都还在）</div>` : ''}
       ${msgs}${thinking}
-      ${ERRMSG ? `<div class="err">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''}</div>` : ''}
+      ${ERRMSG ? `<div class="err">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''} <button class="link" id="bCopyErr">复制出错详情</button><span id="copyErrSt" class="muted"></span></div>` : ''}
       <div class="composer">
         <textarea id="said" rows="${matchMedia('(max-width: 520px)').matches ? 2 : 3}" placeholder="${matchMedia('(max-width: 520px)').matches ? '你做什么、说什么；想问什么直接问' : '戏里：写你做什么、说什么、吩咐谁。戏外：直接问（这时候米价多少？去扬州要几天？）。什么都不写直接发＝照常过几天。Ctrl+回车发出。'}"></textarea>
         <div class="row">
@@ -2063,8 +2072,7 @@ async function startGame(sentence, have, havePre) {
       PHASE = 'verify'; render();
       const oy = sentenceYear(sentence);
       // 核实和立账册一起做：账册照初稿立，核实改掉的字再照改到账里
-      ledP = callClaude(openingLedgerInput(sentence, draft.text, draft.hidden), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' });
-      ledP.catch(() => { /* 下面 await 时再处理 */ });
+      if (MODE === 'local') { ledP = callClaude(openingLedgerInput(sentence, draft.text, draft.hidden), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' }); ledP.catch(() => { /* 下面 await 时再处理 */ }); }
       const vr = await verifyText({ ...(pre || {}), research: arr(pre && pre.research), almanac: arr(pre && pre.almanac), clock: { y: oy ?? 0, m: 6, d: 1, yearLabel: '' }, place: { full: '', polity: '' }, protagonist: { name: '', role: sentence }, chat: [], world: {}, figOver: {}, turn: 0, noTime: oy == null }, sentence, draft.text);
       draft.text = vr.text; draft.audit = vr.audit; st = draft;
     }
@@ -2170,6 +2178,8 @@ async function send(said, span, note, resume) {
       if (FEED.length) { const g1 = S.chat[S.chat.length - 1]; g1.extra = Object.assign(g1.extra || {}, { refs: FEED.slice(-16).map(f => ({ t: f.t, site: f.site, u: f.u })) }); }
       if (arr(st.audit).length) { const g0 = S.chat[S.chat.length - 1]; g0.audit = st.audit; }
     } else {
+      // 网页版（claude.ai）不一定能同时发两个请求：先核实完再记账；桌面版两件一起做
+      if (vrP && MODE !== 'local') await vrP;
       const draft = st.text;
       const ledgerP = (async () => {
         let d0 = null;
@@ -2356,6 +2366,12 @@ document.addEventListener('click', async e => {
       await store.save(b); S = b; lsSet('hrpg:last', b.id);
     } finally { setBusy(false); }
     const m = $('#branchMsg'); if (m) m.textContent = '✓ 已另存为分支，现在玩的是分支'; return;
+  }
+  if (t.id === 'bCopyErr') {
+    const txt = problemReport(), st = $('#copyErrSt');
+    try { await navigator.clipboard.writeText(txt); if (st) st.textContent = ' ✓ 已复制，直接粘贴给 Claude'; }
+    catch (_) { const ta = document.createElement('textarea'); ta.value = txt; ta.style.cssText = 'width:100%;height:8em;margin-top:6px'; t.parentNode.appendChild(ta); ta.select(); if (st) st.textContent = ' 没能自动复制：下面的字已选中，按 Ctrl+C'; }
+    return;
   }
   if (t.id === 'bReport') {
     const txt = problemReport();
