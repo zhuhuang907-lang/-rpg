@@ -1977,8 +1977,9 @@ function renderGame() {
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'draft' ? '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '写好了，正在对照史料把人名、官职、地名、年月再过一遍' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '裁判在按你的身份、钱粮、人手和制度裁定这一步' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : feedHtml()}</div>` : '';
-  const keep = { said: $('#said') ? $('#said').value : '', span: $('#span') ? $('#span').value : 'auto' };
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '写好了，正在对照史料把人名、官职、地名、年月再过一遍' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '裁判在按你的身份、钱粮、人手和制度裁定这一步' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : feedHtml()}</div>` : '';
+  const ae = document.activeElement, saidEl = $('#said');
+  const keep = { said: saidEl ? saidEl.value : '', span: $('#span') ? $('#span').value : 'auto', focus: ae && ae.id === 'said', a: saidEl ? saidEl.selectionStart : 0, b: saidEl ? saidEl.selectionEnd : 0, scroll: window.scrollY };
   $('#app').innerHTML = `<div class="game">
     <div class="chat">
       ${hidden ? `<div class="earlier">更早的 ${hidden} 条对话已收起（摘要、年谱、账册都还在）</div>` : ''}
@@ -1990,7 +1991,7 @@ function renderGame() {
           <label class="muted" for="span">这一回过多久</label>
           <select id="span"><option value="auto">按剧情</option><option value="xun">一旬</option><option value="month">一个月</option><option value="season">一季</option><option value="year">一年</option></select>
           <span class="grow"></span>
-          ${SAVED ? `<span class="savest ${SAVED_BAD ? 'bad' : ''}">${esc(SAVED)}</span>` : ''}
+          ${BG && !BUSY ? `<span class="savest" style="color:var(--mute)">后台：${esc(BGMSG || '整理中')}…（不耽误你写下一步）</span>` : SAVED ? `<span class="savest ${SAVED_BAD ? 'bad' : ''}">${esc(SAVED)}</span>` : ''}
           <button class="main" id="bSend" ${BUSY || !SAMPLE ? 'disabled' : ''}>发出</button>
         </div>
       </div>
@@ -2001,6 +2002,7 @@ function renderGame() {
     </aside>
   </div>`;
   $('#said').value = keep.said; $('#span').value = keep.span;
+  if (keep.focus) { const el = $('#said'); el.focus({ preventScroll: true }); try { el.setSelectionRange(keep.a, keep.b); } catch (_) { /* 无 */ } window.scrollTo(0, keep.scroll); }
 }
 
 /** 现钱走势：一条小折线 */
@@ -2227,15 +2229,34 @@ async function startGame(sentence, have, havePre) {
     else if (!LAST_ACTION) LAST_ACTION = () => startGame(sentence, st, pre);
   }
   finally { STREAM = ''; PHASE = ''; TURN = null; setBusy(false); }
-  if (S && VIEW === 'game' && (packNeed(S) || needGaz(S) || needGeo(S))) {
-    CTL = new AbortController(); TURN = CTL; setBusy(true);
-    try { if (packNeed(S)) await ensureHistPack(S); if (needGaz(S)) { PHASE = 'gaz'; render(); await buildGazetteer(S); } if (needGeo(S)) await ensureGeo(S, S.gazetteer && S.gazetteer.counties); await store.save(S); } catch (_) { /* 下回合再建 */ } finally { PHASE = ''; TURN = null; setBusy(false); }
-  }
-  if (S && !S.inst && VIEW === 'game') buildInst(S);
+  if (S && VIEW === 'game') { const s0 = S; runBg(() => afterTurn(s0, null, null)); }
+}
+/* ========== 后台：每回合写完之后的整理（不挡玩家） ========== */
+let BG = null, BGMSG = '', BGWAIT = false;
+function runBg(fn) {
+  BG = (async () => { await null; try { await fn(); } catch (_) { /* 后台出错下回再做 */ } finally { BG = null; BGMSG = ''; render(); } })();
+}
+/** 写完一回之后：整理较早的章节、推演天下、自建史料、本地志、县级地图、本朝官制。s0 不再是当前存档（换局、重写了）就不存 */
+async function afterTurn(s0, d, g) {
+  const live = () => S === s0;
+  const step = async (msg, f) => { if (!live()) return false; BGMSG = msg; render(); try { await f(); } catch (e) { /* 下回合再做 */ } return live(); };
+  if (arr(s0.summaries).length > 60 && !(await step('整理较早的经过', () => compactMemory(s0)))) return;
+  if (d && SETTINGS.world !== false && needTick(s0, d) && !(await step('推演天下大势', async () => { const r = await worldTick(s0); if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }))) return;
+  if (packNeed(s0) && !(await step('联网整理这几年的史料', () => ensureHistPack(s0)))) return;
+  if (needGaz(s0) && !(await step('查这地方此时的样子（本地志）', () => buildGazetteer(s0)))) return;
+  if (needGeo(s0) && !(await step('查历史地名库、画县级地图', () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties)))) return;
+  if (live()) { BGMSG = '存档'; try { await store.save(s0); } catch (_) { /* 下回再存 */ } }
+  if (live() && !s0.inst) buildInst(s0);
 }
 /** 一回合：先写正文（边写边显示），再交给账房记账核史实。账没记上，正文也留下，可以补记 */
 async function send(said, span, note, resume) {
   if (BUSY || !S) return;
+  if (BG) {   // 上一回的后台活还没完：等它做完再开始（不然两边同时改存档）
+    BUSY = true; BGWAIT = true; PENDING_SAID = String(said || '').trim(); render();
+    try { await BG; } catch (_) { /* 后台出错不影响这一回 */ }
+    BUSY = false; BGWAIT = false;
+    if (!S) return;
+  }
   ERRMSG = ''; STREAM = ''; PHASE = ''; PENDING_SAID = String(said || '').trim(); CUR_SAID = String(said || ''); FEED = [];
   const orig = resume && resume.orig;
   LAST_ACTION = () => { if (orig) S = restorePrev(orig); send(said, span, note, resume && (resume.story || orig) ? { story: resume.story, orig, ruling: resume.ruling } : undefined); };
@@ -2244,7 +2265,7 @@ async function send(said, span, note, resume) {
   CTL = new AbortController(); TURN = CTL;
   setBusy(true);
   const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), baseTurn: S.turn, baseChat: S.chat.length, redo: !!orig, ...o }));
-  let st = resume && resume.story ? resume.story : null, looked = null, ruling = (resume && resume.ruling) || null;
+  let st = resume && resume.story ? resume.story : null, looked = null, ruling = (resume && resume.ruling) || null, postTurn = null;
   try {
     // 写之前：AI 先看玩家这一步，裁定能不能办、决定要查什么；同时把本地、天下的消息搜一轮；再搜 AI 点名要查的
     if (!st && !(resume && (resume.job || resume.ruling))) {
@@ -2328,18 +2349,8 @@ async function send(said, span, note, resume) {
       // 先存一次：后面整理章节、推演天下要一会儿，这时关页面也不丢这一回
       S.prev = before;
       try { await store.save(S); } catch (_) { /* 后面再存 */ }
-      // 后面几步（整理章节、推演、自建史料）：按一次停下，后面的都不做了，这一回照样留下
-      let stopped = false;
-      if (ok && arr(S.summaries).length > 60) { PHASE = 'memory'; render(); if ((await compactMemory(S)) === 'cancelled') stopped = true; }
-      if (ok && !stopped && SETTINGS.world !== false && needTick(S, d)) {
-        lsSet('hrpg:pending', null);
-        PHASE = 'world'; render();
-        try { const r = await worldTick(S); if (r.changes.length || r.ripples.length || arr(r.moves).length) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }
-        catch (e) { if (e && e.code === 'cancelled') stopped = true; }
-      }
-      if (ok && !stopped && packNeed(S)) { try { await ensureHistPack(S); } catch (e) { if (e && e.code === 'cancelled') stopped = true; } }
-      if (ok && !stopped && needGaz(S)) { PHASE = 'gaz'; render(); try { await buildGazetteer(S); } catch (e) { if (e && e.code === 'cancelled') stopped = true; } }
-      if (ok && !stopped && needGeo(S)) { try { await ensureGeo(S, S.gazetteer && S.gazetteer.counties); } catch (_) { /* 下回合再查 */ } }
+      // 后面几步（整理章节、推演天下、自建史料、本地志、地图）放到后台做：玩家先读这一回、想下一步，不用干等
+      if (ok) { const s0 = S, dd = d, g0 = g; postTurn = () => afterTurn(s0, dd, g0); }
     }
     S.prev = before;
     LAST_ACTION = null;
@@ -2358,6 +2369,7 @@ async function send(said, span, note, resume) {
     STREAM = ''; PHASE = ''; PENDING_SAID = ''; TURN = null; setBusy(false);
     const all = document.querySelectorAll('.chat .msg'); const last = all[all.length - 1]; if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+  if (postTurn) runBg(postTurn);
 }
 /** 撤回到上一版：上一版存档里早先的对话只留了几句，从现在的对话里补回来 */
 function restorePrev(cur) {
