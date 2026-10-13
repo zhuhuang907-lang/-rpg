@@ -148,6 +148,17 @@ async function listModels(cfg) {
   });
   return ((json && json.data) || []).map(m => m.id).filter(Boolean);
 }
+/** 快型号（如 deepseek-v4-flash）：只用在不写正文、不定史实的活上（排查询词、压缩前情）；列不出或没有就用原型号 */
+const FAST_CACHE = new Map();
+async function fastModelFor(cfg, model) {
+  const base = trimSlash(cfg.baseUrl || 'https://api.openai.com/v1');
+  if (!FAST_CACHE.has(base)) {
+    let ids = []; try { ids = await listModels(cfg); } catch (_) { /* 列不出就不换 */ }
+    const fam = (String(model).match(/v\d+(\.\d+)?/i) || [''])[0].toLowerCase();
+    FAST_CACHE.set(base, ids.find(i => /flash/i.test(i) && (!fam || i.toLowerCase().includes(fam))) || ids.find(i => /flash/i.test(i)) || '');
+  }
+  return FAST_CACHE.get(base) || '';
+}
 /** 从可用型号里挑一个：优先 v4 pro，其次 pro，再次 flash / chat，最后第一个 */
 function pickModel(ids, want) {
   const w = String(want || '').toLowerCase().replace(/[\s_]+/g, '-');
@@ -201,6 +212,8 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
   const base = trimSlash(cfg.baseUrl || 'https://api.openai.com/v1');
   if (!cfg.apiKey && !/127\.0\.0\.1|localhost/.test(base)) throw new Error('还没填模型的 Key：请在首页或「设置」里粘贴 DeepSeek 的 Key');
   let model = MODEL_CACHE.get(base + '|' + cfg.model) || cfg.model || 'gpt-4o-mini';
+  let usingFast = false;
+  if (cfg.fast && /deepseek/i.test(base + model)) { const f = await fastModelFor(cfg, model); if (f && f !== model) { model = f; usingFast = true; } }
   const isDeepseek = /deepseek/i.test(base) || /deepseek/i.test(model);
   const thinking = cfg.thinking === true || cfg.thinking === 'on';
   let sendThinkingFlag = isDeepseek && !isThinkingModel(model);
@@ -240,6 +253,8 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
       if (useJsonMode && /HTTP 4\d\d/.test(msg) && /response_format|json/i.test(msg)) { useJsonMode = false; continue; }
       // 服务端不认 thinking 参数：去掉再试
       if (sendThinkingFlag && /HTTP 4\d\d/.test(msg) && /thinking|unrecognized|unknown|extra/i.test(msg)) { sendThinkingFlag = false; continue; }
+      // 快型号出了问题：换回原型号再来，不让这一步失败
+      if (usingFast && /HTTP 4\d\d/.test(msg)) { usingFast = false; model = MODEL_CACHE.get(base + '|' + cfg.model) || cfg.model; FAST_CACHE.set(base, ''); continue; }
       // 型号不存在（比如已下线的 deepseek-chat）：拉型号列表换一个
       if (/HTTP (400|404)/.test(msg) && /model/i.test(msg) && !switched) {
         let ids = [];
