@@ -1382,7 +1382,7 @@ function recentTurns(s, head) {
   const R = arr(s.chat).filter(c => c.text).slice(-14);
   R.forEach((c, i) => {
     const near = i >= R.length - 6;   // 最近三来回原文全给（接得上语气和场面），更早的只留个头
-    const role = c.role === 'me' ? 'user' : 'assistant', content = c.role === 'me' ? '【玩家】' + cut(c.text, near ? 800 : 200) : (c.kind === 'talk' ? '【戏外】\n' : '') + cut(c.text, near ? 2600 : 360);
+    const role = c.role === 'me' ? 'user' : 'assistant', content = c.role === 'me' ? '【玩家】' + cut(c.text, near ? 800 : 200) : (c.kind === 'talk' ? '【戏外】\n' : c.when ? `（第${c.turn}回合，写到${c.when}）\n` : '') + cut(c.text, near ? 2600 : 360);
     const last = turns[turns.length - 1];
     if (last.role === role) last.content += '\n\n' + content; else turns.push({ role, content });
   });
@@ -1512,8 +1512,15 @@ function applyFixes(text, fixes) {
   if (SETTINGS.check === false) return { text, done };
   for (const f of arr(fixes).slice(0, 12)) {
     const wrong = String((f && f.wrong) || '').trim(), right = String((f && f.right) || '').trim();
-    if (!wrong || !right || wrong === right || wrong.length > 30 || !text.includes(wrong)) continue;
-    text = text.split(wrong).join(right);
+    if (!wrong || !right || wrong === right || wrong.length > 40) continue;
+    if (text.includes(wrong)) text = text.split(wrong).join(right);
+    else {
+      // 审校摘的原文常常差一个引号、空格或标点：放宽这些再找一遍
+      const re = new RegExp(wrong.replace(/[\s]+/g, '').split('').map(ch => /[「」『』“”‘’"'，,。.：:；;！!？?、]/.test(ch) ? '[「」『』“”‘’"\'，,。.：:；;！!？?、]?' : ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*').join(''));
+      const m = text.match(re);
+      if (!m || m[0].length < 2) continue;
+      text = text.split(m[0]).join(right);
+    }
     done.push({ wrong: one(wrong, 30), right: one(right, 30), why: one(f.why, 60) });
   }
   return { text, done };
@@ -1532,7 +1539,7 @@ function applyReply(s, d, said) {
   if (play) {
     s.turn += 1;
     const turn = s.turn;
-    const when = `${s.clock.yearLabel || ''}${CAL.label(s.clock.m, s.clock.d, s.clock.leap)}`;
+    let when = `${s.clock.yearLabel || ''}${CAL.label(s.clock.m, s.clock.d, s.clock.leap)}`;
     const acc = [];
     for (const m of arr(d.meters)) {
       if (!m || typeof m !== 'object') continue;
@@ -1624,6 +1631,8 @@ function applyReply(s, d, said) {
     const el = eraLabel(s, s.clock.y);
     if (el && !arr(s.history).some(h => /帝|皇|王|崩|即位|篡|年号|改元/.test(h.event + h.now))) s.clock.yearLabel = el;
     if (H) syncHist(s);
+    // 这一回记下的事，日子写过完这段时间之后的（和正文上方的日期一致，免得前后差了几个月）
+    { const w2 = `${s.clock.yearLabel || ''}${CAL.label(s.clock.m, s.clock.d, s.clock.leap)}`; if (w2 !== when) { for (const x of arr(s.chronicle)) if (x.turn === turn && x.when === when) x.when = w2; when = w2; } }
     // 定本：一直成立的事
     for (const x of arr(d.canonDone)) { const pf = String(x || '').trim().slice(0, 6); if (pf.length >= 2) s.canon = arr(s.canon).filter(c => !String(c.text).startsWith(pf)); }
     for (const x of arr(d.canon).slice(0, 6)) if (x && String(x).trim().length > 3 && !arr(s.canon).some(c => c.text === one(x, 80))) s.canon = arr(s.canon).concat([{ turn: s.turn, text: one(x, 80) }]);
