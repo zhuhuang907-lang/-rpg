@@ -310,7 +310,7 @@ function ledgerRules() {
   return `你是这局历史模拟游戏的账房兼史官。主持人刚写好这一回的正文（下面给出）。你的事：照正文把账册更新，再把正文的史实核一遍。只记正文里发生了的事和照理必然发生的事（过了月份的收支、按史书此时发生的天下大事、行情随季节的涨落），不要改剧情、不要添正文没有的情节。
 
 记账规则：
-1. elapsedDays：这一回正文里过了多少天（一场谈话 0–1 天；按正文说的时间算）。yearLabel：过完后的年号纪年。主角搬到别处常住才填 moveTo（新地方的全称）。
+1. elapsedDays：这一回正文里过了多少天（一场谈话 0–1 天；按正文说的时间算）。yearLabel：过完后的年号纪年。主角搬到别处常住才填 moveTo（新地方的全称）；搬到了另一个政权的地界（投奔、逃亡、出使后留下）再填 moveToPolity（那个政权的名字，如「金」「北魏」）。
 2. 一切量化，数字用阿拉伯数字。钱一律折成【家业账】的本位单位。现钱由程序结算——你不报现钱，只把本回合正文里每一笔钱的进出（买卖、工钱、赋税摊派、送礼打点、借贷、赏赐、被偷被抢、事业投入与收获……）在 ledger 里一笔一笔报，收入为正、支出为负，与正文的数对得上；正文没写数但确实花了钱的，按【本地行情】估一个合理的数。每月固定的进出写在 estate 的 income / expense（每月多少），程序过月自动结，不要再在 ledger 里重复报月收支。若【家业账】写着现钱尚未定数，用 setCash 给出现钱多少。
 3. 产业（田地、铺面、宅子、作坊、船、牲口、存货、借出的钱）有数量与估值；在做的事业有状态、进度、下一步。estate 里给出的组整组替换，没变化的组不给。本地行情随季节、年景、战事变化时在 prices 里给出（米、麦、布、盐、肉、田价、房价、雇工日钱、银钱比价等）。
 4. meters：这个身份要紧的五六项数值（值里带数，如「存粮 120 石」），有变化才给，写变化方向和原因。groups：人群对主角的满意度 0–100。presentNpcs：本回合出场或有变化的人，favor 是对主角的好感（-100 到 100），随来往增减。
@@ -329,7 +329,7 @@ function ledgerRules() {
 史实核查（fixes）：逐句核对正文，只找确凿的硬伤——本朝本年不该有的官名、衙门、地名或隶属，违背【制度框架】的职衔、文书、程序、称谓；此时已死或尚未出生、不在此地、不任此职的真实人物；年号、干支、节令错误；本朝还没有的器物、作物、制度；离谱的物价或钱粮单位；现代词语。不改文风、不改虚构人物、不改情节，拿不准的不算。每处给出原文里错的那几个字（原样摘出，十二字以内，必须能在正文里找到）和改成什么。
 
 只输出一个 JSON 对象，不加代码块、不加说明。没有变化的项给 [] 或省略：
-{"elapsedDays":0,"yearLabel":"","moveTo":"","setCash":null,
+{"elapsedDays":0,"yearLabel":"","moveTo":"","moveToPolity":"","setCash":null,
 "ledger":[{"item":"这一笔是什么","amount":0,"note":""}],
 "estate":{"assets":[{"name":"","qty":"","value":0,"note":""}],"income":[{"item":"","amount":0}],"expense":[{"item":"","amount":0}],"projects":[{"name":"","status":"筹划/在做/停了/成了/败了","progress":"进度与下一步","note":""}]},
 "prices":[{"item":"米","price":0,"per":"石"}],
@@ -709,38 +709,101 @@ function syncHist(s) {
   }
   const w = s.world, now = ymOf(s.clock), done = new Set(arr(w.events).map(e => e.key).filter(Boolean));
   const list = histEvents(s, now, now + 60).filter(e => !done.has(e.key)).map(e => histView(s, e)).filter(e => e.status !== '取消');
+  // 本局推迟了的史事：原定日子已过、改后的日子还没到，也要留在「将要发生」里，到时照改后的样子发生
+  const have = new Set(list.map(e => e.key));
+  for (const [k, o] of Object.entries(w.over || {})) {
+    if (!o || o.status !== '已变' || done.has(k) || have.has(k) || num(o.y) == null) continue;
+    if (num(o.y) * 12 + (num(o.m) || 6) <= now) continue;
+    let e0 = null; for (const h of HALL(s)) { e0 = arr(h.events).find(e => evKey(e) === k); if (e0) break; }
+    if (e0) list.push(histView(s, { ...e0, key: k }));
+  }
   const extra = arr(w.extra).filter(x => evYM(x) > now && !done.has(x.key));
   w.upcoming = list.concat(extra).sort((a, b) => evYM(a) - evYM(b)).slice(0, 40);
 }
-/** 此时在世的真人：年龄、当时的官职；本局的改动优先 */
+/** 一个史料人物在 y 年（m 月）的状态：未生 / 在世 / 已故、官职；本局的改动优先。
+   只认史料里明写的生卒；生年不详的按头一次任官推断，卒年不详的按寿数推断，免得把别朝的人当成此时在世 */
+const DEATH_RE = /卒|死|杀|崩|薨|殉|自尽|自缢|遇害|伏诛|被害|病逝/;
+function figState(s, f, y, m) {
+  const o = (s.figOver || {})[f.name] || {};
+  const posts = arr(f.posts).filter(p => Array.isArray(p) && Number.isFinite(p[0]));
+  const firstPost = posts.length ? Math.min(...posts.map(p => p[0])) : null, lastPost = posts.length ? Math.max(...posts.map(p => p[1] ?? p[0])) : null;
+  if (f.born != null && f.born > y) return { state: 'unborn' };
+  if (f.born == null && firstPost != null && y < firstPost - 45) return { state: 'unborn' };
+  if (f.born == null && firstPost == null && f.died != null && y < f.died - 70) return { state: 'unborn' };
+  let died = f.died != null ? f.died : null;
+  // 本局提前死了：照本局的年份；本局躲过了史书上的死期（只在本局真的改了才算）：照活着，但寿数有限
+  if (o.dead === true && o.deadY != null && (died == null || o.deadY < died)) died = o.deadY;
+  if (o.aliveY != null && died != null && o.aliveY >= died) died = f.born != null ? Math.max(o.aliveY, f.born + 75) + 10 : o.aliveY + 15;
+  if (died == null && f.born != null && y > f.born + 90) died = f.born + 85;
+  if (died == null && f.born == null && lastPost != null && y > lastPost + 40) return { state: 'gone' };
+  if (died != null && died < y) return { state: 'dead', died };
+  let dyingNow = false;
+  if (died === y) {
+    // 史书上今年死：今年的史事里有他的死讯、且月份已过，就算已故
+    const ev = arr(histEvents(s, y * 12, y * 12 + 12)).find(e => (arr(e.who).includes(f.name) || String(e.text).includes(f.name)) && DEATH_RE.test(e.text) && e.m);
+    if (ev && m != null && ev.m <= m) return { state: 'dead', died };
+    dyingNow = true;
+  }
+  const dataPost = posts.filter(p => p[0] <= y && (p[1] ?? p[0]) >= y).map(p => p[2]).pop() || '';
+  const laterData = posts.some(p => o.postY != null && p[0] > o.postY && p[0] <= y);
+  const post = o.post && !laterData ? o.post : dataPost;
+  return { state: 'alive', died, post, dyingNow, age: f.born != null ? y - f.born + 1 : null };
+}
+/** 此时在世的真人：年龄、当时的官职；本局的改动优先。只看覆盖这一年的史料（别朝的人不会混进来） */
 function figuresAt(s, y) {
-  const out = [], seen = new Set(), fo = s.figOver || {};
-  for (const h of HALL(s)) for (const f of arr(h.figures)) {
+  const out = [], seen = new Set(), fo = s.figOver || {}, m = s.clock && s.clock.y === y ? s.clock.m : null;
+  for (const h of histFor(y, s)) for (const f of arr(h.figures)) {
     if (seen.has(f.name)) continue; seen.add(f.name);
-    const o = fo[f.name] || {};
-    const died = o.dead === true ? (o.deadY || y) - 1 : o.dead === false ? null : (o.died != null ? o.died : f.died);
-    if (f.born != null && f.born > y) continue;
-    const post = o.post || (arr(f.posts).filter(p => p[0] <= y && p[1] >= y).map(p => p[2]).pop() || '');
-    out.push({ name: f.name, age: f.born != null ? y - f.born + 1 : null, born: f.born, died, alive: died == null || died >= y, post, native: f.native || '', fate: f.fate || '', note: o.note || f.note || '', changed: !!fo[f.name] });
+    const st = figState(s, f, y, m);
+    if (st.state === 'unborn' || st.state === 'gone') continue;
+    out.push({ name: f.name, age: f.born != null ? y - f.born + 1 : null, born: f.born, died: st.died ?? null, alive: st.state === 'alive', dyingNow: !!st.dyingNow, post: st.post || '', native: f.native || '', fate: f.fate || '', note: (fo[f.name] || {}).note || f.note || '', changed: !!fo[f.name] });
   }
   return out;
 }
-/** 这一年在位的君主与年号（照史料；本局改了君主的，交给 AI 的年号） */
-function rulersAt(y, s) {
-  const out = [];
-  for (const h of histFor(y, s)) for (const r of arr(h.rulers)) if (r.from <= y && r.to >= y) {
-    const rg = arr(r.reigns).filter(x => x[1] <= y).sort((a, b) => a[1] - b[1]).pop();
+/** 这一年（这个月）在位的君主与年号（照史料）。
+   同一年换了君主或改了元：看月份——史料里写了起始月份的照它，没写的从当年史事里找「即位/称帝/改元」的月份 */
+const ACCEDE_RE = /即位|称帝|登基|继位|嗣位|改元|受禅|践祚|立为帝|即皇帝位/;
+function startMonth(s, r, era) {
+  if (era && era[2]) return era[2];
+  const ev = histEvents(s, r.from * 12, r.from * 12 + 12).find(e => e.y === r.from && e.m && (arr(e.who).includes(r.name) || String(e.text).includes(r.name) || String(e.text).includes(String(era ? era[0] : '').replace(/[（(].*$/, ''))) && ACCEDE_RE.test(e.text));
+  return ev ? ev.m : 1;
+}
+function rulersAt(y, s, m) {
+  const out = [], seen = new Set();
+  const mm = m != null ? m : s && s.clock && s.clock.y === y ? s.clock.m : 12;
+  const all = [];
+  for (const h of histFor(y, s)) for (const r of arr(h.rulers)) if (r.from <= y && r.to >= y && !seen.has(r.polity + r.name)) { seen.add(r.polity + r.name); all.push(r); }
+  for (const r of all) {
+    const rg0 = arr(r.reigns).slice().sort((a, b) => a[1] - b[1]);
+    // 新君今年才即位、还没到即位的月份：先不算他
+    if (r.from === y && mm < startMonth(s, r, rg0[0] && rg0[0][1] === y ? rg0[0] : null)) continue;
+    // 旧君今年下台：同一朝（或南北宋这样同名延续的）新君已经即位了，就不算他
+    // （新君当年就改了元才换；逾年改元的，这一年仍用旧年号）
+    if (r.to === y && all.some(r2 => { if (r2 === r || r2.from !== y || !(r2.polity === r.polity || r2.polity.slice(-1) === r.polity.slice(-1))) return false; const f = arr(r2.reigns).slice().sort((a, b) => a[1] - b[1])[0]; return f && f[1] <= y && mm >= startMonth(s, r2, f[1] === y ? f : null); })) continue;
+    const rg = rg0.filter(x => x[1] < y || (x[1] === y && mm >= (x[2] || (r.from === y && x === rg0[0] ? startMonth(s, r, x) : 1)))).pop();
     out.push({ polity: r.polity, name: r.name, title: r.title || '', era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
   }
   return out;
 }
+/** 跨了年、AI 没给新年号：把年号后的年数往后推（「至正九年」过一年 →「至正十年」）；推不了就不留旧的 */
+function bumpEra(label, dy) {
+  const m = String(label).match(/^(.*?)(元|[一二三四五六七八九十]+)([年载])$/);
+  if (!m || dy <= 0) return '';
+  const D = '一二三四五六七八九', k = m[2];
+  const n = k === '元' ? 1 : k.length === 1 ? (k === '十' ? 10 : D.indexOf(k) + 1) : k[0] === '十' ? 10 + D.indexOf(k[1]) + 1 : (D.indexOf(k[0]) + 1) * 10 + (k.length > 2 ? D.indexOf(k[2]) + 1 : 0);
+  return m[1] + NUMZH(n + dy) + m[3];
+}
 const NUMZH = n => { const d = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']; if (n === 1) return '元'; if (n < 10) return d[n]; if (n < 20) return '十' + d[n - 10]; return d[Math.floor(n / 10)] + '十' + d[n % 10]; };
 function eraLabel(s, y) {
   const pol = String(s.place.polity || '');
-  const rs = rulersAt(y, s).filter(r => r.era && (!pol || pol.includes(r.polity) || r.polity.includes(pol)));
+  const all = rulersAt(y, s).filter(r => r.era);
+  // 先认同名的政权，再认包含关系（「汉」不能匹配到成汉）
+  let rs = pol ? all.filter(r => r.polity === pol) : all;
+  if (!rs.length && pol) rs = all.filter(r => pol.includes(r.polity) || r.polity.includes(pol)).sort((a, b) => (a.polity.startsWith(pol) ? 1 : 0) - (b.polity.startsWith(pol) ? 1 : 0));
   if (!rs.length) return '';
   const r = rs[rs.length - 1];
-  return r.era + NUMZH(r.n) + '年';
+  // 天宝三载起到至德二载，唐朝改「年」为「载」
+  return r.era + NUMZH(r.n) + ((r.era === '天宝' && r.n >= 3) || r.era === '至德' ? '载' : '年');
 }
 /** 给 AI 的史料块：在位君主、近来与将来的史事（带本局状态）、在世与新近故去的要紧真人 */
 function histBlock(s) {
@@ -749,7 +812,7 @@ function histBlock(s) {
   const rs = rulersAt(y, s);
   L.push(histFor(y, s).some(h => h.grade === 'B') && !histFor(y, s).some(h => !h.grade) ? '【联网自建史料（游戏据检索与通行史书整理，B 级；以此为准，与你的记忆不同时照这里）】' : '【内置史料（程序据史书整理，以此为准；与你的记忆不同时照这里）】');
   if (rs.length) L.push('在位：' + rs.map(r => `${r.title && r.title.startsWith(r.polity) ? '' : r.polity}${r.title ? r.title : ''}${r.name}${r.era ? '（' + r.era + NUMZH(r.n) + '年）' : ''}`).join('；'));
-  const past = histEvents(s, now - 30, now).map(e => histView(s, e)).filter(e => e.status !== '取消');
+  const past = histEvents(s, now - 30, now).map(e => histView(s, e)).filter(e => e.status !== '取消' && evYM(e) <= now);
   if (past.length) L.push('近两三年的史事：\n' + past.slice(-14).map(e => `· ${e.y}年${e.m ? e.m + '月' : ''}：${e.text}${e.status !== '照史' ? '（本局：' + e.status + '）' : ''}`).join('\n'));
   const figs = figuresAt(s, y);
   const near = new Set(histEvents(s, now - 36, now + 60).flatMap(e => arr(e.who)));
@@ -758,7 +821,7 @@ function histBlock(s) {
   const local = f => keys.some(k => String(f.post || '').includes(k) || String(f.native || '').includes(k)) ? 1 : 0;
   const score = f => (talked.includes(f.name) ? 8 : 0) + local(f) * 4 + (near.has(f.name) ? 2 : 0) + (f.post ? 1 : 0);
   const alive = figs.filter(f => f.alive && score(f) >= 1).sort((a, b) => score(b) - score(a)).slice(0, 30);
-  if (alive.length) L.push('此时在世的要紧真人（官职与年龄以此为准）：\n' + alive.map(f => `· ${f.name}${f.age ? '，' + f.age + '岁' : ''}${f.post ? '，' + f.post : ''}${f.native ? '，' + f.native + '人' : ''}${f.changed ? '（本局有变）' : ''}`).join('\n'));
+  if (alive.length) L.push('此时在世的要紧真人（官职与年龄以此为准）：\n' + alive.map(f => `· ${f.name}${f.age ? '，' + f.age + '岁' : ''}${f.post ? '，' + f.post : ''}${f.native ? '，' + f.native + '人' : ''}${f.dyingNow ? '（史书记其本年内去世）' : ''}${f.changed ? '（本局有变）' : ''}`).join('\n'));
   const dead = figs.filter(f => !f.alive && f.died >= y - 25).sort((a, b) => b.died - a.died).slice(0, 24);
   if (dead.length) L.push('新近已故（不得作为活人出场）：' + dead.map(f => `${f.name}（${f.died}年故）`).join('、'));
   const unborn = figs.length ? '' : '';
@@ -768,10 +831,11 @@ function histBlock(s) {
 function mentionedFigures(s, text) {
   if (!hasHist(s)) return '';
   const y = s.clock.y, out = [], seen = new Set();
-  for (const h of HALL(s)) for (const f of arr(h.figures)) {
+  // 只看覆盖这一年的史料：别的朝代同名的人（宋江、黄巢、王伦……）不拿来「纠正」本局的虚构人物
+  for (const h of histFor(y, s)) for (const f of arr(h.figures)) {
     if (seen.has(f.name) || f.name.length < 2 || !text.includes(f.name)) continue; seen.add(f.name);
-    const o = (s.figOver || {})[f.name] || {}, died = o.dead === true ? (o.deadY || y) - 1 : o.dead === false ? null : (o.died != null ? o.died : f.died);
-    const st = f.born != null && f.born > y ? `此时尚未出生（${f.born}年生）` : died != null && died < y ? `已于${died}年去世` : (o.post || arr(f.posts).filter(p => p[0] <= y && p[1] >= y).map(p => p[2]).pop() || '在世');
+    const g = figState(s, f, y, s.clock.m);
+    const st = g.state === 'unborn' ? `此时尚未出生或尚未出仕${f.born != null ? '（' + f.born + '年生）' : ''}` : g.state === 'gone' ? '此时已不在人世或早已退出（史料里多年无记载）' : g.state === 'dead' ? `已于${g.died}年去世` : (g.post || '在世') + (g.dyingNow ? `（史书记其本年内去世）` : '');
     out.push(`${f.name}：${st}`);
   }
   return out.length ? '【正文提到的真人（内置史料）】' + out.join('；') : '';
@@ -965,7 +1029,8 @@ async function wikiRead(s, queries) {
 function researchBlock(s, extraText, localsOnly) {
   const R = localsOnly ? [] : arr(s && s.research).slice(-14);
   const extra = extraText ? '\n' + extraText : '';
-  const LC = arr(s && s.locals).slice(-30);
+  // 此时此地的真人：只留在这个地方、近二十年里认出来的（搬了家、过了很多年，旧地方的人就不算「此时此地」了）
+  const LC = arr(s && s.locals).filter(x => (!x.place || !s.place || x.place === s.place.full) && (!s.clock || !x.y || Math.abs(s.clock.y - x.y) <= 20)).slice(-30);
   if (localsOnly) return LC.length ? '【此时此地的真人（从查证里认出来的）】\n' + LC.map(x => `· ${x.name}：${x.role}${x.y ? '（' + x.y + '年前后）' : ''}${x.note ? '，' + x.note : ''}`).join('\n') : '';
   if (!R.length && !extra) return '';
   return '【联网查到的资料（这个年代此时此地真实的人和事；「维基：」开头的是维基百科条目正文；搜索摘要可信度不一：与内置史料冲突以内置史料为准，与你的记忆冲突以这里为准；没查到的不要硬编）】\n' + R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') + extra
@@ -975,7 +1040,19 @@ function researchBlock(s, extraText, localsOnly) {
 /* ========== 制度库：内置的本朝制度（衙门、文书、程序、称谓、易错处），按这一回的事挑要紧的交给 AI ========== */
 let INSTLIB = [];
 try { INSTLIB = JSON.parse(document.getElementById('instlib').textContent || '[]'); } catch (_) { INSTLIB = []; }
-const instLibFor = s => (s && s.clock ? INSTLIB.filter(h => s.clock.y >= h.range[0] && s.clock.y <= h.range[1]) : []);
+const instLibFor = s => {
+  if (!s || !s.clock) return [];
+  const pol = String((s.place || {}).polity || ''), L = INSTLIB.filter(h => s.clock.y >= h.range[0] && s.clock.y <= h.range[1]);
+  // 两段交界（1644–1662 明清、960 前后）、或辽金这样不在框架里的政权：只给对得上本朝的那一份，对不上就不给（免得拿北宋的制度套辽金）
+  if (!pol) return L.slice(0, 1);
+  const P = /^后(梁|唐|晋|汉|周)$/.test(pol) ? '五代' : pol;
+  const exact = L.filter(h => arr(h.polities).some(p => p === P));
+  if (exact.length) return exact;
+  const hit = L.filter(h => arr(h.polities).some(p => P.includes(p.replace(/（.*$/, '')) || p.includes(P)));
+  if (hit.length) return hit.slice(0, 1);
+  // 没对上：只有一份、又不是金元蒙古这类另一套制度的政权，才拿来参照
+  return L.length === 1 && !/金|蒙|元|夏|辽|吐蕃|南诏|回鹘|准噶尔|朝鲜|安南|缅甸|俄|日本|大燕|大顺|大西/.test(pol) ? L : [];
+};
 /** 两段文字有多少共同的两字词（粗略的相关度） */
 function overlap(a, b) {
   const A = String(a || ''), B = String(b || ''); if (!A || !B) return 0;
@@ -989,7 +1066,7 @@ function instPoints(s, said, extra, max) {
   const who = [s.protagonist.role, (s.career || {}).office, s.place.full].join(' ');  // 挑地方衙署：看身份与所在
   const out = [];
   for (const h of L) {
-    const y = s.clock.y, inRange = x => (x.from == null || x.from <= y) && (x.to == null || x.to >= y);
+    const y = s.clock.y, inRange = x => (typeof x.from !== 'number' || x.from <= y) && (typeof x.to !== 'number' || x.to >= y);
     const top = (xs, f, n, ctx, min) => arr(xs).filter(inRange).map(x => [overlap(ctx, f(x)), x]).filter(([k]) => k >= (min || 1)).sort((a, b) => b[0] - a[0]).slice(0, n).map(([, x]) => x);
     const lines = [`${h.title}：${cut(h.summary, 160)}`];
     if (arr(h.pitfalls).length) lines.push('易错处（不得犯）：' + h.pitfalls.slice(0, 18).join('；'));
@@ -1010,7 +1087,8 @@ function instPoints(s, said, extra, max) {
 
 /* ========== 县级地理：CHGIS 时空地名辞典（复旦/哈佛）查此时此地的县、州府、郡的位置与隶属，程序算里程方向与沿途县城 ========== */
 const canGeo = () => MODE === 'local';
-const LI_KM = 0.55;   // 一里约 0.55 公里（唐宋明清大致如此）
+let LI_KM = 0.55;   // 一里多少公里：秦汉魏晋约 0.415，隋唐约 0.53，宋元约 0.55，明清约 0.576（按本局年代在用之前设好）
+const liKmFor = y => (y < 581 ? 0.415 : y < 960 ? 0.53 : y < 1368 ? 0.553 : 0.576);
 function hav(a, b) { const R = 6371, r = x => x * Math.PI / 180, dLa = r(b.lat - a.lat), dLo = r(b.lon - a.lon); const h = Math.sin(dLa / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
 function dirOf(a, b) { const dx = (b.lon - a.lon) * Math.cos((a.lat + b.lat) / 2 * Math.PI / 180), dy = b.lat - a.lat; const ang = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360; return ['北', '东北', '东', '东南', '南', '西南', '西', '西北'][Math.round(ang / 45) % 8]; }
 const liOf = km => Math.round(km / LI_KM / 5) * 5;
@@ -1071,7 +1149,8 @@ function corridor(g, a, b) {
   }).filter(x => x.along < D && x.off < Math.max(25, D * 0.12)).sort((x, y) => x.along - y.along).slice(0, 14);
 }
 function geoBlock(s, said) {
-  const g = s.geo; if (!g || !g.units.length) return '';
+  LI_KM = liKmFor(s.clock ? s.clock.y : 1600);
+  const g = s.geo; if (!g || !g.units.length || g.place !== s.place.full) return '';
   const here = g.here, L = [];
   const fmt = u => `${u.name}（${dirOf(here, u)}约${liOf(hav(here, u))}里${u.parent ? '，属' + u.parent : ''}）`;
   const sameP = g.units.filter(u => isCounty(u) && u.parent === here.parent && u.name !== here.name);
@@ -1130,7 +1209,7 @@ ${R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') || '（没有查到资
 }
 const needGaz = s => s && (!s.gazetteer || s.gazetteer.place !== s.place.full || Math.abs(s.clock.y - s.gazetteer.y) >= 8);
 function gazBlock(s) {
-  const g = s.gazetteer; if (!g) return '';
+  const g = s.gazetteer; if (!g || g.place !== s.place.full) return '';
   return `【本地志（${g.place}，${g.y}年前后；${g.src === '检索' ? '据检索资料整理' : 'AI 据通行史书整理'}，写本地的人、地、事照这里）】\n衙署：${g.admin}\n官员：${arr(g.officials).map(o => `${o.post}${o.name ? ' ' + o.name : ''}${o.sure ? '' : '[推]'}${o.note ? '（' + o.note + '）' : ''}`).join('；')}\n经济：${g.economy}\n士绅：${g.families}\n地方：${g.places}\n风俗：${g.customs}\n时事：${g.current}`;
 }
 
@@ -1272,7 +1351,17 @@ async function worldTick(s) {
     }
     w.extra = w.extra.filter(x => evYM(x) > nowYM - 12).slice(-30);
     s.figOver = s.figOver || {};
-    for (const f of arr(d.figures)) if (f && f.name) { const k = one(f.name, 10), o = s.figOver[k] || {}; s.figOver[k] = { post: one(f.post, 40) || o.post || '', note: one(f.note || f.stance, 60) || o.note || '', dead: f.alive === false ? true : (f.alive === true ? false : o.dead), deadY: f.alive === false ? (o.deadY || s.clock.y) : o.deadY }; }
+    // 推演说某人死了：只有比史书早才记（记当年）；说某人活着：只记「到某年还活着」，不让他长生不老；官职改动记年份，史料里更晚的任命照样生效
+    const dataFig = n => { for (const h of HALL(s)) { const f = arr(h.figures).find(x => x.name === n); if (f) return f; } return null; };
+    for (const f of arr(d.figures)) if (f && f.name) {
+      const k = one(f.name, 10), o = s.figOver[k] || {}, df = dataFig(k), y = s.clock.y;
+      const n = { ...o, note: one(f.note || f.stance, 60) || o.note || '' };
+      const pst = one(f.post, 40);
+      if (pst && (!df || pst !== (figState(s, df, y, s.clock.m).post || ''))) { n.post = pst; n.postY = y; }
+      if (f.alive === false && (!df || df.died == null || df.died > y) && o.deadY == null) { n.dead = true; n.deadY = y; }
+      if (f.alive === true && df && df.died != null && df.died <= y && arr(s.history).length) n.aliveY = y;
+      s.figOver[k] = n;
+    }
     syncHist(s);
     d.figures = null;
   } else if (up.length) w.upcoming = up;
@@ -1349,7 +1438,7 @@ function blocks(s, forStory) {
     + (fc.length ? '\n主角的兵马：' + fc.map(x => `${x.name || ''}（${x.leader || ''}统领，${x.troops || ''}，${x.quality || ''}，粮${x.supply || '？'}，在${x.at || '？'}，${x.status || ''}）`).join('；') : ''));
   const dd = arr(s.deeds).filter(x => !x.done).slice(-15);
   if (dd.length) L.push('【主角的作为（还可能有后续的；后续真来了在正文写出并记 deedsDone，也可能就此无事）】\n' + dd.map(x => `· 第${x.turn}回合：${x.what}（${x.effect || ''}${x.later ? '；可能：' + x.later : ''}）`).join('\n'));
-  if (arr(s.figures).length) L.push('【要紧人物（真人；此时的官职、所在、生死以此为准）】\n' + s.figures.map(f => `· ${f.name}：${f.post || ''}${f.age ? '，' + f.age + '岁' : ''}${f.where ? '，在' + f.where : ''}${f.alive === false ? '，已故' : ''}${f.stance ? '，' + f.stance : ''}${f.note ? '；' + f.note : ''}`).join('\n'));
+  if (arr(s.figures).length && !hasHist(s)) L.push('【要紧人物（真人；此时的官职、所在、生死以此为准）】\n' + s.figures.map(f => `· ${f.name}：${f.post || ''}${f.age ? '，' + f.age + '岁' : ''}${f.where ? '，在' + f.where : ''}${f.alive === false ? '，已故' : ''}${f.stance ? '，' + f.stance : ''}${f.note ? '；' + f.note : ''}`).join('\n'));
   if (arr(w.ripples).length) L.push('【本局的连锁变化（玩家的作为波及天下的经过）】\n' + w.ripples.slice(-10).map(r => `· ${r.when || ''}${r.cause} → ${r.effect}`).join('\n'));
   if (arr(s.history).length) L.push('【被改写的历史（以此为准，不再照史书发生）】\n' + s.history.map(h => `· ${h.event} → ${h.now}（因${h.cause}）`).join('\n'));
   const pl = Object.entries(s.places || {});
@@ -1434,15 +1523,41 @@ ${story}${hidden ? '\n\n【幕后】' + hidden : ''}
 }
 /** 开局时：玩家写了年份或年号，就先把那几年的史料给 AI */
 function sentenceYear(sentence) {
-  let y = null;
-  const m = String(sentence).match(/(-?\d{3,4})\s*年/); if (m) y = Number(m[1]);
-  if (y == null) for (const h of HIST) for (const r of arr(h.rulers)) for (const [era, st] of arr(r.reigns)) if (era.length >= 2 && sentence.includes(era)) {
-    const k = sentence.slice(sentence.indexOf(era) + era.length).match(/^(元|[一二三四五六七八九十]+)年/);
-    const n = k ? (k[1] === '元' ? 1 : (k[1].length === 1 ? '一二三四五六七八九十'.indexOf(k[1]) + 1 : k[1].startsWith('十') ? 10 + ('一二三四五六七八九'.indexOf(k[1][1]) + 1) : ('一二三四五六七八九'.indexOf(k[1][0]) + 1) * 10 + (k[1].length > 2 ? '一二三四五六七八九'.indexOf(k[1][2]) + 1 : 0))) : null;
-    y = n ? st + n - 1 : st + Math.floor((r.to - st) / 2);
+  const t = String(sentence || '');
+  let m = t.match(/公元前\s*(\d{1,4})\s*年/); if (m) return 1 - Number(m[1]);   // 天文纪年：公元前1年记作 0
+  m = t.match(/(?:公元)?\s*(\d{3,4})\s*年/); if (m) return Number(m[1]);
+  const D = '一二三四五六七八九';
+  const zh = k => k === '元' ? 1 : k.length === 1 ? (k === '十' ? 10 : D.indexOf(k) + 1) : k[0] === '十' ? 10 + D.indexOf(k[1]) + 1 : (D.indexOf(k[0]) + 1) * 10 + (k.length > 2 ? D.indexOf(k[2]) + 1 : 0);
+  // 所有年号：起止年份（下一个年号开始前一年，或君主在位末年）
+  const eras = [];
+  for (const h of HIST) for (const r of arr(h.rulers)) {
+    const rg = arr(r.reigns).slice().sort((a, b) => a[1] - b[1]);
+    rg.forEach(([era, st], i) => { const e = String(era).replace(/[（(].*$/, ''); if (e.length >= 2) eras.push({ e, st, end: i + 1 < rg.length ? rg[i + 1][1] - 1 : r.to, pol: r.polity, main: arr(h.polities)[0] === r.polity }); });
   }
-  if (y == null) for (const h of HIST) for (const f of h.figures) if (f.name.length >= 2 && sentence.includes(f.name) && f.born != null) y = f.born + 30;
-  return y;
+  const cand = [];
+  for (const x of eras) {
+    let i = t.indexOf(x.e);
+    while (i >= 0) {
+      const k = t.slice(i + x.e.length).match(/^(元|[一二三四五六七八九十]+)[年载]/);
+      const n = k ? zh(k[1]) : null;
+      const y = n ? x.st + n - 1 : Math.round((x.st + x.end) / 2);
+      // 年数超出这个年号的年限就不是它（比如吴越的天宝只有几年，「天宝十四载」只能是唐）
+      if (!n || y <= x.end + 1) cand.push({ ...x, i, n, y, len: x.e.length });
+      i = t.indexOf(x.e, i + 1);
+    }
+  }
+  if (cand.length) {
+    // 被更长的年号盖住的不算（「建兴元年」里的「兴元」）；带年数的优先；句子里提到了它的朝代优先；正统朝代优先
+    const ok = cand.filter(c => !cand.some(o => o !== c && o.len > c.len && o.i <= c.i && o.i + o.len >= c.i + c.len));
+    // 句子里点了真人：年份落在他在世期间的优先（「建兴元年诸葛亮帐下」是蜀汉的建兴，不是西晋的）
+    const named = []; for (const h of HIST) for (const f of arr(h.figures)) if (f.name.length >= 2 && t.includes(f.name)) named.push(f);
+    const fits = y => named.some(f => (f.born == null || f.born <= y) && (f.died == null || f.died >= y));
+    const sc = c => (c.n ? 100 : 0) + (named.length && fits(c.y) ? 50 : 0) + (t.includes(String(c.pol).slice(0, 1)) ? 20 : 0) + (c.main ? 10 : 0) + c.len;
+    const best = ok.sort((a, b) => sc(b) - sc(a) || a.st - b.st)[0];
+    if (best) return best.y;
+  }
+  for (const h of HIST) for (const f of h.figures) if (f.name.length >= 2 && t.includes(f.name) && f.born != null) return f.born + 30;
+  return null;
 }
 function openingHist(sentence) {
   const y = sentenceYear(sentence);
@@ -1471,7 +1586,7 @@ async function verifyText(s, said, text) {
 async function verifyCore(s, said, text) {
   if (!text || SETTINGS.check === false) return { text, audit: [] };
   const audit = [];
-  const head = `你是一位严谨的史学审校。下面是一局历史模拟游戏刚写好、还没给玩家看的一段正文。${s.noTime ? '（这是开场，年代与地点以正文自己交代的为准，核对正文前后是否自洽、与史实是否相符）' : `时间：${timeText(s.clock)}；地点：${s.place.full}（${s.place.polity || ''}）`}；主角：${s.protagonist.name ? s.protagonist.name + '，' : ''}${s.protagonist.role}。
+  const head = `你是一位严谨的史学审校。下面是一局历史模拟游戏刚写好、还没给玩家看的一段正文。${s.noTime ? '（这是开场，年代与地点以正文自己交代的为准，核对正文前后是否自洽、与史实是否相符）' : s.yearOnly ? `（这是开场：玩家只说了年份，约公元${s.clock.y}年；月日、地点以正文自己交代的为准，核对前后是否自洽、与史实是否相符）` : `时间：${timeText(s.clock)}；地点：${s.place.full}（${s.place.polity || ''}）`}；主角：${s.protagonist.name ? s.protagonist.name + '，' : ''}${s.protagonist.role}。
 只审史实与制度，不改文风、不改情节、不改虚构人物的言行：真实人物此时的官职、所在、生死；衙门、职衔、品级、文书、办事程序、称谓是否合本朝本年（【制度框架】只是框架，可能有错，以确凿史实为准）；地名与隶属；年号、干支、节令、史事时间；器物、作物、制度是否此时已有；物价与钱粮单位；现代词语。`;
   // 第一步：拿材料核，能确定的直接改；拿不准的列出来去查
   let A = null;
@@ -1636,9 +1751,10 @@ function applyReply(s, d, said) {
       }
     }
     if (d.yearLabel) s.clock.yearLabel = one(d.yearLabel, 16);
+    else if (s.clock.y !== beforeYM.y && s.clock.yearLabel) s.clock.yearLabel = bumpEra(s.clock.yearLabel, s.clock.y - beforeYM.y);
     // 年号照史料算（本局没改写君主时）：AI 的年号与史料不合就以史料为准
     const el = eraLabel(s, s.clock.y);
-    if (el && !arr(s.history).some(h => /帝|皇|王|崩|即位|篡|年号|改元/.test(h.event + h.now))) s.clock.yearLabel = el;
+    if (el && !arr(s.history).some(h => /崩|驾崩|即位|登基|继位|篡位|篡夺|称帝|废立|废帝|禅让|年号|改元/.test(h.event + h.now))) s.clock.yearLabel = el;
     if (H) syncHist(s);
     // 这一回记下的事，日子写过完这段时间之后的（和正文上方的日期一致，免得前后差了几个月）
     { const w2 = `${s.clock.yearLabel || ''}${CAL.label(s.clock.m, s.clock.d, s.clock.leap)}`; if (w2 !== when) { for (const x of arr(s.chronicle)) if (x.turn === turn && x.when === when) x.when = w2; when = w2; } }
@@ -1647,7 +1763,7 @@ function applyReply(s, d, said) {
     for (const x of arr(d.canon).slice(0, 6)) if (x && String(x).trim().length > 3 && !arr(s.canon).some(c => c.text === one(x, 80))) s.canon = arr(s.canon).concat([{ turn: s.turn, text: one(x, 80) }]);
     s.canon = arr(s.canon).slice(-80);
     for (const f of arr(d.localFigures).slice(0, 6)) if (f && f.name && String(f.name).length >= 2) {
-      const k = one(f.name, 10); s.locals = arr(s.locals).filter(x => x.name !== k).concat([{ name: k, role: one(f.role, 40), y: num(f.y) || s.clock.y, note: one(f.note, 60), turn: s.turn }]).slice(-60);
+      const k = one(f.name, 10); s.locals = arr(s.locals).filter(x => x.name !== k).concat([{ name: k, role: one(f.role, 40), y: num(f.y) || s.clock.y, note: one(f.note, 60), turn: s.turn, place: s.place.full }]).slice(-60);
     }
     if (Array.isArray(d.almanac)) addAlmanac(s, d.almanac);
     if (Array.isArray(d.lookups)) s.lookups = d.lookups.map(x => one(x, 40)).filter(Boolean).slice(0, 3);
@@ -1671,6 +1787,7 @@ function applyReply(s, d, said) {
     s.estate.cash = mo.cash != null ? fmtN(mo.cash, u) : s.estate.cash;
     extra.ledger = ledger;
     if (d.moveTo) { s.place.full = one(d.moveTo, 30); extra.moved = s.place.full; }
+    if (d.moveToPolity && one(d.moveToPolity, 12) !== s.place.polity) { s.place.polity = one(d.moveToPolity, 12); extra.moved = (extra.moved || s.place.full) + `（${s.place.polity}）`; }
     const st = d.settlement && typeof d.settlement === 'object' ? d.settlement : {};
     Object.assign(extra, {
       days, acc, life, news,
@@ -1731,7 +1848,7 @@ function newSave(p) {
     v: 2, id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), turn: 0, createdAt: Date.now(),
     title: `${one(p.name, 8) || '无名'} · ${one(p.role, 14)}`,
     protagonist: { name: one(p.name, 8) || '无名', gender: one(p.gender, 2), age: num(p.age), role: one(p.role, 40), nativePlace: one(p.nativePlace, 20), real: !!p.real },
-    idm, clock: { y: num(p.gregorianYear) ?? 1600, m: Math.min(12, Math.max(1, num(p.month) || 1)), d: Math.min(30, Math.max(1, num(p.day) || 1)), leap: false, yearLabel: one(p.yearLabel, 16) },
+    idm, clock: { y: num(p.gregorianYear) ?? num((String(p.gregorianYear ?? '').match(/-?\d{1,4}/) || [])[0]) ?? 1600, m: Math.min(12, Math.max(1, num(p.month) || 1)), d: Math.min(30, Math.max(1, num(p.day) || 1)), leap: false, yearLabel: one(p.yearLabel, 16) },
     place: { full: one(p.place, 30), polity: one(p.polity, 10) },
     household: arr(p.household).filter(m => m && m.name).slice(0, 12).map(m => ({ relation: one(m.relation, 6), name: one(m.name, 8), age: num(m.age), note: one(m.note, 30) })),
     meters: {}, groups: {}, people: {}, orders: [], gmNotes: [], status: {}, statusLog: [], history: [], chronicle: [], summaries: [],
@@ -1749,6 +1866,7 @@ function setBusy(on) { BUSY = on; if (on) THINK_T0 = Date.now(); render(); if (o
 setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = Math.round((Date.now() - THINK_T0) / 1000); } }, 1000);
 
 function render() {
+  if (S && S.clock) LI_KM = liKmFor(S.clock.y);
   $('#bHome').hidden = VIEW !== 'game';
   const sm = $('.brand small'); if (sm) sm.textContent = MODE === 'claude' ? '网页版' : '';
   $('#statusLine').innerHTML = VIEW === 'game' && S ? `<b>${esc(S.protagonist.name)}</b> · ${esc(timeText(S.clock))} · ${esc(S.place.full)}${S.money && S.money.cash != null ? ' · 现钱 ' + esc(fmtN(S.money.cash, S.money.unit || '两')) : ''}${SEARCH_OFF && MODE === 'local' && SETTINGS.search !== false ? ` · <span style="color:var(--zhu)" title="${esc(SEARCH_OFF)}">联网查资料暂时连不上（设置里点「联网自检」看原因）</span>` : ''}` : '';
@@ -2073,7 +2191,7 @@ async function startGame(sentence, have, havePre) {
       const oy = sentenceYear(sentence);
       // 核实和立账册一起做：账册照初稿立，核实改掉的字再照改到账里
       if (MODE === 'local') { ledP = callClaude(openingLedgerInput(sentence, draft.text, draft.hidden), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' }); ledP.catch(() => { /* 下面 await 时再处理 */ }); }
-      const vr = await verifyText({ ...(pre || {}), research: arr(pre && pre.research), almanac: arr(pre && pre.almanac), clock: { y: oy ?? 0, m: 6, d: 1, yearLabel: '' }, place: { full: '', polity: '' }, protagonist: { name: '', role: sentence }, chat: [], world: {}, figOver: {}, turn: 0, noTime: oy == null }, sentence, draft.text);
+      const vr = await verifyText({ ...(pre || {}), research: arr(pre && pre.research), almanac: arr(pre && pre.almanac), clock: { y: oy ?? 0, m: 6, d: 1, yearLabel: '' }, place: { full: '', polity: '' }, protagonist: { name: '', role: sentence }, chat: [], world: {}, figOver: {}, turn: 0, noTime: oy == null, yearOnly: oy != null }, sentence, draft.text);
       draft.text = vr.text; draft.audit = vr.audit; st = draft;
     }
     STREAM = st.text; PHASE = 'ledger'; render();
