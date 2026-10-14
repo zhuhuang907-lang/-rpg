@@ -488,6 +488,7 @@ function shrink(s) {
   if (arr(s.annals).length > 300) s.annals = s.annals.slice(-300);
   if (arr(s.chronicle).length > 400) s.chronicle = s.chronicle.slice(-400);
   if (arr(s.searchedQ).length > 200) s.searchedQ = s.searchedQ.slice(-200);
+  if (arr(s.hsPacks).length > 6) s.hsPacks = s.hsPacks.slice(-6);
   let keep = 30;
   while (bytes(JSON.stringify(s)) > 240000 && keep > 4) { keep -= 4; slim(s, keep); if (s.prev) s.prev = null; }
   if (bytes(JSON.stringify(s)) > 240000) { if (s.geo && arr(s.geo.units).length > 200) s.geo.units = s.geo.units.slice(0, 200); s.research = arr(s.research).slice(-12); s.almanac = arr(s.almanac).slice(-80); s.summaries = arr(s.summaries).slice(-40); }
@@ -725,12 +726,15 @@ try { HIST = JSON.parse(document.getElementById('hist').textContent || '[]'); } 
 let RUNHIST = [];
 /** 自建史料只给同一政权的存档用（内置史料不分） */
 const polOK = (h, pol) => !h.grade || !pol || !h.polity || String(h.polity).includes(pol) || pol.includes(String(h.polity));
-const HALL = s => { const pol = String(((s || S || {}).place || {}).polity || ''); return RUNHIST.length ? HIST.concat(RUNHIST.filter(h => polOK(h, pol))) : HIST; };
+const HALL = s => {
+  const s1 = s || S || {}, pol = String((s1.place || {}).polity || ''), own = arr(s1.hsPacks), ids = new Set(own.map(p => p.id));
+  return (RUNHIST.length || own.length) ? HIST.concat(RUNHIST.filter(h => polOK(h, pol) && !ids.has(h.id)), own.filter(h => polOK(h, pol))) : HIST;
+};
 const evYM = e => e.y * 12 + (e.m || 6) + (e.leap && e.m ? 0.5 : 0);   // 闰月排在同号月之后
 const evKey = e => e.y + ':' + String(e.text).slice(0, 14);
 /** 覆盖本局年份的史料（可能两段交界都要） */
 function histFor(y, s) { return HALL(s).filter(h => y >= h.range[0] && y <= h.range[1]); }
-const hasHist = s => !!(s && histFor(s.clock.y, s).length);
+const hasHist = s => !!(s && histFor(s.clock.y, s).some(h => !h.sync));   // 只有同步来的零散史事不算有整套史料
 function histEvents(s, fromYM, toYM) {
   const out = [], seen = new Set();
   for (const h of HALL(s)) {
@@ -742,7 +746,7 @@ function histEvents(s, fromYM, toYM) {
 /** 史料里的这条在本局变成什么样：照史 / 已变 / 取消 */
 function histView(s, e) {
   const o = ((s.world || {}).over || {})[e.key];
-  if (!o) return { y: e.y, m: e.m, d: e.d, gz: e.gz, leap: e.leap, text: e.text, status: '照史', why: '', key: e.key, src: 'data' };
+  if (!o) return { y: e.y, m: e.m, d: e.d, gz: e.gz, leap: e.leap, ref: e.ref, text: e.text, status: '照史', why: '', key: e.key, src: 'data' };
   return { y: num(o.y) ?? e.y, m: num(o.m) ?? e.m, d: o.y || o.m ? undefined : e.d, text: o.text || e.text, status: o.status, why: o.why || '', needs: o.needs || '', key: e.key, src: 'data', orig: e.text };
 }
 /** 把「将要发生」按史料重排：五年内的史事（照本局的改动）+ 本局新出的事 */
@@ -1324,13 +1328,13 @@ function gazBlock(s) {
 }
 
 /* ========== 联网自建史料：没有内置史料的年代，按十来年一段查年表、君主、重臣、战事、灾荒、制度，整理成同样格式 ========== */
-let HBMSG = '';
+let HBMSG = '', SYNCMSG = '';
 const polKey = p => [...String(p || 'x')].map(c => c.charCodeAt(0).toString(36)).join('').slice(0, 40);
 /** 现在这一段（此刻往后三年）有没有史料；没有就给出该建的一段 */
 function packNeed(s) {
   if (!canSearch() || !s || !s.clock) return null;
   if (s.hbFail != null && s.turn - s.hbFail < 3) return null;  // 刚失败过，隔几回合再试
-  const y = s.clock.y, cov = HALL(s).filter(h => y >= h.range[0] && y <= h.range[1]);
+  const y = s.clock.y, cov = HALL(s).filter(h => !h.sync && y >= h.range[0] && y <= h.range[1]);
   const end = cov.length ? Math.max(...cov.map(h => h.range[1])) : null;
   if (end != null && end >= y + 3) return null;
   const from = end != null ? end + 1 : y - 3;
@@ -1372,6 +1376,85 @@ async function ensureHistPack(s) {
   try { const p = await buildHistPack(s, need.from, need.to); s.hbFail = null; HBMSG = `✓ 已建 ${p.title}：${p.events.length} 件事、${p.figures.length} 位人物`; return p; }
   catch (e) { if (e && e.code === 'cancelled') throw e; HBMSG = '这次没建成：' + errText(e); s.hbFail = s.turn; return null; }
   finally { PHASE = ''; }
+}
+
+/* ========== 史事同步：每回合按月联网查（博查 + 维基年份条目），把此刻前后几个月真实发生的事补进史料，内置史料只当底子 ========== */
+const GZ60 = (() => { const t = '甲乙丙丁戊己庚辛壬癸', d = '子丑寅卯辰巳午未申酉戌亥'; return Array.from({ length: 60 }, (_, i) => t[i % 10] + d[i % 12]); })();
+const syncId = (pol, y) => `sy_${polKey(pol)}_${y}`;
+/** 这回该同步哪几个月：本月、下两个月、上个月，查过的不再查；一回最多三个月 */
+function syncNeed(s) {
+  if (!canSearch() || !s || !s.clock || SETTINGS.hsync === false) return null;
+  if (s.hsFail != null && s.turn - s.hsFail < 2) return null;
+  const done = new Set(arr(s.hsDone)), pol = String(s.place.polity || ''), out = [];
+  let c = { y: s.clock.y, m: s.clock.m, leap: !!s.clock.leap };
+  const seq = [];
+  for (let i = 0; i < 3; i++) { seq.push({ y: c.y, m: c.m }); c = c.m === 12 ? { y: c.y + 1, m: 1 } : { y: c.y, m: c.m + 1 }; }
+  seq.push(s.clock.m === 1 ? { y: s.clock.y - 1, m: 12 } : { y: s.clock.y, m: s.clock.m - 1 });
+  for (const x of seq) { const k = `${pol}:${x.y}-${x.m}`; if (!done.has(k) && out.length < 3) out.push({ ...x, k }); }
+  return out.length ? out : null;
+}
+/** 某个月：查资料、让 AI 只从资料里摘出确凿的事（写明出处那一条），程序再核一遍：人名或地名要能在那条资料里找到 */
+async function histSync(s, months) {
+  const pol = String(s.place.polity || ''), tmp = { research: [], wikiDone: [], turn: s.turn, clock: s.clock, place: s.place, title: s.title };
+  const ml = x => (eraLabel(s, x.y) || '') + CAL.label(x.m, 0, false);
+  const qs = [];
+  for (const x of months) qs.push(`${ml(x)} ${pol}`.trim(), `${x.y}年${x.m}月 ${pol} 大事`, `资治通鉴 ${ml(x)}`);
+  const years = [...new Set(months.map(x => x.y))];
+  await Promise.all([doLookups(tmp, [...new Set(qs)].slice(0, 9)), wikiRead(tmp, years.map(y => (y < 0 ? '前' + -y : y) + '年'))]);
+  const R = arr(tmp.research).filter(x => x.text);
+  if (!R.length) throw { code: 'local', message: '这几个月一条资料都没查到' };
+  const lo = Math.min(...months.map(x => x.y * 12 + x.m)), hi = Math.max(...months.map(x => x.y * 12 + x.m));
+  const have = histEvents(s, lo - 1, hi + 0.5);
+  const { text } = await callClaude(`你在给一局极其讲究史实的历史模拟游戏补史料。政权「${pol}」，要补的月份：${months.map(x => `${x.y}年${x.m}月（${ml(x)}）`).join('、')}。
+下面是联网查到的资料（编了号）。只从这些资料里摘出这几个月里确实发生的事——朝政、人事任免、战事、叛乱、灾异、诏令、外交、地方大事都要；资料里没有的一律不写，不凭记忆补；小说、演义、影视、游戏、网文、野史杂谈不收；月份、日子、干支照资料，资料没写日子的 d 写 0。同一件事已经在【已有】里的不要重复。
+${R.map((x, i) => `[${i + 1}] 查「${x.q}」：${cut(x.text, 1500)}`).join('\n')}
+
+【已有】
+${have.map(e => `· ${e.y}年${e.m || '?'}月${e.d ? e.d + '日' : ''}：${e.text}`).join('\n') || '（无）'}
+
+只输出一个 JSON 对象：{"events":[{"y":公元年,"m":农历月,"leap":是否闰月,"d":日或0,"gz":"日干支或空","text":"六十字内，谁在何地做了什么、结果","where":"地名","who":["人名"],"scope":"天下/地方","tag":"政局/战事/灾异/财政/制度/外交/叛乱/文化/人事","from":资料编号}]}
+没有可补的就输出 {"events":[]}。`, null, { maxTokens: 4000, temperature: 0.1, kind: '同步' });
+  const d = parseJSON(text);
+  if (!d || !Array.isArray(d.events)) throw { code: 'bad_json' };
+  const N = v => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
+  const inWin = e => months.some(x => x.y === e.y && x.m === e.m);
+  const dup = e => histEvents(s, e.y * 12 + e.m - 1, e.y * 12 + e.m + 0.5).some(o => o.m === e.m && (arr(o.who).some(w => e.who.includes(w)) && one(o.text, 6) === one(e.text, 6) || String(o.text).includes(String(e.text).slice(0, 8)) || String(e.text).includes(String(o.text).slice(0, 8))));
+  const add = [];
+  for (const e0 of d.events) {
+    if (!e0 || !e0.text) continue;
+    const e = { y: N(e0.y), m: N(e0.m), text: one(e0.text, 70), where: one(e0.where, 20), who: arr(e0.who).map(x => one(x, 10)).filter(Boolean).slice(0, 5), scope: e0.scope === '地方' ? '地方' : '天下', tag: one(e0.tag, 4), src: '检索' };
+    if (e.y == null || !(e.m >= 1 && e.m <= 12) || !inWin(e)) continue;
+    // 核出处：引的那条资料里要能找到这件事的人名或地名
+    const src = R[N(e0.from) - 1]; if (!src) continue;
+    const keys = e.who.concat(e.where ? [e.where.replace(/[县縣州府郡城]$/, '')] : []).filter(k => k.length >= 2);
+    if (!keys.length || !keys.some(k => src.text.includes(k))) continue;
+    const dd = N(e0.d); if (dd >= 1 && dd <= 30) e.d = dd;
+    if (GZ60.includes(String(e0.gz || '').trim())) e.gz = String(e0.gz).trim();
+    if (e0.leap === true) e.leap = true;
+    e.ref = one(src.q, 30);
+    if (dup(e) || add.some(o => one(o.text, 10) === one(e.text, 10))) continue;
+    add.push(e);
+  }
+  // 存进本局（两种版本都有）；桌面版再存到本机，别的存档同一政权同一年也用得上
+  const packs = arr(s.hsPacks);
+  for (const y of years) {
+    const id = syncId(pol, y), ev = add.filter(e => e.y === y);
+    let pk = packs.find(p => p.id === id) || RUNHIST.find(p => p.id === id);
+    pk = pk ? { ...pk, events: arr(pk.events).slice() } : { id, title: `${pol} ${y}年（联网同步）`, range: [y, y], polity: pol, grade: 'B', sync: true, rulers: [], figures: [], events: [] };
+    pk.events = pk.events.concat(ev).sort((a, b) => evYM(a) - evYM(b) || (a.d || 0) - (b.d || 0)).slice(-120);
+    s.hsPacks = arr(s.hsPacks).filter(p => p.id !== id).concat([pk]).slice(-6);
+    RUNHIST = RUNHIST.filter(h => h.id !== id).concat([pk]);
+    if (MODE === 'local' && ev.length) { try { await api('/api/hpack', { pack: pk }); } catch (_) { /* 存不下也先用着 */ } }
+  }
+  s.hsDone = arr(s.hsDone).concat(months.map(x => x.k)).slice(-120);
+  if (add.length) addAlmanac(s, add.slice(0, 6).map(e => ({ cat: '时事', text: `${e.y}年${e.m}月${e.d ? e.d + '日' : ''}：${e.text}`, src: '检索：' + e.ref, grade: 'B' })));
+  syncHist(s);
+  return add;
+}
+async function ensureSync(s) {
+  const need = syncNeed(s); if (!need) return null;
+  try { const a = await histSync(s, need); s.hsFail = null; s.hsLast = { at: timeText(s.clock), n: a.length, months: need.map(x => `${x.y}年${x.m}月`) }; return a; }
+  catch (e) { if (e && e.code === 'cancelled') throw e; s.hsFail = s.turn; return null; }
 }
 
 /* ========== 天下推演：史书的惯性 + 本局的变化 → 改写将来、更新人物与大势 ========== */
@@ -2231,7 +2314,7 @@ function renderGame() {
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '写好了，正在对照史料把人名、官职、地名、年月再过一遍' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'rewrite' ? '核对时发现有说不通的地方，正在照着改写这一段，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'dossier' ? '正在给这一回牵涉的真人立档：生卒、此刻的官职、在哪、在做什么、见不见得到' : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '裁判在按你的身份、钱粮、人手和制度裁定这一步' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : feedHtml()}</div>` : '';
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '写好了，正在对照史料把人名、官职、地名、年月再过一遍' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'rewrite' ? '核对时发现有说不通的地方，正在照着改写这一段，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'dossier' ? '正在给这一回牵涉的真人立档：生卒、此刻的官职、在哪、在做什么、见不见得到' : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '裁判在按你的身份、钱粮、人手和制度裁定这一步' : PHASE === 'hsync' ? '正在按月联网查此刻前后几个月的真实史事（博查 / 维基年份条目），只收资料里写明的' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : feedHtml()}</div>` : '';
   const ae = document.activeElement, saidEl = $('#said');
   const keep = { said: saidEl ? saidEl.value : '', span: $('#span') ? $('#span').value : 'auto', focus: ae && ae.id === 'said', a: saidEl ? saidEl.selectionStart : 0, b: saidEl ? saidEl.selectionEnd : 0, scroll: window.scrollY };
   $('#app').innerHTML = `<div class="game">
@@ -2362,8 +2445,9 @@ function pane(tab) {
       <div class="row" style="margin-top:4px"><button id="bTick" ${BUSY || !SAMPLE ? 'disabled' : ''}>现在推演一次天下大势</button><span class="muted" style="font-size:12px">${esc(TICKMSG || '每过半年、或你做了波及天下的事，会自动推演')}</span></div>
       ${arr(w.ripples).length ? `<div class="h"><span class="seal">果</span>你引起的连锁变化</div><div class="list">${w.ripples.slice().reverse().map(r => `<div><span class="when">第${r.turn}回合</span><b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`).join('')}</div>` : ''}
       <div class="h"><span class="seal">后</span>将要发生<span class="note">你知道，书中人不知道；红的是被本局改了的</span></div>
-      <div class="list">${w.upcoming.map(x => `<div><span class="when">${esc(x.y)}年${x.m ? x.m + '月' : ''}</span>${badge(x.status)}${esc(x.text)}${x.why && x.status && x.status !== '照史' ? `<div class="muted">${esc(x.why)}</div>` : ''}${x.needs ? `<div class="muted">前提：${esc(x.needs)}</div>` : ''}</div>`).join('') || '<div class="muted">下一回合会补上。</div>'}</div>
+      <div class="list">${w.upcoming.map(x => `<div><span class="when">${esc(x.y)}年${x.m ? (x.leap ? '闰' : '') + x.m + '月' + (x.d ? x.d + '日' : '') : ''}</span>${x.ref ? '<span class="badge" title="按月联网查到：' + esc(x.ref) + '">查</span> ' : ''}${badge(x.status)}${esc(x.text)}${x.why && x.status && x.status !== '照史' ? `<div class="muted">${esc(x.why)}</div>` : ''}${x.needs ? `<div class="muted">前提：${esc(x.needs)}</div>` : ''}</div>`).join('') || '<div class="muted">下一回合会补上。</div>'}</div>
       ${hasHist(s) ? `<div class="muted" style="font-size:12px">${histFor(s.clock.y, s).some(h => !h.grade) ? '本时期有内置史料：史事、君主年号、真人生卒官职由程序据史书给出，AI 不凭记忆编。' : '本时期史料为联网自建（B 级）：游戏查了年表、君主年号、重臣、战事、灾荒，再整理成史料；不够准时可以在下面重建。'}</div>` : `<div class="muted" style="font-size:12px">${canSearch() ? '这个时期的史料正在或将要联网自建（每回合检查，缺了就查）。' : '这个时期没有内置史料，网页版不能联网自建，史线由 AI 按记忆整理，可能有误；桌面版会自动联网自建。'}</div>`}
+      ${canSearch() ? `<div class="row" style="margin-top:2px"><button id="bSync" ${BUSY ? 'disabled' : ''}>现在按月联网同步史事</button><span class="muted" style="font-size:12px">${esc(SYNCMSG || (s.hsLast ? `上次同步于${s.hsLast.at}：查了${s.hsLast.months.join('、')}，新补 ${s.hsLast.n} 件（标「查」）` : '每回合写完后，自动按月查此刻前后几个月的真实史事（' + (MODE === 'local' && KEY.bocha ? '博查 + 维基' : '维基') + '）'))}</span></div>` : ''}
       ${canSearch() ? `<div class="row" style="margin-top:2px"><button id="bHistBuild" ${BUSY ? 'disabled' : ''}>联网（重新）建这十年的史料</button><span class="muted" style="font-size:12px">${esc(HBMSG)}</span></div>` : ''}
       ${hasHist(s) ? (() => { const fs = figuresAt(s, s.clock.y).filter(f => f.alive && f.post).slice(0, 40); return fs.length ? `<div class="h"><span class="seal">人</span>此时在世的要紧人物<span class="note">内置史料；本局改过的标出</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此时官职</th><th>籍贯</th></tr>${fs.map(f => `<tr><td><b>${esc(f.name)}</b>${f.age ? `<div class="muted">${esc(f.age)}岁</div>` : ''}</td><td>${esc(f.post)}${f.changed ? ' <span class="badge b-bad">本局</span>' : ''}${f.note ? `<div class="muted">${esc(f.note)}</div>` : ''}</td><td>${esc(f.native)}</td></tr>`).join('')}</table></div>` : ''; })() : ''}
       ${arr(s.figures).length && !hasHist(s) ? `<div class="h"><span class="seal">人</span>要紧人物<span class="note">真人此时的官职、所在、生死</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>官职身份</th><th>在</th><th>态度</th></tr>${s.figures.map(f => `<tr><td><b>${esc(f.name)}</b>${f.age ? `<div class="muted">${esc(f.age)}岁</div>` : ''}${f.alive === false ? '<div class="muted">已故</div>' : ''}</td><td>${esc(f.post)}${f.note ? `<div class="muted">${esc(f.note)}</div>` : ''}</td><td>${esc(f.where)}</td><td>${esc(f.stance)}</td></tr>`).join('')}</table></div>` : ''}
@@ -2500,8 +2584,9 @@ async function afterTurn(s0, d, g) {
   // 开局查到的资料：开场写完后再慢慢研读成年代志（不挡开场）
   if (!d && arr(s0.research).length && arr(s0.almanac).length < 5 && !(await step('研读开局查到的资料，整理成年代志', () => digestResearch(s0)))) return;
   if (arr(s0.summaries).length > 60 && !(await step('整理较早的经过', () => compactMemory(s0)))) return;
-  if (d && SETTINGS.world !== false && needTick(s0, d) && !(await step('推演天下大势', async () => { const r = await worldTick(s0); if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }))) return;
   if (packNeed(s0) && !(await step('联网整理这几年的史料', () => ensureHistPack(s0)))) return;
+  if (syncNeed(s0) && !(await step('按月联网同步此刻前后的史事', () => ensureSync(s0)))) return;
+  if (d && SETTINGS.world !== false && needTick(s0, d) && !(await step('推演天下大势', async () => { const r = await worldTick(s0); if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }))) return;
   if (needGaz(s0) && !(await step('查这地方此时的样子（本地志）', () => buildGazetteer(s0)))) return;
   if (needGeo(s0) && !(await step('查历史地名库、画县级地图', () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties)))) return;
   if (live()) { BGMSG = '存档'; try { await store.save(s0); } catch (_) { /* 下回再存 */ } }
@@ -2745,9 +2830,19 @@ document.addEventListener('click', async e => {
     buildInst(S); return;
   }
   if (t.id === 'bSettle') { settleLast(); return; }
+  if (t.id === 'bSync') {
+    if (BUSY || !S) return;
+    const pol = String(S.place.polity || ''), c = S.clock, ks = [0, 1, 2].map(i => { const m = (c.m - 1 + i) % 12 + 1, y = c.y + Math.floor((c.m - 1 + i) / 12); return `${pol}:${y}-${m}`; });
+    S.hsDone = arr(S.hsDone).filter(k => !ks.includes(k)); S.hsFail = null;
+    CTL = new AbortController(); TURN = CTL; setBusy(true); PHASE = 'hsync'; SYNCMSG = '';
+    try { const a = await ensureSync(S); SYNCMSG = a ? `✓ 查完：新补 ${a.length} 件` : '这次没查成（连不上或没查到），过两回合自动再试'; await store.save(S); }
+    catch (e) { if (!(e && e.code === 'cancelled')) SYNCMSG = '没查成：' + errText(e); }
+    finally { setBusy(false); PHASE = ''; render(); }
+    return;
+  }
   if (t.id === 'bHistBuild') {
     if (BUSY || !S) return;
-    const y = S.clock.y, cov = RUNHIST.find(h => y >= h.range[0] && y <= h.range[1]);
+    const y = S.clock.y, cov = RUNHIST.find(h => !h.sync && y >= h.range[0] && y <= h.range[1]);
     const from = cov ? cov.range[0] : y - 3;
     CTL = new AbortController(); TURN = CTL; setBusy(true); PHASE = 'histbuild';
     try { const p = await buildHistPack(S, from, from + 11, true); HBMSG = `✓ 已建 ${p.title}：${p.events.length} 件事、${p.figures.length} 位人物`; await store.save(S); }
