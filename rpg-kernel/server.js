@@ -16,6 +16,40 @@ const eraVocab = require('./core/eraVocab');
 
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
+// 接口版本：游戏页面要用到新的服务端接口时加一；自动更新只换页面，页面要求的接口比这里新就提示重新安装
+const API_VER = 1;
+/* —— 自动更新：游戏的全部玩法都在 index.html 里。启动时去 GitHub 看有没有新版，有就下载到 data/update，下次打开直接用新版，不用重新安装 —— */
+const UPDATE_DIR = path.join(ROOT, 'data', 'update');
+const UPDATE_BASE = process.env.RPG_UPDATE_BASE || 'https://raw.githubusercontent.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/rpg-kernel/public';
+const UPDATE = { checked: false, local: null, remote: null, using: 'bundled', needReinstall: false, why: '' };
+function readVer(dir) { try { return JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8')); } catch { return null; } }
+function updatedPage() {
+  const b = readVer(PUBLIC), u = readVer(UPDATE_DIR);
+  if (u && (!b || String(u.build) > String(b.build)) && Number(u.api || 0) <= API_VER && fs.existsSync(path.join(UPDATE_DIR, 'index.html'))) return path.join(UPDATE_DIR, 'index.html');
+  return null;
+}
+async function checkUpdate() {
+  if (process.env.RPG_OFFLINE || process.env.RPG_NO_UPDATE) return;
+  try {
+    const net = require('./core/net');
+    const r = await net.fetchX(UPDATE_BASE + '/version.json?t=' + Date.now(), { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const v = await r.json(), b = readVer(PUBLIC), cur = readVer(UPDATE_DIR);
+    UPDATE.local = b && b.build; UPDATE.remote = v.build;
+    const newest = [b, cur].filter(Boolean).map(x => String(x.build)).sort().pop() || '';
+    if (String(v.build) <= newest) { UPDATE.checked = true; UPDATE.using = updatedPage() ? 'updated' : 'bundled'; return; }
+    if (Number(v.api || 0) > API_VER) { UPDATE.needReinstall = true; UPDATE.checked = true; return; }
+    const r2 = await net.fetchX(UPDATE_BASE + '/index.html?t=' + Date.now(), { signal: AbortSignal.timeout(120000) });
+    if (!r2.ok) throw new Error('HTTP ' + r2.status);
+    const html = await r2.text();
+    if (html.length < 100000 || !html.includes(String(v.build))) throw new Error('下载的页面不完整');
+    fs.mkdirSync(UPDATE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(UPDATE_DIR, 'index.html.tmp'), html); fs.renameSync(path.join(UPDATE_DIR, 'index.html.tmp'), path.join(UPDATE_DIR, 'index.html'));
+    fs.writeFileSync(path.join(UPDATE_DIR, 'version.json'), JSON.stringify(v));
+    UPDATE.checked = true; UPDATE.using = 'updated'; UPDATE.fresh = true;
+    console.log('[update] 已下载新版', v.build);
+  } catch (e) { UPDATE.checked = true; UPDATE.why = String(e && e.message || e).slice(0, 200); }
+}
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '127.0.0.1';
 
@@ -32,6 +66,7 @@ function send(res, code, obj, isJson = true) {
 
 async function serveStatic(req, res, urlPath) {
   let rel = urlPath === '/' ? '/index.html' : urlPath;
+  if (rel === '/index.html') { const up = updatedPage(); if (up) { try { const data = await fsp.readFile(up); res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' }); return res.end(data); } catch { /* 坏了就用自带的 */ } } }
   const file = path.join(PUBLIC, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
   if (!file.startsWith(PUBLIC)) return send(res, 403, { error: 'forbidden' });
   try {
@@ -238,6 +273,7 @@ const routes = {
   'GET /api/health': async () => ({ ok: true, node: process.version }),
   /* 网络诊断：逐个试连 DeepSeek / 博查 / 维基，告诉玩家卡在哪 */
   'GET /api/netcheck': async () => require('./core/net').check(),
+  'GET /api/update': async () => ({ ok: true, api: API_VER, ...UPDATE }),
   'GET /api/rulepacks': async () => engine.listRulepacks(),
   'GET /api/saves': async () => engine.listSaves(),
   /* 个人面板：名位、职权、钱财、兵马、家人、人际、近来变化 */
@@ -771,5 +807,6 @@ fs.mkdirSync(adapters.ADAPTER_DIR, { recursive: true });
 server.listen(PORT, HOST, () => {
   console.log(`枢引擎 running: http://${HOST}:${PORT}`);
   // 启动时先探一遍外网：连不上的站点（国内常见的维基）提前记下，开局时直接走兜底，不再一个个等超时
+  setTimeout(() => checkUpdate().catch(() => {}), 2000);
   if (!process.env.RPG_OFFLINE) require('./core/net').check().then(r => console.log('[net]', r.results.map(x => `${x.name}:${x.ok ? 'ok' : 'down'}`).join(' '))).catch(() => {});
 });
