@@ -726,7 +726,7 @@ let RUNHIST = [];
 /** 自建史料只给同一政权的存档用（内置史料不分） */
 const polOK = (h, pol) => !h.grade || !pol || !h.polity || String(h.polity).includes(pol) || pol.includes(String(h.polity));
 const HALL = s => { const pol = String(((s || S || {}).place || {}).polity || ''); return RUNHIST.length ? HIST.concat(RUNHIST.filter(h => polOK(h, pol))) : HIST; };
-const evYM = e => e.y * 12 + (e.m || 6);
+const evYM = e => e.y * 12 + (e.m || 6) + (e.leap && e.m ? 0.5 : 0);   // 闰月排在同号月之后
 const evKey = e => e.y + ':' + String(e.text).slice(0, 14);
 /** 覆盖本局年份的史料（可能两段交界都要） */
 function histFor(y, s) { return HALL(s).filter(h => y >= h.range[0] && y <= h.range[1]); }
@@ -742,7 +742,7 @@ function histEvents(s, fromYM, toYM) {
 /** 史料里的这条在本局变成什么样：照史 / 已变 / 取消 */
 function histView(s, e) {
   const o = ((s.world || {}).over || {})[e.key];
-  if (!o) return { y: e.y, m: e.m, d: e.d, gz: e.gz, text: e.text, status: '照史', why: '', key: e.key, src: 'data' };
+  if (!o) return { y: e.y, m: e.m, d: e.d, gz: e.gz, leap: e.leap, text: e.text, status: '照史', why: '', key: e.key, src: 'data' };
   return { y: num(o.y) ?? e.y, m: num(o.m) ?? e.m, d: o.y || o.m ? undefined : e.d, text: o.text || e.text, status: o.status, why: o.why || '', needs: o.needs || '', key: e.key, src: 'data', orig: e.text };
 }
 /** 把「将要发生」按史料重排：五年内的史事（照本局的改动）+ 本局新出的事 */
@@ -863,8 +863,8 @@ function histBlock(s) {
   if (rs.length) L.push('在位：' + rs.map(r => `${r.title && r.title.startsWith(r.polity) ? '' : r.polity}${r.title ? r.title : ''}${r.name}${r.era ? '（' + r.era + NUMZH(r.n) + '年）' : ''}`).join('；'));
   // 史料只记到月：本月的史事不算「已经发生」，单列出来，正文按真实日子写（日子没到就还没发生）
   const pastAll = histEvents(s, now - 30, now).map(e => histView(s, e)).filter(e => e.status !== '取消' && evYM(e) <= now);
-  const past = pastAll.filter(e => !(e.m && e.y * 12 + e.m === now)), thisMonth = pastAll.filter(e => e.m && e.y * 12 + e.m === now);
-  if (past.length) L.push('近两三年的史事：\n' + past.slice(-14).map(e => `· ${e.y}年${e.m ? e.m + '月' : ''}：${e.text}${e.status !== '照史' ? '（本局：' + e.status + '）' : ''}`).join('\n'));
+  const past = pastAll.filter(e => !(e.m && evYM(e) === now)), thisMonth = pastAll.filter(e => e.m && evYM(e) === now);
+  if (past.length) L.push('近两三年的史事：\n' + past.slice(-14).map(e => `· ${e.y}年${e.m ? (e.leap ? '闰' : '') + e.m + '月' + (e.d ? e.d + '日' : '') : ''}：${e.text}${e.status !== '照史' ? '（本局：' + e.status + '）' : ''}`).join('\n'));
   if (thisMonth.length) L.push(`本月之内（此刻是本月${s.clock.d || '?'}日；日子没到就还没发生，书中人也还不知道；正文照史书的真实日子写，玩家这一步跨过那一天就写到那一天）：\n` + thisMonth.map(e => `· ${e.d ? `${e.d}日${e.gz ? '（' + e.gz + '）' : ''}${s.clock.d >= e.d ? '【已到】' : '【还有' + (e.d - s.clock.d) + '天】'}` : '本月某日'}：${e.text}${e.status !== '照史' ? '（本局：' + e.status + '）' : ''}`).join('\n'));
   const figs = figuresAt(s, y);
   const near = new Set(histEvents(s, now - 36, now + 60).flatMap(e => arr(e.who)));
@@ -1375,7 +1375,7 @@ async function ensureHistPack(s) {
 }
 
 /* ========== 天下推演：史书的惯性 + 本局的变化 → 改写将来、更新人物与大势 ========== */
-const ymOf = c => c.y * 12 + c.m;
+const ymOf = c => c.y * 12 + c.m + (c.leap ? 0.5 : 0);
 function needTick(s, d) {
   const w = s.world || {}, last = w.tickAt;
   if (!last) return s.turn >= 1;
@@ -1922,7 +1922,7 @@ function applyReply(s, d, said) {
       if (years) { if (s.protagonist.age != null) s.protagonist.age += years; for (const m of s.household) if (m.age != null && !m.dead) m.age += years; }
     }
     // 到了日子的史线：照它发生（不再悄悄丢掉）；被改写的、新出的照本局的样子
-    const nowYM = s.clock.y * 12 + s.clock.m;
+    const nowYM = ymOf(s.clock);
     // 到了日子的史线：史料只到月，本月的事等这个月过完才记成「已经发生」（正文里按真实日子写）
     const due = s.world.upcoming.filter(u => evYM(u) < nowYM || (evYM(u) === nowYM && (!u.m || (u.d && s.clock.d >= u.d))));
     if (due.length) {
