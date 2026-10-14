@@ -1256,9 +1256,10 @@ function geoBlock(s, said) {
   const named = g.units.filter(u => { const st = u.name.replace(/[县縣州府郡]$/, ''); return u.name !== here.name && (st.length >= 2 ? String(said || '').includes(st) : String(said || '').includes(u.name)); }).slice(0, 3);
   for (const u of named) {
     const c = corridor(g, here, u);
-    L.push(`去${u.name}：${dirOf(here, u)}，直线约${liOf(hav(here, u))}里，走路约${liOf(hav(here, u) * 1.3)}里；沿途县城：${c.length ? c.map(x => `${x.u.name}（距此约${liOf(x.along * 1.3)}里）`).join(' → ') : '（直线附近没有县城）'}`);
+    const road = liOf(hav(here, u) * 1.3), dd = v => Math.max(1, Math.ceil(road / v));
+    L.push(`去${u.name}：${dirOf(here, u)}，直线约${liOf(hav(here, u))}里，走路约${road}里——步行（日行五十里上下）约${dd(50)}天，骑马赶路（日行百里上下）约${dd(100)}天，车队辎重约${dd(30)}天，驿马急递（日行三五百里）约${dd(400)}天；遇山岭、渡河、雨雪还要加；沿途县城：${c.length ? c.map(x => `${x.u.name}（距此约${liOf(x.along * 1.3)}里）`).join(' → ') : '（直线附近没有县城）'}`);
   }
-  return `【县级地理（据复旦/哈佛 CHGIS 历史地名库，${g.y}年前后；里程由坐标推算，实际道路还要看山川关隘）】\n你在${here.name}${here.parent ? '（属' + here.parent + '）' : ''}。\n` + L.join('\n');
+  return `【县级地理（据复旦/哈佛 CHGIS 历史地名库，${g.y}年前后；里程由坐标推算，实际道路还要看山川关隘。主角动身远行，日子要照下面的天数往前推，不能当天就到；消息、军报也照这个速度传）】\n你在${here.name}${here.parent ? '（属' + here.parent + '）' : ''}。\n` + L.join('\n');
 }
 async function ensureGeo(s, names) {
   if (!needGeo(s)) return null;
