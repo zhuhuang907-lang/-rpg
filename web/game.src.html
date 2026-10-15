@@ -216,6 +216,7 @@ textarea{resize:vertical}
 <script type="application/json" id="hist">__HIST__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
+<script type="application/json" id="arcs">__ARCS__</script>
 <script>
 'use strict';
 /* ========== 小工具 ========== */
@@ -1721,6 +1722,55 @@ function pushUser(turns, content) {
   return turns;
 }
 /** 写戏：规则 + 账册当第一句，然后是最近的对话，最后是玩家这回说的话；只要正文 */
+/* ========== 大势主线：每个年代按年月铺满的真实历史主线（arcs），每条分几个阶段；主角始终身在其中一条里，每一回都扣着它此刻的阶段写 ========== */
+let ARCS = [];
+try { ARCS = JSON.parse(document.getElementById('arcs').textContent || '[]'); } catch (_) { ARCS = []; }
+const ymA = a => a[0] * 12 + (a[1] || 1);
+/** 主角这个身份看哪一栏：官、兵、商、农、士、贵 */
+function roleKey(s) {
+  const t = [s.protagonist && s.protagonist.role, (s.career || {}).office, s.idm].join(' ');
+  return /皇帝|君主|宗室|王|贵族|公主|emperor|noble/.test(t) ? '贵' : /兵|军|将|校|卒|都尉|统领|节度|总兵|参将|守备|千总|把总|百户|千户|warlord/.test(t) ? '兵'
+    : /官|吏|知县|知府|县令|主簿|刺史|同知|通判|御史|学士|尚书|侍郎|郎中|员外|宰相|太守|丞|official/.test(t) ? '官' : /商|贾|盐|行|铺|掌柜|船/.test(t) ? '商'
+    : /士|生员|举人|秀才|书生|读书|太学|监生|进士/.test(t) ? '士' : '农';
+}
+/** 此刻在进行的各条主线（照本政权、按与主角所在地的远近排），以及各自此刻的阶段 */
+function arcsNow(s) {
+  if (!s || !s.clock || !ARCS.length) return [];
+  const now = s.clock.y * 12 + s.clock.m, pol = String(s.place.polity || ''), pl = String(s.place.full || '') + ' ' + arr(s.gazetteer && s.gazetteer.counties).join(' ');
+  const out = [];
+  for (const a of ARCS) {
+    if (ymA(a.from) > now || ymA(a.to) < now) continue;
+    const pols = arr(a.polity);
+    const polFit = !pol || !pols.length || pols.some(p => pol.includes(p) || p.includes(pol));
+    const st = arr(a.stages).find(x => ymA(x.from) <= now && ymA(x.to) >= now) || arr(a.stages).slice(-1)[0];
+    const places = arr(a.region).concat(arr(st && st.where));
+    const here = places.some(r => r && (pl.includes(r) || r.includes(String(s.place.full || '').slice(0, 2))));
+    const score = (polFit ? 3 : 0) + (here ? 5 : 0) + (s.arcId === a.id ? 4 : 0) + (st && st.felt && st.felt[roleKey(s)] ? 1 : 0);
+    out.push({ a, st, score, here, polFit });
+  }
+  return out.sort((x, y) => y.score - x.score);
+}
+function arcBlock(s, brief) {
+  const L = arcsNow(s); if (!L.length) return '';
+  const k = roleKey(s), top = L[0], a = top.a, st = top.st || {};
+  const i = arr(a.stages).indexOf(top.st), nx = i >= 0 ? a.stages[i + 1] : null;
+  const fmt = x => `${x[0]}年${x[1] ? x[1] + '月' : ''}`;
+  const lines = [`【大势主线（主角身在其中；这一回扣着它此刻的阶段写，主角的事是这条大势在他身上的一段）】${a.title}（${fmt(a.from)}—${fmt(a.to)}）：${a.summary}`,
+    `此刻的阶段：${st.name || ''}（${st.from ? fmt(st.from) : ''}—${st.to ? fmt(st.to) : ''}）：${st.what || ''}`,
+    st.who && st.who.length ? `这一阶段的要角：${st.who.join('、')}${st.where && st.where.length ? '；要地：' + st.where.join('、') : ''}` : '',
+    st.factions ? `各方：${st.factions}` : '',
+    st.felt && st.felt[k] ? `落到主角这样的人身上：${st.felt[k]}` : '',
+    st.pressure ? `眼下压在这地方人身上的事：${st.pressure}` : '',
+    nx ? `下一阶段（书中人不知道，只能写它的前兆）：${nx.name}（${fmt(nx.from)}起）` : ''];
+  if (!brief) for (const o of L.slice(1, 3)) lines.push(`同时在进行：${o.a.title}——${(o.st && o.st.name) || ''}${o.here ? '（就在本地）' : ''}`);
+  return lines.filter(Boolean).join('\n');
+}
+/** 记住主角身在哪条主线（换了就跟着换），长远目标从主线里来 */
+function syncArc(s) {
+  const L = arcsNow(s); if (!L.length) return null;
+  const a = L[0].a; if (s.arcId !== a.id) { s.arcId = a.id; s.arcGoal = (a.goals || {})[roleKey(s)] || ''; }
+  return a;
+}
 /* ========== 剧情引擎：紧扣历史主线。程序从史料里挑出此刻离主角最近的那件真实大事，这一回围着它写；同时管题材，不让 AI 在账本、民夫、摊派、请示里打转 ==========
    一、主线：本月与前后几个月的真实史事（内置史料 + 按月联网同步 + 本局改写过的），按地点、牵涉的人、与主角身份的关系、时间远近打分，挑最要紧的一件。
        没到日子的写前兆（风声、调动、筹备、人心），到了日子的写它砸下来，过去了的写余波；一件大事可以连着几回从不同的角度推进。不编支线。
@@ -1745,7 +1795,7 @@ function mainlineBeat(s) {
   if (hasHist(s)) histEvents(s, now - 3, now + 8).map(e => histView(s, e)).forEach(put);
   arr(s.world && s.world.upcoming).filter(u => evYM(u) <= now + 8).forEach(put);
   arr(s.world && s.world.events).filter(e => evYM(e) >= now - 3).forEach(put);
-  const used = arr(s.mainLog);
+  const used = arr(s.mainLog), A = arcsNow(s)[0], stW = A && A.st ? arr(A.st.who) : [], stP = A && A.st ? arr(A.st.where).concat(arr(A.a.region)) : [];
   let best = null;
   for (const [k, e] of pool) {
     const dm = evYM(e) - now, w = String(e.where || '') + String(e.text);
@@ -1754,6 +1804,7 @@ function mainlineBeat(s) {
     if (arr(e.who).some(n => known.has(n))) sc += 4;
     if (tagRe.test(e.tag || '') || tagRe.test(e.text)) sc += 3;
     if (e.status && e.status !== '照史') sc += 3;                       // 被本局改写的事：主角的作为在起作用
+    if (arr(e.who).some(n => stW.includes(n)) || stP.some(x => x && w.includes(x))) sc += 4;   // 属于主角身在的那条大势主线
     sc -= Math.abs(dm) * (dm > 0 ? 0.6 : 1.2);                          // 将来的事可以提前铺垫，过去的事余波渐弱
     if (used.filter(x => x.key === k).length >= 3) sc -= 4;             // 同一件事写了三回以上，让位给别的
     if (!best || sc > best.sc) best = { key: k, e, sc, dm };
@@ -1766,8 +1817,8 @@ function mainlineBeat(s) {
   return { key: best.key, text: `${when}：${e.text}${e.status && e.status !== '照史' ? '（本局：' + e.status + '）' : ''}`, phase };
 }
 function directorBlock(s, said) {
-  const mb = s.mainNow, ban = bannedTopics(s, said);
-  return (mb ? `【这一回的历史主线（程序据史料挑的，这一回围着它写；玩家这一步也放在它底下写，别的事都是陪衬，不另起支线）】\n${mb.text}\n${mb.phase}。要写出它怎样落到主角这个身份、这个地方的人身上；牵涉的真人照史料写真名真事。\n` : '')
+  const mb = s.mainNow, ban = bannedTopics(s, said), ab = arcBlock(s);
+  return (ab ? ab + '\n' : '') + (mb ? `【这一回的历史主线（程序据史料挑的，这一回围着它写；玩家这一步也放在它底下写，别的事都是陪衬，不另起支线）】\n${mb.text}\n${mb.phase}。要写出它怎样落到主角这个身份、这个地方的人身上；牵涉的真人照史料写真名真事。\n` : '')
     + (ban.length ? `【这一回不许再写的题材（最近写得太多了）】${ban.join('、')}——一个字都不要提，换别的事。\n` : '');
 }
 const BORING = [
@@ -1785,7 +1836,7 @@ function bannedTopics(s, said) {
 /** 情理审读：写好的一回先过一遍十条（桌面版开深度思考），不够格的整段重写。把 DeepSeek 勒紧在合情合理、紧扣史实主线上 */
 async function storyCritic(s, said, text) {
   const prev = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk');
-  const mats = [prev ? '【上一回的结尾】' + String(prev.text).slice(-500) : '', arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(c => c.text).join('；') : '', s.mainNow ? '【这一回的历史主线】' + s.mainNow.text + '（' + s.mainNow.phase.split('：')[0] + '）' : '', dossierBlock(s, said + text), mentionedFigures(s, text)].filter(Boolean).join('\n');
+  const mats = [prev ? '【上一回的结尾】' + String(prev.text).slice(-500) : '', arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(c => c.text).join('；') : '', arcBlock(s, true), s.mainNow ? '【这一回的历史主线】' + s.mainNow.text + '（' + s.mainNow.phase.split('：')[0] + '）' : '', dossierBlock(s, said + text), mentionedFigures(s, text)].filter(Boolean).join('\n');
   const job = callClaude(`你是一位挑剔的历史小说编辑，审一局历史模拟游戏刚写好、还没给玩家看的一回。主角：${s.protagonist.name}（${s.protagonist.gender || ''}，${s.protagonist.age != null ? s.protagonist.age + '岁，' : ''}${s.protagonist.role}），在${s.place.full}，${timeText(s.clock)}。
 【玩家这回说】${String(said || '').trim() || '（没说话，照常过日子）'}
 ${mats}
@@ -1800,7 +1851,7 @@ ${text}
 4 身份与规矩：尊卑、称谓、官场与家族的规矩合这个年代；小人物见不到大人物，见到要有门路
 5 时间与路程：这一回里过的时间、走的路、办的事在日子上说得通
 6 前后一致：与上一回的结尾、定本、真人档案不矛盾；已死的人不出场，人不在两处
-7 历史主线：这一回的历史主线写进来了，阶段（前兆、发生、余波）写对了，主角的事与它缠在一起
+7 历史主线：大势主线此刻的阶段和这一回的历史主线写进来了，阶段（前兆、发生、余波）写对了，主角的事与它缠在一起，不是关起门来的小日子、不是另起的支线
 8 人物不蠢：身边的人能干，不事事请示；对手聪明，不为了让主角赢而犯傻；没人说教
 9 数目与器物：钱粮、兵力、价格、距离的量级合这个年代；没有这个年代没有的东西、说法
 10 有戏：局面有了新的、回不去的变化，不是流水账；结尾停在新事展开处，不是停在一屋子人等主角发话
@@ -1853,7 +1904,7 @@ function openingStoryInput(sentence, sys, custom, mat) {
 function openingLedgerInput(sentence, story, hidden, custom, setting) {
   return ledgerRules() + `
 
-【开局】玩家想当的人：「${sentence}」。${customBlock(custom)}${setting ? '\n' + setting + '\nsetup 的年月日、地点、政权、姓名、性别、年龄照上面这份设定。\n' : ''}主持人已经写好开场（下面）。setup 里的姓名、性别、年龄、身份、地点、政权必须与玩家定的一致。goals 给齐三条（眼下、今年、长远），贴着开场里的处境。照开场把整本账册立起来：meters 按这个身份给五六项初值（${Object.values(IDM).map(x => x.meters).join(' / ')} 里取合身份的那组），groups 给三到五个人群（0–100），estate 把家业账立全（产业及估值、每月进项开销、在做的事），prices 给出本地十来样常用物价，presentNpcs 列出开场里出现的人，places 记下现居地和周边、上级治所、京城等五到八个地方，powers 列出此时天下的主要势力（三到八个，按真实历史），主角有地盘兵马就立 territory、forces，有官职就立 career，hints 给三到五条。开局时 ledger 给 []，elapsedDays 给 0。
+【开局】玩家想当的人：「${sentence}」。${customBlock(custom)}${setting ? '\n' + setting + '\nsetup 的年月日、地点、政权、姓名、性别、年龄照上面这份设定。\n' : ''}主持人已经写好开场（下面）。setup 里的姓名、性别、年龄、身份、地点、政权必须与玩家定的一致。goals 给齐三条（眼下、今年、长远），贴着开场里的处境；长远那条要放在【大势主线】里（这个人在这场大势里想成的事）。${setting && S0ARC ? '\n' + S0ARC + '\n' : ''}照开场把整本账册立起来：meters 按这个身份给五六项初值（${Object.values(IDM).map(x => x.meters).join(' / ')} 里取合身份的那组），groups 给三到五个人群（0–100），estate 把家业账立全（产业及估值、每月进项开销、在做的事），prices 给出本地十来样常用物价，presentNpcs 列出开场里出现的人，places 记下现居地和周边、上级治所、京城等五到八个地方，powers 列出此时天下的主要势力（三到八个，按真实历史），主角有地盘兵马就立 territory、forces，有官职就立 career，hints 给三到五条。开局时 ledger 给 []，elapsedDays 给 0。
 再加两个字段（以开场正文为准，正文没写到的按史实补全）：
 "setup":{"name":"","gender":"男/女","age":30,"role":"一句话具体身份","identityModule":"emperor/noble/official/warlord/commoner 五选一","nativePlace":"","real":false,"yearLabel":"万历二十八年","gregorianYear":1600,"month":3,"day":5,"place":"当时地名全称","polity":"明","unit":"记账的本位单位，如两、贯、文","cash":0,"household":[{"relation":"父","name":"","age":50,"note":"一句话"}]},
 "world":{"overview":"三五句：在位的皇帝（或君主）与年号、当权的人、天下大势、本地本行当的局势","events":[{"y":1598,"m":0,"text":"近十来年真实发生、与此有关的大事"}],"upcoming":[{"y":1601,"m":0,"text":"按史书之后五年会发生的大事"}]}
@@ -2517,6 +2568,7 @@ function introHtml(i) {
     <div><b>时间</b>${esc(i.when)}　<b>地点</b>${esc(i.place)}${i.polity ? '（' + esc(i.polity) + '）' : ''}</div>
     ${i.family ? `<div><b>家里</b>${esc(i.family)}</div>` : ''}${i.cash ? `<div><b>手头</b>现钱 ${esc(i.cash)}</div>` : ''}
     ${i.overview ? `<div><b>天下</b>${esc(i.overview)}</div>` : ''}
+    ${i.arc ? `<div><b>你身在的大势</b>${esc(i.arc)}</div>` : ''}
     ${arr(i.adjust).length ? `<div><b>按史实调过</b>${i.adjust.map(esc).join('；')}</div>` : ''}
     ${arr(i.goals).length ? `<div><b>可以奔的目标</b>${i.goals.map(g => `${esc(g.term)}：${esc(g.text)}`).join('；')}</div>` : ''}
     <div class="muted" style="font-size:13px;margin-top:4px">怎么玩：在下面写你做什么、说什么、吩咐谁——想做什么都行，不必照目标走；时间会随你的行动往前走。不懂的直接问（这时候米价多少？我该投奔谁？），问话不花游戏时间。旁边（手机在顶上）的册子里有人物、家业、仕途、天下大势和地图。</div>
@@ -2664,7 +2716,8 @@ function pane(tab) {
   }
   if (tab === 'world') {
     const w = s.world, badge = st => st && st !== '照史' ? `<span class="badge ${st === '新出' ? 'b-doing' : 'b-bad'}">${esc(st)}</span> ` : '';
-    return `<div class="h" style="margin-top:6px"><span class="seal">势</span>天下大势<span class="note">${w.tickAt ? '推演于' + esc(w.tickAt.label) : '开场时写的'}</span></div><div class="overview">${esc(w.overview || '开场后出现。')}</div>
+    const A0 = arcsNow(s)[0];
+    return `${A0 ? `<div class="h" style="margin-top:6px"><span class="seal">线</span>你身在的大势<span class="note">${esc(A0.a.title)}</span></div><div class="overview"><b>${esc((A0.st && A0.st.name) || '')}</b>　${esc((A0.st && A0.st.what) || '')}${A0.st && A0.st.felt && A0.st.felt[roleKey(s)] ? `<div class="muted" style="margin-top:4px">${esc(A0.st.felt[roleKey(s)])}</div>` : ''}</div>${arcsNow(s).slice(1, 3).map(o => `<div class="muted" style="font-size:13px">同时：${esc(o.a.title)}——${esc((o.st && o.st.name) || '')}</div>`).join('')}` : ''}<div class="h" style="margin-top:6px"><span class="seal">势</span>天下大势<span class="note">${w.tickAt ? '推演于' + esc(w.tickAt.label) : '开场时写的'}</span></div><div class="overview">${esc(w.overview || '开场后出现。')}</div>
       <div class="row" style="margin-top:4px"><button id="bTick" ${BUSY || !SAMPLE ? 'disabled' : ''}>现在推演一次天下大势</button><span class="muted" style="font-size:12px">${esc(TICKMSG || '每过半年、或你做了波及天下的事，会自动推演')}</span></div>
       ${arr(w.ripples).length ? `<div class="h"><span class="seal">果</span>你引起的连锁变化</div><div class="list">${w.ripples.slice().reverse().map(r => `<div><span class="when">第${r.turn}回合</span><b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`).join('')}</div>` : ''}
       <div class="h"><span class="seal">后</span>将要发生<span class="note">你知道，书中人不知道；红的是被本局改了的</span></div>
@@ -2722,10 +2775,10 @@ function pane(tab) {
 
 /* ========== 动作 ========== */
 let PHASE = '', TICKMSG = '', LOOKST = null;
-let OPEN_RANGE = null, QTEXT = '';
+let OPEN_RANGE = null, QTEXT = '', S0ARC = '';
 async function startGame(sentence, have, havePre, custom, spec) {
   KEYMSG = '';
-  custom = String(custom || '').trim(); OPEN_RANGE = (spec && spec.range) || null;
+  custom = String(custom || '').trim(); OPEN_RANGE = (spec && spec.range) || null; if (!havePre) S0ARC = '';
   sentence = String(sentence || '').trim(); if (!sentence || BUSY) return;
   ERRMSG = ''; STREAM = ''; PHASE = ''; if (!have) FEED = [];
   CTL = new AbortController(); TURN = CTL;
@@ -2747,6 +2800,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
       try { r = await resolveOpening(sentence, custom, pre); } catch (e) { if (e && e.code === 'cancelled') throw e; r = null; }
       if (r) {
         const fake = openingState(r, pre);
+        { const A = arcsNow(fake)[0]; S0ARC = A ? arcBlock(fake, true) + ((A.a.goals || {})[roleKey(fake)] ? '\n这条主线里，这样的人可奔的长远目标：' + A.a.goals[roleKey(fake)] : '') : ''; }
         if (canSearch()) {
           const yl = fake.clock.yearLabel || r.y + '年', pl = r.placeShort || r.place;
           const q = [...new Set([r.real ? `${r.name} 生平` : '', r.real ? `${r.name} ${yl}` : '', `${pl} ${yl}`, `${pl} ${r.polity}代 县志`, `${yl} ${r.polity} 大事`, `${r.polity}代 ${String(r.role).slice(0, 12)}`, ...r.queries].filter(x => x && x.trim().length >= 3))].slice(0, 9);
@@ -2760,7 +2814,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     }
     if (!st) {
       const sys = MODE === 'local', r = pre && pre.setting, fake = pre && pre.fake;
-      const mat = r && fake ? [settingBlock(r, fake), histBlock(fake), dossierBlock(fake, [r.name, ...r.people].join(' ')), instPoints(fake, r.role, sentence, 2000)].filter(Boolean).join('\n\n') : '';
+      const mat = r && fake ? [settingBlock(r, fake), arcBlock(fake), histBlock(fake), dossierBlock(fake, [r.name, ...r.people].join(' ')), instPoints(fake, r.role, sentence, 2000)].filter(Boolean).join('\n\n') : '';
       const inp = () => openingStoryInput(sentence, sys, custom, mat) + (pre && arr(pre.almanac).length ? '\n\n' + almanacBlock(pre) : '') + (pre && arr(pre.research).length ? '\n\n' + researchBlock(pre) : '');
       DRAFTN = 0; PHASE = 'draft'; render();
       const { text } = await callClaude(inp(), draftCb, { json: false, temperature: sys ? 0.9 : 1.1, maxTokens: 6000, system: sys ? storyRules() : '' });
@@ -2828,7 +2882,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (pre && pre.fake && pre.fake.dossiers) s.dossiers = Object.assign({}, pre.fake.dossiers, s.dossiers || {});
     if (pre) { s.research = arr(pre.research).concat(arr(s.research)); const got = arr(s.almanac); s.almanac = arr(pre.almanac); addAlmanac(s, got); }
     if (looked) { const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { looked }); }
-    { const g = s.chat[s.chat.length - 1], P = s.protagonist; g.extra = Object.assign(g.extra || {}, { intro: { name: P.name, gender: P.gender, age: P.age, role: P.role, native: P.nativePlace, real: P.real, when: timeText(s.clock), place: s.place.full, polity: s.place.polity, family: arr(s.household).map(m => `${m.relation}${m.name}${m.age != null ? '（' + m.age + '）' : ''}`).join('、'), cash: s.money.cash != null ? fmtN(s.money.cash, s.money.unit || '两') : '', overview: cut((s.world || {}).overview, 300), goals: arr(s.goals).map(x => ({ term: x.term, text: x.text })), adjust: arr(pre && pre.setting && pre.setting.adjust) } }); }
+    { const g = s.chat[s.chat.length - 1], P = s.protagonist; g.extra = Object.assign(g.extra || {}, { intro: { name: P.name, gender: P.gender, age: P.age, role: P.role, native: P.nativePlace, real: P.real, when: timeText(s.clock), place: s.place.full, polity: s.place.polity, family: arr(s.household).map(m => `${m.relation}${m.name}${m.age != null ? '（' + m.age + '）' : ''}`).join('、'), cash: s.money.cash != null ? fmtN(s.money.cash, s.money.unit || '两') : '', overview: cut((s.world || {}).overview, 300), goals: arr(s.goals).map(x => ({ term: x.term, text: x.text })), adjust: arr(pre && pre.setting && pre.setting.adjust), arc: (A => A ? A.a.title + '——' + ((A.st && A.st.name) || '') : '')(arcsNow(s)[0]) } }); syncArc(s); }
     if (FEED.length) { const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { refs: FEED.slice(-16).map(f => ({ t: f.t, site: f.site, u: f.u })) }); }
     S = s; VIEW = 'game'; LAST_ACTION = null; TAB = 'board';
     await store.save(S);
@@ -2882,7 +2936,7 @@ async function send(said, span, note, resume) {
   try {
     // 写之前：AI 先看玩家这一步，裁定能不能办、决定要查什么；同时把本地、天下的消息搜一轮；再搜 AI 点名要查的
     if (!st && !(resume && (resume.job || resume.ruling))) {
-      if (!(resume && resume.ruling)) S.mainNow = mainlineBeat(S);   // 这一回的历史主线
+      if (!(resume && resume.ruling)) { syncArc(S); S.mainNow = mainlineBeat(S); }   // 这一回的历史主线
       const wantPlan = needRuling(said) && (SETTINGS.ruling !== false || canSearch());
       PHASE = canSearch() ? 'search' : 'ruling'; render();
       const [lk, rl] = await Promise.all([
