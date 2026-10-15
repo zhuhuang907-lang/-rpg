@@ -402,7 +402,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261015052543';
+const BUILD = '20261015061827';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -1750,7 +1750,11 @@ function roleKey(s) {
 /** 此刻在进行的各条主线（照本政权、按与主角所在地的远近排），以及各自此刻的阶段 */
 function arcsNow(s) {
   if (!s || !s.clock || !ARCS.length) return [];
-  const now = s.clock.y * 12 + s.clock.m, pol = String(s.place.polity || ''), pl = String(s.place.full || '') + ' ' + arr(s.gazetteer && s.gazetteer.counties).join(' ');
+  const now = s.clock.y * 12 + s.clock.m, pol = String(s.place.polity || '');
+  // 同一个地方在各朝的叫法：顺天＝北京＝京师，开封＝汴京＝东京，长安＝京兆，金陵＝建康＝江宁＝应天＝南京……
+  const ALIAS = [['京师', '北京', '顺天', '京畿', '燕京', '大都', '幽州', '蓟'], ['开封', '汴京', '汴梁', '东京', '大梁', '汴州'], ['长安', '京兆', '西京', '雍州'], ['洛阳', '河南府', '东都', '洛州'], ['南京', '应天', '金陵', '建康', '江宁', '建业', '秣陵'], ['杭州', '临安', '钱塘', '余杭'], ['苏州', '平江', '吴郡', '姑苏', '吴县'], ['扬州', '广陵', '江都'], ['成都', '益州', '蜀郡'], ['广州', '番禺', '南海'], ['太原', '并州', '晋阳'], ['范阳', '幽州', '涿郡']];
+  let pl = String(s.place.full || '') + ' ' + arr(s.gazetteer && s.gazetteer.counties).join(' ');
+  for (const g of ALIAS) if (g.some(n => pl.includes(n))) pl += ' ' + g.join(' ');
   const out = [];
   for (const a of ARCS) {
     if (ymA(a.from) > now || ymA(a.to) < now) continue;
@@ -1758,7 +1762,7 @@ function arcsNow(s) {
     const polFit = !pol || !pols.length || pols.some(p => pol.includes(p) || p.includes(pol));
     const st = arr(a.stages).find(x => ymA(x.from) <= now && ymA(x.to) >= now) || arr(a.stages).slice(-1)[0];
     const places = arr(a.region).concat(arr(st && st.where));
-    const here = places.some(r => r && (pl.includes(r) || r.includes(String(s.place.full || '').slice(0, 2))));
+    const here = places.some(r => r && r.length >= 2 && (pl.includes(r) || pl.includes(r.slice(0, 2))));
     const score = (polFit ? 3 : 0) + (here ? 5 : 0) + (s.arcId === a.id ? 4 : 0) + (st && st.felt && st.felt[roleKey(s)] ? 1 : 0);
     out.push({ a, st, score, here, polFit });
   }
