@@ -392,7 +392,8 @@ function ledgerRules() {
 4. identity：主角的身份这一回变了才给（考中功名、授官、升到另一层、罢官、致仕、从军、退伍、改行经商、出家还俗、落草、受招安、称王称帝、出嫁成了主母……），role 写新身份，identityModule 照新身份选，meters 给新身份要紧的五六项数值初值（旧身份的数值不再用）；没变就不给。
    meters：这个身份要紧的五六项数值（值里带数，如「存粮 120 石」），有变化才给，写变化方向和原因。groups：人群对主角的满意度 0–100。presentNpcs：本回合出场或有变化的人，favor 是对主角的好感（-100 到 100），随来往增减。
 5. lifeEvents：身边人和世界的变化（谁、怎么了）；household：家里人口变化；orders：交代下去的事和办的结果（在办/办妥/办砸/搁下）；deeds：玩家这回做的、可能有后续的事，deedsDone：以前的作为在本回合有了下文的（开头几个字）。
-6. worldEvents：这段时间里按史书发生、或正文里传来的天下大事（年月；被本局改变的写实际样子，changed 填 true）；【按史书将要发生】快用完时，在 worldUpcoming 补上之后五年按史书会发生的大事。historyChanges：玩家使史书上的事没照原样发生时记下。
+6. touches：主角这一回的作为真正碰到了某件天下大事的关键条件（照【这件大事的底细】里列的条件；比如劝动了掌兵的人、截了粮道、递了奏疏让皇帝起疑、杀了或救了要角）才给，写清碰到哪条、分量轻中重；没碰到就给 []。小人物在远处议论、打听不算碰到。程序会按主角的身份折算、累计，够了分量才改写历史。
+6b. worldEvents：这段时间里按史书发生、或正文里传来的天下大事（年月；被本局改变的写实际样子，changed 填 true）；【按史书将要发生】快用完时，在 worldUpcoming 补上之后五年按史书会发生的大事。historyChanges：玩家使史书上的事没照原样发生时记下。
 7. places：正文里头一次出现的地方（当时名称、今地、隶属、在主角现居地的方位里程与行程）。
 8. powers / territory / forces：只给这一回变了的那几条（程序按势力名、地名、军名合并，没提到的照旧；丢了的地盘写 "lost":true，打散了的兵马、灭亡的势力写 "gone":true；打过仗的兵马 troops 写剩下的人数，新占的地盘整条给出）。realm：主角是君主、诸侯、割据一方的人才给，只给变了的项（国库、太仓存粮、总兵额、岁入、岁出写数字；军粮与国库的日常消耗程序会照日子结算，你只记一次性的进出，如赏赐、征发、缴获、赈济）（地盘按县、州府一处一条写当时的名称，兵马的驻地写到县城或关隘）（兵额、存粮石数、户口、民心 0–100、月赋都写数字）。succession：只在主角死去时填。career / careerEvents：主角的官职、品级、差遣、称号、职权、上司属下、考课、可能的下一步有变化时给出；任免升降考课等记 careerEvents。statusChanges：功名、爵位、健康、名望等的变化。
 9. gmNotes：正文后【幕后】里写的真相，以及你看出的伏笔（玩家看不到）；gmNotesDone：已经浮出或了结的（开头几个字）。
@@ -417,7 +418,7 @@ function ledgerRules() {
 "lifeEvents":[{"who":"","what":""}],"household":[{"change":"添丁/娶进/嫁出/过世/离家/回家","relation":"","name":"","age":0,"note":""}],
 "orders":[{"who":"","what":"","status":"在办/办妥/办砸/搁下","result":""}],
 "deeds":[{"what":"","effect":"眼下的影响","later":"可能的后续"}],"deedsDone":[""],
-"worldEvents":[{"y":0,"m":0,"text":"","changed":false}],"worldUpcoming":[{"y":0,"m":0,"text":""}],"historyChanges":[{"event":"","now":"","cause":""}],
+"worldEvents":[{"y":0,"m":0,"text":"","changed":false}],"worldUpcoming":[{"y":0,"m":0,"text":""}],"historyChanges":[{"event":"","now":"","cause":""}],"touches":[{"event":"主角这回的作为碰到的那件大事（照【这件大事的底细】或【将要发生】里的原文开头写）","lever":"碰到了它的哪个关键条件","how":"主角做了什么","weight":"轻/中/重"}],
 "places":[{"name":"","now":"","belong":"","from":"","note":""}],
 "powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}],
 "territory":[{"place":"","pop":0,"troops":0,"grain":0,"loyalty":50,"tax":0,"ruler":"","note":""}],
@@ -443,7 +444,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261017180402';
+const BUILD = '20261017233611';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -1585,6 +1586,7 @@ function needTick(s, d) {
   if (ymOf(s.clock) - last.ym >= 2) return 'time';
   if (s.turn - last.turn >= 3) return 'turns';
   if (arr(d && d.historyChanges).length) return 'history';
+  if (influencePending(s).length) return 'influence';
   if (d && String(d.worldShift || '').trim().length > 3) return 'shift';
   if (arr(w.upcoming).length < 4 && s.turn - last.turn >= 3) return 'few';
   return false;
@@ -1601,7 +1603,7 @@ function worldInput(s) {
 4. 别人也在动：各方势力、朝中各派、真实人物都照自己的利害对本局的变化作出反应——警觉、拉拢、打压、趁乱、观望。
 5. 已经发生的不能撤回；玩家造成的变化不能被「拉回」史书原样。新出的事必须有本局的因可循，不凭空造。
 
-【天下大势（上次写的）】${w.overview || ''}
+${influenceBlock(s) ? influenceBlock(s) + '\n\n' : ''}${eventDetailBlock(s) ? eventDetailBlock(s) + '\n\n' : ''}【天下大势（上次写的）】${w.overview || ''}
 【已经发生（近来）】
 ${arr(w.events).slice(-25).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}${x.changed ? '（本局）' : ''}`).join('\n') || '无'}
 【原先排着将要发生的】${hasHist(s) ? '（带 key 的是内置史料，照史书；你只能说明它在本局是否改变，不能改它的史实）' : ''}
@@ -1633,10 +1635,39 @@ ${arr(s.summaries).slice(-8).map(x => `第${x.turn}回合（${x.when}）：${x.t
 {"overview":"","upcoming":[{"key":"","y":0,"m":0,"text":"","status":"照史/已变/取消/新出","why":"","needs":""}],"figures":[{"name":"","post":"","age":0,"where":"","stance":"","alive":true,"note":""}],"ripples":[{"cause":"","effect":"","when":""}],"npcMoves":[{"name":"","did":"这段时间里他照自己的盘算做了什么","why":"","plan":"他接下来的打算"}],"factions":[{"name":"派系或利益集团","leader":"","members":"要紧成员","aims":"他们要什么","stance":"对主角","strength":"强/中/弱","note":"近来的动作"}],"powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}]}`;
 }
 /** 推演一次：成功就替换将来的史线、人物、大势，并把有变化的列出来 */
+/* ========== 玩家对历史的影响：每回记下主角的作为碰到了哪件大事的哪个条件、分量多重；程序按主角的身份折算、累计，到了门槛才让天下推演改写那件事 ========== */
+function reachOf(s) {
+  const k = roleKey(s), tr = arr(s.forces).reduce((a, x) => a + (N0(x.troops) || 0), 0);
+  if (k === '贵') return /皇帝|天子|君主|称帝|王/.test(s.protagonist.role) ? 3 : 2;
+  if (k === '兵') return tr >= 20000 ? 2.5 : tr >= 5000 ? 1.8 : 1;
+  if (k === '官') return /宰相|尚书|侍郎|学士|节度|总督|巡抚|太守|刺史|知府|御史/.test(String(s.protagonist.role) + String((s.career || {}).office || '')) ? 1.5 : 1;
+  return 0.5;
+}
+function addInfluence(s, touches, turn) {
+  const W = { 轻: 1, 中: 2, 重: 4 }, r = reachOf(s);
+  s.influence = s.influence || {};
+  for (const t of arr(touches)) {
+    if (!t || !t.event) continue;
+    const key = one(t.event, 16), w = (W[String(t.weight || '').trim()[0]] || 1) * r;
+    const o = s.influence[key] || (s.influence[key] = { text: one(t.event, 60), score: 0, log: [], applied: 0 });
+    o.score = Math.round((o.score + w) * 10) / 10;
+    o.log = o.log.concat([{ turn, lever: one(t.lever, 40), how: one(t.how, 60), w: Math.round(w * 10) / 10 }]).slice(-6);
+  }
+  const ks = Object.keys(s.influence); if (ks.length > 12) for (const k of ks.slice(0, ks.length - 12)) delete s.influence[k];
+}
+const INF_STEP = 4;
+const influencePending = s => Object.values(s.influence || {}).filter(o => Math.floor(o.score / INF_STEP) > (o.applied || 0));
+function influenceBlock(s) {
+  const L = Object.values(s.influence || {}).filter(o => o.score >= 1);
+  if (!L.length) return '';
+  return '【主角对历史的影响（程序累计的分量，已按主角的身份折算；4 分以下照史书走，主角的作为只在局部起作用；4–7 分可以让这件事延后、减弱、换人或细节改变；8 分以上可以改变结果，甚至不发生——改动必须从下面碰到的条件推出去，并把连带的后果一起推：谁得势、谁失势、后面哪几件事跟着变）】\n'
+    + L.map(o => `· ${o.text}：累计 ${o.score} 分${influencePending(s).includes(o) ? '（这回到了门槛，必须照此改写）' : ''}——` + o.log.map(x => `第${x.turn}回${x.how}（碰到：${x.lever}，${x.w}分）`).join('；')).join('\n');
+}
 async function worldTick(s) {
   const { text } = await callClaude(worldInput(s), null, { maxTokens: 8000, temperature: 0.4, kind: '推演' });
   const d = parseJSON(text);
   if (!d || !Array.isArray(d.upcoming)) throw { code: 'bad_json' };
+  for (const o of influencePending(s)) o.applied = Math.floor(o.score / INF_STEP);   // 这一档的影响已经交给推演改写过了
   const w = s.world, nowYM = ymOf(s.clock), old = arr(w.upcoming);
   const up = d.upcoming.filter(u => u && u.text).map(u => ({ y: num(u.y) ?? s.clock.y, m: Math.min(12, Math.max(0, num(u.m) || 0)), text: one(u.text, 100), status: /变/.test(u.status || '') ? '已变' : /新/.test(u.status || '') ? '新出' : '照史', why: one(u.why, 100) }))
     .filter(u => evYM(u) > nowYM && u.y <= s.clock.y + 10).sort((a, b) => a.y - b.y || a.m - b.m).slice(0, 20);   // 推演只管眼下十年，太远的不算数
@@ -1915,18 +1946,19 @@ async function ensureEventDetail(s) {
   const { text } = await callClaude(`为一局讲究史实的历史模拟游戏整理一件真实大事的细节，给写正文的人用。大事：${mb.text}。此刻：${timeText(s.clock)}，主角在${s.place.full}，是${s.protagonist.role}。阶段：${ph}（${mb.phase.split('：')[0]}）。
 ${R0.length ? '【联网查到的资料】\n' + R0.map(x => `· 查「${x.q}」：${cut(x.text, 1200)}`).join('\n') : '（这次没查到资料，只写通行史书确载的）'}
 只写资料里写明的、或正史通鉴确载的；拿不准的不写。这一阶段之后才发生的事一律不写（书中人不知道）。
-只输出一个 JSON 对象：{"timeline":[{"when":"月日或时间","what":"一句话：谁在哪做了什么"}],"people":[{"name":"","role":"此时的身份","did":"在这件事里做了什么、怎么想"}],"numbers":"兵力、伤亡、钱粮、里程等确凿数目，一两句","orders":"相关的诏令、檄文、军令、奏疏的要点（能引原句的引一句）","talk":"当时各色人等怎么议论、市面人心怎么变","reach":"这件事此刻怎样波及${s.place.full}和主角这样的人，两三句"}`, null, { maxTokens: 2500, temperature: 0.2, kind: '史事' });
+只输出一个 JSON 对象：{"timeline":[{"when":"月日或时间","what":"一句话：谁在哪做了什么"}],"people":[{"name":"","role":"此时的身份","did":"在这件事里做了什么、怎么想"}],"numbers":"兵力、伤亡、钱粮、里程等确凿数目，一两句","orders":"相关的诏令、檄文、军令、奏疏的要点（能引原句的引一句）","talk":"当时各色人等怎么议论、市面人心怎么变","reach":"这件事此刻怎样波及${s.place.full}和主角这样的人，两三句","levers":[{"cond":"这件事要照史书那样发生，靠的一个关键条件（谁、握着什么、哪件事凑上了）","who":"掌握这个条件的人","ifChanged":"这个条件被动了，事情会怎样（延后、减弱、换人、换结果、不发生）"}],"inertia":"这件事背后有多深的根子、多难改，一句话"}`, null, { maxTokens: 2500, temperature: 0.2, kind: '史事' });
   const d = parseJSON(text); if (!d) return null;
-  D[k] = { ph, at: s.turn, timeline: arr(d.timeline).filter(x => x && x.what).slice(0, 8).map(x => ({ when: one(x.when, 16), what: one(x.what, 80) })), people: arr(d.people).filter(x => x && x.name).slice(0, 6).map(x => ({ name: one(x.name, 10), role: one(x.role, 30), did: one(x.did, 80) })), numbers: one(d.numbers, 160), orders: one(d.orders, 200), talk: one(d.talk, 160), reach: one(d.reach, 200), src: R0.length ? '检索' : '史书' };
+  D[k] = { ph, at: s.turn, timeline: arr(d.timeline).filter(x => x && x.what).slice(0, 8).map(x => ({ when: one(x.when, 16), what: one(x.what, 80) })), people: arr(d.people).filter(x => x && x.name).slice(0, 6).map(x => ({ name: one(x.name, 10), role: one(x.role, 30), did: one(x.did, 80) })), numbers: one(d.numbers, 160), orders: one(d.orders, 200), talk: one(d.talk, 160), reach: one(d.reach, 200), levers: arr(d.levers).filter(x => x && x.cond).slice(0, 5).map(x => ({ cond: one(x.cond, 60), who: one(x.who, 20), ifChanged: one(x.ifChanged, 80) })), inertia: one(d.inertia, 80), text: mb.text, src: R0.length ? '检索' : '史书' };
   const ks = Object.keys(D); if (ks.length > 6) for (const x of ks.slice(0, ks.length - 6)) delete D[x];
   return D[k];
 }
 function eventDetailBlock(s) {
   const mb = s.mainNow, x = mb && s.evDetail && s.evDetail[mb.key]; if (!x) return '';
-  return `【这件大事的细节（据${x.src === '检索' ? '联网查到的资料' : '通行史书'}整理；写它时用这些具体的人、日子、数目、原话，让它在主角眼前一件件发生，不要一句话带过）】`
+  return `【这件大事的底细（据${x.src === '检索' ? '联网查到的资料' : '通行史书'}整理，给推演和写戏的人心里有数用：推演照它算各方怎么动；正文只写主角此刻看得到、听得到、被卷进去的那部分，用上具体的人、日子、数目、原话，不要把整张底细搬给读者，也不要一句话带过）】`
     + (x.timeline.length ? '\n经过：' + x.timeline.map(t => `${t.when} ${t.what}`).join('；') : '')
     + (x.people.length ? '\n人物：' + x.people.map(p => `${p.name}（${p.role}）${p.did}`).join('；') : '')
-    + (x.numbers ? '\n数目：' + x.numbers : '') + (x.orders ? '\n文告：' + x.orders : '') + (x.talk ? '\n人心议论：' + x.talk : '') + (x.reach ? '\n落到此地：' + x.reach : '');
+    + (x.numbers ? '\n数目：' + x.numbers : '') + (x.orders ? '\n文告：' + x.orders : '') + (x.talk ? '\n人心议论：' + x.talk : '') + (x.reach ? '\n落到此地：' + x.reach : '')
+    + (arr(x.levers).length ? '\n它成立的关键条件（主角的作为碰到了哪条，才可能改变它）：' + x.levers.map(l => `${l.cond}（握在${l.who || '？'}手里；若被改：${l.ifChanged}）`).join('；') : '') + (x.inertia ? '\n根子：' + x.inertia : '');
 }
 /** 烈度：此时此地是不是真在兵锋战乱里（照主线阶段与眼前史事判断）。平常年景就写平常日子，不硬加乱兵、盗匪、灾祸 */
 const WAR_RE = /战|叛|乱|起兵|攻|陷|围城|屠|兵变|入寇|南下|北伐|东征|西征|兵临|溃|破城|陷落|起义|造反|寇/;
@@ -2044,7 +2076,7 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
 function ledgerInput(s, said, story, hidden, span, ruling) {
-  const mf = [mentionedFigures(s, story), dossierBlock(s, said + story), modernInStory(story), instPoints(s, said, story)].filter(Boolean).join('\n'), el = eraLabel(s, s.clock.y);
+  const mf = [eventDetailBlock(s), influenceBlock(s), mentionedFigures(s, story), dossierBlock(s, said + story), modernInStory(story), instPoints(s, said, story)].filter(Boolean).join('\n'), el = eraLabel(s, s.clock.y);
   return ledgerRules() + '\n\n' + blocks(s) + (mf ? '\n\n' + mf : '') + (el ? `\n【按史料，本年年号纪年为「${el}」；若本局君主或年号已被改写，照本局】` : '') + (ruling ? '\n\n' + rulingText(ruling) : '') + `\n\n【玩家这回说】${String(said || '').trim() || '（没说话，照常过日子）'}${SPANS[span] ? '（这一回要过' + SPANS[span] + '）' : ''}\n\n【这一回的正文】\n${story}${hidden ? '\n\n【幕后】' + hidden : ''}\n\n照规则记账、核史实，只输出那一个 JSON 对象。`;
 }
 const customBlock = c => c ? `\n【玩家自己定的开局设定（照办，一处都不能改；没填的由你按史实补全；某项与史实对不上——比如那年那地没有这个官职——就取最接近的真实安排，并在开场里自然地交代）】\n${c}\n` : '';
@@ -2433,6 +2465,7 @@ function applyReply(s, d, said) {
     for (const t of arr(d.gmNotesDone)) { const pf = String(t || '').trim().slice(0, 8); if (pf.length >= 2) s.gmNotes = s.gmNotes.filter(n => !String(n.text).startsWith(pf) && simText(n.text, t) < 0.4); }
     for (const t of arr(d.gmNotes)) if (t && String(typeof t === 'string' ? t : JSON.stringify(t)).trim().length > 3) { const tx = one(typeof t === 'string' ? t : JSON.stringify(t), 140); const core = x => String(x).replace(/[\s，。；、：「」…]/g, '').slice(0, 40); if (!s.gmNotes.some(n => n.text === tx || core(n.text).includes(core(tx).slice(0, 20)) || core(tx).includes(core(n.text).slice(0, 20)) || simText(n.text, tx) >= 0.4)) s.gmNotes.push({ turn, text: tx }); }
     s.gmNotes = s.gmNotes.slice(-20);
+    addInfluence(s, d.touches, turn);
     for (const c of arr(d.statusChanges)) { const k = one(c && (c.项 || c.item), 12), v = one(c && (c.后 || c.to), 60); if (k && v) { s.status[k] = v; s.statusLog.push({ turn, k, v, why: one(c.原因, 60) }); } }
     s.statusLog = s.statusLog.slice(-60);
     for (const h of arr(d.historyChanges)) if (h && h.event && h.now) s.history.push({ turn, event: one(h.event, 60), now: one(h.now, 80), cause: one(h.cause, 60) });
