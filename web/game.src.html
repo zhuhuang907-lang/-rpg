@@ -479,7 +479,7 @@ function localSample(input, opts = {}) {
         if (stopped) { api('/api/llm-stop', { job }).catch(() => {}); return; }
         opts.onJob && opts.onJob(job);
       }
-      let last = '', miss = 0;
+      let last = '', miss = 0, restarts = 0;
       for (;;) {
         await new Promise(res => setTimeout(res, 700));
         if (stopped) return;
@@ -487,6 +487,8 @@ function localSample(input, opts = {}) {
         let j; try { j = await api('/api/llm-job', { job }); miss = 0; } catch (_) { if (++miss < 40) continue; return reject({ code: 'local', message: '游戏服务没有回应：启动游戏的小窗口是不是被关掉了？' }); }
         if (j.text && j.text !== last) { last = j.text; opts.onText && opts.onText({ text: last, delta: '' }); }
         if (j.status === 'done') return resolve({ text: j.text, truncated: !!j.truncated });
+        // 游戏服务半路重启过（任务丢了）：重新发一次，不让这一回作废
+        if (!j.ok && /不存在|过期/.test(j.why || '') && restarts < 2) { restarts++; const r2 = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast }).catch(() => null); if (r2 && r2.ok) { job = r2.job; opts.onJob && opts.onJob(job); continue; } }
         if (j.status === 'error' || !j.ok) return reject({ code: 'local', message: j.error || j.why || '没写成' });
         if (j.status === 'cancelled') return;
       }
@@ -2621,7 +2623,7 @@ function customSpec() {
   return { short: one(short, 60), full: L.join('\n'), range: cy != null ? null : rg, c };
 }
 const EXAMPLES = ['万历年间苏州的绣娘', '熙宁二年杭州的知县', '乾隆年间扬州的盐商', '天宝十四载范阳的一个小校', '元丰年间汴京的太学生', '崇祯元年的崇祯皇帝'];
-let KEYMSG = '', KEY_OPEN = false, SELFTEST = '';
+let KEYMSG = '', KEY_OPEN = false, SELFTEST = '', SELFTESTING = false, NETCHECKING = false;
 function keyBox() {
   const open = !KEY.has || KEY_OPEN;
   return `<div class="h"><span class="seal">钥</span>DeepSeek Key<span class="note">只存在你自己电脑上；剧情用你自己的 DeepSeek 额度来写</span></div>
@@ -3284,13 +3286,14 @@ document.addEventListener('click', async e => {
     render(); return;
   }
   if (t.id === 'bNet') {
+    if (NETCHECKING) return; NETCHECKING = true;
     t.disabled = true; t.textContent = '检查中…';
     try {
       const r = await api('/api/netcheck');
       KEYMSG = arr(r.results).map(x => `${x.name}：${x.ok ? '✓ 连得上' : '✗ ' + x.why}`).join('\n') + (r.proxy ? `\n代理：${r.proxy}` : '');
       if (arr(r.results).every(x => x.ok)) KEYMSG = '✓ ' + KEYMSG;
     } catch (e) { KEYMSG = '游戏服务没有回应：' + (e.message || e); }
-    render(); return;
+    NETCHECKING = false; render(); return;
   }
   if (t.id === 'bRetry') { const f = LAST_ACTION; ERRMSG = ''; f && f(); return; }
   if (t.dataset.goal != null) { const el = $('#said'); if (el) { el.value = (el.value ? el.value + '\n' : '') + '为了「' + t.dataset.goal + '」，'; el.focus(); } return; }
@@ -3334,13 +3337,15 @@ document.addEventListener('click', async e => {
     return;
   }
   if (t.id === 'bSelfTest' || t.id === 'bSelfTest2') {
+    if (SELFTESTING) return;   // 正在自检：再点也不重复跑
+    SELFTESTING = true;
     const box = t.id === 'bSelfTest' ? $('#selfBox') : $('#selfBox2'); t.disabled = true; t.textContent = '自检中（半分钟内）…';
     try {
       const r = await api('/api/selftest');
       SELFTEST = `<div class="list">${arr(r.results).map(x => `<div><b style="color:var(--${x.ok ? 'good' : 'zhu'})">${x.ok ? '✓' : '✗'} ${esc(x.name)}</b> <span class="muted">${esc(x.detail)}（${x.ms} 毫秒）</span></div>`).join('')}</div>`; box.innerHTML = SELFTEST;
       if (arr(r.results).some(x => /搜索|维基/.test(x.name) && x.ok)) { SEARCH_OFF = ''; SEARCH_DOWN = 0; }
     } catch (e) { box.textContent = '游戏服务没有回应：' + (e.message || e); }
-    t.disabled = false; t.textContent = '再自检一次'; return;
+    SELFTESTING = false; t.disabled = false; t.textContent = '再自检一次'; return;
   }
   if (t.id === 'bBranch') {
     if (BUSY || !S) return;
