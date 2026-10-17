@@ -219,7 +219,7 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
   let sendThinkingFlag = isDeepseek && !isThinkingModel(model);
   let useJsonMode = !!wantJson && isDeepseek;
   let budget = maxTokens ?? 3000;
-  if (thinking) budget = Math.max(budget * 4, 4000);
+  if (thinking) budget = Math.min(16000, Math.max(budget * 2, 4000));   // 思考也算在额度里，但别要得太多被服务端拒
   let switched = '';
   for (let attempt = 0; attempt < 4; attempt++) {
     const body = {
@@ -251,6 +251,8 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
       const msg = String(e.message || e);
       // 服务端不认 JSON 模式：去掉再试
       if (useJsonMode && /HTTP 4\d\d/.test(msg) && /response_format|json/i.test(msg)) { useJsonMode = false; continue; }
+      // 额度要多了（max_tokens 超过上限）：减半再试
+      if (/HTTP 400/.test(msg) && /max_tokens|max tokens|maximum|too large|exceed/i.test(msg) && budget > 2000) { budget = Math.floor(budget / 2); continue; }
       // 服务端不认 thinking 参数：去掉再试
       if (sendThinkingFlag && /HTTP 4\d\d/.test(msg) && /thinking|unrecognized|unknown|extra/i.test(msg)) { sendThinkingFlag = false; continue; }
       // 快型号出了问题：换回原型号再来，不让这一步失败
@@ -273,8 +275,8 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
     const choice = json?.choices?.[0] || {};
     const text = choice.message?.content ?? '';
     // 正文为空但被截断（额度全被思考吃掉）：放大额度再试一次
-    if (!String(text).trim() && (choice.finish_reason === 'length' || choice.message?.reasoning_content) && budget < 32000) {
-      budget = Math.min(32000, Math.max(budget * 4, 4000));
+    if (!String(text).trim() && (choice.finish_reason === 'length' || choice.message?.reasoning_content) && budget < 16000) {
+      budget = Math.min(16000, Math.max(budget * 2, 4000));
       continue;
     }
     return { text, raw: JSON.stringify(json), meta: { adapter: 'openai-compatible', model, usage: json?.usage, switched: switched || undefined, truncated: choice.finish_reason === 'length' } };

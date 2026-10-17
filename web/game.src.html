@@ -444,11 +444,12 @@ function localSample(input, opts = {}) {
         if (stopped) { api('/api/llm-stop', { job }).catch(() => {}); return; }
         opts.onJob && opts.onJob(job);
       }
-      let last = '';
+      let last = '', miss = 0;
       for (;;) {
         await new Promise(res => setTimeout(res, 700));
         if (stopped) return;
-        let j; try { j = await api('/api/llm-job', { job }); } catch (_) { return reject({ code: 'local', message: '游戏服务没有回应：启动游戏的小窗口是不是被关掉了？' }); }
+        // 偶尔一次没问到（电脑卡了一下）不算失败：连着二十来次（约半分钟）都问不到才报
+        let j; try { j = await api('/api/llm-job', { job }); miss = 0; } catch (_) { if (++miss < 40) continue; return reject({ code: 'local', message: '游戏服务没有回应：启动游戏的小窗口是不是被关掉了？' }); }
         if (j.text && j.text !== last) { last = j.text; opts.onText && opts.onText({ text: last, delta: '' }); }
         if (j.status === 'done') return resolve({ text: j.text, truncated: !!j.truncated });
         if (j.status === 'error' || !j.ok) return reject({ code: 'local', message: j.error || j.why || '没写成' });
@@ -1349,8 +1350,8 @@ function geoBlock(s, said) {
 }
 async function ensureGeo(s, names) {
   if (!needGeo(s)) return null;
-  PHASE = 'geo'; render();
-  try { const g = await buildGeo(s, names); if (!g) s.geoFail = s.turn; return g; } catch (e) { if (e && e.code === 'cancelled') throw e; s.geoFail = s.turn; return null; } finally { PHASE = ''; }
+  const own = !BUSY; if (own) { PHASE = 'geo'; render(); }   // 在后台跑、玩家这一回已经开写时，不去动这一回的进度提示
+  try { const g = await buildGeo(s, names); if (!g) s.geoFail = s.turn; return g; } catch (e) { if (e && e.code === 'cancelled') throw e; s.geoFail = s.turn; return null; } finally { if (own && PHASE === 'geo') PHASE = ''; }
 }
 /** 地图：县城、州府治所、你在哪、你的地盘与去过的地方 */
 function geoMap(s) {
@@ -1454,10 +1455,10 @@ events 三十到六十条，只收 ${from}–${to} 年的；figures 二十到四
 }
 async function ensureHistPack(s) {
   const need = packNeed(s); if (!need) return null;
-  PHASE = 'histbuild'; render();
+  const own = !BUSY; if (own) { PHASE = 'histbuild'; render(); }
   try { const p = await buildHistPack(s, need.from, need.to); s.hbFail = null; HBMSG = `✓ 已建 ${p.title}：${p.events.length} 件事、${p.figures.length} 位人物`; return p; }
   catch (e) { if (e && e.code === 'cancelled') throw e; HBMSG = '这次没建成：' + errText(e); s.hbFail = s.turn; return null; }
-  finally { PHASE = ''; }
+  finally { if (own && PHASE === 'histbuild') PHASE = ''; }
 }
 
 /* ========== 史事同步：每回合按月联网查（博查 + 维基年份条目），把此刻前后几个月真实发生的事补进史料，内置史料只当底子 ========== */
@@ -3010,13 +3011,17 @@ async function startGame(sentence, have, havePre, custom, spec) {
 }
 /* ========== 后台：每回合写完之后的整理（不挡玩家） ========== */
 let BG = null, BGMSG = '', BGWAIT = false, STOP_PENDING = false;
+let BG_STOP = false, BG_STEP = '';
 function runBg(fn) {
-  BG = (async () => { await null; try { await fn(); } catch (_) { /* 后台出错下回再做 */ } finally { BG = null; BGMSG = ''; render(); } })();
+  BG_STOP = false;
+  const me = (async () => { await null; try { await fn(); } catch (_) { /* 后台出错下回再做 */ } finally { if (BG === me) { BG = null; BGMSG = ''; BG_STEP = ''; } render(); } })();
+  BG = me;
 }
 /** 写完一回之后：整理较早的章节、推演天下、自建史料、本地志、县级地图、本朝官制。s0 不再是当前存档（换局、重写了）就不存 */
 async function afterTurn(s0, d, g) {
   const live = () => S === s0;
-  const step = async (msg, f) => { if (!live()) return false; BGMSG = msg; render(); try { await f(); } catch (e) { /* 下回合再做 */ } return live(); };
+  // 玩家等不及了（BG_STOP）就不再开新的一步；没做完的下一回合再做
+  const step = async (msg, f) => { if (!live() || BG_STOP) return false; BGMSG = msg; BG_STEP = msg; render(); try { await f(); } catch (e) { /* 下回合再做 */ } return live() && !BG_STOP; };
   // 开局查到的资料：开场写完后再慢慢研读成年代志（不挡开场）
   if (!d && arr(s0.research).length && arr(s0.almanac).length < 5 && !(await step('研读开局查到的资料，整理成年代志', () => digestResearch(s0)))) return;
   if (arr(s0.summaries).length > 60 && !(await step('整理较早的经过', () => compactMemory(s0)))) return;
@@ -3033,7 +3038,10 @@ async function send(said, span, note, resume) {
   if (BUSY || !S) return;
   if (BG) {   // 上一回的后台活还没完：等它做完再开始（不然两边同时改存档）
     BUSY = true; BGWAIT = true; PENDING_SAID = String(said || '').trim(); render();
-    try { await BG; } catch (_) { /* 后台出错不影响这一回 */ }
+    // 最多等 20 秒：查资料、同步史事、本地志这些可以留到下一回；推演天下会改「将要发生」，要等它做完
+    const t0 = Date.now();
+    while (BG && Date.now() - t0 < 20000) await new Promise(r => setTimeout(r, 400));
+    if (BG) { BG_STOP = true; if (/推演天下/.test(BG_STEP)) { try { await BG; } catch (_) { /* 后台出错不影响这一回 */ } } }
     BUSY = false; BGWAIT = false;
     if (STOP_PENDING) { STOP_PENDING = false; PENDING_SAID = ''; render(); const el = $('#said'); if (el) el.value = String(said || ''); return; }
     if (!S) return;
