@@ -402,7 +402,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261015061827';
+const BUILD = '20261017013115';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -411,7 +411,7 @@ async function watchUpdate() {
     let u = null; try { u = await api('/api/update'); } catch (_) { return; }
     if (!u || !u.ok) return;
     if (u.using === 'updated' && u.remote && String(u.remote) > BUILD && lsGet('hrpg:reloaded') !== String(u.remote)) {
-      while (BUSY || BG) await new Promise(r => setTimeout(r, 3000));
+      while (BUSY || BG || EDITING || INSTING || (($('#said') || {}).value || '').trim() || (VIEW === 'start' && String(QTEXT || '').trim())) await new Promise(r => setTimeout(r, 3000));
       lsSet('hrpg:reloaded', String(u.remote)); location.reload(); return;
     }
     if (u.needReinstall) { UPDMSG = '有新版本，这次改动较大，需要重新下载安装：github.com/zhuhuang907-lang/-rpg/releases/tag/latest'; render(); return; }
@@ -525,6 +525,8 @@ function shrink(s) {
   if (arr(s.chronicle).length > 400) s.chronicle = s.chronicle.slice(-400);
   if (arr(s.searchedQ).length > 200) s.searchedQ = s.searchedQ.slice(-200);
   if (arr(s.hsPacks).length > 6) s.hsPacks = s.hsPacks.slice(-6);
+  const DS = Object.keys(s.dossiers || {}); if (DS.length > 30) for (const k of DS.slice(0, DS.length - 30)) delete s.dossiers[k];
+  if (bytes(JSON.stringify(s)) > 200000) { const P2 = Object.entries(s.people || {}); if (P2.length > 80) s.people = Object.fromEntries(P2.sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 80)); s.hsPacks = arr(s.hsPacks).slice(-3); }
   let keep = 30;
   while (bytes(JSON.stringify(s)) > 240000 && keep > 4) { keep -= 4; slim(s, keep); if (s.prev) s.prev = null; }
   if (bytes(JSON.stringify(s)) > 240000) { if (s.geo && arr(s.geo.units).length > 200) s.geo.units = s.geo.units.slice(0, 200); s.research = arr(s.research).slice(-12); s.almanac = arr(s.almanac).slice(-80); s.summaries = arr(s.summaries).slice(-40); }
@@ -561,7 +563,7 @@ function migrate(s) {
   n.careerLog = [];
   delete n.log; delete n.matters; delete n.desk; delete n.last; delete n.consults; delete n.advice;
   n.prev = null;
-  return n;
+  return migrate(n);   // 再走一遍第二版的补齐
 }
 
 /* ========== 调 Claude ========== */
@@ -1130,7 +1132,9 @@ async function browserWiki(queries) {
 /** 搜到的东西对不对题：搜索词里打头的那个词（人名、地名、年号）得出现在结果里，或者至少两个词出现——「天宝 物价」搜出赵匡胤、端午节这种一律丢掉 */
 const GENERIC_Q = /^(历史|生活|社会|社会生活|衣食住行|物价|米价|工钱|官制|地方官|大事|年表|风俗|节令|制度|经济|行业|物产|街巷|城门|市镇|名胜|岁时|望族|士绅|时事|官员|县志|衙署|知府|生平|代)$/;
 function onTopic(q, text) {
-  const t = String(text || ''), toks = String(q || '').replace(/^维基：/, '').split(/\s+/).map(x => x.replace(/[代朝]$/, '')).filter(x => x.length >= 2 && !GENERIC_Q.test(x));
+  // 「天宝十四载十一月」→「天宝」，「755年11月」「755年至766年」→「755」：年号月份连写的词拆出关键字再比
+  const key = x => x.replace(/^(\d{2,4})年.*$/, '$1').replace(/[元正一二三四五六七八九十廿]+[年载月].*$/, '').replace(/[代朝]$/, '');
+  const t = String(text || ''), toks = String(q || '').replace(/^维基：/, '').split(/\s+/).map(key).filter(x => x.length >= 2 && !GENERIC_Q.test(x) && !/^资治通鉴$/.test(x));
   if (!toks.length) return true;
   return t.includes(toks[0]) || toks.filter(x => t.includes(x)).length >= 2;
 }
@@ -1444,7 +1448,7 @@ function syncNeed(s) {
   const done = new Set(arr(s.hsDone)), pol = String(s.place.polity || ''), out = [];
   let c = { y: s.clock.y, m: s.clock.m, leap: !!s.clock.leap };
   const seq = [];
-  for (let i = 0; i < 3; i++) { seq.push({ y: c.y, m: c.m }); c = c.m === 12 ? { y: c.y + 1, m: 1 } : { y: c.y, m: c.m + 1 }; }
+  for (let i = 0; i < 3; i++) { seq.push({ y: c.y, m: c.m }); c = c.m === 12 ? { y: c.y + 1 === 0 ? 1 : c.y + 1, m: 1 } : { y: c.y, m: c.m + 1 }; }
   seq.push(s.clock.m === 1 ? { y: s.clock.y - 1, m: 12 } : { y: s.clock.y, m: s.clock.m - 1 });
   for (const x of seq) { const k = `${pol}:${x.y}-${x.m}`; if (!done.has(k) && out.length < 3) out.push({ ...x, k }); }
   return out.length ? out : null;
@@ -1670,6 +1674,7 @@ function blocks(s, forStory) {
     : `【数值条（本回合在 meters、groups 里给出初值）】这个身份看：${id.meters}；人群：${id.groups}。`);
   const P = Object.entries(s.people || {}).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 18);
   if (P.length) L.push('【人物（性格、本事、态度、好感、盘算、打算、所知以此为准；他们照自己的盘算行事，只知道自己能知道的事）】\n' + P.map(([k, v]) => `· ${k}：${v.role || ''}${v.tie ? '，' + v.tie : ''}${N0(v.favor) != null ? '，好感' + v.favor : ''}${v.personality ? '，性格' + v.personality : ''}${v.ability ? '，本事' + v.ability : ''}${v.attitude ? '，对主角' + v.attitude : ''}${v.want ? '，想要' + v.want : ''}${v.status ? '，近况：' + v.status : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + v.goal : ''}${v.plan ? '；打算：' + v.plan : ''}${v.knows ? '；知道主角：' + v.knows : ''}`).join('\n'));
+  if (s.arcGoal) L.push('【大势主线里这样的人可奔的长远目标（长远那条目标照这个方向定）】' + s.arcGoal);
   if (arr(s.goals).length) L.push('【主角眼下的目标（上一回定的；没做成也没落空就在 goals 里原样照抄、status 写「在做」，不要换说法）】' + s.goals.map(g => `${g.term}：${g.text}`).join('；'));
   const od = arr(s.orders).filter(o => /在办|待办|推迟/.test(o.status));
   if (od.length) L.push('【差事：交代下去还没办完的（到时必须写结果）】\n' + od.map(o => `· 第${o.turn}回合交代 ${o.who}：${o.what}（${o.status}${o.result ? '，' + o.result : ''}）`).join('\n'));
@@ -1743,8 +1748,8 @@ const ymA = a => a[0] * 12 + (a[1] || 1);
 /** 主角这个身份看哪一栏：官、兵、商、农、士、贵 */
 function roleKey(s) {
   const t = [s.protagonist && s.protagonist.role, (s.career || {}).office, s.idm].join(' ');
-  return /皇帝|君主|宗室|王|贵族|公主|emperor|noble/.test(t) ? '贵' : /兵|军|将|校|卒|都尉|统领|节度|总兵|参将|守备|千总|把总|百户|千户|warlord/.test(t) ? '兵'
-    : /官|吏|知县|知府|县令|主簿|刺史|同知|通判|御史|学士|尚书|侍郎|郎中|员外|宰相|太守|丞|official/.test(t) ? '官' : /商|贾|盐|行|铺|掌柜|船/.test(t) ? '商'
+  return /皇帝|君主|天子|宗室|亲王|郡王|王爷|王子|世子|贵族|公主|皇后|太后|贵妃|妃|嫔|宫女|宫人|emperor|noble/.test(t) ? '贵' : /士兵|兵卒|军士|军官|将军|大将|偏将|副将|校尉|小校|卒|都尉|统领|节度|总兵|参将|守备|千总|把总|百户|千户|武官|军中|warlord/.test(t) ? '兵'
+    : /官|吏|知县|知府|县令|主簿|刺史|同知|通判|御史|学士|尚书|侍郎|郎中|员外|宰相|太守|县丞|参知政事|official/.test(t) && !/江湖郎中|郎中先生|行医|大夫/.test(t) ? '官' : /商|贾|盐|行|铺|掌柜|船/.test(t) ? '商'
     : /士|生员|举人|秀才|书生|读书|太学|监生|进士/.test(t) ? '士' : '农';
 }
 /** 此刻在进行的各条主线（照本政权、按与主角所在地的远近排），以及各自此刻的阶段 */
@@ -1766,7 +1771,8 @@ function arcsNow(s) {
     const score = (polFit ? 3 : 0) + (here ? 5 : 0) + (s.arcId === a.id ? 4 : 0) + (st && st.felt && st.felt[roleKey(s)] ? 1 : 0);
     out.push({ a, st, score, here, polFit });
   }
-  return out.sort((x, y) => y.score - x.score);
+  // 别的政权、又不在本地的主线不算主角身在其中（大理、日本的人不套北宋的主线）
+  return out.filter(x => x.polFit || x.here).sort((x, y) => y.score - x.score);
 }
 function arcBlock(s, brief) {
   const L = arcsNow(s); if (!L.length) return '';
@@ -1939,7 +1945,7 @@ ${story}${hidden ? '\n\n【幕后】' + hidden : ''}
 /** 开局时：玩家写了年份或年号，就先把那几年的史料给 AI */
 function sentenceYear(sentence, range) {
   const t = String(sentence || '');
-  let m = t.match(/(?:公元前|前)\s*(\d{1,4})\s*年?/); if (m) return -Number(m[1]);   // 本游戏纪年：公元前221年记作 -221（没有 0 年）
+  let m = t.match(/公元前\s*(\d{1,4})\s*年?|(?:^|[^\d名])前\s*(\d{3,4})\s*年/); if (m) return -Number(m[1] || m[2]);   // 本游戏纪年：公元前221年记作 -221（没有 0 年）
   m = t.match(/(?:公元)?\s*(\d{3,4})\s*年/) || t.match(/^\s*(\d{3,4})(?!\d)/); if (m) return Number(m[1]);
   const inR = y => !range || (y >= range[0] - 1 && y <= range[1] + 1);
   const D = '一二三四五六七八九';
@@ -2010,12 +2016,12 @@ ${custom ? '【玩家自己定的设定（照办；没填的你按史实补；�
 }
 /** 按定下来的设定，搭一个临时的局面，好用上内置史料、真人档案、制度库、联网资料 */
 function openingState(r, pre) {
-  const fake = { id: 'opening', turn: 0, clock: { y: r.y, m: r.m, d: r.d, yearLabel: r.yearLabel }, place: { full: r.place, polity: r.polity }, protagonist: { name: '', role: (r.real ? r.name + '，' : '') + r.role }, world: {}, chat: [], figOver: {}, research: arr(pre && pre.research).slice(), almanac: arr(pre && pre.almanac).slice(), wikiDone: arr(pre && pre.wikiDone).slice(), dossiers: {}, canon: [] };
+  const fake = { id: 'opening', turn: 0, clock: { y: r.y, m: r.m, d: r.d, yearLabel: r.yearLabel }, place: { full: r.place, polity: r.polity }, protagonist: { name: '', role: r.role }, world: {}, chat: [], figOver: {}, research: arr(pre && pre.research).slice(), almanac: arr(pre && pre.almanac).slice(), wikiDone: arr(pre && pre.wikiDone).slice(), dossiers: {}, canon: [] };
   const el = eraLabel(fake, r.y); if (el) fake.clock.yearLabel = el;
   return fake;
 }
 function settingBlock(r, fake) {
-  const me = r.real ? (() => { for (const h of HALL(fake)) { const f = arr(h.figures).find(x => x.name === r.name); if (f) { const st = figState(fake, f, r.y, r.m); return `${r.name}此刻：${st.alive === false ? '已故' : '在世'}${st.post ? '，' + st.post : ''}`; } } return ''; })() : '';
+  const me = r.real ? (() => { for (const h of HALL(fake)) { const f = arr(h.figures).find(x => x.name === r.name); if (f) { const st = figState(fake, f, r.y, r.m); return `${r.name}此刻：${st.state === 'alive' ? '在世' : st.state === 'unborn' ? '尚未出生' : '已故或早已离开史书视野（不得作为活人出场）'}${st.post ? '，' + st.post : ''}`; } } return ''; })() : '';
   return `【开局定下的设定（照这个写，一处都不能改）】
 时间：${fake.clock.yearLabel || ''}（${yearText(r.y)}）${CAL.label(r.m, r.d, false)}
 地点：${r.place}（${r.polity}）
@@ -2071,11 +2077,11 @@ function nameFixes(s, text) {
   const t = String(text || ''), out = [], used = new Set(Object.keys(s.people || {}).concat(Object.values(s.nameMap || {})));
   for (const h of HALL(s)) for (const f of arr(h.figures)) used.add(f.name);
   s.nameMap = s.nameMap || {};
-  const re = /([一-鿿])某(人|氏)?(?![某些种处事物日月年时个件位甲乙丙丁])/g;
+  const re = /([一-鿿])某(人|氏)?(?![某些种处事物日月年时个件位甲乙丙丁地])/g, PREP = '和与向于从对那为把被给跟同在到往自及或将让叫请找问';
   let m;
   while ((m = re.exec(t))) {
     const sur = m[1], whole = m[0];
-    if (!SURNAMES.includes(sur)) continue;
+    if (!SURNAMES.includes(sur) || PREP.includes(sur)) continue;
     // 「严某」若前面是「某人姓严」之类的整词，仍然起名；同一个占位只起一次
     let nm = s.nameMap[sur + '某'];
     if (!nm) {
@@ -2101,9 +2107,12 @@ async function verifyText(s, said, text, rewrite) {
   // 核实是锦上添花：出任何岔子、或拖得太久（三分钟），都照原稿给玩家，不能让这一回整个作废
   const orig = text;
   let timer;
-  const cap = new Promise(res => { timer = setTimeout(() => res({ text: orig, audit: [], timedOut: true }), rewrite ? 300000 : 180000); });
+  const gate = { expired: false };
+  const cap = new Promise(res => { timer = setTimeout(() => { gate.expired = true; res({ text: orig, audit: [], timedOut: true }); }, rewrite ? 300000 : 180000); });
+  // 超时以后核实就作废：不再整段重写（不然会在下一回合里多花一次写稿、改乱进度）
+  const rw = rewrite ? async p => (gate.expired ? null : rewrite(p)) : null;
   let r;
-  try { r = await Promise.race([verifyCore(s, said, text, rewrite), cap]); }
+  try { r = await Promise.race([verifyCore(s, said, text, rw), cap]); }
   catch (e) { if (e && e.code === 'cancelled') throw e; r = { text: orig, audit: [] }; }
   finally { clearTimeout(timer); }
   // 「严某」这类占位称呼：程序起名，全文一律照改
@@ -2247,7 +2256,7 @@ function applyReply(s, d, said) {
     if (mo.cash == null && N0(d.setCash) != null) mo.cash = N0(d.setCash);
     for (const x of arr(d.ledger).slice(0, 30)) { const a = N0(x && x.amount); if (a != null && a !== 0) ledger.push({ item: one(x.item, 30), amount: a, note: one(x.note, 40) }); }
     // 物价只给了变的那几样：按货名并进去，没提到的照旧
-    if (Array.isArray(d.prices) && d.prices.length) { const m = new Map(arr(s.prices).map(x => [x.item, x])); for (const x of d.prices.filter(x => x && x.item)) m.set(one(x.item, 10), { item: one(x.item, 10), price: N0(x.price), per: one(x.per, 4) }); s.prices = [...m.values()].slice(-24); }
+    if (Array.isArray(d.prices) && d.prices.length) { const m = new Map(arr(s.prices).map(x => [x.item, x])); for (const x of d.prices.filter(x => x && x.item)) { const k = one(x.item, 10), pv = N0(x.price); if (pv == null && m.has(k)) continue; m.set(k, { item: k, price: pv, per: one(x.per, 4) }); } s.prices = [...m.values()].slice(-24); }
     for (const n of arr(d.presentNpcs)) {
       if (!n || !n.name || n.name === s.protagonist.name) continue;
       const k = one(n.name, 12), o = s.people[k] || {};
@@ -2441,7 +2450,7 @@ setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = 
 function render() {
   if (S && S.clock) LI_KM = liKmFor(S.clock.y);
   $('#bHome').hidden = VIEW !== 'game';
-  const sm = $('.brand small'); if (sm) sm.textContent = MODE === 'claude' ? '网页版' : '';
+  const sm = $('.brand small'); if (sm) sm.textContent = (MODE === 'claude' ? '网页版 · ' : '') + (/^\d{8}/.test(BUILD) ? `版本 ${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : '');
   $('#statusLine').innerHTML = VIEW === 'game' && S ? `<b>${esc(S.protagonist.name)}</b> · ${esc(timeText(S.clock))} · ${esc(S.place.full)}${S.money && S.money.cash != null ? ' · 现钱 ' + esc(fmtN(S.money.cash, S.money.unit || '两')) : ''}${SEARCH_OFF && MODE === 'local' && SETTINGS.search !== false ? ` · <span style="color:var(--zhu)" title="${esc(SEARCH_OFF)}">联网查资料暂时连不上（设置里点「联网自检」看原因）</span>` : ''}` : '';
   $('#notice').innerHTML = UPDMSG ? `<div class="banner">${esc(UPDMSG)}</div>` : !READY ? '' : MODE === 'none' ? (location.protocol === 'file:' ? '<div class="err"><b>这样打开用不了。</b>你双击的是游戏里的网页文件。请关掉它，双击桌面上的「历史模拟RPG」图标。</div>' : '<div class="err">游戏服务没有在运行：启动游戏的小窗口是不是被关掉了？重新双击桌面上的「历史模拟RPG」。</div>') : MODE === 'claude' && !SAMPLE ? '<div class="err"><b>这个页面没拿到调用 Claude 的权限，所以开始不了。</b>请点页面右上角的菜单，在「权限」里允许它使用 Claude，然后刷新；或者用桌面版（自己的 DeepSeek Key）。</div>' : '';
   if (VIEW === 'start') return renderStart();
@@ -2889,6 +2898,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (cc.cAge && !(rr && rr.real)) d.setup.age = +cc.cAge;
     if (num(d.setup.gregorianYear) == null) d.setup.gregorianYear = sentenceYear(String(d.setup.yearLabel || '')) ?? sentenceYear(sentence, OPEN_RANGE) ?? d.setup.gregorianYear;
     const s = newSave(d.setup);
+    if (pre && pre.fake && pre.fake.nameMap) s.nameMap = { ...pre.fake.nameMap };
     if (d.world) s.world = { overview: cut(d.world.overview, 600), events: arr(d.world.events).filter(x => x && x.text).map(x => ({ y: num(x.y) ?? s.clock.y, m: num(x.m) || 0, text: one(x.text, 100) })).slice(-40), upcoming: [] };
     d.worldUpcoming = arr(d.worldUpcoming).concat(arr(d.world && d.world.upcoming));
     if (hasHist(s)) {
@@ -2957,8 +2967,8 @@ async function send(said, span, note, resume) {
   let st = resume && resume.story ? resume.story : null, looked = null, ruling = (resume && resume.ruling) || null, postTurn = null;
   try {
     // 写之前：AI 先看玩家这一步，裁定能不能办、决定要查什么；同时把本地、天下的消息搜一轮；再搜 AI 点名要查的
+    if (!st) { syncArc(S); S.mainNow = mainlineBeat(S); }   // 这一回的历史主线（重试、续写也照算）
     if (!st && !(resume && (resume.job || resume.ruling))) {
-      if (!(resume && resume.ruling)) { syncArc(S); S.mainNow = mainlineBeat(S); }   // 这一回的历史主线
       const wantPlan = needRuling(said) && (SETTINGS.ruling !== false || canSearch());
       PHASE = canSearch() ? 'search' : 'ruling'; render();
       const [lk, rl] = await Promise.all([
@@ -3028,7 +3038,7 @@ async function send(said, span, note, resume) {
     if (st.talk) {
       if (vrP) await vrP;
       lsSet('hrpg:pending', null);
-      applyReply(S, { reply: st.text, mode: 'talk' }, said); PENDING_SAID = '';
+      applyReply(S, { reply: st.text, mode: 'talk' }, said); PENDING_SAID = ''; S.mainNow = null;
       if (FEED.length) { const g1 = S.chat[S.chat.length - 1]; g1.extra = Object.assign(g1.extra || {}, { refs: FEED.slice(-16).map(f => ({ t: f.t, site: f.site, u: f.u })) }); }
       if (arr(st.audit).length) { const g0 = S.chat[S.chat.length - 1]; g0.audit = st.audit; }
     } else {
@@ -3183,13 +3193,14 @@ document.addEventListener('click', async e => {
     send(said, span, note, { orig }); return;
   }
   if (t.id === 'bInst') {
+    if (BG) return;
     const kb = ($('#kbText').value || '').trim();
     lsSet(KB_KEY, kb ? cut(kb, 60000) : null);
     buildInst(S); return;
   }
   if (t.id === 'bSettle') { settleLast(); return; }
   if (t.id === 'bTick') {
-    if (BUSY || !S) return;
+    if (BUSY || BG || !S) return;
     TICKMSG = ''; ERRMSG = ''; PHASE = 'world'; CTL = new AbortController(); TURN = CTL; setBusy(true);
     try { const r = await worldTick(S); TICKMSG = `✓ 推演好了${r.changes.length ? '，有 ' + r.changes.length + ' 处走向变了' : '，大势照史书走'}`; await store.save(S); }
     catch (e) { if (!(e && e.code === 'cancelled')) TICKMSG = '没推演成：' + errText(e); }
