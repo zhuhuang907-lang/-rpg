@@ -346,24 +346,27 @@ const routes = {
     const isBocha = cfg.provider === 'bocha';
     const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
     const GOOD = /baike\.baidu|wikipedia|baike\.sogou|ctext|guoxue|gushiwen|zhonghuadiancang|shidianguji|cnki|cass|historychina|zgdsw|dpm\.org|ndlib|chinaknowledge|douban\.com\/note|zhihu/;
-    const once = q => Promise.race([
+    // 一整批最多等 25 秒：每条最多 12 秒，到点还没回的就算没搜到，不让玩家干等
+    const DEADLINE = Date.now() + 25000;
+    const once = q => { const ms = Math.max(1500, Math.min(isBocha ? 12000 : 8000, DEADLINE - Date.now())); return Promise.race([
       search.search(q, isBocha ? { noFallback: true } : {}).catch(e => ({ query: q, results: [], error: String(e && e.message || e) })),
-      new Promise(r => setTimeout(() => r({ query: q, results: [], error: `超时（${isBocha ? 20 : 8} 秒没回）` }), isBocha ? 20000 : 8000)),
-    ]);
+      new Promise(r => setTimeout(() => r({ query: q, results: [], error: `超时（${Math.round(ms / 1000)} 秒没回）` }), ms)),
+    ]); };
     // 没搜到（不是出错）：把查询改短再搜，维基这类搜索框只认简单的词（「扬州府 乾隆二十二年 知府」→「扬州府 知府」→「扬州府」）
     const one = async q => {
       let r = await once(q);
       const toks = q.split(/\s+/).filter(Boolean);
       const tries = toks.length > 2 ? [toks[0] + ' ' + toks[toks.length - 1], toks[0]] : toks.length === 2 ? [toks[0]] : [];
-      for (const q2 of tries) { if ((r.results || []).length || r.error) break; r = await once(q2); }
+      for (const q2 of tries.slice(0, 1)) { if ((r.results || []).length || r.error || Date.now() > DEADLINE - 3000) break; r = await once(q2); }
       return r;
     };
     const rs = [];
     const netErr = r => !(r.results || []).length && /超时|ENOTFOUND|ECONN|fetch failed|timeout|abort|socket|network/i.test(String(r.error || ''));
-    for (let i = 0; i < qs.length; i += 3) {
-      // 头一批全都连不上：后面的不再白等，直接记同样的原因
+    // 一起搜（最多五路同时），不再三条三条地排队
+    for (let i = 0; i < qs.length; i += 5) {
       if (i > 0 && rs.length && rs.every(netErr)) { for (const q of qs.slice(i)) rs.push({ query: q, results: [], error: rs[0].error }); break; }
-      rs.push(...await Promise.all(qs.slice(i, i + 3).map(one)));
+      if (Date.now() > DEADLINE) { for (const q of qs.slice(i)) rs.push({ query: q, results: [], error: '这一批搜索时间到了' }); break; }
+      rs.push(...await Promise.all(qs.slice(i, i + 5).map(one)));
     }
     const friendly = e => {
       const s = String(e || '');
