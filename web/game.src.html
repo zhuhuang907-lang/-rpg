@@ -355,7 +355,8 @@ function ledgerRules() {
 1. elapsedDays：这一回正文里过了多少天（一场谈话 0–1 天；按正文说的时间算）。yearLabel：过完后的年号纪年。主角搬到别处常住才填 moveTo（新地方的全称）；搬到了另一个政权的地界（投奔、逃亡、出使后留下）再填 moveToPolity（那个政权的名字，如「金」「北魏」）。
 2. 一切量化，数字用阿拉伯数字。钱一律折成【家业账】的本位单位。现钱由程序结算——你不报现钱，只把本回合正文里每一笔钱的进出（买卖、工钱、赋税摊派、送礼打点、借贷、赏赐、被偷被抢、事业投入与收获……）在 ledger 里一笔一笔报，收入为正、支出为负，与正文的数对得上；正文没写数但确实花了钱的，按【本地行情】估一个合理的数。每月固定的进出写在 estate 的 income / expense（每月多少），程序过月自动结，不要再在 ledger 里重复报月收支。若【家业账】写着现钱尚未定数，用 setCash 给出现钱多少。
 3. 产业（田地、铺面、宅子、作坊、船、牲口、存货、借出的钱）有数量与估值；在做的事业有状态、进度、下一步。estate 里给出的组整组替换，没变化的组不给。本地行情随季节、年景、战事变化时在 prices 里给出（米、麦、布、盐、肉、田价、房价、雇工日钱、银钱比价等）。
-4. meters：这个身份要紧的五六项数值（值里带数，如「存粮 120 石」），有变化才给，写变化方向和原因。groups：人群对主角的满意度 0–100。presentNpcs：本回合出场或有变化的人，favor 是对主角的好感（-100 到 100），随来往增减。
+4. identity：主角的身份这一回变了才给（考中功名、授官、升到另一层、罢官、致仕、从军、退伍、改行经商、出家还俗、落草、受招安、称王称帝、出嫁成了主母……），role 写新身份，identityModule 照新身份选，meters 给新身份要紧的五六项数值初值（旧身份的数值不再用）；没变就不给。
+   meters：这个身份要紧的五六项数值（值里带数，如「存粮 120 石」），有变化才给，写变化方向和原因。groups：人群对主角的满意度 0–100。presentNpcs：本回合出场或有变化的人，favor 是对主角的好感（-100 到 100），随来往增减。
 5. lifeEvents：身边人和世界的变化（谁、怎么了）；household：家里人口变化；orders：交代下去的事和办的结果（在办/办妥/办砸/搁下）；deeds：玩家这回做的、可能有后续的事，deedsDone：以前的作为在本回合有了下文的（开头几个字）。
 6. worldEvents：这段时间里按史书发生、或正文里传来的天下大事（年月；被本局改变的写实际样子，changed 填 true）；【按史书将要发生】快用完时，在 worldUpcoming 补上之后五年按史书会发生的大事。historyChanges：玩家使史书上的事没照原样发生时记下。
 7. places：正文里头一次出现的地方（当时名称、今地、隶属、在主角现居地的方位里程与行程）。
@@ -391,6 +392,7 @@ function ledgerRules() {
 "career":{"office":"","rank":"","post":"","titles":[""],"duties":"","powers":"","superior":"","subordinates":"","evaluation":"","tenure":"","nextSteps":[{"to":"","need":""}]},
 "careerEvents":[{"what":"","office":""}],
 "statusChanges":[{"项":"","后":"","原因":""}],
+"identity":{"role":"主角身份变了才填：新身份一句话","identityModule":"emperor/noble/official/warlord/commoner","why":"怎么变的","meters":[{"项":"新身份要紧的数值","值":"带数"}]},
 "gmNotes":[""],"gmNotesDone":[""],
 "hints":[""],
 "fixes":[{"wrong":"原文","right":"改成","why":""}],
@@ -685,7 +687,17 @@ async function callClaude(input, onReply, extra, tier) {
     const r = await SAMPLE(input, { ...opts, ...(MODE === 'local' ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
     logRaw(kind, r && r.text, r && r.truncated);
     return r;
-  } catch (e) { logRaw(kind, (e && e.text) || '', false, (e && (e.code + ' ' + (e.message || ''))) || String(e)); throw e; }
+  } catch (e) {
+    logRaw(kind, (e && e.text) || '', false, (e && (e.code + ' ' + (e.message || ''))) || String(e));
+    // 深度思考那一路出了岔子（太慢、思考吃光额度、服务端不认）：关掉思考再来一次，不让玩家看到报错
+    if (MODE === 'local' && extra && extra.thinking && !(e && (e.code === 'cancelled' || e.code === 'no_key')) && !(TURN && TURN.signal.aborted)) {
+      CTL = new AbortController(); if (TURN) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); }
+      const r2 = await SAMPLE(input, { ...opts, ...extra, thinking: false, signal: CTL.signal, onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
+      logRaw(kind + '（关思考重试）', r2 && r2.text, r2 && r2.truncated);
+      return r2;
+    }
+    throw e;
+  }
 }
 /** 问题报告用：最近几次 AI 原样的输出与出错 */
 function logRaw(kind, text, truncated, err) {
@@ -1929,6 +1941,26 @@ function draftFaults(s, said, text) {
   for (const name of bannedTopics(s, said)) { const re = BORING.find(x => x[0] === name)[1]; if (countIn(text, re) >= 1) out.push(`又写了「${name}」这类题材：这一回不许写，换成别的事`); }
   return out;
 }
+/** 一下过很久（玩家选了一季一年，或说「过到年底」「过两年」）：把这段日子里照史料要来的事和主线阶段列出来，按日子写进去 */
+function spanMonths(span, said) {
+  const t = String(said || '');
+  const SP = { xun: 0.3, month: 1, season: 3, year: 12 };
+  if (SP[span]) return SP[span];
+  const zh = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 半: 0.5 };
+  let m = t.match(/(半|[一两二三四五六七八九十]|\d+)\s*年/); if (m && /过|等|守|熬|住|做|当|在/.test(t)) return Math.min(60, (zh[m[1]] ?? +m[1]) * 12);
+  m = t.match(/(半|[一两二三四五六七八九十]|\d+)\s*个?月/); if (m && /过|等|守|熬|住|做|当|在/.test(t)) return Math.min(24, zh[m[1]] ?? +m[1]);
+  if (/到年底|到年终|过年|到明年|开春|入冬|到秋|整年/.test(t)) return 6;
+  return 0;
+}
+function spanBlock(s, span, said) {
+  const mo = spanMonths(span, said); if (mo < 2 || !s.clock) return '';
+  const now = ymOf(s.clock), L = [];
+  const ev = hasHist(s) ? histEvents(s, now, now + mo).map(e => histView(s, e)).filter(e => e.status !== '取消') : arr(s.world && s.world.upcoming).filter(u => evYM(u) <= now + mo);
+  for (const e of ev.slice(0, 14)) L.push(`· ${e.y}年${e.m ? e.m + '月' : ''}${e.d ? e.d + '日' : ''}：${e.text}`);
+  const A = arcsNow(s)[0];
+  if (A) { const st = arr(A.a.stages).filter(x => ymA(x.to) >= now && ymA(x.from) <= now + mo); if (st.length > 1) L.push(`主线「${A.a.title}」这段日子里走过的阶段：${st.map(x => x.name).join(' → ')}`); }
+  return L.length ? `【这段日子（约${mo >= 12 ? Math.round(mo / 12) + '年' : mo + '个月'}）里照史料会发生的事（按先后、照真实日子写进去，主角的日子和身份随之变化；年纪、家人、仕途、产业都跟着时间走）】\n${L.join('\n')}` : '';
+}
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
   const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料') : ''));
@@ -1942,7 +1974,8 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const sc = ruling && ruling.scene;
   const scene = sc ? `\n【人物底（出场的人各自的心思、不在场的人做了什么；参考着写，人物照各自的盘算说话做事）】${sc.type ? '\n场面：' + sc.type : ''}${sc.where ? '\n场合：' + sc.where : ''}${sc.cast.length ? '\n出场：' + sc.cast.map(x => `${x.name}（${x.want}）`).join('；') : ''}${sc.offstage ? '\n不在场的人：' + sc.offstage : ''}${sc.beats.length ? '\n' + sc.beats.map((b, i) => `${i + 1}. ${b}`).join('\n') : ''}${sc.end ? '\n停在：' + sc.end : ''}` : '';
   const dos = dossierBlock(s, said + ' ' + (sc ? sc.cast.map(x => x.name).join(' ') : '') + ' ' + arr(ruling && ruling.realPeople).join(' '));
-  const dir = directorBlock(s, said) + (s.mainNow && s.mainNow.upcoming && s.mainNow.days > 3 && !SPANS[span] && (String(said || '').trim().length < 8 || /看看|等等|等着|歇|随便|观望|先这样|再说|嗯/.test(said)) ? `【这一回的时间】玩家没交代要紧的事：把日子往前推，写这几天到几十天里主线的前兆一件件来，推到离那件大事更近的时候（它约${s.mainNow.days}天后到来，可以直接写到它前一两天或当天）。\n` : '');
+  const sb2 = spanBlock(s, span, said);
+  const dir = directorBlock(s, said) + (sb2 ? sb2 + '\n' : '') + (s.mainNow && s.mainNow.upcoming && s.mainNow.days > 3 && !SPANS[span] && (String(said || '').trim().length < 8 || /看看|等等|等着|歇|随便|观望|先这样|再说|嗯/.test(said)) ? `【这一回的时间】玩家没交代要紧的事：把日子往前推，写这几天到几十天里主线的前兆一件件来，推到离那件大事更近的时候（它约${s.mainNow.days}天后到来，可以直接写到它前一两天或当天）。\n` : '');
   return pushUser(turns, what + modernNote(said) + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ruling ? '\n' + rulingText(ruling) : '') + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + '\n\n照规则写正文。');
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
@@ -2264,6 +2297,21 @@ function applyReply(s, d, said) {
     const turn = s.turn;
     let when = `${s.clock.yearLabel || ''}${CAL.label(s.clock.m, s.clock.d, s.clock.leap)}`;
     const acc = [];
+    // 身份变了：身份、数值、看大势的角度、本朝官制、目标一起换，记进履历
+    const idc = d.identity && typeof d.identity === 'object' && String(d.identity.role || '').trim().length >= 2 && !/没变|未变|不变|^无$/.test(String(d.identity.role)) ? d.identity : null;
+    if (idc) {
+      const from = s.protagonist.role, to = one(idc.role, 40);
+      if (to !== from) {
+        s.protagonist.role = to; if (IDM[idc.identityModule]) s.idm = idc.identityModule;
+        s.title = `${s.protagonist.name} · ${one(to, 14)}`;
+        if (arr(idc.meters).length) { s.meters = {}; d.meters = arr(idc.meters).concat(arr(d.meters).filter(m => m && !arr(idc.meters).some(x => (x.项 || x.name) === (m.项 || m.name)))); }
+        s.careerLog = arr(s.careerLog).concat([{ turn, when, what: `由「${one(from, 20)}」成为「${one(to, 20)}」${idc.why ? '：' + one(idc.why, 60) : ''}` }]);
+        s.chronicle = arr(s.chronicle).concat([{ turn, when, who: s.protagonist.name, what: `身份变了：${one(to, 30)}${idc.why ? '（' + one(idc.why, 40) + '）' : ''}` }]);
+        s.inst = null; s.arcId = null; s.arcGoal = '';
+        s.goals = arr(s.goals).filter(g => g.term === '长远');   // 眼下、今年的目标照新身份重定
+        extra.identity = { from: one(from, 30), to, why: one(idc.why, 80) };
+      }
+    }
     for (const m of arr(d.meters)) {
       if (!m || typeof m !== 'object') continue;
       const k = one(m.项 || m.name, 16), v = one(m.值 || m.value, 40);
@@ -2596,6 +2644,7 @@ function extrasHtml(x) {
   if (arr(x.news).length) top.push(`<div class="ex news"><div class="eh">天下事<span>传到你这里的</span></div>${x.news.map(r => `<div>${esc(r.y)}年${r.m ? r.m + '月' : ''}：${esc(r.text)}${r.changed ? ' <span class="mine">（本局）</span>' : ''}</div>`).join('')}</div>`);
   if (x.moved) top.push(`<div class="ex"><div class="eh">搬到了</div><div>${esc(x.moved)}</div></div>`);
   if (x.succession) top.push(`<div class="ex news"><div class="eh">传承</div><div>${esc(x.succession)}</div></div>`);
+  if (x.identity) top.push(`<div class="ex news"><div class="eh">身份变了</div><div>${esc(x.identity.from)} → <b>${esc(x.identity.to)}</b>${x.identity.why ? `<div class="muted">${esc(x.identity.why)}</div>` : ''}</div></div>`);
   if (x.salvaged) top.push(`<div class="ex"><div class="eh">提醒</div><div>这一回的正文留下了，但变化没记上（钱、人物、时间都还是上一回的）。${x.salvagedBtn === false ? '' : '<button class="link" id="bSettle">补记这一回</button>'}</div></div>`);
   // 收起来的：数目、幕后推演、参阅的资料
   const cash = arr(x.acc).find(a => /现钱/.test(a.k));
@@ -3079,8 +3128,8 @@ async function send(said, span, note, resume) {
       if (vrP && MODE !== 'local') await vrP;
       const ledgerFor = async (txt, hid) => {
         let d0 = null;
-        for (let k = 0; k < 2 && !d0; k++) {
-          try { const { text: lt } = await callClaude(ledgerInput(S, said, txt, hid, span, ruling), null, { maxTokens: 8000, temperature: 0.3, kind: '记账' }); d0 = parseJSON(lt); } catch (e) { if (e && e.code === 'cancelled') throw e; }
+        for (let k = 0; k < 3 && !d0; k++) {
+          try { const { text: lt } = await callClaude(ledgerInput(S, said, txt, hid, span, ruling) + (k ? '\n\n（上一次的回答不是合法的 JSON 或被截断了。这次只输出那一个 JSON 对象，括号配对，没变的字段不要给，写短些。）' : ''), null, { maxTokens: 8000, temperature: 0.3, kind: '记账' }); d0 = parseJSON(lt); } catch (e) { if (e && e.code === 'cancelled') throw e; }
         }
         return d0;
       };
