@@ -347,6 +347,40 @@ function storyRules() {
 · 直接写正文，不加标题、不加代码块。写完后若有玩家看不到的真相（谁在瞒报、谁打什么主意、某事的真相与后续），另起一行写「【幕后】」，一两句；没有就不写。`;
 }
 
+/* ========== 国势账：地盘、兵马、势力、国库按名字合并（不再被一张不全的清单整组冲掉），粮饷与岁入岁出由程序照日子结算 ========== */
+const GONE = v => /^(true|是|1|丢|失|亡|散|灭)/.test(String(v == null ? '' : v).trim());
+function mergeRows(old, upd, key, n) {
+  const m = new Map(arr(old).filter(x => x && x[key]).map(x => [x[key], x]));
+  for (const x of arr(upd)) {
+    const k = x && x[key]; if (!k) continue;
+    if (GONE(x.lost) || GONE(x.gone)) { m.delete(k); continue; }
+    const clean = Object.fromEntries(Object.entries(x).filter(([kk, v]) => v !== '' && v != null && kk !== 'lost' && kk !== 'gone'));
+    m.set(k, { ...(m.get(k) || {}), ...clean });
+  }
+  return [...m.values()].slice(-n);
+}
+/** 过了几天：兵吃粮（一人一日一升半）、国库照岁入岁出折算；记进这一回的账 */
+function realmUpkeep(s, days, acc) {
+  if (!days || days <= 0) return;
+  for (const f of arr(s.forces)) {
+    const t = N0(f.troops), g = N0(f.grain);
+    if (t > 0 && g != null) { const use = Math.round(t * 0.02 * days); if (use > 0) { const ng = Math.max(0, g - use); acc.push({ k: `${f.name || f.leader}军粮`, from: g + '石', to: ng + '石', why: `${t}人×${days}天，日食二升` }); f.grain = String(ng); } }
+  }
+  const R = s.realm;
+  if (R) { const rev = N0(R.revenue) || 0, out = N0(R.outlay) || 0, tr = N0(R.treasury); if (tr != null && (rev || out)) { const nt = Math.round(tr + (rev - out) * days / 360); if (nt !== tr) { acc.push({ k: '国库', from: fmtN(tr, (s.money || {}).unit || '两'), to: fmtN(nt, (s.money || {}).unit || '两'), why: `岁入${rev}、岁出${out}，折${days}天` }); R.treasury = String(nt); } } }
+}
+/** 给推演、写正文、记账的人看的国势总账（程序算的，以此为准） */
+function realmBlock(s) {
+  const tr = arr(s.territory), fc = arr(s.forces), R = s.realm, pw = arr(s.powers);
+  if (!tr.length && !fc.length && !R) return '';
+  const sum = (xs, k) => xs.reduce((a, x) => a + (N0(x[k]) || 0), 0);
+  const L = ['【国势账（程序结算，以此为准；正文里的兵数、粮数、地盘、国库必须和这里对得上，打了仗、丢了城、征了兵就在记账时改）】'];
+  if (R) L.push(`国库 ${R.treasury ?? '？'}；太仓存粮 ${R.granary ?? '？'}石；总兵额 ${R.army ?? '？'}；岁入 ${R.revenue ?? '？'}、岁出 ${R.outlay ?? '？'}${R.note ? '；' + R.note : ''}`);
+  if (tr.length) L.push(`地盘 ${tr.length} 处（户口合计约 ${sum(tr, 'pop')}，守军合计 ${sum(tr, 'troops')}，存粮合计 ${sum(tr, 'grain')}石）：` + tr.map(x => `${x.place}（户${x.pop || '？'}，守军${x.troops || '？'}，粮${x.grain || '？'}石，民心${x.loyalty || '？'}${x.ruler ? '，' + x.ruler + '治' : ''}）`).join('；'));
+  if (fc.length) L.push(`兵马 ${fc.length} 支（合计 ${sum(fc, 'troops')} 人）：` + fc.map(x => { const t = N0(x.troops), g = N0(x.grain); const dd = t > 0 && g != null ? Math.floor(g / (t * 0.02)) : null; return `${x.name || ''}（${x.leader || ''}统，${x.troops || '？'}人，${x.quality || ''}，在${x.at || '？'}，${x.status || ''}${dd != null ? `，粮可支${dd}天${dd < 30 ? '——要断粮了' : ''}` : ''}）`; }).join('；'));
+  if (pw.length) L.push('天下各方：' + pw.map(x => `${x.name}（${x.leader || ''}，据${x.seat || ''}${x.land ? '，' + x.land : ''}，兵${x.troops || '？'}，对主角${x.stance || '？'}）`).join('；'));
+  return L.join('\n');
+}
 /** 账房的规则：照正文记账、核史实，只出 JSON */
 function ledgerRules() {
   return `你是这局历史模拟游戏的账房兼史官。主持人刚写好这一回的正文（下面给出）。你的事：照正文把账册更新，再把正文的史实核一遍。只记正文里发生了的事和照理必然发生的事（过了月份的收支、按史书此时发生的天下大事、行情随季节的涨落），不要改剧情、不要添正文没有的情节。
@@ -360,7 +394,7 @@ function ledgerRules() {
 5. lifeEvents：身边人和世界的变化（谁、怎么了）；household：家里人口变化；orders：交代下去的事和办的结果（在办/办妥/办砸/搁下）；deeds：玩家这回做的、可能有后续的事，deedsDone：以前的作为在本回合有了下文的（开头几个字）。
 6. worldEvents：这段时间里按史书发生、或正文里传来的天下大事（年月；被本局改变的写实际样子，changed 填 true）；【按史书将要发生】快用完时，在 worldUpcoming 补上之后五年按史书会发生的大事。historyChanges：玩家使史书上的事没照原样发生时记下。
 7. places：正文里头一次出现的地方（当时名称、今地、隶属、在主角现居地的方位里程与行程）。
-8. powers / territory / forces：势力、主角的地盘与兵马有变化时整组给出（地盘按县、州府一处一条写当时的名称，兵马的驻地写到县城或关隘）（兵额、存粮石数、户口、民心 0–100、月赋都写数字）。succession：只在主角死去时填。career / careerEvents：主角的官职、品级、差遣、称号、职权、上司属下、考课、可能的下一步有变化时给出；任免升降考课等记 careerEvents。statusChanges：功名、爵位、健康、名望等的变化。
+8. powers / territory / forces：只给这一回变了的那几条（程序按势力名、地名、军名合并，没提到的照旧；丢了的地盘写 "lost":true，打散了的兵马、灭亡的势力写 "gone":true；打过仗的兵马 troops 写剩下的人数，新占的地盘整条给出）。realm：主角是君主、诸侯、割据一方的人才给，只给变了的项（国库、太仓存粮、总兵额、岁入、岁出写数字；军粮与国库的日常消耗程序会照日子结算，你只记一次性的进出，如赏赐、征发、缴获、赈济）（地盘按县、州府一处一条写当时的名称，兵马的驻地写到县城或关隘）（兵额、存粮石数、户口、民心 0–100、月赋都写数字）。succession：只在主角死去时填。career / careerEvents：主角的官职、品级、差遣、称号、职权、上司属下、考课、可能的下一步有变化时给出；任免升降考课等记 careerEvents。statusChanges：功名、爵位、健康、名望等的变化。
 9. gmNotes：正文后【幕后】里写的真相，以及你看出的伏笔（玩家看不到）；gmNotesDone：已经浮出或了结的（开头几个字）。
 10. hints：四五条，玩家接下来可以做的事，一句一条（不要查账、盘账、催粮、派夫这类琐事），方向要拉开：一条顺着眼下的事，一条反着来或换个办法，一条完全另起炉灶的大胆路子（离开此地、改行、投奔某人、冒险一搏、做件出格的事），一条戏外可以问的问题。
 11. canon：本回合新确立、以后必须一直成立的事实（身份名分、婚姻亲属、产权契约、承诺约定、结下的恩怨、谁知道了什么秘密、主角立下的规矩），一句一条，没有就 []；canonDone：已经不再成立的（开头几个字）。
@@ -388,6 +422,7 @@ function ledgerRules() {
 "powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}],
 "territory":[{"place":"","pop":0,"troops":0,"grain":0,"loyalty":50,"tax":0,"ruler":"","note":""}],
 "forces":[{"name":"","leader":"","troops":0,"grain":0,"quality":"","at":"","status":"驻守/行军/交战/休整"}],
+"realm":{"treasury":0,"granary":0,"army":0,"revenue":0,"outlay":0,"note":""},
 "succession":{"died":"主角死了才填「是」","heir":"","heirRole":"","heirAge":0,"note":""},
 "career":{"office":"","rank":"","post":"","titles":[""],"duties":"","powers":"","superior":"","subordinates":"","evaluation":"","tenure":"","nextSteps":[{"to":"","need":""}]},
 "careerEvents":[{"what":"","office":""}],
@@ -408,7 +443,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261017153024';
+const BUILD = '20261017162444';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -973,7 +1008,7 @@ function rulingInput(s, said) {
 【此刻】${timeText(s.clock)}，${s.place.full}（${s.place.polity || ''}）
 【主角】${p.name}，${p.gender ? p.gender + '，' : ''}${p.age != null ? p.age + '岁，' : ''}${p.role}${c.office ? '；官职：' + c.office + (c.rank ? '（' + c.rank + '）' : '') + (c.powers ? '，职权：' + c.powers : '') : ''}${Object.keys(s.status || {}).length ? '；名位：' + Object.entries(s.status).map(([k, v]) => k + v).join('，') : ''}
 【钱粮】现钱 ${mo.cash == null ? '未定' : fmtN(mo.cash, u)}；产业：${arr((s.estate || {}).assets).map(a => a.name + (a.qty ? a.qty : '')).join('、') || '无'}；每月净得 ${fmtN(arr((s.estate || {}).income).reduce((a, x) => a + (N0(x.amount) || 0), 0) - arr((s.estate || {}).expense).reduce((a, x) => a + (N0(x.amount) || 0), 0), u)}
-${arr(s.forces).length ? '【兵马】' + s.forces.map(x => `${x.name}${x.troops}人在${x.at}`).join('；') + '\n' : ''}${arr(s.territory).length ? '【地盘】' + s.territory.map(x => x.place).join('、') + '\n' : ''}【身边的人（各有盘算）】${P.map(([k, v]) => `${k}（${v.role || ''}，好感${v.favor ?? '?'}${v.personality ? '，' + v.personality : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + cut(v.goal, 30) : ''}${v.plan ? '；打算：' + cut(v.plan, 30) : ''}）`).join('；') || '无'}
+${realmBlock(s) ? realmBlock(s) + '\n' : ''}【身边的人（各有盘算）】${P.map(([k, v]) => `${k}（${v.role || ''}，好感${v.favor ?? '?'}${v.personality ? '，' + v.personality : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + cut(v.goal, 30) : ''}${v.plan ? '；打算：' + cut(v.plan, 30) : ''}）`).join('；') || '无'}
 ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下去还没办完的】' + s.orders.filter(o => /在办|待办|推迟/.test(o.status)).slice(-6).map(o => `${o.who}：${o.what}`).join('；') + '\n' : ''}${arr(s.gmNotes).length ? '【幕后真相（玩家不知道）】' + s.gmNotes.slice(-8).map(n => cut(n.text, 60)).join('；') + '\n' : ''}${arr(s.summaries).length ? '【最近几回】' + s.summaries.slice(-4).map(x => cut(x.text, 80)).join(' / ') + '\n' : ''}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '无'}
 ${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
@@ -1652,7 +1687,7 @@ async function worldTick(s) {
     s.chronicle.push({ turn: s.turn, when: `${s.clock.yearLabel || ''}${CAL.label(s.clock.m, 0, s.clock.leap)}`, who: m.name, what: m.did });
   }
   const rows = (a, n) => a.filter(x => x && typeof x === 'object').slice(0, n).map(x => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, one(v, 60)])));
-  if (Array.isArray(d.powers) && d.powers.length) s.powers = rows(d.powers, 16).filter(x => x.name);
+  if (Array.isArray(d.powers) && d.powers.length) s.powers = mergeRows(s.powers, rows(d.powers, 16), 'name', 16);
   if (Array.isArray(d.factions)) { const f = rows(d.factions, 10).filter(x => x.name); if (f.length) s.factions = f; }
   w.tickAt = { ym: nowYM, turn: s.turn, label: timeText(s.clock) };
   return { changes: report.slice(0, 8), ripples: rp, moves, overview: cut(d.overview, 600) };
@@ -1714,9 +1749,7 @@ function blocks(s, forStory) {
   instBlocks(s, L, forStory);
   if (arr(s.factions).length) L.push('【派系与利益集团（以此为准；派系照各自诉求行动，议题不同可以分合）】' + s.factions.map(f => `${f.name}（${f.leader || ''}${f.members ? '；' + f.members : ''}；要${f.aims || '？'}；对主角${f.stance || '？'}；${f.strength || ''}${f.note ? '；' + f.note : ''}）`).join('；'));
   const pw = arr(s.powers), tr = arr(s.territory), fc = arr(s.forces);
-  L.push('【势力（以此为准；有变化在 powers / territory / forces 里整体给出）】\n天下各方：' + (pw.length ? pw.map(x => `${x.name}（${x.leader || ''}，据${x.seat || ''}${x.land ? '，' + x.land : ''}，兵${x.troops || '？'}，对主角${x.stance || '？'}${x.note ? '，' + x.note : ''}）`).join('；') : '（下一回合给出此时天下的主要势力）')
-    + (tr.length ? '\n主角的地盘：' + tr.map(x => `${x.place}（户${x.pop || '？'}，守军${x.troops || '？'}，民心${x.loyalty || '？'}，存粮${x.grain || '？'}，${x.ruler ? x.ruler + '治理' : ''}${x.note ? '，' + x.note : ''}）`).join('；') : '')
-    + (fc.length ? '\n主角的兵马：' + fc.map(x => `${x.name || ''}（${x.leader || ''}统领，${x.troops || ''}，${x.quality || ''}，粮${x.supply || '？'}，在${x.at || '？'}，${x.status || ''}）`).join('；') : ''));
+  { const rb = realmBlock(s); if (rb) L.push(rb); else if (arr(s.powers).length) L.push('【天下各方（以此为准；有变化在 powers 里只给变了的）】' + s.powers.map(x => `${x.name}（${x.leader || ''}，据${x.seat || ''}${x.land ? '，' + x.land : ''}，兵${x.troops || '？'}，对主角${x.stance || '？'}）`).join('；')); }
   const dd = arr(s.deeds).filter(x => !x.done).slice(-15);
   if (dd.length) L.push('【主角的作为（还可能有后续的；后续真来了在正文写出并记 deedsDone，也可能就此无事）】\n' + dd.map(x => `· 第${x.turn}回合：${x.what}（${x.effect || ''}${x.later ? '；可能：' + x.later : ''}）`).join('\n'));
   if (arr(s.figures).length && !hasHist(s)) L.push('【要紧人物（真人；此时的官职、所在、生死以此为准）】\n' + s.figures.map(f => `· ${f.name}：${f.post || ''}${f.age ? '，' + f.age + '岁' : ''}${f.where ? '，在' + f.where : ''}${f.alive === false ? '，已故' : ''}${f.stance ? '，' + f.stance : ''}${f.note ? '；' + f.note : ''}`).join('\n'));
@@ -1998,7 +2031,7 @@ function openingStoryInput(sentence, sys, custom, mat) {
 function openingLedgerInput(sentence, story, hidden, custom, setting) {
   return ledgerRules() + `
 
-【开局】玩家想当的人：「${sentence}」。${customBlock(custom)}${setting ? '\n' + setting + '\nsetup 的年月日、地点、政权、姓名、性别、年龄照上面这份设定。\n' : ''}主持人已经写好开场（下面）。setup 里的姓名、性别、年龄、身份、地点、政权必须与玩家定的一致。goals 给齐三条（眼下、今年、长远），贴着开场里的处境；长远那条要放在【大势主线】里（这个人在这场大势里想成的事）。${setting && S0ARC ? '\n' + S0ARC + '\n' : ''}照开场把整本账册立起来：meters 按这个身份给五六项初值（${Object.values(IDM).map(x => x.meters).join(' / ')} 里取合身份的那组），groups 给三到五个人群（0–100），estate 把家业账立全（产业及估值、每月进项开销、在做的事），prices 给出本地十来样常用物价（照这个年代真实的量级与单位：唐宋多用文、贯、斗、匹，明清多用银两、钱、石；拿不准就取史书常见的数），presentNpcs 列出开场里出现的人，places 记下现居地和周边、上级治所、京城等五到八个地方，powers 列出此时天下的主要势力（三到八个，按真实历史），主角有地盘兵马就立 territory、forces，有官职就立 career，hints 给三到五条。开局时 ledger 给 []，elapsedDays 给 0。
+【开局】玩家想当的人：「${sentence}」。${customBlock(custom)}${setting ? '\n' + setting + '\nsetup 的年月日、地点、政权、姓名、性别、年龄照上面这份设定。\n' : ''}主持人已经写好开场（下面）。setup 里的姓名、性别、年龄、身份、地点、政权必须与玩家定的一致。goals 给齐三条（眼下、今年、长远），贴着开场里的处境；长远那条要放在【大势主线】里（这个人在这场大势里想成的事）。${setting && S0ARC ? '\n' + S0ARC + '\n' : ''}照开场把整本账册立起来：meters 按这个身份给五六项初值（${Object.values(IDM).map(x => x.meters).join(' / ')} 里取合身份的那组），groups 给三到五个人群（0–100），estate 把家业账立全（产业及估值、每月进项开销、在做的事），prices 给出本地十来样常用物价（照这个年代真实的量级与单位：唐宋多用文、贯、斗、匹，明清多用银两、钱、石；拿不准就取史书常见的数），presentNpcs 列出开场里出现的人，places 记下现居地和周边、上级治所、京城等五到八个地方，powers 列出此时天下的主要势力（三到八个，按真实历史），主角有地盘兵马就立 territory、forces（每支兵马都写 grain 存粮石数），是君主、诸侯、割据一方的再立 realm（国库、太仓存粮、总兵额、岁入、岁出，照这个年代真实的量级），有官职就立 career，hints 给三到五条。开局时 ledger 给 []，elapsedDays 给 0。
 再加两个字段（以开场正文为准，正文没写到的按史实补全）：
 "setup":{"name":"","gender":"男/女","age":30,"role":"一句话具体身份","identityModule":"emperor/noble/official/warlord/commoner 五选一","nativePlace":"","real":false,"yearLabel":"万历二十八年","gregorianYear":1600,"month":3,"day":5,"place":"当时地名全称","polity":"明","unit":"记账的本位单位，如两、贯、文","cash":0,"household":[{"relation":"父","name":"","age":50,"note":"一句话"}]},
 "world":{"overview":"三五句：在位的皇帝（或君主）与年号、当权的人、天下大势、本地本行当的局势","events":[{"y":1598,"m":0,"text":"近十来年真实发生、与此有关的大事"}],"upcoming":[{"y":1601,"m":0,"text":"按史书之后五年会发生的大事"}]}
@@ -2387,6 +2420,7 @@ function applyReply(s, d, said) {
       const nd = CAL.addDays(s.clock, days), years = Math.max(0, nd.y - s.clock.y);
       Object.assign(s.clock, nd);
       if (years) { if (s.protagonist.age != null) s.protagonist.age += years; for (const m of s.household) if (m.age != null && !m.dead) m.age += years; }
+      realmUpkeep(s, days, acc);
     }
     // 到了日子的史线：照它发生（不再悄悄丢掉）；被改写的、新出的照本局的样子
     const nowYM = ymOf(s.clock);
@@ -2491,9 +2525,10 @@ function applyReply(s, d, said) {
     s.career = c;
   }
   const rows = (a, n) => a.filter(x => x && typeof x === 'object').slice(0, n).map(x => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, one(v, 60)])));
-  if (Array.isArray(d.powers) && d.powers.length) s.powers = rows(d.powers, 16).filter(x => x.name);
-  if (Array.isArray(d.territory) && d.territory.length) s.territory = rows(d.territory, 30).filter(x => x.place);
-  if (Array.isArray(d.forces) && d.forces.length) s.forces = rows(d.forces, 20).filter(x => x.name || x.leader);
+  if (Array.isArray(d.powers) && d.powers.length) s.powers = mergeRows(s.powers, rows(d.powers, 16), 'name', 16);
+  if (Array.isArray(d.territory) && d.territory.length) s.territory = mergeRows(s.territory, rows(d.territory, 40), 'place', 60);
+  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(x => ({ ...x, name: x.name || x.leader })), 'name', 30);
+  if (d.realm && typeof d.realm === 'object' && !Array.isArray(d.realm)) s.realm = { ...(s.realm || {}), ...Object.fromEntries(Object.entries(d.realm).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, one(v, 60)])) };
   for (const p of arr(d.places)) {
     if (!p || !p.name) continue;
     const k = one(p.name, 16), o = s.places[k] || {};
@@ -2790,7 +2825,8 @@ function pane(tab) {
   }
   if (tab === 'power') {
     const tbl = (rows, cols, keys) => `<div class="tblwrap"><table class="tbl"><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>${rows.map(r => `<tr>${keys.map((k, i) => `<td>${i === 0 ? '<b>' : ''}${esc(r[k] || '')}${i === 0 ? '</b>' : ''}</td>`).join('')}</tr>`).join('')}</table></div>`;
-    return `<div class="h" style="margin-top:6px"><span class="seal">雄</span>天下各方<span class="note">各方会照自己的利害行动</span></div>
+    const sumN = (xs, k) => xs.reduce((a, x) => a + (N0(x[k]) || 0), 0), R0 = s.realm, TR = arr(s.territory), FC = arr(s.forces);
+    return `${R0 || TR.length || FC.length ? `<div class="h" style="margin-top:6px"><span class="seal">国</span>你的国势<span class="note">程序照日子结算粮饷与岁入岁出</span></div><dl class="kv">${R0 ? `<dt>国库</dt><dd>${esc(R0.treasury ?? '？')}</dd><dt>太仓存粮</dt><dd>${esc(R0.granary ?? '？')} 石</dd><dt>总兵额</dt><dd>${esc(R0.army ?? '？')}</dd><dt>岁入／岁出</dt><dd>${esc(R0.revenue ?? '？')}／${esc(R0.outlay ?? '？')}</dd>` : ''}${TR.length ? `<dt>地盘</dt><dd>${TR.length} 处，户口约 ${sumN(TR, 'pop')}，守军 ${sumN(TR, 'troops')}</dd>` : ''}${FC.length ? `<dt>兵马</dt><dd>${FC.length} 支，合计 ${sumN(FC, 'troops')} 人</dd>` : ''}</dl>` : ''}<div class="h" style="margin-top:6px"><span class="seal">雄</span>天下各方<span class="note">各方会照自己的利害行动</span></div>
       ${arr(s.powers).length ? tbl(s.powers, ['势力', '首领', '据地', '兵力', '对你', '近况'], ['name', 'leader', 'seat', 'troops', 'stance', 'note']) : '<div class="muted">下一回合给出此时天下的主要势力。</div>'}
       ${arr(s.factions).length ? `<div class="h"><span class="seal">党</span>派系与利益集团<span class="note">天下推演时更新</span></div>${tbl(s.factions, ['派系', '头面人物', '成员', '诉求', '对你', '实力'], ['name', 'leader', 'members', 'aims', 'stance', 'strength'])}` : ''}
       <div class="h"><span class="seal">土</span>你的地盘</div>
