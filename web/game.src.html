@@ -296,7 +296,7 @@ function storyRules() {
 · 不落套：不要回回由管家、账房、仆人、差役进门来报信开场，不要回回是「某人求见—禀报一件麻烦—等你拿主意」这一个模子；场面要换着来——路上、公堂、军中、市集、酒席、书房夜读、田头作坊、寺观、朝会、家里私话、独处——看大事的角度也要换着来：朝局、军情、诏令、任免、市面、民情、身边人的选择。看【最近几回的场面】，这回的地方、出场的人、开头的方式、收尾的方式都要和它们不同。
 · 身边的人是能干的成年人，不是等吩咐的木偶：管家、账房、幕僚、部将、伙计、家人在自己分内的事上自己拿主意、自己办，办完回报结果（办得好坏看本事和私心）；不会事事来请示、不会问「该怎么办」「请示下」。一回里最多只有一件真正要主角拍板的大事。主角没理会的事，别人照自己的盘算办了，后果照来。
 · 题材要宽：账目、钱粮、差役、摊派、文书公事只是日子的一角，多数时候一笔带过；正文的重心是时代大事怎样落到这些人身上，以及他们的选择。
-· 天下大事按真实的日子到来（看【内置史料】里的「本月之内」「将要发生」）：玩家这一步跨过了那个日子，就写到那一天，让它砸进主角的日子里——他看见、听见、被卷进去的那一部分。
+· 天下大事按真实的日子到来（看【内置史料】里的「本月之内」「将要发生」）：玩家这一步跨过了那个日子，就写到那一天，让它砸进主角的日子里——他看见、听见、被卷进去的那一部分。大事要写成场面，不一句话带过：消息怎么到的、谁带来的、原话怎么说、具体的人名地名日子数目（照【这件大事的细节】），身边的人头一个反应是什么、各自打什么主意，第二天街上、衙门里、军中有什么变化。
 · 好看的是人。每个人有出身、处境、性格、本事和私心。头一次出场交代他是谁、和主角什么关系。
 · 令行禁止：主角权限之内的吩咐，下面的人立刻照办、办成，这一回就写出办的经过和结果；不追问、不推诿、不讨价还价、不拖到下一回。只有真办不到的（超出主角的身份权限、违犯律令要掉脑袋、钱粮人手实在不够、人在千里之外）才写难处，而且把难处和结果一次写清，不留着让玩家再问。办事的人有本事高低：能干的办得漂亮，平庸的办得一般，但都办了。
 · 不追问玩家：玩家只说了个大概，就照常理把细节补齐办下去；人物不问「要不要」「是否」「怎么办」「请示下」，不让玩家二选一，不等玩家拍板才动。
@@ -1901,6 +1901,33 @@ function mainlineBeat(s) {
     : '刚刚发生过：这一回写它的余波——消息怎样传到这里、走了样；朝局、军情、市面、人心怎样跟着变；跟主角有关的人怎样各自应对';
   return { key: best.key, days: best.dm >= 0 ? days : 0, upcoming: best.dm > 0 || (best.dm === 0 && e.d && (s.clock.d || 1) < e.d), text: `${when}：${e.text}${e.status && e.status !== '照史' ? '（本局：' + e.status + '）' : ''}`, phase };
 }
+/** 大事深挖：这一回的历史主线那件大事，联网查它的经过、人物、兵力、诏令、时人反应、波及哪里，整理成细节卡（每件大事每个阶段查一次） */
+const phaseOf = mb => /还没发生/.test(mb.phase) ? '前兆' : /余波/.test(mb.phase) ? '余波' : '发生';
+async function ensureEventDetail(s) {
+  const mb = s.mainNow; if (!mb || !canSearch()) return null;
+  const ph = phaseOf(mb), D = s.evDetail || (s.evDetail = {}), k = mb.key;
+  if (D[k] && D[k].ph === ph) return D[k];
+  const core = String(mb.text).replace(/^[^：]*：/, '').split(/[，,；;。（(]/)[0].slice(0, 16), y = s.clock.y, pol = s.place.polity || '';
+  const qs = ph === '前兆' ? [`${core} 起因 背景`, `${core} 前夕 ${y}年`, `${core} 筹备 部署`] : ph === '余波' ? [`${core} 影响`, `${core} 之后 ${pol} 局势`, `${core} 善后 处置`] : [`${core} 经过`, `${core} 兵力 伤亡`, `${core} ${y}年 日程`];
+  const tmp = { research: [], wikiDone: [], turn: s.turn, clock: s.clock, place: s.place, title: s.title };
+  await Promise.all([doLookups(tmp, qs), wikiRead(tmp, [core])]);
+  const R0 = arr(tmp.research).filter(x => x.text);
+  const { text } = await callClaude(`为一局讲究史实的历史模拟游戏整理一件真实大事的细节，给写正文的人用。大事：${mb.text}。此刻：${timeText(s.clock)}，主角在${s.place.full}，是${s.protagonist.role}。阶段：${ph}（${mb.phase.split('：')[0]}）。
+${R0.length ? '【联网查到的资料】\n' + R0.map(x => `· 查「${x.q}」：${cut(x.text, 1200)}`).join('\n') : '（这次没查到资料，只写通行史书确载的）'}
+只写资料里写明的、或正史通鉴确载的；拿不准的不写。这一阶段之后才发生的事一律不写（书中人不知道）。
+只输出一个 JSON 对象：{"timeline":[{"when":"月日或时间","what":"一句话：谁在哪做了什么"}],"people":[{"name":"","role":"此时的身份","did":"在这件事里做了什么、怎么想"}],"numbers":"兵力、伤亡、钱粮、里程等确凿数目，一两句","orders":"相关的诏令、檄文、军令、奏疏的要点（能引原句的引一句）","talk":"当时各色人等怎么议论、市面人心怎么变","reach":"这件事此刻怎样波及${s.place.full}和主角这样的人，两三句"}`, null, { maxTokens: 2500, temperature: 0.2, kind: '史事' });
+  const d = parseJSON(text); if (!d) return null;
+  D[k] = { ph, at: s.turn, timeline: arr(d.timeline).filter(x => x && x.what).slice(0, 8).map(x => ({ when: one(x.when, 16), what: one(x.what, 80) })), people: arr(d.people).filter(x => x && x.name).slice(0, 6).map(x => ({ name: one(x.name, 10), role: one(x.role, 30), did: one(x.did, 80) })), numbers: one(d.numbers, 160), orders: one(d.orders, 200), talk: one(d.talk, 160), reach: one(d.reach, 200), src: R0.length ? '检索' : '史书' };
+  const ks = Object.keys(D); if (ks.length > 6) for (const x of ks.slice(0, ks.length - 6)) delete D[x];
+  return D[k];
+}
+function eventDetailBlock(s) {
+  const mb = s.mainNow, x = mb && s.evDetail && s.evDetail[mb.key]; if (!x) return '';
+  return `【这件大事的细节（据${x.src === '检索' ? '联网查到的资料' : '通行史书'}整理；写它时用这些具体的人、日子、数目、原话，让它在主角眼前一件件发生，不要一句话带过）】`
+    + (x.timeline.length ? '\n经过：' + x.timeline.map(t => `${t.when} ${t.what}`).join('；') : '')
+    + (x.people.length ? '\n人物：' + x.people.map(p => `${p.name}（${p.role}）${p.did}`).join('；') : '')
+    + (x.numbers ? '\n数目：' + x.numbers : '') + (x.orders ? '\n文告：' + x.orders : '') + (x.talk ? '\n人心议论：' + x.talk : '') + (x.reach ? '\n落到此地：' + x.reach : '');
+}
 /** 烈度：此时此地是不是真在兵锋战乱里（照主线阶段与眼前史事判断）。平常年景就写平常日子，不硬加乱兵、盗匪、灾祸 */
 const WAR_RE = /战|叛|乱|起兵|攻|陷|围城|屠|兵变|入寇|南下|北伐|东征|西征|兵临|溃|破城|陷落|起义|造反|寇/;
 function heat(s) {
@@ -1920,6 +1947,7 @@ function heatBlock(s) {
 function directorBlock(s, said) {
   const mb = s.mainNow, ban = bannedTopics(s, said), ab = arcBlock(s);
   return heatBlock(s) + '\n' + (ab ? ab + '\n' : '') + (mb ? `【这一回的历史主线（程序据史料挑的，这一回围着它写；玩家这一步也放在它底下写，别的事都是陪衬，不另起支线）】\n${mb.text}\n${mb.phase}。要写出它怎样落到主角这个身份、这个地方的人身上；牵涉的真人照史料写真名真事。\n` : '')
+    + (eventDetailBlock(s) ? eventDetailBlock(s) + '\n' : '')
     + (ban.length ? `【这一回不许再写的题材（最近写得太多了）】${ban.join('、')}——一个字都不要提，换别的事。\n` : '');
 }
 const BORING = [
@@ -1999,7 +2027,7 @@ function spanBlock(s, span, said) {
 }
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
-  const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料') : ''));
+  const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（新消息：这一回至少用上一两条具体的，作为主角新听到、新看到的事；不相干的不用）') : ''));
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、身边人主动做的事、结识的人、家里的变化、季节年景、传来的天下大事），其余一两句带过。` : '';
   const what = String(said || '').trim() ? `【玩家这回说】\n${said}` : '【玩家这回没说话】日子照常往下过（一般几天到一旬，在打仗就写这几日的军中与敌情）：别人照自己的盘算做事，新的人和事自己找上来，写满这段日子，停在一件新事刚刚展开的地方。';
   // 制度程序只在玩家这一步本身是公事时才给写正文的人（不然它就满篇衙门文书、摊派差役）
@@ -3102,6 +3130,7 @@ async function send(said, span, note, resume) {
       const [lk, rl] = await Promise.all([
         canSearch() ? doLookups(S, lookupQueries(S, said)) : Promise.resolve(null),
         wantPlan ? getRuling(S, said) : Promise.resolve(null),
+        ensureEventDetail(S).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }),   // 大事深挖，和别的查询一起做
       ]);
       looked = lk; ruling = rl;
       if (ruling && SETTINGS.ruling === false) ruling = { steps: [], risks: [], alt: '', search: ruling.search, scene: ruling.scene, brief: ruling.brief, places: ruling.places, realPeople: ruling.realPeople };
