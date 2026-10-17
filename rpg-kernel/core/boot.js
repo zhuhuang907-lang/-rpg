@@ -46,11 +46,24 @@ function relaunchIfNeeded() {
     env.NO_PROXY = [env.NO_PROXY, '127.0.0.1', 'localhost', '::1'].filter(Boolean).join(',');
     if (allowed.has('--use-env-proxy')) flags.push('--use-env-proxy');
   }
-  if (!flags.length) return false;
-  const child = spawn(process.execPath, [...flags, ...process.execArgv, process.argv[1], ...process.argv.slice(2)], { stdio: 'inherit', env, windowsHide: true });
-  child.on('exit', code => process.exit(code == null ? 1 : code));
-  child.on('error', e => { console.error('[boot] 子进程启动失败，改为直接运行：', e.message); process.env.RPG_BOOTED = '1'; });
-  for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK']) { try { process.on(sig, () => { try { child.kill(); } catch (_) { /* 忽略 */ } process.exit(0); }); } catch (_) { /* 平台不支持该信号 */ } }
+  // Windows 上总是由父进程看着：游戏服务万一崩了，一秒后自己重启，玩家不用关掉重开
+  if (!flags.length && process.platform !== 'win32' && process.env.RPG_SUPERVISE !== '1') return false;
+  let child = null, quitting = false;
+  const starts = [];
+  const launch = () => {
+    starts.push(Date.now()); while (starts.length && Date.now() - starts[0] > 5 * 60 * 1000) starts.shift();
+    child = spawn(process.execPath, [...flags, ...process.execArgv, process.argv[1], ...process.argv.slice(2)], { stdio: 'inherit', env, windowsHide: true });
+    child.on('exit', code => {
+      if (quitting) return process.exit(code == null ? 0 : code);
+      // 五分钟里重启了十次还在崩：多半是端口被占、文件坏了，别再无限重启
+      if (starts.length >= 10) { console.error('[boot] 游戏服务反复退出，不再重启'); return process.exit(code == null ? 1 : code); }
+      console.error(`[boot] 游戏服务意外退出（${code}），一秒后重启`);
+      setTimeout(launch, 1000);
+    });
+    child.on('error', e => { console.error('[boot] 子进程启动失败：', e.message); });
+  };
+  launch();
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK']) { try { process.on(sig, () => { quitting = true; try { child && child.kill(); } catch (_) { /* 忽略 */ } process.exit(0); }); } catch (_) { /* 平台不支持该信号 */ } }
   return true;
 }
 

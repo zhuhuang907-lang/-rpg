@@ -15,9 +15,13 @@ const events = require('./core/events');
 const eraVocab = require('./core/eraVocab');
 
 const ROOT = __dirname;
+// 兜底：哪里漏接了一个错误（联网半路断了、某个回调里抛了异常），记下来照常运行，不让整个游戏服务退出
+process.on('uncaughtException', e => { console.error('[兜底] 未接住的错误：', e && (e.stack || e.message || e)); });
+process.on('unhandledRejection', e => { console.error('[兜底] 未接住的异步错误：', e && (e.stack || e.message || e)); });
 const PUBLIC = path.join(ROOT, 'public');
 // 接口版本：游戏页面要用到新的服务端接口时加一；自动更新只换页面，页面要求的接口比这里新就提示重新安装
-const API_VER = 1;
+const API_VER = 2;
+let SELFTEST_RUN = null;   // 自检一次只跑一个：连点几下就等同一次的结果
 /* —— 自动更新：游戏的全部玩法都在 index.html 里。启动时去 GitHub 看有没有新版，有就下载到 data/update，下次打开直接用新版，不用重新安装 —— */
 const UPDATE_DIR = path.join(ROOT, 'data', 'update');
 const UPDATE_BASE = process.env.RPG_UPDATE_BASE || 'https://raw.githubusercontent.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/rpg-kernel/public';
@@ -398,7 +402,8 @@ const routes = {
   },
   async 'POST /api/llm-stop'(body) { const j = LLM_JOBS.get((body || {}).job); if (j) j.status = 'cancelled'; return { ok: true }; },
   /* 联网自检：用真实请求把写剧情、搜索、维基、历史地名库各试一遍，告诉玩家哪个通、拿到了什么 */
-  async 'GET /api/selftest'() {
+  'GET /api/selftest'() { if (!SELFTEST_RUN) SELFTEST_RUN = routes['GET /api/selftest0']().finally(() => { SELFTEST_RUN = null; }); return SELFTEST_RUN; },
+  async 'GET /api/selftest0'() {
     const out = [];
     const time = async (name, f) => { const t0 = Date.now(); try { const r = await f(); out.push({ name, ok: !!r.ok, detail: String(r.detail || '').slice(0, 160), ms: Date.now() - t0 }); } catch (e) { out.push({ name, ok: false, detail: String(e && e.message || e).slice(0, 160), ms: Date.now() - t0 }); } };
     const cfg = await search.loadConfig();
