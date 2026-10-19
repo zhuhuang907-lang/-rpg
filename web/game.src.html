@@ -440,10 +440,14 @@ async function watchUpdate() {
   }
 }
 let UPDMSG = '';
+const SERVER_GONE = '游戏服务的小窗口被关掉了或卡住了：请重新双击桌面上的「历史模拟RPG」，存档不会丢';
 const api = async (url, body) => {
-  const r = await fetch(url, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  return r.json();
+  let r;
+  try { r = await fetch(url, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); }
+  catch (e) { if (e && e.name === 'AbortError') throw e; throw new Error(SERVER_GONE); }
+  try { return await r.json(); } catch (_) { throw new Error(SERVER_GONE); }
 };
+const plainWhy = w => String(w || '').split(' :: ')[0].trim();   // 服务端报错里「::」后面是原始返回，玩家不用看
 /** 桌面版：把对话交给本机的游戏服务，由它带着 DeepSeek Key 去问，边写边取回 */
 function localSample(input, opts = {}) {
   return new Promise(async (resolve, reject) => {
@@ -464,15 +468,15 @@ function localSample(input, opts = {}) {
         await new Promise(res => setTimeout(res, 700));
         if (stopped) return;
         // 偶尔一次没问到（电脑卡了一下）不算失败：连着二十来次（约半分钟）都问不到才报
-        let j; try { j = await api('/api/llm-job', { job }); miss = 0; } catch (_) { if (++miss < 40) continue; return reject({ code: 'local', message: '游戏服务没有回应：启动游戏的小窗口是不是被关掉了？' }); }
+        let j; try { j = await api('/api/llm-job', { job }); miss = 0; } catch (_) { if (++miss < 40) continue; return reject({ code: 'local', message: SERVER_GONE }); }
         if (j.text && j.text !== last) { last = j.text; opts.onText && opts.onText({ text: last, delta: '' }); }
         if (j.status === 'done') return resolve({ text: j.text, truncated: !!j.truncated });
         // 游戏服务半路重启过（任务丢了）：重新发一次，不让这一回作废
         if (!j.ok && /不存在|过期/.test(j.why || '') && restarts < 2) { restarts++; const r2 = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast }).catch(() => null); if (r2 && r2.ok) { job = r2.job; opts.onJob && opts.onJob(job); continue; } }
-        if (j.status === 'error' || !j.ok) return reject({ code: 'local', message: j.error || j.why || '没写成' });
+        if (j.status === 'error' || !j.ok) return reject({ code: 'local', message: plainWhy(j.error || j.why) || '没写成' });
         if (j.status === 'cancelled') return;
       }
-    } catch (e) { if (!stopped) reject({ code: 'local', message: '游戏服务没有回应：' + (e.message || e) }); }
+    } catch (e) { if (!stopped) reject({ code: 'local', message: (e && e.message === SERVER_GONE) ? SERVER_GONE : '游戏服务没有回应：' + plainWhy(e.message || e) }); }
   });
 }
 const LOCAL_INDEX = 'hrpg:index';
@@ -483,7 +487,7 @@ const store = {
     const m = new Map();
     for (const x of readIdx()) m.set(x.id, { ...x });
     const add = v => { const o = m.get(v.id); if (!o || (v.updatedAt || 0) >= (o.updatedAt || 0)) m.set(v.id, { id: v.id, title: v.title, sub: v.sub, updatedAt: v.updatedAt }); };
-    if (MODE === 'local') { try { const r = await api('/api/wsaves'); for (const v of arr(r.saves)) add(v); } catch (_) { /* 只列浏览器里的 */ } }
+    if (MODE === 'local') { try { const r = await api('/api/wsaves'); for (const v of arr(r.saves)) add(v); } catch (e) { if (!ERRMSG) ERRMSG = SERVER_GONE; } }
     else if (DB && UID) {
       try {
         const q = await DB.collection('data/users/' + UID).get();
@@ -603,7 +607,7 @@ const ERR = {
   upstream_error: '连接中断了，点「再试一次」。',
   bad_json: 'AI 返回的格式不对，没读出内容，点「再试一次」。',
 };
-const errText = e => (e && (e.code === 'local' || e.code === 'no_key' || e.code === 'no_sample') ? e.message + (e.code === 'local' ? '。点「再试一次」；反复出现就在首页点「检查网络」。' : '') : '') || ERR[e && e.code] || ('出错了：' + ((e && (e.message || e.code)) || e) + '。点「再试一次」。');
+const errText = e => (e && (e.code === 'local' || e.code === 'no_key' || e.code === 'no_sample') ? plainWhy(e.message) + (e.code === 'local' ? (/Key|余额|权限|小窗口/.test(e.message) ? '' : '。点「再试一次」；反复出现就在首页点「检查网络」。') : '') : '') || ERR[e && e.code] || ('出错了：' + ((e && (e.message || e.code)) || e) + '。点「再试一次」。');
 function parseJSON(text) {
   const t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
@@ -2831,27 +2835,28 @@ function customSpec() {
 const EXAMPLES = ['万历年间苏州的绣娘', '熙宁二年杭州的知县', '乾隆年间扬州的盐商', '天宝十四载范阳的一个小校', '元丰年间汴京的太学生', '崇祯元年的崇祯皇帝'];
 let KEYMSG = '', KEY_OPEN = false, SELFTEST = '', SELFTESTING = false, NETCHECKING = false;
 function keyBox() {
-  const open = !KEY.has || KEY_OPEN;
+  const open = !KEY.has || KEY_OPEN || !!KEY.bad;
   return `<div class="h"><span class="seal">钥</span>DeepSeek Key<span class="note">只存在你自己电脑上；剧情用你自己的 DeepSeek 额度来写</span></div>
-    ${KEY.has && !KEY_OPEN ? `<div class="row" style="margin-top:0"><span class="savest">✓ 已接上 DeepSeek（Key 尾号 ${esc(KEY.tail)}，型号 ${esc(KEY.model)}）</span><button class="link" id="bKeyOpen">换 Key</button><button class="link" id="bNet">检查网络</button><button class="link" id="bSelfTest2">联网自检</button></div><div id="selfBox2">${SELFTEST}</div>` : ''}
+    ${KEY.has && !KEY_OPEN ? `<div class="row" style="margin-top:0">${KEY.bad ? `<span class="err" style="margin:0">✗ Key 试连没通：${esc(plainWhy(KEY.bad))}</span>` : `<span class="savest">✓ 已接上 DeepSeek（Key 尾号 ${esc(KEY.tail)}，型号 ${esc(KEY.model)}）</span>`}<button class="link" id="bKeyOpen">换 Key</button><button class="link" id="bNet">检查网络</button><button class="link" id="bSelfTest2">联网自检</button></div>${SELFTEST ? `<div id="selfBox2">${SELFTEST}</div>` : ''}` : ''}
     ${open ? `<div class="howto" style="grid-template-columns:1fr"><div>
       <b>${KEY.has ? '换一个 Key' : '第一次玩：先粘贴 DeepSeek 的 Key'}</b>
-      <div class="row"><input id="kIn" type="password" autocomplete="off" placeholder="sk-……" class="grow"><input id="kModel" placeholder="型号，留空用 deepseek-v4-pro" style="width:16em"><button class="main" id="bKeySave">保存</button></div>
+      <div class="row" style="flex-wrap:wrap"><input id="kIn" type="password" autocomplete="off" placeholder="sk-……" style="flex:2 1 14em;min-width:0"><input id="kModel" placeholder="型号，留空用 deepseek-v4-pro" style="flex:1 1 12em;min-width:0"><button class="main" id="bKeySave">保存</button></div>
       <div class="muted" style="margin-top:6px">没有 Key？去 platform.deepseek.com 注册，在「API keys」里生成一个，充几块钱就能玩很久。</div>
-      <div class="row"><button id="bNet">检查网络</button><button id="bSelfTest2">联网自检（真实试一遍）</button>${KEY.has ? '<button class="link" id="bKeyClose">不换了</button>' : ''}</div><div id="selfBox2">${SELFTEST}</div>
+      <div class="row"><button id="bNet">检查网络</button><button id="bSelfTest2">联网自检（真实试一遍）</button>${KEY.has && !KEY.bad ? '<button class="link" id="bKeyClose">不换了</button>' : ''}</div>${SELFTEST ? `<div id="selfBox2">${SELFTEST}</div>` : ''}
     </div></div>` : ''}
     <div class="howto" style="grid-template-columns:1fr;margin-top:8px"><div>
-      <b>联网查资料（每回合自动）</b> ${KEY.bocha ? '<span class="savest">✓ 已接上博查搜索</span>' : '<span class="muted">现在用维基百科（免费）；再填博查 Key，中文资料多得多</span>'}
+      <b>联网查资料（每回合自动）</b> ${KEY.bocha ? '<span class="savest">✓ 已接上博查搜索</span> <button class="link" id="bNoBocha">不用博查，改回维基</button>' : KEY.bochaSaved ? '<span class="muted">博查 Key 存着但试搜没通，现在照旧用维基百科；重新填一个 Key 再保存试试</span>' : '<span class="muted">现在用维基百科（免费）；再填博查 Key，中文资料多得多</span>'}
       <div class="row"><input id="bIn" type="password" autocomplete="off" placeholder="博查 API Key（open.bochaai.com 申请，按次计费、很便宜）" class="grow"><button id="bBochaSave">保存</button></div>
     </div></div>
     ${KEYMSG ? `<div class="${/✓/.test(KEYMSG) ? 'banner' : 'err'}">${esc(KEYMSG)}</div>` : ''}`;
 }
-async function refreshKey() { try { const q = await api('/api/quick-status'); if (q.lookup) LOOKST = q.lookup; KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '', search: q.search || '', bocha: !!q.hasBocha }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
+async function refreshKey() { try { const q = await api('/api/quick-status'); if (q.lookup) LOOKST = q.lookup; KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '', search: q.search || '', bocha: !!q.hasBocha, bochaSaved: !!q.bochaSaved, bad: q.hasKey && q.lastTest && q.lastTest.ok === false && /401|402|403|Key 不对|余额|没有权限|Unauthorized|Authentication/i.test(q.lastTest.why || '') ? q.lastTest.why : '' }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
 async function renderStart() {
   $('#app').innerHTML = `<section class="start">
     <div class="hero"><h1>你想当谁？</h1>
       <p>一句话就行：哪个年代、什么地方、什么人。之后就像聊天一样往下玩：戏里你说做什么，世界照真实的样子回应；戏外你随时可以问历史、问地理、问局面、请它帮你分析。</p>
       <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off" value="${esc(QTEXT)}"><button class="main" id="bStart" ${BUSY || !SAMPLE || (MODE === 'local' && !KEY.has) ? 'disabled' : ''}>开始</button></form>
+      ${MODE === 'local' && !KEY.has ? '<div class="err">先在下面「DeepSeek Key」里粘贴 Key，才能开始。<a href="#kIn" style="color:inherit">去填 ↓</a></div>' : ''}
       <div class="examples">${EXAMPLES.map(x => `<button class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
       ${customForm()}
     </div>
@@ -2872,7 +2877,7 @@ async function renderStart() {
   </section>`;
   const list = await store.list();
   const box = $('#saves'); if (!box) return;
-  box.innerHTML = list.length ? list.map(x => `<div class="save"><div class="t"><b>${esc(x.title)}</b><span>${esc(x.sub || '')}</span></div>
+  box.innerHTML = list.length ? list.map(x => `<div class="save"><div class="t"><b>${esc(x.title)}</b><span>${esc(x.sub || '')}${x.updatedAt ? ' · 上次玩：' + esc(new Date(x.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })) : ''}</span></div>
       <button class="main" data-load="${esc(x.id)}">继续</button><span class="confirm" id="del-${esc(x.id)}"><button data-askdel="${esc(x.id)}">删除</button></span></div>`).join('')
     : '<div class="muted">还没有存档。在上面写一句话开一局。</div>';
 }
@@ -2945,7 +2950,7 @@ function renderGame() {
       <div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${paras(c.text)}</div>
       ${c.kind !== 'talk' ? extrasHtml(c.extra && c.extra.salvaged && !(isLast && c.unsettled) ? { ...c.extra, salvagedBtn: false } : c.extra) : ''}
       ${isLast && !BUSY ? `<div class="msgacts">${EDITING ? '<button class="main" id="bEditSave">保存修改</button><button id="bEditCancel">取消</button>'
-        : `<button id="bRegen" ${s.prev ? '' : 'disabled'}>重写这一条</button><button id="bEdit">改这段文字</button>`}</div><div id="regenBox"></div>
+        : `<button id="bRegen" ${s.prev ? '' : 'disabled title="开场不能重写；想换开场，回首页重开一局"'}>重写这一条</button><button id="bEdit">改这段文字</button>`}</div><div id="regenBox"></div>
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
@@ -3006,14 +3011,14 @@ function pane(tab) {
   if (tab === 'people') {
     const P = Object.entries(s.people).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const fam = s.household.filter(m => !s.people[m.name]);
-    return `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」把话写进框里</span></div><div class="pcs">
-      ${fam.map(m => `<div class="pc"><div class="pn"><b>${esc(m.name)}</b><span class="att">${esc(m.relation)}</span></div><div class="pr">${m.age != null ? m.age + '岁' : ''}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">找他</button>`}</div>`).join('')}
+    return `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
+      ${fam.map(m => `<div class="pc"><div class="pn"><b>${esc(m.name)}</b><span class="att">${esc(m.relation)}</span></div><div class="pr">${m.age != null ? m.age + '岁' : ''}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
       ${P.map(([k, v]) => `<div class="pc"><div class="pn"><b>${esc(k)}</b>${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
         <div class="pr">${esc(v.role)}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''}</div>
         ${N0(v.favor) != null ? `<div class="grp"><span class="gk">好感 ${esc(v.favor)}</span><span class="bar"><i style="width:${Math.max(3, (Number(v.favor) + 100) / 2)}%" class="${v.favor < -30 ? 'bad' : v.favor < 0 ? 'warn' : v.favor >= 40 ? 'good' : ''}"></i></span>${v.favorDelta ? `<span class="${v.favorDelta > 0 ? 'up' : 'down'}">${v.favorDelta > 0 ? '▲' : '▼'}${Math.abs(v.favorDelta)}</span>` : ''}</div>` : ''}
         ${v.personality || v.ability ? `<div class="pl"><span>为人</span>${esc(v.personality || '')}${v.ability ? `<span class="abil">本事${esc(v.ability)}</span>` : ''}</div>` : ''}
         ${v.want ? `<div class="pl"><span>想要</span>${esc(v.want)}</div>` : ''}${v.goal ? `<div class="pl"><span>盘算</span>${esc(v.goal)}</div>` : ''}${v.plan ? `<div class="pl"><span>打算</span>${esc(v.plan)}</div>` : ''}${v.knows ? `<div class="pl"><span>知你</span>${esc(v.knows)}</div>` : ''}${v.status ? `<div class="pl"><span>近况</span>${esc(v.status)}</div>` : ''}
-        <button class="link" data-write="${esc('我去找' + k + '，')}">找他</button></div>`).join('')}
+        <button class="link" data-write="${esc('我去找' + k + '，')}">${/女|妇|氏$|娘|妻|妾|姐|妹|母|婆|姑/.test((v.gender || '') + (v.role || '') + (v.tie || '') + k) ? '找她' : '找他'}</button></div>`).join('')}
       ${!P.length && !fam.length ? '<div class="muted">开场后，出场的人会列在这里。</div>' : ''}</div>`;
   }
   if (tab === 'estate') {
@@ -3128,7 +3133,7 @@ function pane(tab) {
     <div class="h"><span class="seal">枝</span>分支存档</div>
     <p class="muted" style="font-size:13px">把这一局此刻的样子另存一份，再走另一条路；原来那份不动，首页「接着玩」里两份都在。</p>
     <div class="row"><button id="bBranch" ${BUSY ? 'disabled' : ''}>另存为分支，接着玩分支</button><span class="muted" id="branchMsg"></span></div>
-    ${MODE === 'local' ? `<p class="muted" style="font-size:13px">剧情用你自己的 DeepSeek Key（尾号 ${esc(KEY.tail)}）来写。换 Key：点右上「换一局」回到首页。</p>` : `
+    ${MODE === 'local' ? `<p class="muted" style="font-size:13px">剧情用你自己的 DeepSeek Key（尾号 ${esc(KEY.tail)}）来写。换 Key：先点「回到正文 ✕」（手机上），再点右上「换一局」回到首页，在「DeepSeek Key」里点「换 Key」。</p>` : `
     <label class="muted" for="sTier" style="display:block;margin-top:10px">用哪档 AI</label>
     <select id="sTier">${[['default', '标准（快一些）'], ['complex', '最强（更细更准，但更慢、更费额度）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.tier === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <p class="muted" style="font-size:13px">剧情用你自己的 Claude 账号来写，会占用你的 Claude 使用额度。存档存在你的账号里，只有你看得到。</p>`}`;
@@ -3140,7 +3145,8 @@ let OPEN_RANGE = null, QTEXT = '', S0ARC = '';
 async function startGame(sentence, have, havePre, custom, spec) {
   KEYMSG = '';
   custom = String(custom || '').trim(); OPEN_RANGE = (spec && spec.range) || null; if (!havePre) S0ARC = '';
-  sentence = String(sentence || '').trim(); if (!sentence || BUSY) return;
+  sentence = String(sentence || '').trim(); if (BUSY) return;
+  if (!sentence) { ERRMSG = '先写一句：哪个年代、什么地方、什么人（例如：乾隆年间扬州的盐商）'; render(); return; }
   ERRMSG = ''; STREAM = ''; PHASE = ''; if (!have) FEED = [];
   CTL = new AbortController(); TURN = CTL;
   setBusy(true);
@@ -3468,7 +3474,11 @@ const keepCustom = e => { const el = e.target; if (el && el.closest && el.closes
 document.addEventListener('input', e => { if (e.target && e.target.id === 'qText') QTEXT = e.target.value; });
 document.addEventListener('input', keepCustom); document.addEventListener('change', keepCustom);
 document.addEventListener('toggle', e => { if (e.target && e.target.id === 'dCustom') CUSTOM_OPEN = e.target.open; }, true);
-document.addEventListener('keydown', e => { if (e.target.id === 'said' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#bSend').click(); } });
+document.addEventListener('keydown', e => {
+  if (e.target.id === 'said' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#bSend').click(); }
+  if (e.target.id === 'regenNote' && e.key === 'Enter') { e.preventDefault(); const b = $('#bRegenGo'); if (b) b.click(); }
+  if (e.key === 'Escape' && typeof SIDE_FOLD !== 'undefined' && !SIDE_FOLD && matchMedia('(max-width: 960px)').matches) { SIDE_FOLD = true; render(); }
+});
 document.addEventListener('click', async e => {
   const t = e.target.closest('button'); if (!t) return;
   const ds = t.dataset;
@@ -3485,10 +3495,11 @@ document.addEventListener('click', async e => {
       await refreshKey();
       if (!r.ok) KEYMSG = '没保存上：' + (r.why || '未知原因');
       else if (r.test && r.test.ok) { KEYMSG = `✓ 已保存，试连成功（${r.test.model || ''}）`; KEY_OPEN = false; }
-      else KEYMSG = '已保存，但试连没通：' + ((r.test && r.test.why) || '') + '。点「检查网络」看看卡在哪。';
+      else { const w = plainWhy(r.test && r.test.why); KEYMSG = '已保存，但试连没通：' + w + (/Key|余额|权限/.test(w) ? '。请核对 Key 后重新粘贴。' : '。点「检查网络」看看卡在哪。'); }
     } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
     render(); return;
   }
+  if (t.id === 'bNoBocha') { try { await api('/api/quick-key', { noBocha: true }); await refreshKey(); KEYMSG = '✓ 已改回维基百科搜索'; } catch (e) { KEYMSG = e.message; } render(); return; }
   if (t.id === 'bBochaSave') {
     const k = $('#bIn').value.trim(); if (!k) { $('#bIn').focus(); return; }
     t.disabled = true; t.textContent = '保存中…'; KEYMSG = '';
@@ -3496,7 +3507,7 @@ document.addEventListener('click', async e => {
       const r = await api('/api/quick-key', { bochaKey: k });
       await refreshKey();
       if (r.bocha && r.bocha.ok) { SEARCH_OFF = ''; SEARCH_DOWN = 0; }
-      KEYMSG = r.bocha && r.bocha.ok ? `✓ 博查已保存，试搜成功（${r.bocha.count} 条）` : '博查 Key 已保存，但试搜没通：' + ((r.bocha && r.bocha.why) || r.why || '');
+      KEYMSG = r.bocha && r.bocha.ok ? `✓ 博查已保存，试搜成功（${r.bocha.count} 条）` : '博查试搜没通：' + plainWhy((r.bocha && r.bocha.why) || r.why || '');
     } catch (e) { KEYMSG = '没保存上：' + (e.message || e); }
     render(); return;
   }
@@ -3525,7 +3536,7 @@ document.addEventListener('click', async e => {
   if (t.id === 'bSend') { const sp = $('#span').value; const said = $('#said').value; $('#span').value = 'auto'; send(said, sp); return; }
   if (t.id === 'bEdit') { EDITING = true; render(); const el = $('#editText'); el && el.focus(); return; }
   if (t.id === 'bEditCancel') { EDITING = false; render(); return; }
-  if (t.id === 'bEditSave') { const el = $('#editText'); const last = [...S.chat].reverse().find(c => c.role === 'gm'); if (el && last) last.text = el.innerText.replace(/\n{2,}/g, '\n').trim(); EDITING = false; await store.save(S); render(); return; }
+  if (t.id === 'bEditSave') { const el = $('#editText'); const last = [...S.chat].reverse().find(c => c.role === 'gm'); if (el && last) { const tx = el.innerText.replace(/\n{2,}/g, '\n').trim(); if (!tx) { el.focus(); return; } last.text = tx; } EDITING = false; await store.save(S); render(); return; }
   if (t.id === 'bRegen') { $('#regenBox').innerHTML = `<div class="row"><input id="regenNote" class="grow" placeholder="想怎么改？比如：别让他这么快答应 / 写得更细（可以不填）"><button class="main" id="bRegenGo">重写</button><button id="bRegenNo">算了</button></div>`; $('#regenNote').focus(); return; }
   if (t.id === 'bRegenNo') { $('#regenBox').innerHTML = ''; return; }
   if (t.id === 'bRegenGo') {

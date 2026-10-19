@@ -1790,7 +1790,7 @@ async function runLeanTurn(state, { input, adapterId, adapterConfig, verbosityOv
   const saved = await loadAdapterConfig();
   const aid = adapterId || saved.selected || 'deepseek';
   const { adapter, config } = await resolveAdapter(aid, { ...(saved.configs?.[aid] || {}), ...(adapterConfig || {}) });
-  if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请在「设置」里填好 DeepSeek 的 Key');
+  if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请回首页在「DeepSeek Key」里粘贴 Key');
   try { await require('./memory').compressIfDue(state, adapter, config); } catch (_) { /* 压缩失败不阻塞 */ }
   const isOpening = !(state.log || []).some(l => l.speaker === 'GM');
   const verbosity = verbosityOverride || (state.meta && state.meta.verbosity) || 'normal';
@@ -2493,7 +2493,7 @@ async function quickCall({ system, prompt, temperature = 0.7, maxTokens = 1500 }
   const saved = await loadAdapterConfig();
   const aid = saved.selected || 'deepseek';
   const { adapter, config } = await resolveAdapter(aid, saved.configs?.[aid] || {});
-  if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请在「设置」里填好 DeepSeek 的 Key');
+  if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请回首页在「DeepSeek Key」里粘贴 Key');
   const res = await adapter.call({ system, prompt, temperature, maxTokens }, config);
   return String((res && res.text) || '');
 }
