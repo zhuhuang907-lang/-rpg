@@ -1293,16 +1293,19 @@ function geoData() {
 }
 // 史书、史料里的俗称、京城别名 → 当时的正式地名（按年代）
 const GEO_ALIAS = [[/^(北京|京师|北平)$/, y => y >= 1403 ? '顺天' : y >= 1368 ? '北平' : y >= 1272 ? '大都' : y >= 1153 ? '中都' : '幽州'], [/^南京$/, y => y >= 1368 && y < 1645 ? '应天' : y >= 1645 ? '江宁' : '应天'], [/^(东京|汴京|汴梁)$/, y => y >= 960 && y < 1127 ? '开封' : '开封'], [/^西京$/, y => y >= 960 && y < 1127 ? '河南' : '河南'], [/^临安$/, () => '临安'], [/^(长安|西安)$/, y => y >= 1369 ? '西安' : y >= 618 && y < 907 ? '京兆' : '长安'], [/^洛阳$/, y => y >= 25 && y < 589 ? '洛阳' : '河南'], [/^(建康|金陵|建业)$/, y => y < 280 ? '建业' : y < 589 ? '建康' : '江宁'], [/^盛京$/, () => '奉天']];
-function geoFind(stem, y) {
+function geoFind(stem, y, ctx) {
   const G = geoData(); if (!G.length || !stem) return null;
-  for (const [re, f] of GEO_ALIAS) if (re.test(stem)) { const a = f(y || 1600); if (a !== stem) { const u = geoFind(a, y); if (u) return u; } break; }
   if (!GEOIX) { GEOIX = new Map(); for (const u of G) { const k = geoStem(u.name); if (!GEOIX.has(k)) GEOIX.set(k, []); GEOIX.get(k).push(u); } }
+  const direct = arr(GEOIX && GEOIX.get(stem)).some(u => y == null || (u.from <= y && u.to >= y));
+  if (!direct) for (const [re, f] of GEO_ALIAS) if (re.test(stem)) { const a = f(y || 1600); if (a !== stem) { const u = geoFind(a, y); if (u) return u; } break; }
   const L = arr(GEOIX.get(stem)); if (!L.length) return null;
   const ok = L.filter(u => y == null || ((u.from == null || u.from <= y) && (u.to == null || u.to >= y)));
   const rk = u => /府|州|郡/.test(u.type) ? 0 : /县/.test(u.type) ? 1 : 2;
   if (!ok.length && y != null && !L.some(u => Math.abs((u.from + u.to) / 2 - y) < 300)) return null;   // 别的朝代的同名地方不算
-  const pick = (ok.length ? ok : L).slice().sort((a, b) => rk(a) - rk(b) || (y == null ? 0 : Math.min(Math.abs(a.from - y), Math.abs(a.to - y)) - Math.min(Math.abs(b.from - y), Math.abs(b.to - y))));
-  return pick[0];
+  const valid = u => y == null || ((u.from == null || u.from <= y) && (u.to == null || u.to >= y));
+  const pm = u => arr(ctx).some(c => c !== stem && c.length >= 2 && String(u.parent || '').includes(c)) ? 0 : 1;   // 上级对得上（「顺天府通州」里的顺天府）最要紧
+  const dist = u => y == null ? 0 : valid(u) ? 0 : Math.min(Math.abs(u.from - y), Math.abs(u.to - y));
+  return L.slice().sort((a, b) => pm(a) - pm(b) || dist(a) - dist(b) || rk(a) - rk(b))[0];
 }
 function tgazLocal(p) {
   const G = geoData(), n = String(p.n || ''), ip = String(p.ipar || ''), y = p.yr != null && p.yr !== '' ? +p.yr : null;
@@ -1326,7 +1329,28 @@ function placeNames(full) {
   // 先查最具体的（县），全称在前、简称在后
   return [...new Set(pairs.reverse().flat().filter(x => x && x.length >= 2))];
 }
+/** 用内置地名库按坐标就近建：主角周围四百里上下、当年（或相差六十年内）存在的州府县；属哪个州府照当年的上级，对不上的取最近的治所 */
+function buildGeoLocal(s) {
+  const y = s.clock.y, G = geoData();
+  const h0 = placeXY(s, s.place.full, y); if (!h0) return null;
+  const best = new Map();
+  for (const u of G) {
+    if (Math.abs(u.lat - h0.lat) > 4 || Math.abs(u.lon - h0.lon) > 5 || !(isCounty(u) || isPref(u))) continue;
+    const d = u.from <= y && u.to >= y ? 0 : Math.min(Math.abs(u.from - y), Math.abs(u.to - y)); if (d > 60) continue;
+    const o = best.get(u.name); if (!o || d < o.d) best.set(u.name, { u, d });
+  }
+  // 同一处（坐标三公里内）别的年代的旧名、改名，让位给当年就有的
+  const B = [...best.values()], cur = B.filter(x => x.d === 0);
+  const all = B.filter(x => x.d === 0 || !cur.some(c => hav(c.u, x.u) < 3 && isCounty(c.u) === isCounty(x.u))).map(x => ({ ...x.u, parent: x.d === 0 ? x.u.parent : '' }));
+  const prefs = all.filter(isPref), pn = new Set(prefs.map(p => p.name));
+  const parentOf = u => { if (pn.has(u.parent)) return u.parent; let b = null, bd = 1e9; for (const p of prefs) { const d = hav(u, p); if (d < bd) { bd = d; b = p; } } return b && bd < 120 ? b.name : u.parent; };
+  const list = all.map(u => ({ id: u.id, name: u.name, type: u.type, lat: u.lat, lon: u.lon, parent: isCounty(u) ? parentOf(u) : u.parent })).sort((a, b) => hav(h0, a) - hav(h0, b)).slice(0, 500);
+  const here = list.find(u => u.name === h0.name) || { ...h0, parent: isCounty(h0) ? parentOf(h0) : h0.parent };
+  s.geo = { y, place: s.place.full, here: { name: here.name, lat: +here.lat, lon: +here.lon, parent: here.parent }, units: list, built: Date.now(), src: 'local' };
+  return s.geo;
+}
 async function buildGeo(s, extraNames) {
+  if (geoData().length) { const g = buildGeoLocal(s); if (g) return g; }
   const y = s.clock.y, units = new Map();
   const add = u => { if (geoValid(u, y) && !units.has(u.id)) units.set(u.id, { id: u.id, name: u.name, type: u.type, parent: u.parent, lat: +u.lat, lon: +u.lon }); };
   // 1. 找主角所在
@@ -1374,7 +1398,7 @@ function geoBlock(s, said) {
   LI_KM = liKmFor(s.clock ? s.clock.y : 1600);
   const g = s.geo; if (!g || !g.units.length || g.place !== s.place.full) return '';
   const here = g.here, L = [];
-  const fmt = u => `${u.name}（${dirOf(here, u)}约${liOf(hav(here, u))}里${u.parent ? '，属' + u.parent : ''}）`;
+  const fmt = u => `${u.name}（${dirOf(here, u)}约${liOf(hav(here, u))}里${u.parent && isCounty(u) ? '，属' + u.parent : ''}）`;   // 州府的上级在库里常挂着别朝的名字，不写
   const sameP = g.units.filter(u => isCounty(u) && u.parent === here.parent && u.name !== here.name);
   if (sameP.length) L.push(`本${here.parent || '州'}属县：` + sameP.map(fmt).join('、'));
   const prefs = g.units.filter(isPref).filter(u => u.name !== here.parent).map(u => [hav(here, u), u]).sort((a, b) => a[0] - b[0]).slice(0, 10).map(([, u]) => u);
@@ -1968,13 +1992,14 @@ function eventDetailBlock(s) {
 
 /* ========== 消息传到此地：外地的事按路程先成风闻、后有确报；没传到的，书中人不知道 ========== */
 const dayIdx = c => Math.round((c.y * 12 + (c.m || 6) + (c.leap ? 0.5 : 0)) * 29.53 + ((c.d || 15) - 1));
-const geoStem = x => String(x || '').replace(/[省道路府州郡县縣城镇鎮军]+$/, '');
+const geoStem = x => { const t = String(x || '').trim(); return t.length > 2 ? t.replace(/[省府州郡县縣城镇鎮军]$/, '') : t; };
 function placeXY(s, name, y) {
   const t = String(name || ''); if (!t) return null;
-  const keys = [...new Set([t, ...placeNames(t), ...t.split(/[、，,／/\s]+/)].map(geoStem).filter(x => x.length >= 2))];
+  const parts = t.split(/[、，,／/\s]+/).filter(Boolean), tail = x => x.replace(/^(北直隶|南直隶|直隶)/, '');
+  const keys = [...new Set([t, ...placeNames(t), ...parts, ...parts.map(tail), ...parts.flatMap(x => [x.slice(-3), x.slice(-2), x.slice(0, 2)])].map(geoStem).filter(x => x.length >= 2))];
   const g = arr(s.geo && s.geo.units);
   for (const k of keys) { const u = g.find(u => geoStem(u.name) === k); if (u) return u; }
-  for (const k of keys) { const u = geoFind(k, y); if (u) return u; }
+  for (const k of keys) { const u = geoFind(k, y, keys); if (u) return u; }
   return null;
 }
 const hereXY = s => s.geo && s.geo.here && s.geo.place === s.place.full ? s.geo.here : placeXY(s, s.place.full, s.clock.y);
@@ -1986,14 +2011,14 @@ function newsTimes(s, e, here) {
   if (!big && li > 1200) return null;   // 外地的小事传不到这里
   if (li < 80) return { li, r: 0, o: 0 };
   const hi = !!(s.realm || (s.career && s.career.office) || arr(s.territory).length);   // 有官职、有地盘的人有塘报、公文
-  return { li, r: Math.ceil(li / 100) + 1, o: hi ? Math.ceil(li / 300) + 1 : Math.ceil(li / 200) + 8 };
+  return { li, r: Math.ceil(li / 160) + 1, o: hi ? Math.ceil(li / 300) + 2 : Math.ceil(li / 150) + 10 };   // 口耳相传顺着驿路商道走；邸报要等抄发
 }
 /** 每回开写前：照日子和路程，算出这一回新传到的风闻与确报；已经发生、还没传到的记下来（书中人不知道） */
 function newsArrive(s) {
   if (!s || !s.clock) return [];
   LI_KM = liKmFor(s.clock.y);
   const now = dayIdx(s.clock), nym = ymOf(s.clock), H = s.heard || (s.heard = {}), here = hereXY(s), pool = new Map();
-  if (hasHist(s)) histEvents(s, nym - 24, nym + 1).map(e => histView(s, e)).filter(e => e.status !== '取消').forEach(e => pool.set(e.key, e));
+  if (hasHist(s)) histEvents(s, nym - 24, nym + 1).map(e => ({ ...e, ...histView(s, e) })).filter(e => e.status !== '取消').forEach(e => pool.set(e.key, e));
   for (const e of arr(s.world && s.world.events)) if (e.key && evYM(e) >= nym - 24 && !pool.has(e.key)) pool.set(e.key, e);   // 没有 key 的是正文里主角亲历、AI 记下的，不算外来消息
   const first = !s.heardInit, fresh = [], unheard = [];
   for (const [k, e] of pool) {
@@ -2449,7 +2474,7 @@ function applyReply(s, d, said) {
     let when = `${s.clock.yearLabel || ''}${CAL.label(s.clock.m, s.clock.d, s.clock.leap)}`;
     const acc = [];
     // 身份变了：身份、数值、看大势的角度、本朝官制、目标一起换，记进履历
-    const idc = d.identity && typeof d.identity === 'object' && String(d.identity.role || '').trim().length >= 2 && !/没变|未变|不变|^无$/.test(String(d.identity.role)) ? d.identity : null;
+    const idc = d.identity && typeof d.identity === 'object' && String(d.identity.role || '').trim().length >= 2 && !/没变|未变|不变|^无$|才填|一句话/.test(String(d.identity.role)) ? d.identity : null;
     if (idc) {
       const from = s.protagonist.role, to = one(idc.role, 40);
       if (to !== from) {
@@ -2504,7 +2529,7 @@ function applyReply(s, d, said) {
     for (const h of arr(d.household).slice(0, 6)) {
       if (!h || !h.name) continue;
       const ch = String(h.change || ''), m = s.household.find(x => x.name === h.name);
-      if (/过世|亡|故/.test(ch)) { if (m) m.dead = true; }
+      if (/过世|去世|身故|病故|亡故|殁|夭折|死/.test(ch) && !/逃亡|流亡|亡命|故乡|故里|死里逃生|没死/.test(ch)) { if (m) m.dead = true; }
       else if (/嫁出|离家/.test(ch)) { if (m) { m.away = true; m.note = one(ch + (h.note ? '，' + h.note : ''), 30); } }
       else if (/回家/.test(ch)) { if (m) m.away = false; }
       else if (!m) s.household.push({ relation: one(h.relation, 6), name: one(h.name, 8), age: num(h.age) ?? (/添丁|出生/.test(ch) ? 0 : null), note: one(h.note || ch, 30) });
@@ -2580,7 +2605,7 @@ function applyReply(s, d, said) {
       }
       for (const x of done) s.chronicle.push({ turn: s.turn, when, who: s.protagonist.name, what: '做成了：' + x.text });
       for (const x of lost) s.chronicle.push({ turn: s.turn, when, who: s.protagonist.name, what: '没能做成：' + x.text });
-      if (now.length) s.goals = T.map(t => now.find(x => x.term === t) || arr(s.goals).find(x => x.term === t && !done.concat(lost).some(y => y.term === t))).filter(Boolean);
+      if (now.length || done.length || lost.length) s.goals = T.map(t => now.find(x => x.term === t) || arr(s.goals).find(x => x.term === t && !done.concat(lost).some(y => y.term === t))).filter(Boolean);
       if (done.length || lost.length || (fresh.length && s.turn > 1)) extra.goals = { done, lost, fresh: s.turn > 1 ? fresh : [] };
     }
     // 年鉴：跨了年，就从存档里把上一年（或几年）记一笔（程序整理，不靠 AI）
@@ -2588,9 +2613,9 @@ function applyReply(s, d, said) {
       const ev = arr(s.world.events).filter(e => e.y === y0).map(e => (e.changed ? '［本局］' : '') + e.text);
       const sumT = arr(s.summaries).filter(x => x.turn > (s.annalTurn || 0)).map(x => x.text);
       const mine = arr(s.chronicle).filter(x => x.turn > (s.annalTurn || 0)).map(x => (x.who ? x.who + '：' : '') + x.what);
-      s.annals = arr(s.annals).concat([{ y: y0, label: eraLabel(s, y0) || (y0 + '年'), world: ev.slice(0, 12), mine: mine.slice(0, 12), sum: cut(sumT.join('；'), 400), cash: mo.cash }]).slice(-600);
-      s.annalTurn = turn;
+      s.annals = arr(s.annals).concat([{ y: y0, label: eraLabel(s, y0) || (y0 + '年'), world: ev.slice(0, 12), mine: y0 === beforeYM.y ? mine.slice(0, 12) : [], sum: y0 === beforeYM.y ? cut(sumT.join('；'), 400) : '', cash: mo.cash }]).slice(-600);
     }
+    if (s.clock.y > beforeYM.y) s.annalTurn = turn;
     // 过了几个月就按每月进项开销结几次
     const months = Math.max(0, CAL.monthsBetween(beforeYM, s.clock));
     const inc = arr(s.estate.income).reduce((a, x) => a + (N0(x.amount) || 0), 0), exp = arr(s.estate.expense).reduce((a, x) => a + (N0(x.amount) || 0), 0);
@@ -2622,15 +2647,15 @@ function applyReply(s, d, said) {
     s.careerLog = s.careerLog.slice(-80);
     // 传承：主角死了，由继承人接着玩
     const sc = d.succession && typeof d.succession === 'object' ? d.succession : null;
-    if (sc && String(sc.heir || '').trim() && (sc.died === true || (String(sc.died || '').trim() && !/^(否|false|没|无|未)/.test(String(sc.died).trim())))) {
+    if (sc && String(sc.heir || '').trim() && (sc.died === true || /^(是|true|死|亡|卒|殁|薨|崩|驾崩|去世|病故)/.test(String(sc.died || '').trim()))) {
       const old = s.protagonist, heir = one(sc.heir, 8), m = s.household.find(x => x.name === heir);
       s.chronicle.push({ turn, when, who: old.name, what: `去世，享年${old.age != null ? old.age : '不详'}。由${heir}承继家业。` });
       s.household = s.household.filter(x => x.name !== heir);
       s.household.unshift({ relation: '先人', name: old.name, age: old.age, dead: true, note: one(old.role, 30) });
-      s.protagonist = { name: heir, gender: m && /女|妻|母|姐|妹/.test(m.relation) ? '女' : '男', age: num(sc.heirAge) ?? (m ? m.age : null), role: one(sc.heirRole || old.role, 40), nativePlace: old.nativePlace, real: false };
+      s.protagonist = { name: heir, gender: m && /女|妻|母|姐|妹/.test(m.relation) ? '女' : '男', age: num(sc.heirAge) || (m ? m.age : null), role: one(sc.heirRole || old.role, 40), nativePlace: old.nativePlace, real: false };
       s.title = `${heir} · ${one(s.protagonist.role, 14)}`;
       extra.succession = `${old.name}去世，你现在是${heir}`;
-      s.career = null;
+      s.career = null; s.goals = []; s.inst = null; s.arcId = null; s.arcGoal = '';
     }
     s.summaries.push({ turn, when, text: one(d.turnSummary || d.reply, 140) });
     s.summaries = s.summaries.slice(-200);
@@ -2861,6 +2886,7 @@ function renderGame() {
   }).join('');
   const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? (MODE === 'local' && SETTINGS.deep !== false && !DRAFTN ? '先构思这一回：谁在场、各自要什么、天下大事怎么砸进来（深度思考，要一两分钟）' : '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字') : PHASE === 'verify' ? '快写好了' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'rewrite' ? '正在写，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'dossier' ? '正在给这一回牵涉的真人立档：生卒、此刻的官职、在哪、在做什么、见不见得到' : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '正在想这一步会怎样' : PHASE === 'hsync' ? '正在按月联网查此刻前后几个月的真实史事（博查 / 维基年份条目），只收资料里写明的' : PHASE === 'critic' ? '写好了初稿，正在通读一遍，看情理通不通' : PHASE === 'resolve' ? '先把你的设定落到真实历史里：定下年月日、地点、政权、身份，对不上史实的地方按史实调' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : feedHtml()}</div>` : '';
   const ae = document.activeElement, saidEl = $('#said');
+  const edKeep = EDITING && $('#editText') ? $('#editText').innerHTML : null, rgKeep = $('#regenBox') ? $('#regenBox').innerHTML : '', rnKeep = $('#regenNote') ? $('#regenNote').value : null;
   const keep = { said: saidEl ? saidEl.value : '', span: $('#span') ? $('#span').value : 'auto', focus: ae && ae.id === 'said', a: saidEl ? saidEl.selectionStart : 0, b: saidEl ? saidEl.selectionEnd : 0, scroll: window.scrollY };
   $('#app').innerHTML = `<div class="game">
     <div class="chat">
@@ -2885,6 +2911,8 @@ function renderGame() {
     </aside>
   </div>`;
   $('#said').value = keep.said; $('#span').value = keep.span;
+  if (edKeep != null && $('#editText')) $('#editText').innerHTML = edKeep;
+  if (rgKeep && $('#regenBox')) { $('#regenBox').innerHTML = rgKeep; if (rnKeep != null && $('#regenNote')) $('#regenNote').value = rnKeep; }
   if (keep.focus) { const el = $('#said'); el.focus({ preventScroll: true }); try { el.setSelectionRange(keep.a, keep.b); } catch (_) { /* 无 */ } window.scrollTo(0, keep.scroll); }
 }
 
@@ -3166,14 +3194,16 @@ async function startGame(sentence, have, havePre, custom, spec) {
 /* ========== 后台：每回合写完之后的整理（不挡玩家） ========== */
 let BG = null, BGMSG = '', BGWAIT = false, STOP_PENDING = false;
 let BG_STOP = false, BG_STEP = '';
+let BG_GEN = 0;
 function runBg(fn) {
   BG_STOP = false;
-  const me = (async () => { await null; try { await fn(); } catch (_) { /* 后台出错下回再做 */ } finally { if (BG === me) { BG = null; BGMSG = ''; BG_STEP = ''; } render(); } })();
+  const gen = ++BG_GEN;
+  const me = (async () => { await null; try { await fn(gen); } catch (_) { /* 后台出错下回再做 */ } finally { if (BG === me) { BG = null; BGMSG = ''; BG_STEP = ''; } render(); } })();
   BG = me;
 }
 /** 写完一回之后：整理较早的章节、推演天下、自建史料、本地志、县级地图、本朝官制。s0 不再是当前存档（换局、重写了）就不存 */
-async function afterTurn(s0, d, g) {
-  const live = () => S === s0;
+async function afterTurn(s0, d, g, gen = BG_GEN) {
+  const live = () => S === s0 && gen === BG_GEN;   // 新的一回又起了后台活：这条旧的就停
   // 玩家等不及了（BG_STOP）就不再开新的一步；没做完的下一回合再做
   const step = async (msg, f) => { if (!live() || BG_STOP) return false; BGMSG = msg; BG_STEP = msg; render(); try { await f(); } catch (e) { /* 下回合再做 */ } return live() && !BG_STOP; };
   // 开局查到的资料：开场写完后再慢慢研读成年代志（不挡开场）
@@ -3190,6 +3220,7 @@ async function afterTurn(s0, d, g) {
 /** 一回合：先写正文（边写边显示），再交给账房记账核史实。账没记上，正文也留下，可以补记 */
 async function send(said, span, note, resume) {
   if (BUSY || !S) return;
+  EDITING = false;
   if (BG) {   // 上一回的后台活还没完：等它做完再开始（不然两边同时改存档）
     BUSY = true; BGWAIT = true; PENDING_SAID = String(said || '').trim(); render();
     // 最多等 20 秒：查资料、同步史事、本地志这些可以留到下一回；推演天下会改「将要发生」，要等它做完
@@ -3197,7 +3228,7 @@ async function send(said, span, note, resume) {
     while (BG && Date.now() - t0 < 20000) await new Promise(r => setTimeout(r, 400));
     if (BG) { BG_STOP = true; if (/推演天下/.test(BG_STEP)) { try { await BG; } catch (_) { /* 后台出错不影响这一回 */ } } }
     BUSY = false; BGWAIT = false;
-    if (STOP_PENDING) { STOP_PENDING = false; PENDING_SAID = ''; render(); const el = $('#said'); if (el) el.value = String(said || ''); return; }
+    if (STOP_PENDING) { STOP_PENDING = false; PENDING_SAID = ''; if (resume && resume.orig) S = resume.orig; render(); const el = $('#said'); if (el) el.value = String(said || ''); return; }
     if (!S) return;
   }
   ERRMSG = ''; STREAM = ''; PHASE = ''; PENDING_SAID = String(said || '').trim(); CUR_SAID = String(said || ''); FEED = [];
@@ -3348,6 +3379,7 @@ async function send(said, span, note, resume) {
 /** 撤回到上一版：上一版存档里早先的对话只留了几句，从现在的对话里补回来 */
 function restorePrev(cur) {
   const p = clone(cur.prev);
+  p.id = cur.id; p.title = cur.title; if (cur.branchOf) p.branchOf = cur.branchOf;   // 分支上重写，留在分支里
   arr(p.chat).forEach((c, i) => { const o = cur.chat[i]; if (o && !c.text && o.text) { c.text = o.text; c.extra = o.extra; c.hints = o.hints; } });
   for (const k of ['inst', 'research', 'almanac', 'locals', 'searchedQ', 'searchedYears', 'wikiDone', 'geo', 'gazetteer', 'dossiers']) if (cur[k] && !p[k]) p[k] = cur[k];
   return p;
@@ -3417,11 +3449,12 @@ document.addEventListener('click', async e => {
   if (t.id === 'bCustomClear') { CUSTOM = {}; lsSet('hrpg:custom', null); render(); return; }
   if (t.id === 'bCloseSide') { SIDE_FOLD = true; render(); return; }
   if (t.id === 'bHome') { if (BUSY) return; VIEW = 'start'; S = null; ERRMSG = ''; SAVED = ''; render(); return; }
-  if (ds.load) { const s = await store.load(ds.load); if (!s) { ERRMSG = '这个存档读不出来了。'; render(); return; } S = s; VIEW = 'game'; ERRMSG = ''; EDITING = false; SAVED = ''; lsSet('hrpg:last', s.id); render(); return; }
+  if (ds.load) { if (BUSY) return; const s = await store.load(ds.load); if (!s) { ERRMSG = '这个存档读不出来了。'; render(); return; } S = s; VIEW = 'game'; ERRMSG = ''; EDITING = false; SAVED = ''; lsSet('hrpg:last', s.id); render(); return; }
   if (ds.askdel) { document.getElementById('del-' + ds.askdel).innerHTML = `确定删掉？<button data-del="${esc(ds.askdel)}">删掉</button><button data-nodel="1">不删</button>`; return; }
   if (ds.nodel) { renderStart(); return; }
   if (ds.del) { await store.del(ds.del); renderStart(); return; }
   if (ds.tab) { SIDE_FOLD = TAB === ds.tab ? !SIDE_FOLD : false; TAB = ds.tab; render(); return; }
+  if ((ds.write || ds.goal) && !SIDE_FOLD && matchMedia('(max-width: 960px)').matches) { SIDE_FOLD = true; render(); }
   if (ds.write) { const ta = $('#said'); ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + ds.write; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); ta.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
   if (t.id === 'bSend') { const sp = $('#span').value; const said = $('#said').value; $('#span').value = 'auto'; send(said, sp); return; }
   if (t.id === 'bEdit') { EDITING = true; render(); const el = $('#editText'); el && el.focus(); return; }
@@ -3470,7 +3503,7 @@ document.addEventListener('click', async e => {
     try {
       await store.save(S);
       const b = clone(S); b.id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      b.title = `${one(S.title, 20)}（分支·第${S.turn}回合）`; b.branchOf = S.id; b.createdAt = Date.now();
+      b.title = `${one(S.title, 20)}（分支·第${S.turn}回合）`; b.branchOf = S.id; b.createdAt = Date.now(); if (b.prev) { b.prev.id = b.id; b.prev.title = b.title; b.prev.branchOf = S.id; }
       await store.save(b); S = b; lsSet('hrpg:last', b.id);
     } finally { setBusy(false); }
     const m = $('#branchMsg'); if (m) m.textContent = '✓ 已另存为分支，现在玩的是分支'; return;
@@ -3507,9 +3540,9 @@ render();
     const p = JSON.parse(lsGet('hrpg:pending') || 'null');
     if (p && S && p.saveId === S.id && Date.now() - p.at < 30 * 60e3 && (p.story || (p.job && MODE === 'local'))) {
       const moved = p.baseChat != null ? S.chat.length !== p.baseChat : S.turn !== p.baseTurn;
-      if (p.redo && moved && S.prev) S = restorePrev(S);
+      const o0 = S; if (p.redo && moved && S.prev) S = restorePrev(S);
       const still = p.baseChat != null ? S.chat.length === p.baseChat : S.turn === p.baseTurn;
-      if (still) send(p.said, p.span, p.note, { job: p.job, story: p.story, ruling: p.ruling }); else lsSet('hrpg:pending', null);
+      if (still) send(p.said, p.span, p.note, { job: p.job, story: p.story, ruling: p.ruling, orig: p.redo && moved ? o0 : undefined }); else lsSet('hrpg:pending', null);
     }
     else lsSet('hrpg:pending', null);
   } catch (_) { lsSet('hrpg:pending', null); }
