@@ -431,15 +431,16 @@ async function watchUpdate() {
     await new Promise(r => setTimeout(r, i ? 30000 : 8000));
     let u = null; try { u = await api('/api/update'); } catch (_) { return; }
     if (!u || !u.ok) return;
+    UPDINFO = u;
     if (u.using === 'updated' && u.remote && String(u.remote) > BUILD && lsGet('hrpg:reloaded') !== String(u.remote)) {
       while (BUSY || BG || EDITING || INSTING || (($('#said') || {}).value || '').trim() || (VIEW === 'start' && String(QTEXT || '').trim())) await new Promise(r => setTimeout(r, 3000));
       lsSet('hrpg:reloaded', String(u.remote)); location.reload(); return;
     }
-    if (u.needReinstall) { UPDMSG = '有新版本，这次改动较大，需要重新下载安装：github.com/zhuhuang907-lang/-rpg/releases/tag/latest'; render(); return; }
+    if (u.needReinstall) { UPDMSG = '有新版本，这次改动较大，需要重新下载安装：github.com/zhuhuang907-lang/-rpg/releases/tag/latest（打不开就用 ghfast.top/https://github.com/zhuhuang907-lang/-rpg/releases/download/latest/HistoryRPG-Setup.exe）'; render(); return; }
     if (u.checked) return;
   }
 }
-let UPDMSG = '';
+let UPDMSG = '', UPDINFO = null;
 const SERVER_GONE = '游戏服务的小窗口被关掉了或卡住了：请重新双击桌面上的「历史模拟RPG」，存档不会丢';
 const api = async (url, body) => {
   let r;
@@ -447,6 +448,25 @@ const api = async (url, body) => {
   catch (e) { if (e && e.name === 'AbortError') throw e; throw new Error(SERVER_GONE); }
   try { return await r.json(); } catch (_) { throw new Error(SERVER_GONE); }
 };
+/* ========== 问题记录：出过的错按时间留在本机（不含 Key），「设置」里一键导出成问题报告 ========== */
+const ERRLOG_KEY = 'hrpg:errlog';
+function noteErr(kind, msg, extra) {
+  try {
+    const L = JSON.parse(lsGet(ERRLOG_KEY) || '[]');
+    L.push({ at: new Date().toISOString(), build: BUILD, mode: MODE, kind, msg: String(msg || '').replace(/sk-[A-Za-z0-9]{6,}/g, 'sk-***').slice(0, 600), phase: typeof PHASE === 'string' ? PHASE : '', turn: typeof S !== 'undefined' && S ? S.turn : null, ...(extra || {}) });
+    lsSet(ERRLOG_KEY, JSON.stringify(L.slice(-80)));
+  } catch (_) { /* 记不下就算了 */ }
+}
+window.addEventListener('error', e => noteErr('页面错误', (e.message || '') + ' @' + (e.lineno || '') + ':' + (e.colno || ''), { stack: String(e.error && e.error.stack || '').slice(0, 800) }));
+window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r && r.code === 'cancelled') return; noteErr('未接住的异步错误', (r && (r.message || r.code)) || String(r), { stack: String(r && r.stack || '').slice(0, 800) }); });
+async function exportReport() {
+  let diag = null; if (MODE === 'local') { try { diag = await api('/api/diag'); } catch (e) { diag = { error: String(e.message || e) }; } }
+  const s = S, pend = (() => { try { return JSON.parse(lsGet('hrpg:pending') || 'null'); } catch (_) { return null; } })();
+  const rep = { made: new Date().toISOString(), build: BUILD, mode: MODE, ua: navigator.userAgent, screen: innerWidth + 'x' + innerHeight, settings: SETTINGS, key: { has: KEY.has, model: KEY.model, search: KEY.search, bocha: KEY.bocha, bad: KEY.bad ? plainWhy(KEY.bad) : '' }, errors: JSON.parse(lsGet(ERRLOG_KEY) || '[]'), diag, pending: pend ? { ...pend, story: pend.story ? '(有草稿)' : undefined } : null, errmsg: ERRMSG,
+    game: s ? { title: s.title, turn: s.turn, clock: s.clock, place: s.place && s.place.full, protagonist: s.protagonist && { name: s.protagonist.name, role: s.protagonist.role, age: s.protagonist.age }, chatLen: arr(s.chat).length, lastChat: arr(s.chat).slice(-6).map(c => ({ role: c.role, kind: c.kind, turn: c.turn, text: cut(c.text, 400), unsettled: !!c.unsettled, extraKeys: c.extra ? Object.keys(c.extra) : [] })), sizeKB: Math.round(JSON.stringify(s).length / 1024) } : null };
+  const blob = new Blob([JSON.stringify(rep, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `问题报告-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
 const plainWhy = w => String(w || '').split(' :: ')[0].trim();   // 服务端报错里「::」后面是原始返回，玩家不用看
 /** 桌面版：把对话交给本机的游戏服务，由它带着 DeepSeek Key 去问，边写边取回 */
 function localSample(input, opts = {}) {
@@ -3134,6 +3154,10 @@ function pane(tab) {
     ${MODE === 'local' ? `<div class="h"><span class="seal">检</span>联网自检</div>
     <p class="muted" style="font-size:13px">用真实的请求把写剧情（DeepSeek）、搜索、维基百科读条目、历史地名库各试一遍，看你这台电脑上哪个通、拿到了什么。</p>
     <div class="row"><button id="bSelfTest">开始自检</button><span class="muted" id="selfMsg"></span></div><div id="selfBox">${SELFTEST}</div>` : ''}
+    <div class="h"><span class="seal">修</span>版本与问题报告</div>
+    <p class="muted" style="font-size:13px">现在的版本：${esc(/^\d{8}/.test(BUILD) ? `${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : BUILD)}${MODE === 'local' && UPDINFO ? (UPDINFO.remote && String(UPDINFO.remote) > BUILD ? `；网上有更新的版本${UPDINFO.using === 'updated' ? '，已下载好，空下来时自动换上' : ''}` : UPDINFO.why ? `；上次查更新没成：${esc(UPDINFO.why)}` : UPDINFO.checked ? '；已是最新' : '') : ''}${UPDINFO && UPDINFO.needReinstall ? '；这次改动大，要重新下载安装包' : ''}</p>
+    <div class="row">${MODE === 'local' ? `<button id="bUpdCheck" ${BUSY ? 'disabled' : ''}>检查更新</button>` : ''}<button id="bReport">导出问题报告</button><span class="muted" id="updMsg" style="font-size:12px"></span></div>
+    <p class="muted" style="font-size:12px">玩的时候出了问题，点「导出问题报告」会下载一个文件（记着出过的错、此刻的版本和这一局最近几回，不含 Key），把它发给我就能照着查。</p>
     <div class="h"><span class="seal">枝</span>分支存档</div>
     <p class="muted" style="font-size:13px">把这一局此刻的样子另存一份，再走另一条路；原来那份不动，首页「接着玩」里两份都在。</p>
     <div class="row"><button id="bBranch" ${BUSY ? 'disabled' : ''}>另存为分支，接着玩分支</button><span class="muted" id="branchMsg"></span></div>
@@ -3443,7 +3467,13 @@ async function send(said, span, note, resume) {
     try { await store.save(S); } catch (_) { SAVED = '这回没存上，下回会再试。'; SAVED_BAD = true; }
   } catch (e) {
     lsSet('hrpg:pending', null);
-    if (!(e && e.code === 'cancelled')) ERRMSG = errText(e);
+    if (!(e && e.code === 'cancelled')) { ERRMSG = errText(e); noteErr('回合失败', (e && (e.message || e.code)) || String(e), { code: e && e.code, said: cut(said, 80), hadStory: !!st, stack: String(e && e.stack || '').slice(0, 600) }); }
+    // 网络抖一下、模型忙、格式没读出来这类：自动再试，最多两次；Key 不对、余额不足这类才让玩家来管
+    const tries = (resume && resume.autoTry) || 0, em = String((e && e.message) || '') + ' ' + String((e && e.code) || '');
+    if (e && e.code !== 'cancelled' && !/no_key|no_sample/.test(e.code || '') && !/Key|余额|权限|小窗口|太长/.test(em) && /网络|超时|连不上|没有回应|繁忙|频繁|稍后|HTTP (429|5\d\d)|中断|没写成|格式|没读出|terminated|没给出正文|aborted|upstream|bad_json|empty|local/i.test(em) && tries < 2) {
+      AUTO_RETRY = { said, span, note, sig: null, resume: { ...(st ? { story: st } : {}), ...(ruling ? { ruling } : {}), orig, autoTry: tries + 1 } };
+      ERRMSG = `网络或模型抖了一下，${tries ? '再' : ''}自动重试一次（第 ${tries + 1} 次）……`;
+    }
     const keepR = S.research, keepQ = S.searchedQ, keepY = S.searchedYears;  // 查到的资料不算这一回的账，留着给再试一次用
     if (orig) S = orig;  // 重写或补记没成：原来那一回照旧留着
     else { const keepPrev = S.prev; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, before, { prev: keepPrev }); }
@@ -3455,8 +3485,14 @@ async function send(said, span, note, resume) {
     STREAM = ''; PHASE = ''; PENDING_SAID = ''; TURN = null; setBusy(false);
     const all = document.querySelectorAll('.chat .msg'); const last = all[all.length - 1]; if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+  if (AUTO_RETRY) {
+    const A = AUTO_RETRY; AUTO_RETRY = null; A.sig = S && chatSig(S); const msg = ERRMSG;
+    setTimeout(() => { if (!BUSY && S && chatSig(S) === A.sig && ERRMSG === msg) { ERRMSG = ''; if (A.resume.orig) S = restorePrev(A.resume.orig); send(A.said, A.span, A.note, A.resume); } }, 4000);
+    return;
+  }
   if (postTurn) runBg(postTurn);
 }
+let AUTO_RETRY = null;
 /** 撤回到上一版：上一版存档里早先的对话只留了几句，从现在的对话里补回来 */
 const chatSig = s => { const c = arr(s && s.chat)[arr(s && s.chat).length - 1]; return c && c.id ? 'i' + c.id : 'n' + arr(s && s.chat).length + ':' + (s && s.turn); };
 function restorePrev(cur) {
@@ -3509,6 +3545,13 @@ document.addEventListener('click', async e => {
       else if (r.test && r.test.ok) { KEYMSG = `✓ 已保存，试连成功（${r.test.model || ''}）`; KEY_OPEN = false; }
       else { const w = plainWhy(r.test && r.test.why); KEYMSG = '已保存，但试连没通：' + w + (/Key|余额|权限/.test(w) ? '。请核对 Key 后重新粘贴。' : '。点「检查网络」看看卡在哪。'); }
     } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
+    render(); return;
+  }
+  if (t.id === 'bReport') { exportReport().catch(e => { const m = $('#updMsg'); if (m) m.textContent = '没导出来：' + (e.message || e); }); return; }
+  if (t.id === 'bUpdCheck') {
+    t.disabled = true; t.textContent = '查更新中…（最多一两分钟）';
+    try { const u = await api('/api/update/check', {}); UPDINFO = u; if (u.using === 'updated' && u.remote && String(u.remote) > BUILD) { lsSet('hrpg:reloaded', String(u.remote)); if (!BUSY && !BG) { location.reload(); return; } } }
+    catch (e) { UPDINFO = { why: e.message || String(e) }; }
     render(); return;
   }
   if (t.id === 'bNoBocha') { try { await api('/api/quick-key', { noBocha: true }); await refreshKey(); KEYMSG = '✓ 已改回维基百科搜索'; } catch (e) { KEYMSG = e.message; } render(); return; }
