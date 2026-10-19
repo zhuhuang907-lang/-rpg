@@ -380,6 +380,7 @@ function ledgerRules() {
 13. localFigures：从【联网查到的资料】里认出的、此时在主角所在地方或与主角处境相关的真实人物（本地的官、士绅、名士、商人、僧道等），资料里确有其人才记，写明此时的身份与出处；没有就 []。
 14. almanac：从这一回【联网查到的资料】里整理出的、【年代志】里还没有的事实，一句一条（带年份、地名、人名、数目），按人物/官制/地方/物价/风俗/时事/器物归类，写明出处；资料里确实写着才记，小说演义影视的不收；五到十二条，没有就 []。
 16. goals：主角眼下可以奔的目标，每回都给齐三条——「眼下」（这几天到一个月内的一件具体的事）、「今年」（今年之内的一件事）、「长远」（这一生想成的事）。贴着主角此刻的身份、处境、性情和玩家这些回合的取向（玩家往哪个方向走，目标就跟着往哪儿长），要具体、够得着、有那个年代的样子（如「赶在秋粮入仓前把那二十亩田的契约过户」「今年考取功名」「在本地同行里站稳头几家」），不要空话。上一回的目标照旧的标「在做」；这一回做成了标「达成」、彻底没指望了标「落空」，并补上新的同一档目标（status「新」）。这不是任务，玩家可以不理。
+17. officials：正文里头一回点了名、坐在某个官位上的人（州县长官、佐贰、学官、武官……），记职位、地方、全名、到任年月（不知道就写今年）；照【本地官员名册】已有的不必再记；没有就给 []。
 15. turnSummary：本回合事实摘要，120 字内。worldShift：玩家这回做的事若可能波及更大的局面（杀了或救了要紧人物、占了一地、改了一项大政、截了一笔军饷、结交或得罪了权要……），一句话写出来，程序会据此推演天下；小事留空。
 
 史实核查（fixes）：逐句核对正文，只找确凿的硬伤——本朝本年不该有的官名、衙门、地名或隶属，违背【制度框架】的职衔、文书、程序、称谓；此时已死或尚未出生、不在此地、不任此职的真实人物；年号、干支、节令错误；本朝还没有的器物、作物、制度；离谱的物价或钱粮单位；现代词语。不改文风、不改虚构人物、不改情节，拿不准的不算。每处给出原文里错的那几个字（原样摘出，十二字以内，必须能在正文里找到）和改成什么。
@@ -390,6 +391,7 @@ function ledgerRules() {
 "estate":{"assets":[{"name":"","qty":"","value":0,"note":""}],"income":[{"item":"","amount":0}],"expense":[{"item":"","amount":0}],"projects":[{"name":"","status":"筹划/在做/停了/成了/败了","progress":"进度与下一步","note":""}]},
 "prices":[{"item":"米","price":0,"per":"石"}],
 "meters":[{"项":"","值":"","变":"↑/↓","因":""}],"groups":[{"人群":"","值":50,"因":""}],
+"officials":[{"post":"职位","place":"哪个府州县","name":"全名","since":"到任年.月","until":"","src":"正文"}],
 "presentNpcs":[{"name":"","role":"","tie":"与主角的关系","personality":"性格几个字","ability":"高/中/低","attitude":"对主角的态度一词","favor":0,"want":"眼下想要什么","goal":"长远的盘算","plan":"接下来打算做什么","knows":"他知道主角的哪些事（只写他确实能知道的）","status":"近况一句","where":"此刻在哪"}],
 "settlement":{"回报":[{"who":"","text":"办事人怎么回的话"}],"风声":["街谈巷议，一句一条"]},
 "lifeEvents":[{"who":"","what":""}],"household":[{"change":"添丁/娶进/嫁出/过世/离家/回家","relation":"","name":"","age":0,"note":""}],
@@ -421,7 +423,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261019032633';
+const BUILD = '20261019042954';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -995,12 +997,12 @@ ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下
 ${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
 ${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}【玩家这回说】${said}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
-再为这一回写一份场景简报（brief），给写正文的人当材料——要具体、确凿、有那个年代的味道：这件事牵涉的衙门与办事程序（谁有权、走什么文书（用本朝本代的文书名目））、此时此地相关职位上是谁（只写材料里有名有姓的）、当时人的说法与称谓、相关各方（人群、行当、衙役、士绅、商人）的利害与惯常做法、可写进场面的器物与细节；拿不准的标「推」，不编造。
+再为这一回写一份场景简报（brief），给写正文的人当材料——要具体、确凿、有那个年代的味道：这件事牵涉的衙门与办事程序（谁有权、走什么文书（用本朝本代的文书名目））、此时此地相关职位上是谁（写全名，照【本地官员名册】与材料）、当时人的说法与称谓、相关各方（人群、行当、衙役、士绅、商人）的利害与惯常做法、可写进场面的器物与细节；拿不准的标「推」，不编造。
 【制度框架】只是框架，可能有错：这一回要用到的衙门、职衔、文书、程序、称谓，凡框架里没有、或你拿不准的，也列进 search 去查。
 另外，写这一回之前要联网查证什么，由你来定（至少一半要搜政局、制度、战事、财政经济、天下形势这些实在的东西，不要只搜人名称呼）：玩家这一步牵涉的真人（此时的官职、所在、生死）、地方（此时的名称、隶属、路程）、制度门道、器物风俗、正在发生的时事，凡是要写准就得查的，列成搜索词（三到六条，写成「人名 年号某年 地名」「朝代 地名 衙门或行当」这样的词）；已经清楚的不必再查。
 再给写正文的人备一份人物底（scene）：出场的每个人此刻想要什么、怕什么、瞒着什么；不在场的人这段日子照自己的盘算做了什么，有到了时候的才在这一回露出来（交代下去的事有了结果、幕后的真相露出一角、有人记恨来报复），没有就空着，不硬凑。不替玩家做决定、不替主角说话；别人照自己的盘算行事。玩家做的事是正戏，不管跟历史主线有没有关系；【眼下的历史背景】到了日子才写它怎样落到主角这里，没到日子、离得远就不安排。一回只安排一两件事，不堆。意外（surprise）：前文埋下的、有人的打算到了时候、主角做过的事的后果、此时此地这个季节常有的事，顺理成章该发作的，写进 surprise 并说清来由；凭空的不要，没有就空。玩家还在上一回那场对话、那段路、那件事里，场面就接着上一回，不换；新起一场时，场面类型、出场的人、开头和收尾的方式才和【最近几回的场面】错开。不要每回都安排人找上门来报麻烦，主角在跟人说话时，停在对方说完、轮到主角开口处；主角在路上时，停在路上一处要主角自己定怎么走的地方；不在对话和路上时，也可以停在一个意外、一个消息、一段日子的结束上。
 如果玩家这回是在戏外提问（问历史、地理、局面、建议），steps 给 []，scene 不给，search 列出回答需要查的。
-只输出一个 JSON 对象：{"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"realPeople":["这一回牵涉的真实历史人物的名字：玩家点名要见、要找、要投奔、要对付的，以及场面里会出现的真人（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人：只写上面材料（本地志、史料、制度框架）里有名有姓的，材料里没有的只写职位、不写名字","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
+只输出一个 JSON 对象：{"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"realPeople":["这一回牵涉的真实历史人物的名字：玩家点名要见、要找、要投奔、要对付的，以及场面里会出现的真人（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人，一律写全名：照【本地官员名册】与上面材料；都没有的，照常理起一个合乎时代的全名","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
 }
 async function getRuling(s, said) {
   try {
@@ -1447,6 +1449,66 @@ function geoMap(s) {
   return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px" role="img" aria-label="县级地图">${dots}${labels.join('')}</svg><div class="muted" style="font-size:12px">红点你在这里；黑点州府治所；灰点县城；绿点你的地盘。据 CHGIS 历史地名库（${g.y}年前后），共 ${g.units.length} 处。</div>`;
 }
 
+
+/* ========== 本地官员名册：此地各衙门在任的人，人人有真名。查得到照史料；查到历任与到任离任的年月就推算此刻是谁；实在查不到才照常理拟一个。记下就是定本，前后不矛盾 ========== */
+const OF_RANK = { 史料: 3, 推断: 2, 正文: 1, 拟: 1 };
+const ofYM = v => { const m = String(v == null ? '' : v).match(/(-?\d+)(?:[.\-年](\d+))?/); return m ? +m[1] * 12 + (m[2] ? +m[2] : 1) : null; };
+const ofHere = (s, o) => { const k = geoStem(o.place); return k.length >= 2 && String(s.place.full || '').includes(k); };
+// 离任不详的：照常例算任期（州县官多三年一任；史料确载的放宽到六年），过了就当任满，去定接任的人
+const ofEnd = o => { const b = ofYM(o.until); if (b != null) return b; const a = ofYM(o.since); return a == null ? null : a + (o.src === '史料' ? 72 : 36); };
+function ofNow(s, o) { const n = ymOf(s.clock), a = ofYM(o.since), b = ofEnd(o); return (a == null || a <= n) && (b == null || b >= n); }
+/** 此地此刻在任的（照所在地方与它上一级的名字认） */
+function officialsHere(s) {
+  return arr(s.offices).filter(o => o && o.name && ofHere(s, o) && ofNow(s, o));
+}
+function officialsBlock(s) {
+  const L = officialsHere(s); if (!L.length) return '';
+  return `【本地官员名册（此刻在任；写到这些职位上的人一律用这些名字，不改名、不另起一个、不写「某」；名册里没有的职位，照常理起一个合乎时代的全名）】\n` + L.map(o => `${o.post}（${o.place}）：${o.name}${o.since ? '，' + o.since + '到任' : ''}${o.until ? '，' + o.until + '离任' : ''}${o.src === '推断' ? '［据任期推断' + (o.basis ? '：' + o.basis : '') + '］' : o.src === '拟' ? '［史料无考，拟］' : ''}${o.note ? '；' + o.note : ''}`).join('\n');
+}
+/** 要不要（重）查：此地没有名册、名册里有人任期已满、或隔了一年没核过 */
+const officialsDue = s => s && s.clock && !(s.offFail != null && s.turn - s.offFail < 4) && (!officialsHere(s).length || s.offAt !== s.place.full + '|' + s.clock.y || arr(s.offices).some(o => ofHere(s, o) && ofEnd(o) != null && ofEnd(o) < ymOf(s.clock) && !s.offices.some(e => e !== o && e.post === o.post && geoStem(e.place) === geoStem(o.place) && ofNow(s, e))));   // 有人任满、还没定接任的
+/** 把新定的人并进名册：同一地方同一职位任期重叠的，名次高的（史料>推断>拟）且旧的还没在正文里出过场才替换；一个人不同时在两处任职 */
+function mergeOffices(s, list, src0) {
+  s.offices = arr(s.offices);
+  const said = arr(s.chat).map(c => c.text).join('\n');
+  for (const x of arr(list)) {
+    if (!x || !x.post || !x.place) continue;
+    const name = one(x.name, 10).replace(/某|佚名|不详|无考|^\?+$/g, '').trim(); if (name.length < 2) continue;
+    const o = { post: one(x.post, 16), place: one(x.place, 16), name, since: one(x.since, 10), until: one(x.until, 10), src: /史料|史书|确/.test(x.src || '') ? '史料' : /推/.test(x.src || '') ? '推断' : src0 || '拟', basis: one(x.basis, 60), note: one(x.note, 40), at: s.turn };
+    const same = s.offices.filter(e => geoStem(e.place) === geoStem(o.place) && e.post === o.post && ofNow(s, e));
+    if (same.some(e => e.name === o.name)) { same.filter(e => e.name === o.name).forEach(e => { if ((OF_RANK[o.src] || 0) > (OF_RANK[e.src] || 0)) Object.assign(e, o); }); continue; }
+    const keep = same.filter(e => (OF_RANK[e.src] || 0) >= (OF_RANK[o.src] || 0) || said.includes(e.name));
+    if (keep.length) continue;   // 已经定下（或已经在戏里出过场）的人不换
+    if (s.offices.some(e => e.name === o.name && e.post === o.post)) continue;   // 同一人同一职已经记过
+    if (s.offices.some(e => e.name === o.name && ofNow(s, e) && geoStem(e.place) !== geoStem(o.place))) continue;   // 同一个人不在两处同时任职
+    s.offices = s.offices.filter(e => !same.includes(e)).concat([o]);
+  }
+  s.offices = s.offices.slice(-200);
+}
+async function ensureOfficials(s) {
+  const pl = String(s.place.full || ''), y = s.clock.y, yl = s.clock.yearLabel || (y + '年'), pol = s.place.polity || '';
+  const fu = (pl.match(/[^省道路\s]{2,4}(府|州|郡)/) || [''])[0], xian = (pl.match(/[^府州郡\s]{2,4}(县|縣)/) || [''])[0], top = fu || pl;
+  const qs = [`${top} 历任 长官 ${pol}`, `${top} ${yl} 知府 刺史 太守 知州`, `${top}志 职官志 ${pol}`, `${xian || top} 历任 知县 县令 ${pol}`, `${xian || top} ${yl} 到任`, `${top} ${y}年 官员 到任 离任 调任`, `${top} ${pol} 驻军 将领 ${yl}`].filter(q => q.trim().length > 4);
+  const tmp = { research: [], wikiDone: [], turn: s.turn, clock: s.clock, place: s.place, title: s.title };
+  if (canSearch()) await Promise.all([doLookups(tmp, qs), wikiRead(tmp, [top, xian].filter(Boolean))]);
+  const R0 = arr(tmp.research).filter(x => x.text);
+  const old = arr(s.offices).filter(o => ofHere(s, o));
+  const { text } = await callClaude(`为一局讲究史实的历史模拟游戏定出此时此地各衙门在任的人。此刻：${timeText(s.clock)}（${y}年${s.clock.m}月）。地方：${pl}（${pol}）。主角：${s.protagonist.role}。
+${s.inst ? '【本朝官制】' + cut(s.inst.summary, 300) + '\n' : ''}${old.length ? '【名册里已经有的（任期没过、在任的照旧，不换人；任期已满的，定出接任的人）】\n' + old.map(o => `${o.post}（${o.place}）：${o.name}，${o.since || '?'}—${o.until || '在任'}［${o.src}］`).join('\n') + '\n' : ''}${R0.length ? '【联网查到的资料】\n' + R0.map(x => `· 查「${x.q}」：${cut(x.text, 900)}`).join('\n') : '（这次没查到资料）'}
+
+要定的职位（照本朝本代真实的官名，七到十二个）：本州府的长官与主要佐贰、本县的长官与佐官、学官、驻在此地或管着此地的武官、管着此地的上一级长官（监司、巡抚、观察使、节度使之类，照本朝）。
+每个职位都必须给出一个人的全名，不许空着、不许写「某」「佚名」「不详」。按下面的次序定：
+1. 资料或正史、方志确载此刻在任的——写他，src 写「史料」。
+2. 资料只有历任名单、到任离任年月的——自己推算此刻是谁：甲某年某月到任、乙某年某月接任，中间这段就是甲在任；某人二月到任、十一月调走，那么十月在任的就是他。src 写「推断」，basis 写清依据（谁哪年到任、谁哪年接任）。查到的名单有空档，就用最近的前任或后任合理推断。
+3. 真的查不到任何线索——照这个年代这个地方的常理拟一个合乎身份的全名（官员守回避：多是外省人，不用本地望族的姓氏），src 写「拟」。
+前后不能矛盾：一个人同一时候只在一个地方任一个职；已死的人不能在任；任期起止要合本朝常例（州县官多三年一任）。since、until 写「年.月」（如 1629.2），不知道离任就空着。
+只输出一个 JSON 对象：{"officials":[{"post":"职位","place":"哪个府州县（写当时的名称）","name":"全名","since":"到任年.月","until":"离任年.月或空","src":"史料/推断/拟","basis":"推断的依据（史料、拟的可空）","note":"此人此时的作为或口碑一句（可空）"}]}`, null, { maxTokens: 2500, temperature: 0.2, kind: '任官' });
+  const d = parseJSON(text); if (!d || !Array.isArray(d.officials)) throw { code: 'bad_json' };
+  mergeOffices(s, d.officials);
+  s.offAt = pl + '|' + y;
+  return officialsHere(s);
+}
+
 /* ========== 本地志：主角所在地方此时的样子（衙署与官员、经济行业、大族、街巷市镇、风俗、本地时事），开局与搬家时查一次 ========== */
 function gazQueries(s) {
   const pl = String(s.place.full || ''), yl = s.clock.yearLabel || (s.clock.y + '年'), dy = (s.place.polity || '') + '代';
@@ -1458,20 +1520,22 @@ async function buildGazetteer(s) {
   if (canSearch()) await Promise.all([doLookups(tmp, gazQueries(s)), wikiRead(tmp, placeNames(s.place.full).slice(0, 2))]);
   const R = arr(tmp.research);
   const { text } = await callClaude(`为一局历史模拟游戏整理主角所在地方的「本地志」：${s.place.full}（${s.place.polity || ''}），${timeText(s.clock)}。主角：${s.protagonist.role}。
-要的是让人身临其境的、确凿的地方知识：这地方此时的行政隶属与衙署（同城有几个县、各衙门在哪）、此时在任的上下官员与驻军（照本朝本代的官名：州县长官、佐官、驻地的使职或监司、军镇将校等，写本名，确知的才写名字）、经济与行业（主业、行会、市镇、税关）、望族士绅、城门街巷桥梁市集寺观、风俗岁时、方言称谓、本地此时正在发生的事。下面是联网查到的资料，优先用；资料里没有、你确知的通行史实也可以写，拿不准的标「推」。小说演义影视的不收。
+要的是让人身临其境的、确凿的地方知识：这地方此时的行政隶属与衙署（同城有几个县、各衙门在哪）、此时在任的上下官员与驻军（照本朝本代的官名：州县长官、佐官、驻地的使职或监司、军镇将校等，每个都写全名：确载的照史，只有历任年份的推算此刻是谁，sure 写 false）、经济与行业（主业、行会、市镇、税关）、望族士绅、城门街巷桥梁市集寺观、风俗岁时、方言称谓、本地此时正在发生的事。下面是联网查到的资料，优先用；资料里没有、你确知的通行史实也可以写，拿不准的标「推」。小说演义影视的不收。
 ${R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') || '（没有查到资料）'}
 
 只输出一个 JSON 对象：{"admin":"行政隶属与衙署，三四句","officials":[{"post":"官职","name":"本名或空","note":"此时的作为或口碑","sure":true}],"economy":"经济与行业，三四句","families":"望族士绅，两三句","places":"城门街巷桥梁市集寺观，三四句（写真名）","customs":"风俗岁时、称谓方言，两三句","current":"本地此时的时事与人心，两三句","counties":["本州府与邻近州府此时的县名（写全称，如 良乡县），二十个以内"]}`, null, { maxTokens: 3500, temperature: 0.2, kind: '方志' });
   const d = parseJSON(text);
   if (!d || !d.admin) throw { code: 'bad_json' };
   s.gazetteer = { place: s.place.full, y: s.clock.y, admin: cut(d.admin, 300), economy: cut(d.economy, 300), families: cut(d.families, 200), places: cut(d.places, 300), customs: cut(d.customs, 200), current: cut(d.current, 200),
-    officials: arr(d.officials).filter(o => o && o.post).slice(0, 14).map(o => ({ post: one(o.post, 20), name: o.sure !== false ? one(o.name, 10) : '', note: one(o.note, 50), sure: true })), src: R.length ? '检索' : '记忆', counties: arr(d.counties).map(x => one(x, 10)).filter(x => x.length >= 2).slice(0, 24) };
+    officials: arr(d.officials).filter(o => o && o.post).slice(0, 14).map(o => ({ post: one(o.post, 20), name: one(o.name, 10), note: one(o.note, 50), sure: o.sure !== false })), src: R.length ? '检索' : '记忆', counties: arr(d.counties).map(x => one(x, 10)).filter(x => x.length >= 2).slice(0, 24) };
+  mergeOffices(s, s.gazetteer.officials.filter(o => o.name).map(o => ({ post: o.post, place: (s.geo && s.geo.here && s.geo.here.parent) || s.place.full, name: o.name, since: String(s.clock.y), src: o.sure ? '史料' : '推断', note: o.note })));
   return s.gazetteer;
 }
 const needGaz = s => s && (!s.gazetteer || s.gazetteer.place !== s.place.full || Math.abs(s.clock.y - s.gazetteer.y) >= 8);
 function gazBlock(s) {
-  const g = s.gazetteer; if (!g || g.place !== s.place.full) return '';
-  return `【本地志（${g.place}，${g.y}年前后；${g.src === '检索' ? '据检索资料整理' : 'AI 据通行史书整理'}，写本地的人、地、事照这里）】\n衙署：${g.admin}\n官员：${arr(g.officials).map(o => `${o.post}${o.name ? ' ' + o.name : ''}${o.sure ? '' : '[推]'}${o.note ? '（' + o.note + '）' : ''}`).join('；')}\n经济：${g.economy}\n士绅：${g.families}\n地方：${g.places}\n风俗：${g.customs}\n时事：${g.current}`;
+  const g = s.gazetteer; if (!g || g.place !== s.place.full) return officialsBlock(s);
+  const ob = officialsBlock(s);
+  return (ob ? ob + '\n' : '') + `【本地志（${g.place}，${g.y}年前后；${g.src === '检索' ? '据检索资料整理' : 'AI 据通行史书整理'}，写本地的人、地、事照这里）】\n衙署：${g.admin}${officialsBlock(s) ? '' : '\n官员：' + arr(g.officials).map(o => `${o.post}${o.name ? ' ' + o.name : ''}${o.note ? '（' + o.note + '）' : ''}`).join('；')}\n经济：${g.economy}\n士绅：${g.families}\n地方：${g.places}\n风俗：${g.customs}\n时事：${g.current}`;
 }
 
 /* ========== 联网自建史料：没有内置史料的年代，按十来年一段查年表、君主、重臣、战事、灾荒、制度，整理成同样格式 ========== */
@@ -2546,6 +2610,7 @@ function applyReply(s, d, said) {
     for (const t of arr(d.gmNotes)) if (t && String(typeof t === 'string' ? t : JSON.stringify(t)).trim().length > 3) { const tx = one(typeof t === 'string' ? t : JSON.stringify(t), 140); const core = x => String(x).replace(/[\s，。；、：「」…]/g, '').slice(0, 40); if (!s.gmNotes.some(n => n.text === tx || core(n.text).includes(core(tx).slice(0, 20)) || core(tx).includes(core(n.text).slice(0, 20)) || simText(n.text, tx) >= 0.4)) s.gmNotes.push({ turn, text: tx }); }
     s.gmNotes = s.gmNotes.slice(-20);
     addInfluence(s, d.touches, turn);
+    mergeOffices(s, d.officials, '正文');   // 正文里头一回点了名的官员，记进名册
     for (const c of arr(d.statusChanges)) { const k = one(c && (c.项 || c.item), 12), v = one(c && (c.后 || c.to), 60); if (k && v) { s.status[k] = v; s.statusLog.push({ turn, k, v, why: one(c.原因, 60) }); } }
     s.statusLog = s.statusLog.slice(-60);
     for (const h of arr(d.historyChanges)) if (h && h.event && h.now) s.history.push({ turn, event: one(h.event, 60), now: one(h.now, 80), cause: one(h.cause, 60) });
@@ -3030,7 +3095,7 @@ function pane(tab) {
     const pl = Object.entries(s.places);
     return `<div class="h" style="margin-top:6px"><span class="seal">地</span>地理册<span class="note">当时地名、今地、隶属、离你多远</span></div>
       ${s.geo ? `<div class="h"><span class="seal">图</span>县级地图<span class="note">${esc(s.geo.here.name)} 一带</span></div>${geoMap(s)}` : canGeo() ? '<div class="muted" style="font-size:12px">县级地图会在下一回合从历史地名库查出来。</div>' : ''}
-      ${s.gazetteer ? `<div class="h"><span class="seal">志</span>本地志<span class="note">${esc(s.gazetteer.place)} · ${esc(s.gazetteer.y)}年前后</span></div><dl class="kv">${[['衙署', s.gazetteer.admin], ['官员', arr(s.gazetteer.officials).map(o => o.post + (o.name ? ' ' + o.name : '') + '').join('；')], ['经济', s.gazetteer.economy], ['士绅', s.gazetteer.families], ['地方', s.gazetteer.places], ['风俗', s.gazetteer.customs], ['时事', s.gazetteer.current]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+      ${s.gazetteer ? `<div class="h"><span class="seal">志</span>本地志<span class="note">${esc(s.gazetteer.place)} · ${esc(s.gazetteer.y)}年前后</span></div><dl class="kv">${[['衙署', s.gazetteer.admin], ['官员', officialsHere(s).length ? officialsHere(s).map(o => o.post + ' ' + o.name).join('；') : arr(s.gazetteer.officials).map(o => o.post + (o.name ? ' ' + o.name : '') + '').join('；')], ['经济', s.gazetteer.economy], ['士绅', s.gazetteer.families], ['地方', s.gazetteer.places], ['风俗', s.gazetteer.customs], ['时事', s.gazetteer.current]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
       <div class="row" style="margin-top:0"><span class="muted">你现在在：<b style="color:var(--ink)">${esc(s.place.full)}</b></span></div>
       ${pl.length ? `<div class="tblwrap"><table class="tbl"><tr><th>地名</th><th>今地</th><th>隶属</th><th>离你</th></tr>${pl.map(([k, v]) => `<tr><td><b>${esc(k)}</b>${v.note ? `<div class="muted">${esc(v.note)}</div>` : ''}</td><td>${esc(v.now)}</td><td>${esc(v.belong)}</td><td>${esc(v.from)}</td></tr>`).join('')}</table></div>` : '<div class="muted">开场后出现；正文里提到新地方会自动记进来。</div>'}
       <div id="copyMsg" class="muted"></div>`;
@@ -3250,6 +3315,7 @@ async function send(said, span, note, resume) {
         canSearch() ? doLookups(S, lookupQueries(S, said)) : Promise.resolve(null),
         wantPlan ? getRuling(S, said) : Promise.resolve(null),
         ensureEventDetail(S).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }),   // 大事深挖，和别的查询一起做
+        officialsDue(S) ? ensureOfficials(S).catch(e => { if (e && e.code === 'cancelled') throw e; S.offFail = S.turn; return null; }) : Promise.resolve(null),   // 本地官员名册：查、推断，人人有名字
       ]);
       looked = lk; ruling = rl;
       if (ruling && SETTINGS.ruling === false) ruling = { steps: [], risks: [], alt: '', search: ruling.search, scene: ruling.scene, brief: ruling.brief, places: ruling.places, realPeople: ruling.realPeople };
