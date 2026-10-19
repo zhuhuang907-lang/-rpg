@@ -44,9 +44,9 @@ async function readConfigFile() {
     return { raw: JSON.parse(txt), exists: true };
   } catch (e) {
     if (e && e.code === 'ENOENT') return { raw: null, exists: false };
-    // 文件在、但读不懂：备份一份，绝不覆盖（里面可能有用户的 Key）
-    try { await fsp.copyFile(CONFIG_FILE, CONFIG_FILE + `.unreadable-${Date.now()}.bak`); } catch { /* 忽略 */ }
-    return { raw: null, exists: true, broken: true };
+    // 文件在、但读不懂：改名留底一次（里面可能有用户的 Key），之后按新文件处理，不再每读一次就备份一份
+    try { await fsp.rename(CONFIG_FILE, CONFIG_FILE + `.unreadable-${Date.now()}.bak`); } catch { /* 忽略 */ }
+    return { raw: null, exists: false, broken: true };
   }
 }
 function mergeConfig(base, over) {
@@ -83,7 +83,8 @@ async function saveConfig(cfg) {
   // 空配置（{} 或只有空字段）一律视为「不改」，原样返回
   if (!cfg || (!cfg.provider && !cfg.providers && !cfg.fallback)) return mergeConfig(raw, null);
   const merged = mergeConfig(raw, cfg);
-  await fsp.writeFile(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf8');
+  await fsp.writeFile(CONFIG_FILE + '.tmp', JSON.stringify(merged, null, 2), 'utf8');
+  try { await fsp.rename(CONFIG_FILE + '.tmp', CONFIG_FILE); } catch (_) { await fsp.writeFile(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf8'); }
   return merged;
 }
 

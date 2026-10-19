@@ -16,9 +16,21 @@ const eraVocab = require('./core/eraVocab');
 
 const ROOT = __dirname;
 // 兜底：哪里漏接了一个错误（联网半路断了、某个回调里抛了异常），记下来照常运行，不让整个游戏服务退出
-process.on('uncaughtException', e => { console.error('[兜底] 未接住的错误：', e && (e.stack || e.message || e)); });
-process.on('unhandledRejection', e => { console.error('[兜底] 未接住的异步错误：', e && (e.stack || e.message || e)); });
+// 启动器关掉了、输出管道断了：写日志会一直报 EPIPE，不能让它在兜底里自己绕圈把 CPU 吃满
+for (const st of [process.stdout, process.stderr]) st.on('error', () => {});
+const logErr = (...a) => { try { console.error(...a); } catch (_) { /* 管道断了就不写 */ } };
+process.on('uncaughtException', e => { if (e && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED')) return; logErr('[兜底] 未接住的错误：', e && (e.stack || e.message || e)); });
+process.on('unhandledRejection', e => { logErr('[兜底] 未接住的异步错误：', e && (e.stack || e.message || e)); });
 const PUBLIC = path.join(ROOT, 'public');
+/** 改名（存档落盘的最后一步）：Windows 上杀毒软件、索引服务会短暂占着文件，等一下再试，别让存档失败 */
+function renameRetry(a, b) {
+  for (let i = 0; ; i++) {
+    try { return fs.renameSync(a, b); } catch (e) {
+      if (i >= 6 || !/EPERM|EBUSY|EACCES/.test(e.code || '')) { if (i >= 6) { fs.copyFileSync(a, b); try { fs.unlinkSync(a); } catch (_) { /* 忽略 */ } return; } throw e; }
+      const t = Date.now() + 60 * (i + 1); while (Date.now() < t) { /* 等一下 */ }
+    }
+  }
+}
 // 接口版本：游戏页面要用到新的服务端接口时加一；自动更新只换页面，页面要求的接口比这里新就提示重新安装
 const API_VER = 2;
 let SELFTEST_RUN = null;   // 自检一次只跑一个：连点几下就等同一次的结果
@@ -85,8 +97,8 @@ async function serveStatic(req, res, urlPath) {
 }
 
 async function readBody(req) {
-  const chunks = [];
-  for await (const c of req) chunks.push(c);
+  const chunks = []; let size = 0;
+  for await (const c of req) { size += c.length; if (size > 20e6) throw new Error('请求太大'); chunks.push(c); }
   if (!chunks.length) return {};
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return {}; }
 }
@@ -256,6 +268,7 @@ const routes = {
     const saved = (await adapters.loadAdapterConfig()).configs?.[aid] || {};
     const cfg = { baseUrl: aid === 'deepseek' ? 'https://api.deepseek.com' : undefined, ...saved };
     for (const [kk, vv] of Object.entries(b.config || {})) if (vv !== '' && vv != null) cfg[kk] = vv;
+    if (b.config && b.config.baseUrl && !b.config.apiKey && saved.apiKey && b.config.baseUrl !== saved.baseUrl) return { ok: false, why: '换了接口地址，要连同 Key 一起填' };   // 不把存着的 Key 发到别的地址
     if (!cfg.apiKey) return { ok: false, why: '先填 Key 才能列出型号' };
     const models = await adapters.listModels(cfg);
     return { ok: true, models, current: cfg.model || '' };
@@ -400,6 +413,11 @@ const routes = {
     // 写完的任务留一阵：页面刷新或网络抖一下再来取，结果还在
     return { ok: true, status: j.status, text: j.text, error: j.error, truncated: !!j.truncated };
   },
+  // 启动器再开一次时先请旧服务自己退出（连同看着它的守护进程），免得守护进程一秒后又把它拉起来抢端口
+  async 'POST /api/quit'() {
+    setTimeout(() => { const pp = Number(process.env.RPG_PARENT_PID); if (pp && pp !== process.pid) { try { process.kill(pp); } catch (_) { /* 父进程已不在 */ } } process.exit(0); }, 200);
+    return { ok: true };
+  },
   async 'POST /api/llm-stop'(body) { const j = LLM_JOBS.get((body || {}).job); if (j) j.status = 'cancelled'; return { ok: true }; },
   /* 联网自检：用真实请求把写剧情、搜索、维基、历史地名库各试一遍，告诉玩家哪个通、拿到了什么 */
   'GET /api/selftest'() { if (!SELFTEST_RUN) SELFTEST_RUN = routes['GET /api/selftest0']().finally(() => { SELFTEST_RUN = null; }); return SELFTEST_RUN; },
@@ -481,7 +499,7 @@ const routes = {
     if (!pk || !/^[\w\-]+$/.test(String(pk.id || '')) || !Array.isArray(pk.range)) return { ok: false, why: '格式不对' };
     const dir = path.join(ROOT, 'data', 'histpacks'); fs.mkdirSync(dir, { recursive: true });
     const tmp = path.join(dir, pk.id + '.json.tmp');
-    fs.writeFileSync(tmp, JSON.stringify(pk)); fs.renameSync(tmp, path.join(dir, pk.id + '.json'));
+    fs.writeFileSync(tmp, JSON.stringify(pk)); renameRetry(tmp, path.join(dir, pk.id + '.json'));
     return { ok: true };
   },
   'GET /api/wsaves': async () => {
@@ -496,7 +514,7 @@ const routes = {
     if (!s || !/^[a-z0-9]+$/i.test(String(s.id || ''))) return { ok: false, why: '存档格式不对' };
     const dir = path.join(ROOT, 'data', 'websaves'); fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, s.id + '.json');
-    fs.writeFileSync(file + '.tmp', JSON.stringify(s)); fs.renameSync(file + '.tmp', file);   // 先写临时文件再改名：写到一半断电也不会坏档
+    fs.writeFileSync(file + '.tmp', JSON.stringify(s)); renameRetry(file + '.tmp', file);   // 先写临时文件再改名：写到一半断电也不会坏档
     return { ok: true };
   },
   async 'POST /api/wload'(body) {
@@ -790,13 +808,28 @@ ${body.what === 'geography'
   async 'POST /api/verify/term'(body) { return verify.verifyTerm(body); },
 };
 
+// 只认本机来的请求：别的网站（哪怕是玩家开着的网页）不能借浏览器来调这个服务、读 Key、跑命令
+const LOOPBACK = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
+const LOCAL_ONLY = /^(127\.0\.0\.1|localhost|::1)$/i.test(HOST);
+const DEV_ONLY = new Set(['POST /api/adapter-test', 'GET /api/adapter-config', 'POST /api/adapter-config', 'GET /api/search/config', 'POST /api/search/config']);
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  let body = {};
-  if (req.method === 'POST' || req.method === 'PUT') body = await readBody(req);
+  const host = String(req.headers.host || '');
+  if (LOCAL_ONLY && !LOOPBACK.test(host)) { res.writeHead(403); return res.end(); }
+  const origin = req.headers.origin;
+  if (origin && origin !== 'null' && origin.replace(/^https?:\/\//, '') !== host) return send(res, 403, { ok: false, why: '只接受本机游戏页面的请求' });
+  let url;
+  try { url = new URL(req.url, `http://${host || '127.0.0.1'}`); } catch (_) { res.writeHead(400); return res.end(); }
   const key = `${req.method} ${url.pathname}`;
+  if ((req.method === 'POST' || req.method === 'PUT') && routes[key] && !/json/i.test(req.headers['content-type'] || '')) return send(res, 415, { ok: false, why: '请求格式不对' });
+  let body = {};
+  try { if (req.method === 'POST' || req.method === 'PUT') body = await readBody(req); } catch (e) { return send(res, 413, { ok: false, why: String(e.message || e) }); }
   const handler = routes[key];
   if (!handler) return serveStatic(req, res, url.pathname);
+  if (DEV_ONLY.has(key) && !process.env.RPG_DEV) {   // 高级调试接口：带 Key 明文、能起子进程，玩家用不到
+    if (key === 'GET /api/adapter-config') { const c = await adapters.loadAdapterConfig(); return send(res, 200, { selected: c.selected, configs: Object.fromEntries(Object.entries(c.configs || {}).map(([k, v]) => [k, { ...v, apiKey: v && v.apiKey ? '••••' + String(v.apiKey).slice(-4) : '' }])) }); }
+    if (key === 'GET /api/search/config') { const c = await search.loadConfig(); return send(res, 200, JSON.parse(JSON.stringify(c, (k, v) => /key/i.test(k) && typeof v === 'string' && v ? '••••' + v.slice(-4) : v))); }
+    if (key === 'POST /api/adapter-test' && /python-subprocess|mcp-stdio/.test(String(body.adapterId || ''))) return send(res, 403, { ok: false, why: '这个适配器只在开发模式下可用' });
+  }
   try {
     const out = await handler(body, url.searchParams);
     send(res, 200, out);
@@ -804,7 +837,7 @@ const server = http.createServer(async (req, res) => {
     // 业务错误（参数不对、找不到、未配置 Key）统一回 {ok:false, why}，
     // 让前端能看懂原因；旧版一律 500 + 堆栈，界面上只显示 undefined。
     // 堆栈留在服务端日志里排障，不进响应。
-    console.error(`[${key}]`, e && e.stack || e);
+    logErr(`[${key}]`, e && e.stack || e);
     send(res, 200, { ok: false, why: String(e && e.message || e) });
   }
 });
@@ -812,6 +845,10 @@ const server = http.createServer(async (req, res) => {
 engine.ensureDirs();
 fs.mkdirSync(adapters.ADAPTER_DIR, { recursive: true });
 
+server.on('error', e => {
+  logErr(e && e.code === 'EADDRINUSE' ? `端口 ${PORT} 已被占用：游戏可能已经开着了（看看浏览器里是不是已有一个），或先关掉它再打开` : e);
+  process.exit(98);   // 98：不是意外，守护进程不要再重启
+});
 server.listen(PORT, HOST, () => {
   console.log(`枢引擎 running: http://${HOST}:${PORT}`);
   // 启动时先探一遍外网：连不上的站点（国内常见的维基）提前记下，开局时直接走兜底，不再一个个等超时

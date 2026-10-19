@@ -2508,13 +2508,13 @@ async function chatCall({ messages, system = '', maxTokens = 8000, temperature =
   const config = { ...cfg0, ...(thinking ? { thinking: true } : {}), ...(fast ? { fast: true } : {}) };
   // 模型服务一时忙（429 / 5xx / 断线）且还没写出字时，自动再试两次，不让玩家看到报错
   let res, wrote = false;
-  const od = onDelta ? t => { wrote = true; onDelta(t); } : undefined;
+  const od = onDelta ? t => { if (t) wrote = true; onDelta(t); } : undefined;
   for (let i = 0; ; i++) {
     try { res = await adapter.call({ system, messages, prompt: messages.length ? messages[messages.length - 1].content : '', temperature, maxTokens, onDelta: od, json: !!json }, config); break; }
     catch (e) {
       const m = String(e && e.message || e);
       if (e && e.stopStream) throw e;
-      if (i >= 2 || wrote || !/HTTP (429|500|502|503|504)|ECONNRESET|socket hang up|fetch failed|terminated|ETIMEDOUT/i.test(m)) throw e;
+      if (i >= 2 || wrote || !/HTTP (429|500|502|503|504)|ECONNRESET|socket hang up|fetch failed|terminated|ETIMEDOUT|UND_ERR_SOCKET|other side closed|连接超时|连不上|网络/i.test(m)) throw e;
       await new Promise(r => setTimeout(r, i === 0 ? 2500 : 6000));
     }
   }
