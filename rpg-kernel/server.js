@@ -448,7 +448,7 @@ const routes = {
     const cf = path.join(dir, key + '.json');
     try { return JSON.parse(fs.readFileSync(cf, 'utf8')); } catch (_) { /* 没缓存 */ }
     const params = new URLSearchParams({ fmt: 'json' }); if (n) params.set('n', n); if (yr) params.set('yr', yr); if (ipar) params.set('ipar', ipar); if (ftyp) params.set('ftyp', ftyp);
-    const bases = (process.env.TGAZ_BASE ? [process.env.TGAZ_BASE] : []).concat(['https://maps.cga.harvard.edu', 'https://tgaz.fudan.edu.cn', 'http://tgaz.fudan.edu.cn']);
+    const bases = (process.env.TGAZ_BASE ? [process.env.TGAZ_BASE] : []).concat(['https://tgaz.fudan.edu.cn', 'http://tgaz.fudan.edu.cn', 'https://maps.cga.harvard.edu']);
     let lastErr = '';
     for (const b of bases) {
       try {
