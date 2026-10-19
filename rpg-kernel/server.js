@@ -129,6 +129,15 @@ function withSaveLock(id, fn) {
 // 最近一次连 AI 的结果：首页据此显示「已接通」还是「连不上」（以前只要存了 Key 就显示已接通）
 const STATUS_FILE = path.join(__dirname, 'data', 'status.json');
 function readStatus() { try { return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')); } catch (_) { return {}; } }
+function friendlySearch(e, bocha) {
+  const s = String(e || '').split(' :: ')[0], who = bocha ? '博查' : '维基百科搜索';
+  if (bocha && /401|无效|invalid|unauthor/i.test(s)) return '博查 Key 无效（到 open.bochaai.com 核对，或在首页重新填）';
+  if (bocha && /403|余额|balance|insufficient|欠费/i.test(s)) return '博查余额不足（到 open.bochaai.com 充值）';
+  if (/429|频繁|rate/i.test(s)) return `搜得太频繁，${who}限流了（过一会儿自动恢复）`;
+  if (/未配置|没填/.test(s)) return '还没填博查 Key（首页「联网查证」里填）';
+  if (/ENOTFOUND|ECONN|fetch failed|超时|timeout|abort/i.test(s)) return `连不上${who}（网络或代理问题）`;
+  return s.slice(0, 120);
+}
 function recordTest(ok, why) {
   try { fs.writeFileSync(STATUS_FILE, JSON.stringify({ ...readStatus(), lastTest: { ok: !!ok, why: ok ? '' : String(why || '').slice(0, 300), at: Date.now() } }), 'utf8'); } catch (_) { /* 忽略 */ }
 }
@@ -229,8 +238,12 @@ const routes = {
   /* ---- 首页一步填 Key：DeepSeek（必填）+ 博查（可选），合并保存，不会冲掉已有的 Key ---- */
   async 'POST /api/quick-key'(body) {
     const b = body || {};
-    const k = String(b.apiKey || '').trim();
-    const bk = String(b.bochaKey || '').trim();
+    // 粘贴时带进来的空格、换行一律去掉；有中文、全角字符的不是 Key（多半复制错了）
+    const k = String(b.apiKey || '').replace(/\s+/g, '');
+    const bk = String(b.bochaKey || '').replace(/\s+/g, '');
+    if (b.noBocha) { await search.saveConfig({ provider: 'wikipedia' }); return { ok: true, saved: { bocha: false }, bochaOff: true }; }
+    if (k && !/^[\x21-\x7e]+$/.test(k)) return { ok: false, why: 'DeepSeek Key 里有中文或全角字符，请从 DeepSeek 网页上重新复制（以 sk- 开头的一串英文数字）' };
+    if (bk && !/^[\x21-\x7e]+$/.test(bk)) return { ok: false, why: '博查 Key 里有中文或全角字符，请从博查网页上重新复制' };
     if (!k && !bk && !b.model) return { ok: false, why: '没有填任何 Key' };
     const saved = (await adapters.loadAdapterConfig()).configs?.deepseek || {};
     // 型号：玩家选了就用；没选沿用已存的；已下线的 deepseek-chat / deepseek-reasoner 换成 V4 Pro
@@ -239,7 +252,7 @@ const routes = {
     const patch = { model, baseUrl: saved.baseUrl || 'https://api.deepseek.com' };
     if (k) patch.apiKey = k;
     if (k || b.model) await adapters.saveAdapterConfig({ selected: 'deepseek', configs: { deepseek: patch } });
-    if (bk) await search.saveConfig({ provider: 'bocha', providers: { bocha: { apiKey: bk, count: 8 } } });
+    if (bk) await search.saveConfig({ providers: { bocha: { apiKey: bk, count: 8 } } });   // 先存 Key，试搜通了才改用博查：Key 不对时照旧用维基，不至于每回都搜不到
     const out = { ok: true, saved: { deepseek: !!k, model, bocha: !!bk } };
     // 试连与保存分开：试连失败也不影响已保存的 Key，只如实告诉玩家原因
     if (k || b.model) {
@@ -249,7 +262,7 @@ const routes = {
         out.test = { ok: true, ms: t.ms, model: ((await adapters.loadAdapterConfig()).configs.deepseek || {}).model };
         recordTest(true);
       } catch (e) {
-        let why = String(e.message || e).slice(0, 300);
+        let why = String(e.message || e).split(' :: ')[0].slice(0, 300);
         if (!/^连不上/.test(why) && /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(why)) why += '（连不上 api.deepseek.com：请检查网络、代理或防火墙）';
         out.test = { ok: false, why };
         recordTest(false, why);
@@ -257,7 +270,8 @@ const routes = {
     }
     if (bk) {
       const r = await search.search('苏轼', { provider: 'bocha', noCache: true });
-      out.bocha = r.error ? { ok: false, why: String(r.error).slice(0, 200) } : { ok: true, count: (r.results || []).length };
+      if (!r.error) await search.saveConfig({ provider: 'bocha' });
+      out.bocha = r.error ? { ok: false, why: friendlySearch(r.error, true) + '（仍用维基百科搜索）' } : { ok: true, count: (r.results || []).length };
     }
     return out;
   },
@@ -283,7 +297,7 @@ const routes = {
       ok: true, model: aid, modelName: c.model || (aid === 'deepseek' ? 'deepseek-v4-pro' : ''),
       hasKey: !!c.apiKey || ['ollama', 'skeleton', 'mock'].includes(aid),
       keyTail: c.apiKey ? String(c.apiKey).slice(-4) : '',
-      search: scfg.provider, hasBocha: !!bochaKey, lookup: LOOKUP_STATUS,
+      search: scfg.provider, hasBocha: !!bochaKey && scfg.provider === 'bocha', bochaSaved: !!bochaKey, lookup: LOOKUP_STATUS,
       lastTest: readStatus().lastTest || null,
     };
   },
@@ -385,15 +399,7 @@ const routes = {
       if (Date.now() > DEADLINE) { for (const q of qs.slice(i)) rs.push({ query: q, results: [], error: '这一批搜索时间到了' }); break; }
       rs.push(...await Promise.all(qs.slice(i, i + 5).map(one)));
     }
-    const friendly = e => {
-      const s = String(e || '');
-      if (/401|无效|invalid|unauthor/i.test(s)) return '博查 Key 无效（到 open.bochaai.com 核对，或在首页重新填）';
-      if (/403|余额|balance|insufficient|欠费/i.test(s)) return '博查余额不足（到 open.bochaai.com 充值）';
-      if (/429|频繁|rate/i.test(s)) return '搜得太频繁，博查限流了（过一会儿自动恢复）';
-      if (/未配置|没填/.test(s)) return '还没填博查 Key（首页「联网查证」里填）';
-      if (/ENOTFOUND|ECONN|fetch failed|超时|timeout|abort/i.test(s)) return '连不上搜索服务（网络或代理问题）';
-      return s.slice(0, 120);
-    };
+    const friendly = e => friendlySearch(e, isBocha);
     let okN = 0, lastErr = '';
     const results = rs.map((r, i) => {
       const seen = new Set();

@@ -68,7 +68,7 @@ async function httpJson(url, { method = 'POST', headers = {}, body, timeoutMs = 
   const raw = await res.text();
   if (!res.ok) {
     // 常见错误翻成人话：玩家看到「HTTP 401」不知道该干什么
-    const hint = { 401: 'Key 不对或已失效，请到「设置」重新填', 402: '账户余额不足，请到模型官网充值', 403: '没有权限（Key 不对或被封）', 429: '请求太频繁或额度用完，稍等再试', 500: '模型服务出错，稍后再试', 502: '模型服务暂时不可用', 503: '模型服务繁忙，稍后再试' }[res.status];
+    const hint = { 401: 'Key 不对或已失效，请回首页（右上「换一局」）在「DeepSeek Key」里点「换 Key」重新粘贴', 402: '账户余额不足，请到模型官网充值', 403: '没有权限（Key 不对或被封）', 429: '请求太频繁或额度用完，稍等再试', 500: '模型服务出错，稍后再试', 502: '模型服务暂时不可用', 503: '模型服务繁忙，稍后再试' }[res.status];
     throw new Error(`${hint ? hint + '（' : ''}HTTP ${res.status}${hint ? '）' : ''} ${res.statusText} :: ${raw.slice(0, 300)}`);
   }
   let json = null;
@@ -190,7 +190,7 @@ async function streamChat(url, headers, body, timeoutMs, onDelta) {
   }, { noFastFail: true });
   if (!res.ok) {
     const raw = await res.text();
-    const hint = { 401: 'Key 不对或已失效，请到「设置」重新填', 402: '账户余额不足，请到模型官网充值', 403: '没有权限（Key 不对或被封）', 429: '请求太频繁或额度用完，稍等再试', 500: '模型服务出错，稍后再试', 502: '模型服务暂时不可用', 503: '模型服务繁忙，稍后再试' }[res.status];
+    const hint = { 401: 'Key 不对或已失效，请回首页（右上「换一局」）在「DeepSeek Key」里点「换 Key」重新粘贴', 402: '账户余额不足，请到模型官网充值', 403: '没有权限（Key 不对或被封）', 429: '请求太频繁或额度用完，稍等再试', 500: '模型服务出错，稍后再试', 502: '模型服务暂时不可用', 503: '模型服务繁忙，稍后再试' }[res.status];
     throw new Error(`${hint ? hint + '（' : ''}HTTP ${res.status}${hint ? '）' : ''} ${res.statusText} :: ${raw.slice(0, 300)}`);
   }
   const ct = String(res.headers.get('content-type') || '');
