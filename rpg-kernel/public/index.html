@@ -423,7 +423,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261019224734';
+const BUILD = '20261019230650';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -464,8 +464,14 @@ async function exportReport() {
   const s = S, pend = (() => { try { return JSON.parse(lsGet('hrpg:pending') || 'null'); } catch (_) { return null; } })();
   const rep = { made: new Date().toISOString(), build: BUILD, mode: MODE, ua: navigator.userAgent, screen: innerWidth + 'x' + innerHeight, settings: SETTINGS, key: { has: KEY.has, model: KEY.model, search: KEY.search, bocha: KEY.bocha, bad: KEY.bad ? plainWhy(KEY.bad) : '' }, errors: JSON.parse(lsGet(ERRLOG_KEY) || '[]'), diag, pending: pend ? { ...pend, story: pend.story ? '(有草稿)' : undefined } : null, errmsg: ERRMSG,
     game: s ? { title: s.title, turn: s.turn, clock: s.clock, place: s.place && s.place.full, protagonist: s.protagonist && { name: s.protagonist.name, role: s.protagonist.role, age: s.protagonist.age }, chatLen: arr(s.chat).length, lastChat: arr(s.chat).slice(-6).map(c => ({ role: c.role, kind: c.kind, turn: c.turn, text: cut(c.text, 400), unsettled: !!c.unsettled, extraKeys: c.extra ? Object.keys(c.extra) : [] })), sizeKB: Math.round(JSON.stringify(s).length / 1024) } : null };
-  const blob = new Blob([JSON.stringify(rep, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `问题报告-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  const blob = new Blob([JSON.stringify(rep, null, 2)], { type: 'application/json' }), fname = `问题报告-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
+  if (MODE === 'claude') {   // 网页版：页面不能直接下载，交给 claude.ai 弹确认框保存
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (!dl) throw new Error('这里不能下载文件');
+    try { await dl.save({ filename: fname, data: blob }); } catch (e) { if (e && e.code === 'declined') return; throw new Error((e && e.message) || '没存上'); }
+    return;
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
 }
 const plainWhy = w => String(w || '').split(' :: ')[0].trim();   // 服务端报错里「::」后面是原始返回，玩家不用看
 /** 桌面版：把对话交给本机的游戏服务，由它带着 DeepSeek Key 去问，边写边取回 */
