@@ -224,7 +224,7 @@ textarea{resize:vertical}
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cut = (s, n) => { const t = String(s ?? '').replace(/[ \t]+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '……' : t; };
-const one = (s, n) => cut(String(s ?? '').replace(/\s+/g, ' '), n);
+const one = (s, n) => cut(String(s && typeof s === 'object' ? (Array.isArray(s) ? s.filter(x => x != null && typeof x !== 'object').join('、') : (s.name ?? s.text ?? s.value ?? s.what ?? '')) : (s ?? '')).replace(/\s+/g, ' '), n);   // AI 偶尔把字段写成对象：取里面的名字或文字，不显示 [object Object]
 const arr = v => (Array.isArray(v) ? v : []);
 const clone = o => JSON.parse(JSON.stringify(o));
 const num = v => (v === null || v === '' || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v));
@@ -423,7 +423,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261019161040';
+const BUILD = '20261019162518';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -474,7 +474,7 @@ function localSample(input, opts = {}) {
         // 游戏服务半路重启过（任务丢了）：重新发一次，不让这一回作废
         if (!j.ok && /不存在|过期/.test(j.why || '') && restarts < 2) { restarts++; const r2 = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast }).catch(() => null); if (r2 && r2.ok) { job = r2.job; opts.onJob && opts.onJob(job); continue; } }
         if (j.status === 'error' || !j.ok) return reject({ code: 'local', message: plainWhy(j.error || j.why) || '没写成' });
-        if (j.status === 'cancelled') return;
+        if (j.status === 'cancelled') return reject({ code: 'cancelled' });
       }
     } catch (e) { if (!stopped) reject({ code: 'local', message: (e && e.message === SERVER_GONE) ? SERVER_GONE : '游戏服务没有回应：' + plainWhy(e.message || e) }); }
   });
@@ -1895,7 +1895,10 @@ function blocks(s, forStory) {
 const SPANS = { auto: '', xun: '约十天（一旬）', month: '约一个月', season: '约三个月（一季）', year: '约一年' };
 /** 正文与幕后分开：【幕后】之后的玩家看不到；流式时半截的标记也先藏起来 */
 function splitStory(text) {
-  let t = String(text || '').replace(/^```\w*\s*/, '').replace(/```\s*$/, '');
+  let t = String(text || '').trim();
+  // AI 偶尔把正文包成 JSON、或在末尾跟一段代码块：取出正文，代码块去掉
+  if (/^\{\s*"(reply|scene|story|text)"/.test(t)) { const j = parseJSON(t); const v = j && (j.reply || j.scene || j.story || j.text); if (typeof v === 'string' && v.trim()) t = v; }
+  t = t.replace(/^```\w*\s*/, '').replace(/\n?```(?:json)?\s*\{[\s\S]*$/, '').replace(/```\s*$/, '');
   const i = t.indexOf('【幕后】');
   const hidden = i >= 0 ? t.slice(i + 4).trim() : '';
   if (i >= 0) t = t.slice(0, i);
@@ -2496,7 +2499,7 @@ function auditSweep(obj, audit) {
     const esc1 = x => JSON.stringify(String(x)).slice(1, -1);
     for (const a of arr(audit)) {
       const w = String(a.wrong || ''), r = String(a.right || '');
-      if (!w || !r || /……$/.test(w) || /整段改写/.test(w)) continue;
+      if (!w || !r || w.length < 2 || /……$/.test(w) || /整段改写/.test(w)) continue;
       j = j.split(esc1(w)).join(esc1(r));
       let p = 0; while (p < w.length && p < r.length && w[p] === r[p]) p++;
       let q = 0; while (q < w.length - p && q < r.length - p && w[w.length - 1 - q] === r[r.length - 1 - q]) q++;
@@ -2512,7 +2515,7 @@ function applyFixes(text, fixes) {
   if (SETTINGS.check === false) return { text, done };
   for (const f of arr(fixes).slice(0, 12)) {
     const wrong = String((f && f.wrong) || '').trim(), right = String((f && f.right) || '').trim();
-    if (!wrong || !right || wrong === right || wrong.length > 40) continue;
+    if (!wrong || !right || wrong === right || wrong.length < 2 || wrong.length > 40) continue;   // 单个字（两→钱）会把全文同字都改坏
     if (text.includes(wrong)) text = text.split(wrong).join(right);
     else {
       // 审校摘的原文常常差一个引号、空格或标点：放宽这些再找一遍
@@ -2548,7 +2551,7 @@ function applyReply(s, d, said) {
       if (to !== from) {
         s.protagonist.role = to; if (IDM[idc.identityModule]) s.idm = idc.identityModule;
         s.title = `${s.protagonist.name} · ${one(to, 14)}`;
-        if (arr(idc.meters).length) { s.meters = {}; d.meters = arr(idc.meters).concat(arr(d.meters).filter(m => m && !arr(idc.meters).some(x => (x.项 || x.name) === (m.项 || m.name)))); }
+        const im = arr(idc.meters).filter(x => x && typeof x === 'object'); if (im.length) { s.meters = {}; d.meters = im.concat(arr(d.meters).filter(m => m && typeof m === 'object' && !im.some(x => (x.项 || x.name) === (m.项 || m.name)))); }
         s.careerLog = arr(s.careerLog).concat([{ turn, when, what: `由「${one(from, 20)}」成为「${one(to, 20)}」${idc.why ? '：' + one(idc.why, 60) : ''}` }]);
         s.chronicle = arr(s.chronicle).concat([{ turn, when, who: s.protagonist.name, what: `身份变了：${one(to, 30)}${idc.why ? '（' + one(idc.why, 40) + '）' : ''}` }]);
         s.inst = null; s.arcId = null; s.arcGoal = '';
@@ -2564,7 +2567,7 @@ function applyReply(s, d, said) {
       if (old && old !== v) acc.push({ k, from: old, to: v, why: one(m.因, 60) });
       s.meters[k] = { value: v, delta: old && old !== v ? (m.变 || '') : '', why: old !== v ? one(m.因, 60) : (s.meters[k] || {}).why || '' };
     }
-    for (const k of Object.keys(s.meters)) if (!arr(d.meters).some(m => (m.项 || m.name) === k)) s.meters[k].delta = '';
+    for (const k of Object.keys(s.meters)) if (!arr(d.meters).some(m => m && (m.项 || m.name) === k)) s.meters[k].delta = '';
     for (const g of arr(d.groups)) {
       const k = one(g && (g.人群 || g.name), 12), v = num(g && (g.值 ?? g.value));
       if (!k || v == null) continue;
@@ -2627,7 +2630,7 @@ function applyReply(s, d, said) {
     }
     s.world.events = s.world.events.slice(-120);
     const beforeYM = { y: s.clock.y, m: s.clock.m, leap: !!s.clock.leap };
-    const days = Math.max(0, Math.min(400, Math.round(Number(d.elapsedDays) || 0)));
+    const days = Math.max(0, Math.min(Math.max(400, Math.round(spanMonths(d.span, said) * 30.5)), 1900, Math.round(Number(d.elapsedDays) || 0)));   // 玩家说过两年、过五年：照他说的推，最多五年多
     if (days) {
       const nd = CAL.addDays(s.clock, days), years = Math.max(0, nd.y - s.clock.y);
       Object.assign(s.clock, nd);
@@ -2748,8 +2751,8 @@ function applyReply(s, d, said) {
   }
   for (const u of arr(d.worldUpcoming)) if (u && u.text && !s.world.upcoming.some(x => x.text === one(u.text, 100))) s.world.upcoming.push({ y: num(u.y) ?? s.clock.y, m: num(u.m) || 0, text: one(u.text, 100), status: /变|新/.test(u.status || '') ? one(u.status, 4) : '照史', why: one(u.why, 80) });
   s.world.upcoming.sort((a, b) => a.y - b.y || a.m - b.m); s.world.upcoming = s.world.upcoming.slice(0, 30);
-  if (String(said || '').trim()) s.chat.push({ role: 'me', text: String(said).trim(), turn: s.turn });
-  s.chat.push({ role: 'gm', kind: play ? 'play' : 'talk', text: String(d.reply || d.scene || '').trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null,
+  if (String(said || '').trim()) s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'me', text: String(said).trim(), turn: s.turn });
+  s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'gm', kind: play ? 'play' : 'talk', text: String(d.reply || d.scene || '').trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null,
     hints: arr(d.hints).map(h => one(h, 50)).filter(Boolean).slice(0, 5) });
 }
 function newSave(p) {
@@ -3309,7 +3312,8 @@ async function send(said, span, note, resume) {
   if ($('#said')) $('#said').value = '';
   CTL = new AbortController(); TURN = CTL;
   setBusy(true);
-  const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), baseTurn: S.turn, baseChat: S.chat.length, redo: !!orig, ...o }));
+  const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), baseTurn: S.turn, baseChat: S.chat.length, baseSig: chatSig(S), redo: !!orig, ...o }));
+  if (!(resume && (resume.job || resume.story))) pend({});   // 一开始就记下：查资料那半分钟里刷新了，玩家写的话也不丢
   let st = resume && resume.story ? resume.story : null, looked = null, ruling = (resume && resume.ruling) || null, postTurn = null;
   try {
     // 写之前：AI 先看玩家这一步，裁定能不能办、决定要查什么；同时把本地、天下的消息搜一轮；再搜 AI 点名要查的
@@ -3410,11 +3414,15 @@ async function send(said, span, note, resume) {
       if (d && arr(st.audit).length) d = auditSweep(d, st.audit);
       if (arr(st.audit).length) for (const k of ['people', 'canon', 'gmNotes', 'estate', 'chronicle', 'summaries', 'orders', 'deeds', 'goals', 'places']) if (S[k]) S[k] = auditSweep(S[k], st.audit);
       lsSet('hrpg:pending', null);
-      const ok = !!d;
+      let ok = !!d;
       d = d || { elapsedDays: 0 };
       const fx = applyFixes(st.text, d.fixes);
       if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
-      applyReply(S, Object.assign(d, { reply: fx.text, mode: 'play' }), said); PENDING_SAID = '';
+      // 账里哪一项格式怪到程序出错：正文照样留下，这一回标成「账没记上」，可以补记，不让整回作废
+      const snap = clone(S);
+      try { applyReply(S, Object.assign(d, { reply: fx.text, mode: 'play', span }), said); }
+      catch (e) { if (e && e.code === 'cancelled') throw e; S = snap; applyReply(S, { elapsedDays: 0, reply: fx.text, mode: 'play' }, said); ok = false; }
+      PENDING_SAID = '';
       if (S.mainNow) { S.mainLog = arr(S.mainLog).concat([{ key: S.mainNow.key, turn: S.turn }]).slice(-30); S.mainNow = null; }
       const g = S.chat[S.chat.length - 1];
       if (looked) g.extra = Object.assign(g.extra || {}, { looked });
@@ -3449,10 +3457,13 @@ async function send(said, span, note, resume) {
   if (postTurn) runBg(postTurn);
 }
 /** 撤回到上一版：上一版存档里早先的对话只留了几句，从现在的对话里补回来 */
+const chatSig = s => { const c = arr(s && s.chat)[arr(s && s.chat).length - 1]; return c && c.id ? 'i' + c.id : 'n' + arr(s && s.chat).length + ':' + (s && s.turn); };
 function restorePrev(cur) {
   const p = clone(cur.prev);
   p.id = cur.id; p.title = cur.title; if (cur.branchOf) p.branchOf = cur.branchOf;   // 分支上重写，留在分支里
-  arr(p.chat).forEach((c, i) => { const o = cur.chat[i]; if (o && !c.text && o.text) { c.text = o.text; c.extra = o.extra; c.hints = o.hints; } });
+  // 按编号对上（聊天记录到了上限会从头裁掉，按位置对会错开一回）；老存档没编号的才按位置
+  const byId = new Map(arr(cur.chat).filter(o => o && o.id).map(o => [o.id, o]));
+  arr(p.chat).forEach((c, i) => { const o = c.id ? byId.get(c.id) : (cur.chat.length === p.chat.length + 2 || cur.chat.length === p.chat.length + 1 ? cur.chat[i] : null); if (o && !c.text && o.text) { c.text = o.text; c.extra = o.extra; c.hints = o.hints; } });
   for (const k of ['inst', 'research', 'almanac', 'locals', 'searchedQ', 'searchedYears', 'wikiDone', 'geo', 'gazetteer', 'dossiers']) if (cur[k] && !p[k]) p[k] = cur[k];
   return p;
 }
@@ -3616,12 +3627,17 @@ render();
   try {
     const p = JSON.parse(lsGet('hrpg:pending') || 'null');
     if (p && S && p.saveId === S.id && Date.now() - p.at < 30 * 60e3 && (p.story || (p.job && MODE === 'local'))) {
-      const moved = p.baseChat != null ? S.chat.length !== p.baseChat : S.turn !== p.baseTurn;
+      const same = () => p.baseSig ? chatSig(S) === p.baseSig : p.baseChat != null ? S.chat.length === p.baseChat : S.turn === p.baseTurn;
+      const moved = !same();
       const o0 = S; if (p.redo && moved && S.prev) S = restorePrev(S);
-      const still = p.baseChat != null ? S.chat.length === p.baseChat : S.turn === p.baseTurn;
+      const still = same();
       if (still) send(p.said, p.span, p.note, { job: p.job, story: p.story, ruling: p.ruling, orig: p.redo && moved ? o0 : undefined }); else lsSet('hrpg:pending', null);
     }
-    else lsSet('hrpg:pending', null);
+    else {
+      // 还没开写就刷新了：把玩家写的那句放回输入框
+      if (p && S && p.saveId === S.id && p.said && !p.job && !p.story && Date.now() - p.at < 30 * 60e3) { const el = $('#said'); if (el && !el.value) el.value = String(p.said); }
+      lsSet('hrpg:pending', null);
+    }
   } catch (_) { lsSet('hrpg:pending', null); }
 })();
 </script>
