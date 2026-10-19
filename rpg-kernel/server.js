@@ -18,7 +18,8 @@ const ROOT = __dirname;
 // 兜底：哪里漏接了一个错误（联网半路断了、某个回调里抛了异常），记下来照常运行，不让整个游戏服务退出
 // 启动器关掉了、输出管道断了：写日志会一直报 EPIPE，不能让它在兜底里自己绕圈把 CPU 吃满
 for (const st of [process.stdout, process.stderr]) st.on('error', () => {});
-const logErr = (...a) => { try { console.error(...a); } catch (_) { /* 管道断了就不写 */ } };
+const ERR_RING = [];   // 最近出过的错，问题报告里带上（Key 打码）
+const logErr = (...a) => { try { ERR_RING.push({ at: new Date().toISOString(), msg: a.map(x => String(x && x.stack || x)).join(' ').replace(/sk-[A-Za-z0-9]{6,}/g, 'sk-***').slice(0, 800) }); if (ERR_RING.length > 60) ERR_RING.shift(); } catch (_) { /* 忽略 */ } try { console.error(...a); } catch (_) { /* 管道断了就不写 */ } };
 process.on('uncaughtException', e => { if (e && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED')) return; logErr('[兜底] 未接住的错误：', e && (e.stack || e.message || e)); });
 process.on('unhandledRejection', e => { logErr('[兜底] 未接住的异步错误：', e && (e.stack || e.message || e)); });
 const PUBLIC = path.join(ROOT, 'public');
@@ -36,7 +37,6 @@ const API_VER = 2;
 let SELFTEST_RUN = null;   // 自检一次只跑一个：连点几下就等同一次的结果
 /* —— 自动更新：游戏的全部玩法都在 index.html 里。启动时去 GitHub 看有没有新版，有就下载到 data/update，下次打开直接用新版，不用重新安装 —— */
 const UPDATE_DIR = path.join(ROOT, 'data', 'update');
-const UPDATE_BASE = process.env.RPG_UPDATE_BASE || 'https://raw.githubusercontent.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/rpg-kernel/public';
 const UPDATE = { checked: false, local: null, remote: null, using: 'bundled', needReinstall: false, why: '' };
 function readVer(dir) { try { return JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8')); } catch { return null; } }
 function updatedPage() {
@@ -44,28 +44,57 @@ function updatedPage() {
   if (u && (!b || String(u.build) > String(b.build)) && Number(u.api || 0) <= API_VER && fs.existsSync(path.join(UPDATE_DIR, 'index.html'))) return path.join(UPDATE_DIR, 'index.html');
   return null;
 }
-async function checkUpdate() {
-  if (process.env.RPG_OFFLINE || process.env.RPG_NO_UPDATE) return;
+/** 更新的来源：GitHub 原站在国内常连不上，同时试几个镜像，哪个快、哪个版本新就用哪个 */
+const UPD_REPO = 'zhuhuang907-lang/-rpg', UPD_BRANCH = 'claude/gallant-davinci-l8pni0', UPD_PATH = 'rpg-kernel/public';
+async function updateSources() {
+  const raw = `https://raw.githubusercontent.com/${UPD_REPO}/${UPD_BRANCH}/${UPD_PATH}`;
+  const L = [{ name: 'GitHub', base: process.env.RPG_UPDATE_BASE || raw }];
+  if (process.env.RPG_UPDATE_BASE) return L;
+  L.push({ name: '镜像 ghfast', base: 'https://ghfast.top/' + raw }, { name: '镜像 gh-proxy', base: 'https://gh-proxy.com/' + raw });
+  // jsDelivr 要提交号：先问 GitHub 接口这条分支最新的提交（接口站在国内一般比 raw 好连）
   try {
-    const net = require('./core/net');
-    const r = await net.fetchX(UPDATE_BASE + '/version.json?t=' + Date.now(), { signal: AbortSignal.timeout(15000) });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const v = await r.json(), b = readVer(PUBLIC), cur = readVer(UPDATE_DIR);
-    UPDATE.local = b && b.build; UPDATE.remote = v.build;
+    const r = await require('./core/net').fetchX(`https://api.github.com/repos/${UPD_REPO}/commits/${encodeURIComponent(UPD_BRANCH)}`, { headers: { accept: 'application/vnd.github.sha' }, signal: AbortSignal.timeout(10000) });
+    const sha = r.ok ? (await r.text()).trim() : '';
+    if (/^[0-9a-f]{40}$/.test(sha)) L.push({ name: 'jsDelivr', base: `https://cdn.jsdelivr.net/gh/${UPD_REPO}@${sha}/${UPD_PATH}` }, { name: 'jsDelivr 备用', base: `https://fastly.jsdelivr.net/gh/${UPD_REPO}@${sha}/${UPD_PATH}` });
+  } catch (_) { /* 问不到就只用上面几个 */ }
+  return L;
+}
+let UPDATING = null;
+function checkUpdate(force) { if (!UPDATING || force) UPDATING = doCheckUpdate().finally(() => { UPDATING = null; }); return UPDATING; }
+async function doCheckUpdate() {
+  if (process.env.RPG_OFFLINE || process.env.RPG_NO_UPDATE) return;
+  const net = require('./core/net');
+  try {
+    const srcs = await updateSources();
+    const vs = (await Promise.all(srcs.map(async x => {
+      try { const r = await net.fetchX(x.base + '/version.json?t=' + Date.now(), { signal: AbortSignal.timeout(15000) }); if (!r.ok) return null; const v = await r.json(); return v && v.build ? { ...x, v } : null; } catch (_) { return null; }
+    }))).filter(Boolean);
+    if (!vs.length) throw new Error('GitHub 和几个镜像都连不上（' + srcs.map(x => x.name).join('、') + '）');
+    const best = vs.sort((a, b) => String(b.v.build).localeCompare(String(a.v.build)))[0], v = best.v, b = readVer(PUBLIC), cur = readVer(UPDATE_DIR);
+    UPDATE.local = b && b.build; UPDATE.remote = v.build; UPDATE.source = best.name; UPDATE.why = '';
     const newest = [b, cur].filter(Boolean).map(x => String(x.build)).sort().pop() || '';
     if (String(v.build) <= newest) { UPDATE.checked = true; UPDATE.using = updatedPage() ? 'updated' : 'bundled'; return; }
     if (Number(v.api || 0) > API_VER) { UPDATE.needReinstall = true; UPDATE.checked = true; return; }
-    const r2 = await net.fetchX(UPDATE_BASE + '/index.html?t=' + Date.now(), { signal: AbortSignal.timeout(120000) });
-    if (!r2.ok) throw new Error('HTTP ' + r2.status);
-    const html = await r2.text();
-    if (html.length < 100000 || !html.includes(String(v.build))) throw new Error('下载的页面不完整');
+    let html = '', lastErr = '';
+    for (const x of vs.filter(x => String(x.v.build) === String(v.build))) {
+      try {
+        const r2 = await net.fetchX(x.base + '/index.html?t=' + Date.now(), { signal: AbortSignal.timeout(180000) });
+        if (!r2.ok) throw new Error('HTTP ' + r2.status);
+        const t = await r2.text();
+        if (t.length < 100000 || !t.includes(String(v.build))) throw new Error('下载的页面不完整');
+        html = t; UPDATE.source = x.name; break;
+      } catch (e) { lastErr = x.name + '：' + String(e && e.message || e).slice(0, 80); }
+    }
+    if (!html) throw new Error(lastErr || '下载失败');
     fs.mkdirSync(UPDATE_DIR, { recursive: true });
-    fs.writeFileSync(path.join(UPDATE_DIR, 'index.html.tmp'), html); fs.renameSync(path.join(UPDATE_DIR, 'index.html.tmp'), path.join(UPDATE_DIR, 'index.html'));
+    fs.writeFileSync(path.join(UPDATE_DIR, 'index.html.tmp'), html); renameRetry(path.join(UPDATE_DIR, 'index.html.tmp'), path.join(UPDATE_DIR, 'index.html'));
     fs.writeFileSync(path.join(UPDATE_DIR, 'version.json'), JSON.stringify(v));
     UPDATE.checked = true; UPDATE.using = 'updated'; UPDATE.fresh = true;
-    console.log('[update] 已下载新版', v.build);
+    logErr('[update] 已下载新版', v.build, '来自', UPDATE.source);
   } catch (e) { UPDATE.checked = true; UPDATE.why = String(e && e.message || e).slice(0, 200); }
 }
+// 开着游戏也每两小时看一次有没有新版
+setInterval(() => { checkUpdate().catch(() => {}); }, 2 * 3600e3).unref();
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '127.0.0.1';
 
@@ -302,9 +331,18 @@ const routes = {
     };
   },
   'GET /api/health': async () => ({ ok: true, node: process.version }),
+  /* 问题报告用：版本、更新、最近出过的错、模型与搜索的状态（不含 Key） */
+  'GET /api/diag': async () => {
+    const c = await adapters.loadAdapterConfig(), d = (c.configs || {})[c.selected || 'deepseek'] || {}, sc = await search.loadConfig();
+    const jobs = [...LLM_JOBS.values()];
+    return { ok: true, page: readVer(PUBLIC), updatePage: readVer(UPDATE_DIR), update: UPDATE, api: API_VER, node: process.version, platform: process.platform + ' ' + require('os').release(), uptimeMin: Math.round(process.uptime() / 60), memMB: Math.round(process.memoryUsage().rss / 1048576),
+      model: { adapter: c.selected, model: d.model, baseUrl: d.baseUrl, thinking: d.thinking, hasKey: !!d.apiKey }, search: { provider: sc.provider }, lookup: LOOKUP_STATUS, lastTest: readStatus().lastTest || null,
+      jobs: { running: jobs.filter(j => j.status === 'running').length, error: jobs.filter(j => j.status === 'error').slice(-8).map(j => j.error) }, errors: ERR_RING.slice(-40), proxy: !!(process.env.HTTPS_PROXY || process.env.https_proxy) };
+  },
   /* 网络诊断：逐个试连 DeepSeek / 博查 / 维基，告诉玩家卡在哪 */
   'GET /api/netcheck': async () => require('./core/net').check(),
   'GET /api/update': async () => ({ ok: true, api: API_VER, ...UPDATE }),
+  async 'POST /api/update/check'() { UPDATE.checked = false; await checkUpdate(true); return { ok: true, api: API_VER, ...UPDATE }; },
   'GET /api/rulepacks': async () => engine.listRulepacks(),
   'GET /api/saves': async () => engine.listSaves(),
   /* 个人面板：名位、职权、钱财、兵马、家人、人际、近来变化 */
@@ -363,7 +401,7 @@ const routes = {
     LLM_JOBS.set(id, job);
     engine.chatCall({ messages: msgs, system: String(b.system || '').slice(0, 60000), maxTokens: Math.min(16000, Number(b.maxTokens) || 8000), json: b.json !== false, temperature: Number.isFinite(Number(b.temperature)) ? Number(b.temperature) : 0.8, thinking: b.thinking === true, fast: b.fast === true, onDelta: t => { if (job.status === 'cancelled') { const e = new Error('玩家停下了'); e.stopStream = true; throw e; } if (job.status === 'running') job.text = String(t || ''); } })
       .then(r => { if (job.status === 'running') { job.status = 'done'; job.text = r.text; job.truncated = r.truncated; recordTest(true); } })
-      .catch(e => { if (job.status === 'running') { job.status = 'error'; job.error = String(e && e.message || e).slice(0, 400); recordTest(false, job.error); } });
+      .catch(e => { if (job.status === 'running') { job.status = 'error'; job.error = String(e && e.message || e).slice(0, 400); recordTest(false, job.error); logErr('[llm]', job.error); } });
     for (const [k, j] of LLM_JOBS) if (Date.now() - j.at > 3600e3) LLM_JOBS.delete(k);
     return { ok: true, job: id };
   },
