@@ -48,6 +48,7 @@ function relaunchIfNeeded() {
   }
   // Windows 上总是由父进程看着：游戏服务万一崩了，一秒后自己重启，玩家不用关掉重开
   if (!flags.length && process.platform !== 'win32' && process.env.RPG_SUPERVISE !== '1') return false;
+  for (const st of [process.stdout, process.stderr]) st.on('error', () => {});
   let child = null, quitting = false;
   const starts = [];
   const launch = () => {
@@ -55,6 +56,7 @@ function relaunchIfNeeded() {
     child = spawn(process.execPath, [...flags, ...process.execArgv, process.argv[1], ...process.argv.slice(2)], { stdio: 'inherit', env, windowsHide: true });
     child.on('exit', code => {
       if (quitting) return process.exit(code == null ? 0 : code);
+      if (code === 98) return process.exit(98);   // 端口被占：重启也没用，让启动器告诉玩家
       // 五分钟里重启了十次还在崩：多半是端口被占、文件坏了，别再无限重启
       if (starts.length >= 10) { console.error('[boot] 游戏服务反复退出，不再重启'); return process.exit(code == null ? 1 : code); }
       console.error(`[boot] 游戏服务意外退出（${code}），一秒后重启`);

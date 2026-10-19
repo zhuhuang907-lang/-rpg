@@ -10,7 +10,7 @@ import time
 import subprocess
 import webbrowser
 
-PORT = "8787"
+PORT = os.environ.get("PORT", "8787")
 URL = "http://127.0.0.1:%s" % PORT
 
 APP_DIR = os.path.dirname(os.path.abspath(sys.executable)) if getattr(

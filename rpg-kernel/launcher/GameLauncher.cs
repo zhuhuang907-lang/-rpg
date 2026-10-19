@@ -13,6 +13,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -107,6 +108,7 @@ static class GameLauncher
         {
             WorkingDirectory = GameDir, UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,   // node 写的是 UTF-8，不设会在中文 Windows 上成乱码
         };
         psi.EnvironmentVariables["PORT"] = Port.ToString();
         psi.EnvironmentVariables["SHU_NO_BROWSER"] = "1";
@@ -210,6 +212,18 @@ static class GameLauncher
     // 只关「占着端口的 node 进程」，不碰别的程序
     static void KillOldServer(int port)
     {
+        // 先请旧服务自己退出（它会连同守护它的父进程一起退），再按端口兜底
+        try
+        {
+            var q = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + "/api/quit");
+            q.Method = "POST"; q.ContentType = "application/json"; q.Timeout = 1500; q.Proxy = null;
+            var b = Encoding.UTF8.GetBytes("{}"); q.ContentLength = b.Length;
+            using (var st = q.GetRequestStream()) st.Write(b, 0, b.Length);
+            using (q.GetResponse()) { }
+            for (int i = 0; i < 20 && !PortFree(port); i++) Thread.Sleep(150);
+            if (PortFree(port)) { Log("旧服务已自行退出"); return; }
+        }
+        catch { }
         try
         {
             var psi = new ProcessStartInfo("netstat", "-ano -p tcp")
@@ -224,9 +238,27 @@ static class GameLauncher
                 try
                 {
                     var proc = Process.GetProcessById(pid);
-                    if (proc.ProcessName.ToLower().Contains("node")) { proc.Kill(); proc.WaitForExit(3000); Log("关掉旧服务 pid " + pid); }
+                    if (proc.ProcessName.ToLower().Contains("node")) { proc.Kill(); proc.WaitForExit(3000); Log("关掉旧服务 pid " + pid); Thread.Sleep(1500); if (!PortFree(port)) KillPortOnce(port); }
                 }
                 catch { }
+            }
+        }
+        catch { }
+    }
+
+    // 守护进程一秒后又拉起了一个：再按端口关一次
+    static void KillPortOnce(int port)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("netstat", "-ano -p tcp") { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
+            string outp; using (var p = Process.Start(psi)) { outp = p.StandardOutput.ReadToEnd(); p.WaitForExit(3000); }
+            foreach (var line in outp.Split('\n'))
+            {
+                var parts = line.Split(new[] { ' ', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 5 || !parts[1].EndsWith(":" + port) || parts[3] != "LISTENING") continue;
+                int pid; if (!int.TryParse(parts[4], out pid)) continue;
+                try { var k = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + pid) { UseShellExecute = false, CreateNoWindow = true }); k.WaitForExit(3000); } catch { }
             }
         }
         catch { }

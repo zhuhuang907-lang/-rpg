@@ -33,9 +33,8 @@ async function loadAdapterConfig() {
 async function saveAdapterConfig({ selected, configs }) {
   fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
   const { cfg: cur, broken } = readAdapterFile();
-  if (broken) {
-    try { fs.copyFileSync(CONFIG_FILE, CONFIG_FILE + `.unreadable-${Date.now()}.bak`); } catch { /* 忽略 */ }
-    throw new Error('模型配置文件读不懂，已另存备份；为防丢失 Key，本次不写入，请检查 data/adapter-config.json');
+  if (broken) {   // 文件坏了（断电、磁盘满）：坏文件改名留底，用玩家这次填的重新建，不再把人锁在外面
+    try { fs.renameSync(CONFIG_FILE, CONFIG_FILE + `.broken-${Date.now()}.bak`); } catch { /* 忽略 */ }
   }
   const merged = { ...(cur.configs || {}) };
   for (const [id, c] of Object.entries(configs || {})) {
@@ -47,10 +46,16 @@ async function saveAdapterConfig({ selected, configs }) {
     selected: selected === undefined ? cur.selected : selected,
     configs: merged,
   };
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2), 'utf8');
+  writeAtomic(CONFIG_FILE, JSON.stringify(next, null, 2));
   return next;
 }
 
+/** 先写临时文件再改名：写到一半断电也不会留下半截的配置 */
+function writeAtomic(file, text) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, text, 'utf8');
+  for (let i = 0; ; i++) { try { fs.renameSync(tmp, file); return; } catch (e) { if (i >= 4 || !/EPERM|EBUSY|EACCES/.test(e.code || '')) { fs.writeFileSync(file, text, 'utf8'); try { fs.unlinkSync(tmp); } catch { /* 忽略 */ } return; } const t = Date.now() + 80 * (i + 1); while (Date.now() < t) { /* 等杀毒软件放手 */ } } }
+}
 function trimSlash(u) { return String(u || '').replace(/\/+$/, ''); }
 
 async function httpJson(url, { method = 'POST', headers = {}, body, timeoutMs = 120000 } = {}) {
@@ -173,21 +178,32 @@ const isThinkingModel = m => /reasoner|r1\b|-r1|think/i.test(m);
 /* 流式请求（SSE）：边收边把累计的正文交给 onDelta，界面就能边写边显示，不必干等一整段。
    返回与非流式相同形状的 json（choices[0].message.content / finish_reason），供后面的逻辑照常处理。 */
 async function streamChat(url, headers, body, timeoutMs, onDelta) {
+  // 总时限之外再加一个「多久没来数据」的时限：卡在半路的连接九十秒没动静就断开重来，不让玩家干等五分钟
+  const ac = new AbortController(), host = (() => { try { return new URL(url).host; } catch (_) { return ''; } })();
+  const total = setTimeout(() => ac.abort(new Error('模型服务一直没写完（超时）')), timeoutMs);
+  let idle = null; const poke = () => { clearTimeout(idle); idle = setTimeout(() => ac.abort(new Error('连接超时：模型服务九十秒没有动静')), 90000); };
+  poke();
+  try {
   const res = await require('../core/net').fetchX(url, {
     method: 'POST', headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify({ ...body, stream: true }), signal: AbortSignal.timeout(timeoutMs),
+    body: JSON.stringify({ ...body, stream: true }), signal: ac.signal,
   }, { noFastFail: true });
   if (!res.ok) {
     const raw = await res.text();
     const hint = { 401: 'Key 不对或已失效，请到「设置」重新填', 402: '账户余额不足，请到模型官网充值', 403: '没有权限（Key 不对或被封）', 429: '请求太频繁或额度用完，稍等再试', 500: '模型服务出错，稍后再试', 502: '模型服务暂时不可用', 503: '模型服务繁忙，稍后再试' }[res.status];
     throw new Error(`${hint ? hint + '（' : ''}HTTP ${res.status}${hint ? '）' : ''} ${res.statusText} :: ${raw.slice(0, 300)}`);
   }
+  const ct = String(res.headers.get('content-type') || '');
+  if (ct && !/event-stream|json/i.test(ct)) throw new Error('返回的不是模型数据（可能被代理、杀毒软件或网络登录页拦截）');
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '', content = '', reasoning = '', finish = null, usage = null;
   for (;;) {
-    const { done, value } = await reader.read();
+    let r;
+    try { r = await reader.read(); } catch (e) { throw (ac.signal.aborted && ac.signal.reason) || require('../core/net').explain(e, host); }
+    const { done, value } = r;
     if (done) break;
+    poke();
     buf += dec.decode(value, { stream: true });
     let i;
     while ((i = buf.indexOf('\n')) >= 0) {
@@ -201,11 +217,13 @@ async function streamChat(url, headers, body, timeoutMs, onDelta) {
       if (!ch) continue;
       const d = ch.delta || {};
       if (d.content) { content += d.content; try { onDelta(content); } catch (e) { if (e && e.stopStream) { try { await reader.cancel(); } catch (_) { /* 已断 */ } throw e; } /* 界面回调别的出错不影响收稿 */ } }
-      if (d.reasoning_content) reasoning += d.reasoning_content;
+      if (d.reasoning_content) { reasoning += d.reasoning_content; try { onDelta(content); } catch (e) { if (e && e.stopStream) { try { await reader.cancel(); } catch (_) { /* 已断 */ } throw e; } } }   // 思考时也看一眼玩家有没有按停
       if (ch.finish_reason) finish = ch.finish_reason;
     }
   }
   return { choices: [{ message: { content, reasoning_content: reasoning || undefined }, finish_reason: finish }], usage };
+  } catch (e) { if (e && e.name === 'AbortError' && ac.signal.reason) throw ac.signal.reason; throw e; }
+  finally { clearTimeout(total); clearTimeout(idle); }
 }
 
 async function openaiChat({ system, prompt, messages, temperature, maxTokens, onDelta, json: wantJson }, cfg) {
@@ -252,13 +270,14 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
       // 服务端不认 JSON 模式：去掉再试
       if (useJsonMode && /HTTP 4\d\d/.test(msg) && /response_format|json/i.test(msg)) { useJsonMode = false; continue; }
       // 额度要多了（max_tokens 超过上限）：减半再试
-      if (/HTTP 400/.test(msg) && /max_tokens|max tokens|maximum|too large|exceed/i.test(msg) && budget > 2000) { budget = Math.floor(budget / 2); continue; }
+      if (/HTTP 400/.test(msg) && /context length|context_length|reduce the length|context window/i.test(msg)) throw new Error('这一回送给模型的前情太长了（超出模型能读的长度），请稍后重试；还不行就在「设置」里把篇幅调短');
+      if (/HTTP 400/.test(msg) && /max_tokens|max tokens|max_completion/i.test(msg) && budget > 2000) { budget = Math.floor(budget / 2); continue; }
       // 服务端不认 thinking 参数：去掉再试
       if (sendThinkingFlag && /HTTP 4\d\d/.test(msg) && /thinking|unrecognized|unknown|extra/i.test(msg)) { sendThinkingFlag = false; continue; }
       // 快型号出了问题：换回原型号再来，不让这一步失败
       if (usingFast && /HTTP 4\d\d/.test(msg)) { usingFast = false; model = MODEL_CACHE.get(base + '|' + cfg.model) || cfg.model; FAST_CACHE.set(base, ''); continue; }
       // 型号不存在（比如已下线的 deepseek-chat）：拉型号列表换一个
-      if (/HTTP (400|404)/.test(msg) && /model/i.test(msg) && !switched) {
+      if (/HTTP (400|404)/.test(msg) && /model[^a-z]*(not|does|exist|found|invalid)|no such model|model_not_found|Model Not Exist/i.test(msg) && !switched) {
         let ids = [];
         try { ids = await listModels(cfg); } catch (_) { /* 列不出来就照原样报错 */ }
         const alt = ids.length ? pickModel(ids, cfg.model) : '';
@@ -279,6 +298,7 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
       budget = Math.min(16000, Math.max(budget * 2, 4000));
       continue;
     }
+    if (!String(text).trim()) throw new Error('模型连续几次没给出正文（可能思考过长被截断），请稍后再试，或在「设置」里关掉思考模式。');
     return { text, raw: JSON.stringify(json), meta: { adapter: 'openai-compatible', model, usage: json?.usage, switched: switched || undefined, truncated: choice.finish_reason === 'length' } };
   }
   throw new Error('模型连续几次没给出正文（可能思考过长被截断），请稍后再试，或在「设置」里关掉思考模式。');
@@ -565,7 +585,7 @@ async function resolveAdapter(id, runtimeConfig) {
 async function testAdapter(id, runtimeConfig) {
   const { adapter, config } = await resolveAdapter(id, runtimeConfig);
   const t0 = Date.now();
-  const res = await adapter.call({ system: '你是一个连通性测试。', prompt: '只回复两个字：正常' }, config);
+  const res = await adapter.call({ system: '你是一个连通性测试。', prompt: '只回复两个字：正常' }, { ...(config || {}), timeoutMs: 30000 });   // 试连最多等半分钟，不让保存按钮卡五分钟
   if (!String(res.text || '').trim()) throw new Error('模型连上了，但返回的正文是空的');
   return { ok: true, ms: Date.now() - t0, adapter: adapter.id, model: res.meta && res.meta.model, switched: res.meta && res.meta.switched, preview: String(res.text).slice(0, 200) };
 }
