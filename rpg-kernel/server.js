@@ -336,7 +336,7 @@ const routes = {
     const c = await adapters.loadAdapterConfig(), d = (c.configs || {})[c.selected || 'deepseek'] || {}, sc = await search.loadConfig();
     const jobs = [...LLM_JOBS.values()];
     return { ok: true, page: readVer(PUBLIC), updatePage: readVer(UPDATE_DIR), update: UPDATE, api: API_VER, node: process.version, platform: process.platform + ' ' + require('os').release(), uptimeMin: Math.round(process.uptime() / 60), memMB: Math.round(process.memoryUsage().rss / 1048576),
-      model: { adapter: c.selected, model: d.model, baseUrl: d.baseUrl, thinking: d.thinking, hasKey: !!d.apiKey }, search: { provider: sc.provider }, lookup: LOOKUP_STATUS, lastTest: readStatus().lastTest || null,
+      model: { adapter: c.selected, model: d.model, baseUrl: d.baseUrl, thinking: d.thinking, hasKey: !!d.apiKey }, lastRequest: adapters.LAST_REQ, search: { provider: sc.provider }, lookup: LOOKUP_STATUS, lastTest: readStatus().lastTest || null,
       jobs: { running: jobs.filter(j => j.status === 'running').length, error: jobs.filter(j => j.status === 'error').slice(-8).map(j => j.error) }, errors: ERR_RING.slice(-40), proxy: !!(process.env.HTTPS_PROXY || process.env.https_proxy) };
   },
   /* 网络诊断：逐个试连 DeepSeek / 博查 / 维基，告诉玩家卡在哪 */

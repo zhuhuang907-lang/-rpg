@@ -56,6 +56,7 @@ function writeAtomic(file, text) {
   fs.writeFileSync(tmp, text, 'utf8');
   for (let i = 0; ; i++) { try { fs.renameSync(tmp, file); return; } catch (e) { if (i >= 4 || !/EPERM|EBUSY|EACCES/.test(e.code || '')) { fs.writeFileSync(file, text, 'utf8'); try { fs.unlinkSync(tmp); } catch { /* 忽略 */ } return; } const t = Date.now() + 80 * (i + 1); while (Date.now() < t) { /* 等杀毒软件放手 */ } } }
 }
+const LAST_REQ = {}, SEEN_REQ = new Set();
 function trimSlash(u) { return String(u || '').replace(/\/+$/, ''); }
 
 async function httpJson(url, { method = 'POST', headers = {}, body, timeoutMs = 120000 } = {}) {
@@ -251,6 +252,10 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
     // 要 JSON 的调用：让 DeepSeek 只输出合法 JSON（对白里的引号会被正确转义，不再因为一个引号整回合作废）
     if (useJsonMode) body.response_format = { type: 'json_object' };
     if (!thinking && !isThinkingModel(model)) body.temperature = temperature ?? 0.9;
+    // 自检：实际发出去的是哪个型号、开没开思考、额度和温度——第一次和每次变了都记一笔，问题报告里能看到
+    { const sig = [model, body.thinking ? body.thinking.type : (isThinkingModel(model) ? 'model-thinks' : 'off'), body.max_tokens, body.temperature ?? '-', body.response_format ? 'json' : 'text'].join('|');
+      LAST_REQ.at = new Date().toISOString(); LAST_REQ.model = model; LAST_REQ.thinking = body.thinking ? body.thinking.type : (isThinkingModel(model) ? '型号自带' : '关'); LAST_REQ.maxTokens = body.max_tokens; LAST_REQ.temperature = body.temperature ?? null; LAST_REQ.json = !!body.response_format; LAST_REQ.base = base;
+      if (!SEEN_REQ.has(sig)) { SEEN_REQ.add(sig); try { console.log('[llm] 实际请求：型号', model, '思考', LAST_REQ.thinking, 'max_tokens', body.max_tokens, '温度', body.temperature ?? '（思考模式不用）', body.response_format ? 'JSON 模式' : ''); } catch (_) { /* 忽略 */ } } }
     let json;
     try {
       const headers = cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {};
@@ -590,4 +595,4 @@ async function testAdapter(id, runtimeConfig) {
   return { ok: true, ms: Date.now() - t0, adapter: adapter.id, model: res.meta && res.meta.model, switched: res.meta && res.meta.switched, preview: String(res.text).slice(0, 200) };
 }
 
-module.exports = { listModels, pickModel, listAdapters, resolveAdapter, testAdapter, loadAdapterConfig, saveAdapterConfig, ADAPTER_DIR };
+module.exports = { listModels, pickModel, listAdapters, resolveAdapter, testAdapter, loadAdapterConfig, saveAdapterConfig, ADAPTER_DIR, LAST_REQ };
