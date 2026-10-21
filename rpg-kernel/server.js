@@ -409,6 +409,7 @@ const routes = {
      去掉小说、演义、影视、游戏的结果（免得把虚构当史实），百科、正史、学术站排前面；
      博查出错时给出明白的原因（Key 无效、余额不足、太频繁），状态记下来给页面显示 */
   async 'POST /api/lookup'(body) {
+    const both = !!(body || {}).both;
     const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean).slice(0, 10);
     if (!qs.length) return { ok: true, results: [] };
     const cfg = await search.loadConfig();
@@ -421,14 +422,20 @@ const routes = {
     const race = (p, ms) => Promise.race([p.catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: `超时（${Math.round(ms / 1000)} 秒没回）` }), ms))]);
     const once = async q => {
       const left = () => Math.max(1500, DEADLINE - Date.now());
-      if (!isBocha) return { query: q, ...(await race(search.search(q, {}), Math.min(8000, left()))) };
+      // 第一层：维基百科，查不到再查维基文库（史书原文）；第二层：博查。both（查官员、真人这种要卡准年份的）两层都查，博查放前面
+      const netDown = e => /超时|ENOTFOUND|ECONN|fetch failed|timeout|abort|socket|连不上/i.test(String(e || ''));
+      let w = { results: [] };
       if (Date.now() - WIKI_DOWN_AT > 300000) {
-        const w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(6000, left()));
-        if ((w.results || []).length) return { query: q, ...w, provider: 'wikipedia' };
-        if (/超时|ENOTFOUND|ECONN|fetch failed|timeout|abort|socket|连不上/i.test(String(w.error || ''))) WIKI_DOWN_AT = Date.now();
+        w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(6000, left()));
+        if (!(w.results || []).length && !netDown(w.error)) { const ws = await race(search.search(q, { provider: 'wikisource' }), Math.min(5000, left())); if ((ws.results || []).length) w = { ...ws, provider: 'wikisource' }; }
+        if (netDown(w.error)) WIKI_DOWN_AT = Date.now();
       }
+      const wOk = (w.results || []).length;
+      if (!isBocha) return { query: q, ...w, provider: w.provider || 'wikipedia' };
+      if (wOk && !both) return { query: q, ...w, provider: w.provider || 'wikipedia' };
       const b = await race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(12000, left()));
-      return { query: q, ...b, provider: 'bocha' };
+      if (wOk && (b.results || []).length) return { query: q, results: [...b.results.slice(0, 3), ...w.results.slice(0, 2)], provider: 'mixed' };
+      return (b.results || []).length || !wOk ? { query: q, ...b, provider: 'bocha' } : { query: q, ...w, provider: w.provider || 'wikipedia' };
     };
     // 没搜到（不是出错）：把查询改短再搜，维基这类搜索框只认简单的词（「扬州府 乾隆二十二年 知府」→「扬州府 知府」→「扬州府」）
     const one = async q => {
@@ -494,12 +501,13 @@ const routes = {
     const one = async q => {
       const cf = path.join(dir, require('crypto').createHash('md5').update(q).digest('hex') + '.json');
       try { return JSON.parse(fs.readFileSync(cf, 'utf8')); } catch (_) { /* 没缓存 */ }
-      const u = (process.env.WIKI_BASE || 'https://zh.wikipedia.org') + '/w/api.php?' + new URLSearchParams({ action: 'query', format: 'json', generator: 'search', gsrsearch: q, gsrlimit: '1', prop: 'extracts|info', inprop: 'url', explaintext: '1', exsectionformat: 'plain', exchars: '4000', variant: 'zh-cn', converttitles: '1', origin: '*' });
+      const u = (process.env.WIKI_BASE || 'https://zh.wikipedia.org') + '/w/api.php?' + new URLSearchParams({ action: 'query', format: 'json', generator: 'search', gsrsearch: q, gsrlimit: '3', prop: 'extracts|info|pageprops', ppprop: 'disambiguation', inprop: 'url', explaintext: '1', exsectionformat: 'plain', exchars: '4000', variant: 'zh-cn', converttitles: '1', origin: '*' });
       try {
         const r = await require('./core/net').fetchX(u, { headers: { 'User-Agent': 'HistoryRPG/1.0 (game)' }, signal: AbortSignal.timeout(10000) });
         if (!r.ok) return { q, error: 'HTTP ' + r.status };
         const d = await r.json();
-        const pg = Object.values((d.query || {}).pages || {})[0];
+        // 取搜索排第一、又不是消歧义页的那篇（消歧义页只是一串同名条目，不是这个人这件事）
+        const pg = Object.values((d.query || {}).pages || {}).sort((a, b) => (a.index || 0) - (b.index || 0)).find(p => p && p.extract && !(p.pageprops && 'disambiguation' in p.pageprops));
         if (!pg || !pg.extract) return { q, error: '没有条目' };
         const FICTION = /小说|游戏|电视剧|动画|漫画|电影/;
         if (FICTION.test(pg.title)) return { q, error: '只找到虚构作品的条目' };
