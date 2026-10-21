@@ -180,7 +180,7 @@ async function selectedModel() {
 // 正在写的回合：页面轮询取已写出的部分
 const TURN_JOBS = new Map();
 const LLM_JOBS = new Map();
-let LOOKUP_STATUS = null;
+let LOOKUP_STATUS = null, WIKI_DOWN_AT = 0;
 /** 从还没写完的 JSON 里取出 scene 字段已写出的部分（处理转义） */
 function partialScene(text) {
   const t = String(text || '');
@@ -412,15 +412,24 @@ const routes = {
     const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean).slice(0, 10);
     if (!qs.length) return { ok: true, results: [] };
     const cfg = await search.loadConfig();
-    const isBocha = cfg.provider === 'bocha';
+    const isBocha = cfg.provider === 'bocha' && !!(cfg.providers && cfg.providers.bocha && cfg.providers.bocha.apiKey);
     const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
     const GOOD = /baike\.baidu|wikipedia|baike\.sogou|ctext|guoxue|gushiwen|zhonghuadiancang|shidianguji|cnki|cass|historychina|zgdsw|dpm\.org|ndlib|chinaknowledge|douban\.com\/note|zhihu/;
     // 一整批最多等 25 秒：每条最多 12 秒，到点还没回的就算没搜到，不让玩家干等
     const DEADLINE = Date.now() + 25000;
-    const once = q => { const ms = Math.max(1500, Math.min(isBocha ? 12000 : 8000, DEADLINE - Date.now())); return Promise.race([
-      search.search(q, isBocha ? { noFallback: true } : {}).catch(e => ({ query: q, results: [], error: String(e && e.message || e) })),
-      new Promise(r => setTimeout(() => r({ query: q, results: [], error: `超时（${Math.round(ms / 1000)} 秒没回）` }), ms)),
-    ]); };
+    // 混合查：先查维基，维基查得到就用；查不到（或维基连不上）再查博查。维基连不上时五分钟内直接走博查
+    const race = (p, ms) => Promise.race([p.catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: `超时（${Math.round(ms / 1000)} 秒没回）` }), ms))]);
+    const once = async q => {
+      const left = () => Math.max(1500, DEADLINE - Date.now());
+      if (!isBocha) return { query: q, ...(await race(search.search(q, {}), Math.min(8000, left()))) };
+      if (Date.now() - WIKI_DOWN_AT > 300000) {
+        const w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(6000, left()));
+        if ((w.results || []).length) return { query: q, ...w, provider: 'wikipedia' };
+        if (/超时|ENOTFOUND|ECONN|fetch failed|timeout|abort|socket|连不上/i.test(String(w.error || ''))) WIKI_DOWN_AT = Date.now();
+      }
+      const b = await race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(12000, left()));
+      return { query: q, ...b, provider: 'bocha' };
+    };
     // 没搜到（不是出错）：把查询改短再搜，维基这类搜索框只认简单的词（「扬州府 乾隆二十二年 知府」→「扬州府 知府」→「扬州府」）
     const one = async q => {
       let r = await once(q);
@@ -449,7 +458,8 @@ const routes = {
       return { q: qs[i], provider: r.provider || cfg.provider, error: r.error ? friendly(r.error) : '', items };
     });
     LOOKUP_STATUS = { at: Date.now(), provider: cfg.provider, ok: okN > 0 || !lastErr, okN, total: qs.length, err: okN ? '' : lastErr };
-    return { ok: true, provider: cfg.provider, status: LOOKUP_STATUS, results };
+    const used = [...new Set(results.filter(r => r.items.length).map(r => r.provider))];
+    return { ok: true, provider: used.length > 1 ? 'mixed' : used[0] || cfg.provider, status: LOOKUP_STATUS, results };
   },
   async 'POST /api/llm-job'(body) {
     const j = LLM_JOBS.get((body || {}).job);
