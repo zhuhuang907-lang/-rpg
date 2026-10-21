@@ -7,14 +7,29 @@ name: 打包 Windows 版
 on:
   push:
     branches: [main, claude/gallant-davinci-l8pni0]
-    paths: ['rpg-kernel/**', '.github/workflows/package.yml']
+    paths: ['rpg-kernel/**', 'web/**', '.github/workflows/package.yml']
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  # 质量检测：提示词护栏、规则回归、开局与三回合巡检、家业检查；不过就不打包
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 装测试用的浏览器
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null
+          npx playwright install --with-deps chromium
+      - name: 快速质量检测
+        run: NODE_PATH=/tmp/pw/node_modules QUICK=1 bash web/tests/qa.sh
   windows:
+    needs: qa
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
