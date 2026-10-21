@@ -457,7 +457,7 @@ const routes = {
     let okN = 0, lastErr = '';
     const results = rs.map((r, i) => {
       const seen = new Set();
-      const items = (r.results || []).filter(h => h && h.title && !FICTION.test(h.title + ' ' + (h.url || '')))
+      const items = (r.results || []).filter(h => h && h.title && !FICTION.test(h.title + ' ' + (h.url || '')) && !/古装剧|电视剧|连续剧|网剧|主演|执导|執導|编剧|首播|收视/.test(String(h.snippet || '').slice(0, 120)))
         .filter(h => { const k = String(h.url || h.title).replace(/[?#].*$/, ''); if (seen.has(k)) return false; seen.add(k); return true; })
         .sort((a, b) => (GOOD.test(b.url || '') ? 1 : 0) - (GOOD.test(a.url || '') ? 1 : 0))
         .slice(0, 4).map(h => ({ title: String(h.title || '').slice(0, 60), url: String(h.url || ''), snippet: String(h.snippet || '').replace(/\s+/g, ' ').slice(0, 600) }));
