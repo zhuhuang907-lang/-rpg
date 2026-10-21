@@ -158,6 +158,9 @@ function withSaveLock(id, fn) {
 // 最近一次连 AI 的结果：首页据此显示「已接通」还是「连不上」（以前只要存了 Key 就显示已接通）
 const STATUS_FILE = path.join(__dirname, 'data', 'status.json');
 function readStatus() { try { return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')); } catch (_) { return {}; } }
+function setStatus(patch) { try { fs.writeFileSync(STATUS_FILE, JSON.stringify({ ...readStatus(), ...patch }), 'utf8'); } catch (_) { /* 忽略 */ } }
+/** 用不用博查：填了博查 Key 就用（试搜没通也照用，可能只是网络抖了一下），只有玩家点了「不用博查」才不用 */
+async function bochaOn() { const c = await search.loadConfig(); return !!(c.providers && c.providers.bocha && c.providers.bocha.apiKey) && !readStatus().bochaOff; }
 function friendlySearch(e, bocha) {
   const s = String(e || '').split(' :: ')[0], who = bocha ? '博查' : '维基百科搜索';
   if (bocha && /401|无效|invalid|unauthor/i.test(s)) return '博查 Key 无效（到 open.bochaai.com 核对，或在首页重新填）';
@@ -270,7 +273,8 @@ const routes = {
     // 粘贴时带进来的空格、换行一律去掉；有中文、全角字符的不是 Key（多半复制错了）
     const k = String(b.apiKey || '').replace(/\s+/g, '');
     const bk = String(b.bochaKey || '').replace(/\s+/g, '');
-    if (b.noBocha) { await search.saveConfig({ provider: 'wikipedia' }); return { ok: true, saved: { bocha: false }, bochaOff: true }; }
+    if (b.noBocha) { setStatus({ bochaOff: true }); await search.saveConfig({ provider: 'wikipedia' }); return { ok: true, saved: { bocha: false }, bochaOff: true }; }
+    if (b.bochaKey) setStatus({ bochaOff: false });
     if (k && !/^[\x21-\x7e]+$/.test(k)) return { ok: false, why: 'DeepSeek Key 里有中文或全角字符，请从 DeepSeek 网页上重新复制（以 sk- 开头的一串英文数字）' };
     if (bk && !/^[\x21-\x7e]+$/.test(bk)) return { ok: false, why: '博查 Key 里有中文或全角字符，请从博查网页上重新复制' };
     if (!k && !bk && !b.model) return { ok: false, why: '没有填任何 Key' };
@@ -326,7 +330,7 @@ const routes = {
       ok: true, model: aid, modelName: c.model || (aid === 'deepseek' ? 'deepseek-v4-pro' : ''),
       hasKey: !!c.apiKey || ['ollama', 'skeleton', 'mock'].includes(aid),
       keyTail: c.apiKey ? String(c.apiKey).slice(-4) : '',
-      search: scfg.provider, hasBocha: !!bochaKey && scfg.provider === 'bocha', bochaSaved: !!bochaKey, lookup: LOOKUP_STATUS,
+      search: scfg.provider, hasBocha: !!bochaKey && !readStatus().bochaOff, bochaSaved: !!bochaKey, bochaTestOk: scfg.provider === 'bocha', lookup: LOOKUP_STATUS,
       lastTest: readStatus().lastTest || null,
     };
   },
@@ -413,7 +417,7 @@ const routes = {
     const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean).slice(0, 10);
     if (!qs.length) return { ok: true, results: [] };
     const cfg = await search.loadConfig();
-    const isBocha = cfg.provider === 'bocha' && !!(cfg.providers && cfg.providers.bocha && cfg.providers.bocha.apiKey);
+    const isBocha = await bochaOn();
     const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
     const GOOD = /baike\.baidu|wikipedia|baike\.sogou|ctext|guoxue|gushiwen|zhonghuadiancang|shidianguji|cnki|cass|historychina|zgdsw|dpm\.org|ndlib|chinaknowledge|douban\.com\/note|zhihu/;
     // 一整批最多等 25 秒：每条最多 12 秒，到点还没回的就算没搜到，不让玩家干等

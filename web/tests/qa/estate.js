@@ -8,7 +8,13 @@ const { chromium } = require('playwright');
   // 再把身份换成流民，单独跑一次立家业：模拟 AI 第一次故意给八万文，程序必须退回重立
   await p.evaluate(async () => { S.protagonist.role = '东京城外的流民'; S.money.cash = null; await buildEstate(S); });
   console.log('RICH', JSON.stringify(rich));
+  // 皇帝：家底是国势账（国库、兵马、地盘），不是田和房
+  const emp = await p.evaluate(async () => { const c = clone(S); c.idm = 'emperor'; c.protagonist.role = '大宋皇帝'; c.realm = null; c.forces = []; c.territory = []; await buildEstate(c); return { treasury: c.realm && c.realm.treasury, forces: arr(c.forces).length, territory: arr(c.territory).length }; });
+  console.log('EMPEROR', JSON.stringify(emp));
+  // 搜索真的发生了：开局查到的资料要进存档
+  const searched = await p.evaluate(() => arr(S.research).length);
+  console.log('SEARCHED', searched);
   const r = await p.evaluate(() => ({ role: S.protagonist.role, cash: S.money.cash, unit: S.money.unit, assets: arr(S.estate.assets).length, standing: S.estate.standing || '' }));
-  const ok = errs.length === 0 && rich.assets >= 1 && rich.standing && r.cash != null && r.cash <= 8000 && r.assets >= 1 && /流民/.test(r.standing) && require('fs').readFileSync('estate.log', 'utf8').includes('retry');
+  const ok = errs.length === 0 && emp.treasury > 0 && emp.forces >= 1 && emp.territory >= 1 && searched > 0 && rich.assets >= 1 && rich.standing && r.cash != null && r.cash <= 8000 && r.assets >= 1 && /流民/.test(r.standing) && require('fs').readFileSync('estate.log', 'utf8').includes('retry');
   console.log('ESTATE', JSON.stringify(r)); console.log(ok ? 'ESTATE OK' : 'ESTATE FAIL', errs);
   await b.close(); process.exit(ok ? 0 : 1); })();

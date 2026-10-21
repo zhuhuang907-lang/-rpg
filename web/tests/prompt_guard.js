@@ -2,6 +2,7 @@
 // 跑法：node web/tests/prompt_guard.js（不用浏览器）
 const fs = require('fs'), path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'game.src.html'), 'utf8');
+const server = fs.readFileSync(path.join(__dirname, '..', '..', 'rpg-kernel', 'server.js'), 'utf8');
 const rules = (src.match(/function storyRules\(\) \{\s*return `([\s\S]*?)`;\n\}/) || [])[1] || '';
 const checks = [
   ['写正文的规则还在', rules.length > 2500],
@@ -22,6 +23,14 @@ const checks = [
   ['传闻按路程到达', /function newsArrive/.test(src) && /newsArrive\(S\)/.test(src)],
   ['不给玩家看将来的史事', !/<span class="seal">后<\/span>将要发生/.test(src)],
   ['开局立家业', /await buildEstate\(s, st\.text\)/.test(src) && /const cashCap = /.test(src)],
+  ['开局不派差事', /开场不安排人来给主角派差事/.test(src) && /「眼下」「今年」开局不给/.test(src) && !/可以奔的目标<\/b>/.test(src)],
+  ['差事是偶尔的', /别人找上门托事、派差事是偶尔的/.test(rules)],
+  ['历史主线每回都露样子', /主线也一直在走：每回都让它在此地/.test(rules)],
+  ['皇帝节度使立国势账', /function buildRealm/.test(src) && /if \(isRuler\(s\)\) return buildRealm/.test(src)],
+  ['填了博查 Key 就用（试搜没通也用，玩家关了才不用）', /const isBocha = await bochaOn\(\)/.test(server) && /!readStatus\(\)\.bochaOff/.test(server)],
+  ['战斗由程序结算、正文照结果写', /function resolveBattle/.test(src) && /battleBlock\(ruling\.battleResult\)/.test(src) && /applyBattle\(S, ruling\.battleResult\)/.test(src)],
+  ['身份切换照账册自动判断', /autoIdentity\(s, extra\)/.test(src)],
+  ['军阀领主也立国势账', /领主\|诸侯/.test(src)],
   ['先维基后博查、矛盾信博查', /维基与博查说法矛盾时以博查为准/.test(src)],
   ['存档不存地理、上一版最后才丢', /const saveJSON = /.test(src) && /> 240000 && s\.prev\) s\.prev = null/.test(src)],
 ];
