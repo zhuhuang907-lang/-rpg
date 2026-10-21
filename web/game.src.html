@@ -1185,16 +1185,15 @@ async function bochaFetch(q, ms = 12000) {
   } finally { clearTimeout(t); }
 }
 async function browserLookup(queries) {
+  // 混合查：先查维基，维基查得到就用；查不到的再用博查（填了博查 Key 才有）
+  const w = await browserLookupWiki(queries);
+  const res = arr(w.results).map(x => ({ ...x, provider: arr(x.items).length ? 'wikipedia' : '' }));
   if (BOCHA_KEY) {
-    let fails = 0;
-    const res = [];
-    for (let i = 0; i < queries.length; i += 5) res.push(...await Promise.all(queries.slice(i, i + 5).map(async q => { try { const items = await bochaFetch(q); return { q, items, provider: 'bocha' }; } catch (e) { fails++; return { q, items: [], error: e.name === 'AbortError' ? '博查超时' : e.message }; } })));
-    // 博查没搜到、或出错的那几条，再用维基补一次
-    const miss = res.filter(x => !x.items.length).map(x => x.q);
-    if (miss.length) { const w = await browserLookupWiki(miss); for (const x of w.results) { const o = res.find(r => r.q === x.q); if (o && x.items.length) { o.items = x.items; o.error = ''; } } }
-    return { results: res, provider: fails === queries.length ? 'wikipedia' : 'bocha' };
+    const miss = res.filter(x => !arr(x.items).length);
+    for (let i = 0; i < miss.length; i += 5) await Promise.all(miss.slice(i, i + 5).map(async o => { try { const items = await bochaFetch(o.q); if (items.length) { o.items = items; o.error = ''; o.provider = 'bocha'; } } catch (e) { o.error = e.name === 'AbortError' ? '博查超时' : e.message; } }));
   }
-  return browserLookupWiki(queries);
+  const used = [...new Set(res.filter(x => arr(x.items).length).map(x => x.provider))];
+  return { results: res, provider: used.length > 1 ? 'mixed' : used[0] || 'wikipedia' };
 }
 async function browserLookupWiki(queries) {
   const one1 = async q => {
@@ -1244,7 +1243,7 @@ async function doLookups(s, queries) {
     if (x.error && !arr(x.items).length) { errs.push(`${x.q}：${x.error}`); continue; }
     x.items = arr(x.items).filter(i => onTopic(x.q, `${i.title} ${i.snippet}`));
     const text = arr(x.items).map(i => `${i.title}：${i.snippet}`).join(' / ');
-    if (s && text) { s.research = arr(s.research).filter(o => o.q !== x.q).concat([{ q: x.q, turn: s.turn, y: s.clock.y, text: cut(text, 700), links: arr(x.items).slice(0, 3).map(i => ({ t: one(i.title, 30), u: String(i.url || '').slice(0, 200) })).filter(l => /^https?:\/\//.test(l.u)) }]).slice(-40); }
+    if (s && text) { s.research = arr(s.research).filter(o => o.q !== x.q).concat([{ q: x.q, turn: s.turn, y: s.clock.y, src: x.provider || r.provider || '', text: cut(text, 700), links: arr(x.items).slice(0, 3).map(i => ({ t: one(i.title, 30), u: String(i.url || '').slice(0, 200) })).filter(l => /^https?:\/\//.test(l.u)) }]).slice(-40); }
     shown.push({ q: x.q, titles: arr(x.items).map(i => i.title).slice(0, 3) });
     feedAdd(arr(x.items).slice(0, 2).map(i => ({ t: i.title, u: i.url, q: x.q })));
     if (s && arr(x.items).length) { s.searchedQ = arr(s.searchedQ).concat([x.q]).slice(-300); if (/大事$/.test(x.q) && s.clock && !arr(s.searchedYears).includes(s.clock.y)) s.searchedYears = arr(s.searchedYears).concat([s.clock.y]).slice(-40); }
@@ -1282,7 +1281,7 @@ function researchBlock(s, extraText, localsOnly) {
   const LC = arr(s && s.locals).filter(x => (!x.place || !s.place || x.place === s.place.full) && (!s.clock || !x.y || Math.abs(s.clock.y - x.y) <= 20)).slice(-30);
   if (localsOnly) return LC.length ? '【此时此地的真人（从查证里认出来的）】\n' + LC.map(x => `· ${x.name}：${x.role}${x.y ? '（' + x.y + '年前后）' : ''}${x.note ? '，' + x.note : ''}`).join('\n') : '';
   if (!R.length && !extra) return '';
-  return '【联网查到的资料（这个年代此时此地真实的人和事；「维基：」开头的是维基百科条目正文；搜索摘要可信度不一：与内置史料冲突以内置史料为准；跟此时此地此人不相干的不用；与通行史书冲突时照通行史书；没查到的不要硬编）】\n' + R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') + extra
+  return '【联网查到的资料（这个年代此时此地真实的人和事；「维基：」开头的是维基百科条目正文；〔博查〕〔维基〕标着出处；维基与博查说法矛盾时以博查为准；搜索摘要可信度不一：与内置史料冲突以内置史料为准；跟此时此地此人不相干的不用；与通行史书冲突时照通行史书；没查到的不要硬编）】\n' + R.map(x => `· 查「${x.q}」${x.wiki ? '〔维基〕' : x.src === 'bocha' ? '〔博查〕' : x.src === 'wikipedia' ? '〔维基〕' : ''}：${x.text}`).join('\n') + extra
     + (LC.length ? '\n【此时此地的真人（从查证里认出来的）】\n' + LC.map(x => `· ${x.name}：${x.role}${x.y ? '（' + x.y + '年前后）' : ''}${x.note ? '，' + x.note : ''}`).join('\n') : '');
 }
 
@@ -2485,7 +2484,7 @@ async function ensureDossiers(s, names) {
   }
   const { text } = await callClaude(`下面这些名字是一局历史模拟游戏里玩家这一回提到、或场面里要出现的人，可能是真实历史人物。请按史实给每个人立一份档案，并写出他在${timeText(s.clock)}这一刻的状态。主角：${s.protagonist.name || '（玩家扮演的人）'}${s.protagonist.gender ? '（' + s.protagonist.gender + '）' : ''}，${s.protagonist.role}，在${s.place.full}（${s.place.polity || ''}）。
 名字：${want.join('、')}
-${ev ? '【查到的资料（维基、博查、CBDB；CBDB 的任官年份最可靠，照它推算此刻他在任什么官、在哪）】\n' + ev + '\n' : ''}要求：只写史书确有记载的；此刻的官职照任官年份推算（某年任甲官、某年改乙官，此刻就在两者之间那一任），推算出来的照写，不要因为没有「此刻」二字就写不详；拿不准的写「不详」，绝不编造官职、地点、年份。同名的取与这个年代、这个地方相关的那一位。查无此人、或此时尚未出生、早已去世的，照实写。
+${ev ? '【查到的资料（维基、博查、CBDB：维基与博查说法矛盾时以博查为准；照 CBDB 的任官年份推算此刻他在任什么官、在哪，与博查矛盾也以博查为准）】\n' + ev + '\n' : ''}要求：只写史书确有记载的；此刻的官职照任官年份推算（某年任甲官、某年改乙官，此刻就在两者之间那一任），推算出来的照写，不要因为没有「此刻」二字就写不详；拿不准的写「不详」，绝不编造官职、地点、年份。同名的取与这个年代、这个地方相关的那一位。查无此人、或此时尚未出生、早已去世的，照实写。
 只输出一个 JSON 对象：{"people":[{"name":"","real":true,"born":0,"died":0,"native":"籍贯","identity":"一句话：他是谁、凭什么出名","state":"此刻：在世/未生/已故","age":0,"post":"此刻的官职或身份","where":"此刻大约在哪（写到州县）","doing":"此刻在做什么、处境如何","ties":"此刻与他相关的要紧人物与派系","reach":"以主角此刻的身份、所在，见不见得到他、要经谁引荐、要走多远多久；他会怎么看待主角这样的人"}]}。born、died 不知道写 null。`, null, { maxTokens: 3000, temperature: 0.1, kind: '档案' });
   const d = parseJSON(text), got = [];
   s.dossiers = s.dossiers || {};
@@ -3058,7 +3057,7 @@ function extrasHtml(x) {
   }
   if (x.looked && arr(x.looked.shown).some(q => arr(q.titles).length)) {   // 这一回自动查了什么：摆在明处，不折起来
     const qs = x.looked.shown.filter(q => arr(q.titles).length), n = qs.reduce((a, q) => a + q.titles.length, 0);
-    top.push(`<div class="ex refs"><div class="eh">这一回自动查证<span>${esc(x.looked.provider === 'bocha' ? '博查' : x.looked.provider === 'wikipedia' ? '维基百科' : (x.looked.provider || '联网'))}，查了 ${qs.length} 项、用到 ${n} 条</span></div><div class="muted" style="font-size:13px">${qs.slice(0, 8).map(q => esc(q.q)).join('　·　')}</div></div>`);
+    top.push(`<div class="ex refs"><div class="eh">这一回自动查证<span>${esc(x.looked.provider === 'bocha' ? '博查' : x.looked.provider === 'wikipedia' ? '维基百科' : x.looked.provider === 'mixed' ? '维基 + 博查' : (x.looked.provider || '联网'))}，查了 ${qs.length} 项、用到 ${n} 条</span></div><div class="muted" style="font-size:13px">${qs.slice(0, 8).map(q => esc(q.q)).join('　·　')}</div></div>`);
   }
   if (arr(x.refs).length) {
   } else if (x.looked && !arr(x.looked.shown).some(q => arr(q.titles).length) && x.looked.err) { sum.push('这一回联网没查成，按内置史料和已核查的名册写');
