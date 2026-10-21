@@ -14,6 +14,7 @@ const CASES = require('./rules_cases.json');
     if (c.check === 'faults') { const f = draftFaults(s, c.said, c.text, c.span || 'auto'); got = c.expect.map(k => f.some(x => x.includes(k))); return { id: c.id, ok: c.bad ? got.every(Boolean) : f.length === 0, detail: f }; }
     if (c.check === 'fixreq') { got = isFixRequest(c.said); return { id: c.id, ok: got === c.want, detail: got }; }
     if (c.check === 'split') { const t = splitStory(c.text).text; return { id: c.id, ok: c.mustNot.every(m => !t.includes(m)) && c.must.every(m => t.includes(m)), detail: t.slice(0, 120) }; }
+    if (c.check === 'paras') { const ps = autoParas(c.text); return { id: c.id, ok: ps.length >= c.min && ps.join('') === c.text.replace(/\n/g, ''), detail: ps }; }
     if (c.check === 'cur') { const cs = curStatus(s, { presentNpcs: c.npcs }); return { id: c.id, ok: c.must.every(m => JSON.stringify(cs).includes(m)), detail: cs }; }
     return { id: c.id, ok: false, detail: '未知检查' };
   }), CASES);
