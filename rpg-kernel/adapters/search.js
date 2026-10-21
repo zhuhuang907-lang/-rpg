@@ -97,10 +97,12 @@ async function cacheWrite(key, val) {
   try { await fsp.writeFile(path.join(CACHE_DIR, `${key}.json`), JSON.stringify(val), 'utf8'); } catch { /* 缓存失败不影响主流程 */ }
 }
 
+const UA = 'HistoryRPG/1.0 (https://github.com/zhuhuang907-lang/-rpg; history game)';
 async function http(url, { method = 'GET', headers = {}, body, timeoutMs = 30000 } = {}) {
   const res = await require('../core/net').fetchX(url, {
     method,
-    headers: { 'content-type': 'application/json', ...headers },
+    // 维基要求带能联系到人的 User-Agent，不带容易被限流
+    headers: { 'content-type': 'application/json', 'user-agent': UA, 'api-user-agent': UA, ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -146,6 +148,19 @@ const PROVIDERS = {
         snippet: String(h.snippet || '').replace(/<[^>]+>/g, ''),
         source: `${lang}.wikipedia.org`,
       }));
+    },
+  },
+
+  // 维基文库：《宋史》《续资治通鉴长编》这类原始史料的原文，查任免、日期、先后比百科准
+  wikisource: {
+    id: 'wikisource',
+    displayName: '维基文库（免费，史书原文）',
+    free: true,
+    note: '二十四史、通鉴、会要等原文；只当百科查不到时补查。',
+    async search(q, cfg) {
+      const u = `https://zh.wikisource.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=${cfg.limit || 4}&srsearch=${encodeURIComponent(q)}`;
+      const { json } = await httpRetry(u);
+      return (json?.query?.search || []).map(h => ({ title: h.title, url: `https://zh.wikisource.org/wiki/?curid=${h.pageid}`, snippet: String(h.snippet || '').replace(/<[^>]+>/g, ''), source: 'zh.wikisource.org' }));
     },
   },
 
@@ -233,11 +248,15 @@ const PROVIDERS = {
     note: '国产搜索 API，中文语境与国内站点覆盖最好，按次计费便宜。做中国史模拟优先选它。注意：博查在 key 无效时仍返回 HTTP 200，错误藏在响应体的 code 字段里 —— 本适配器已检查 body.code，会把真实原因报出来。',
     async search(q, cfg) {
       if (!cfg.apiKey) throw new Error('未配置博查 API Key');
-      const { json, status } = await http('https://api.bochaai.com/v1/web-search', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${cfg.apiKey}` },
-        body: { query: q, count: Number(cfg.count) || 5, summary: true, freshness: 'noLimit' },
-      });
+      // 博查有两个域名：api.bocha.cn 是现在的，api.bochaai.com 是旧的；前一个连不上就换后一个（Key 不对不换）
+      let json, status, lastErr;
+      for (const host of ['https://api.bocha.cn', 'https://api.bochaai.com']) {
+        try {
+          ({ json, status } = await http(host + '/v1/web-search', { method: 'POST', headers: { Authorization: `Bearer ${cfg.apiKey}` }, body: { query: q, count: Number(cfg.count) || 5, summary: true, freshness: 'noLimit' } }));
+          lastErr = null; break;
+        } catch (e) { lastErr = e; if (/HTTP 4\d\d/.test(String(e.message))) break; }
+      }
+      if (lastErr) throw lastErr;
       // 博查的关键坑：鉴权失败/参数错误时 HTTP 仍是 200，错误在 body.code / body.message
       const code = json && json.code;
       if (code !== undefined && String(code) !== '200') {
@@ -261,7 +280,7 @@ async function listProviders() {
 }
 
 function isConfigured(id, cfg) {
-  if (id === 'wikipedia' || id === 'wikidata' || id === 'off') return true;
+  if (id === 'wikipedia' || id === 'wikisource' || id === 'wikidata' || id === 'off') return true;
   if (id === 'searxng') return !!cfg.baseUrl;
   return !!cfg.apiKey;
 }
