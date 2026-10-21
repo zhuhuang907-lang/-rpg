@@ -418,7 +418,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261020230404';
+const BUILD = '20261021022915';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -1169,7 +1169,34 @@ async function wfetch(params, ms = 9000) {
   const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
   try { const r = await fetch(u, { signal: c.signal }); if (!r.ok) throw new Error('维基百科回了 ' + r.status); return await r.json(); } finally { clearTimeout(t); }
 }
+/* 网页版也走博查：博查的接口允许浏览器直接调，用玩家自己在「设置」里填的博查 Key；没填或出错才退回维基 */
+let BOCHA_KEY = (() => { try { return lsGet('hrpg:bochakey') || ''; } catch (_) { return ''; } })();
+const BOCHA_FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节/i;
+async function bochaFetch(q, ms = 12000) {
+  const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
+  try {
+    const r = await fetch('https://api.bochaai.com/v1/web-search', { method: 'POST', signal: c.signal, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + BOCHA_KEY }, body: JSON.stringify({ query: q, count: 8, summary: true, freshness: 'noLimit' }) });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || (j && j.code !== undefined && String(j.code) !== '200')) throw new Error(String(j && j.code) === '401' || r.status === 401 ? '博查 Key 无效' : String(j && j.code) === '403' || r.status === 403 ? '博查余额不足' : '博查出错（' + ((j && j.message) || r.status) + '）');
+    const pages = (j && j.data && ((j.data.webPages && j.data.webPages.value) || j.data.value)) || [];
+    const seen = new Set();
+    return pages.filter(h => h && h.name && !BOCHA_FICTION.test(h.name + ' ' + (h.url || ''))).filter(h => { const k = String(h.url || h.name).replace(/[?#].*$/, ''); if (seen.has(k)) return false; seen.add(k); return true; })
+      .slice(0, 4).map(h => ({ title: String(h.name).slice(0, 60), url: String(h.url || ''), snippet: String(h.summary || h.snippet || '').replace(/\s+/g, ' ').slice(0, 600) }));
+  } finally { clearTimeout(t); }
+}
 async function browserLookup(queries) {
+  if (BOCHA_KEY) {
+    let fails = 0;
+    const res = [];
+    for (let i = 0; i < queries.length; i += 5) res.push(...await Promise.all(queries.slice(i, i + 5).map(async q => { try { const items = await bochaFetch(q); return { q, items, provider: 'bocha' }; } catch (e) { fails++; return { q, items: [], error: e.name === 'AbortError' ? '博查超时' : e.message }; } })));
+    // 博查没搜到、或出错的那几条，再用维基补一次
+    const miss = res.filter(x => !x.items.length).map(x => x.q);
+    if (miss.length) { const w = await browserLookupWiki(miss); for (const x of w.results) { const o = res.find(r => r.q === x.q); if (o && x.items.length) { o.items = x.items; o.error = ''; } } }
+    return { results: res, provider: fails === queries.length ? 'wikipedia' : 'bocha' };
+  }
+  return browserLookupWiki(queries);
+}
+async function browserLookupWiki(queries) {
   const one1 = async q => {
     const tries = [q].concat((() => { const t = q.split(/\s+/).filter(Boolean); return t.length > 2 ? [t[0] + ' ' + t[t.length - 1], t[0]] : t.length === 2 ? [t[0]] : []; })());
     for (const q2 of tries) {
@@ -1540,7 +1567,7 @@ ${s.inst ? '【本朝官制】' + cut(s.inst.summary, 300) + '\n' : ''}${old.len
 function gazQueries(s) {
   const pl = String(s.place.full || ''), yl = s.clock.yearLabel || (s.clock.y + '年'), dy = (s.place.polity || '') + '代';
   const fu = (pl.match(/[^省道路]{2,4}(府|州|郡)/) || [''])[0], xian = (pl.match(/[^府州郡]{2,4}县/) || [''])[0];
-  return [`${pl} ${yl}`, `${fu || pl} ${yl} 知府 官员`, `${xian || pl} ${dy} 县志 衙署`, `${fu || pl} ${dy} 经济 行业 物产`, `${fu || pl} ${dy} 街巷 城门 市镇 名胜`, `${fu || pl} ${dy} 风俗 岁时`, `${fu || pl} ${dy} 望族 士绅`, `${fu || pl} ${yl} 时事`].filter(q => q.trim().length > 4);
+  return [`${pl} ${yl}`, `${fu || pl} ${yl} 知府 官员`, `${xian || pl} ${dy} 县志 衙署`, `${fu || pl} ${dy} 经济 行业 物产`, `${fu || pl} ${dy} 街巷 城门 市镇 名胜`, `${fu || pl} ${dy} 风俗 岁时`, `${fu || pl} ${dy} 望族 士绅`, `${fu || pl} ${yl} 时事`, `${fu || pl} 山川 形胜 河流 关隘`, `${fu || pl} ${dy} 驿路 驿站 渡口 水路`].filter(q => q.trim().length > 4);
 }
 async function buildGazetteer(s) {
   const tmp = { research: [], wikiDone: [], turn: s.turn, clock: s.clock, place: s.place, title: s.title };
@@ -1550,10 +1577,10 @@ async function buildGazetteer(s) {
 要的是让人身临其境的、确凿的地方知识：这地方此时的行政隶属与衙署（同城有几个县、各衙门在哪）、此时在任的上下官员与驻军（照本朝本代的官名：州县长官、佐官、驻地的使职或监司、军镇将校等，每个都写全名：确载的照史，只有历任年份的推算此刻是谁，sure 写 false）、经济与行业（主业、行会、市镇、税关）、望族士绅、城门街巷桥梁市集寺观、风俗岁时、方言称谓、本地此时正在发生的事。下面是联网查到的资料，优先用；资料里没有、你确知的通行史实也可以写，拿不准的标「推」。小说演义影视的不收。
 ${R.map(x => `· 查「${x.q}」：${x.text}`).join('\n') || '（没有查到资料）'}
 
-只输出一个 JSON 对象：{"admin":"行政隶属与衙署，三四句","officials":[{"post":"官职","name":"本名或空","note":"此时的作为或口碑","sure":true}],"economy":"经济与行业，三四句","families":"望族士绅，两三句","places":"城门街巷桥梁市集寺观，三四句（写真名）","customs":"风俗岁时、称谓方言，两三句","current":"本地此时的时事与人心，两三句","counties":["本州府与邻近州府此时的县名（写全称，如 良乡县），二十个以内"]}`, null, { maxTokens: 3500, temperature: 0.2, kind: '方志' });
+只输出一个 JSON 对象：{"admin":"行政隶属与衙署，三四句","officials":[{"post":"官职","name":"本名或空","note":"此时的作为或口碑","sure":true}],"economy":"经济与行业，三四句","families":"望族士绅，两三句","places":"城门街巷桥梁市集寺观，三四句（写真名）","customs":"风俗岁时、称谓方言，两三句","current":"本地此时的时事与人心，两三句","terrain":"山川形势：周围的山、河、湖、关隘、驿路、渡口、水陆通道与去邻近州府怎么走（写真名），三四句","counties":["本州府与邻近州府此时的县名（写全称，如 良乡县），二十个以内"]}`, null, { maxTokens: 3500, temperature: 0.2, kind: '方志' });
   const d = parseJSON(text);
   if (!d || !d.admin) throw { code: 'bad_json' };
-  s.gazetteer = { place: s.place.full, y: s.clock.y, admin: cut(d.admin, 300), economy: cut(d.economy, 300), families: cut(d.families, 200), places: cut(d.places, 300), customs: cut(d.customs, 200), current: cut(d.current, 200),
+  s.gazetteer = { place: s.place.full, y: s.clock.y, admin: cut(d.admin, 300), economy: cut(d.economy, 300), families: cut(d.families, 200), places: cut(d.places, 300), customs: cut(d.customs, 200), current: cut(d.current, 200), terrain: cut(d.terrain, 300),
     officials: arr(d.officials).filter(o => o && o.post).slice(0, 14).map(o => ({ post: one(o.post, 20), name: one(o.name, 10), note: one(o.note, 50), sure: o.sure !== false })), src: R.length ? '检索' : '记忆', counties: arr(d.counties).map(x => one(x, 10)).filter(x => x.length >= 2).slice(0, 24) };
   mergeOffices(s, s.gazetteer.officials.filter(o => o.name).map(o => ({ post: o.post, place: (s.geo && s.geo.here && s.geo.here.parent) || s.place.full, name: o.name, since: String(s.clock.y), src: o.sure ? '史料' : '推断', note: o.note })));
   return s.gazetteer;
@@ -1562,7 +1589,7 @@ const needGaz = s => s && (!s.gazetteer || s.gazetteer.place !== s.place.full ||
 function gazBlock(s) {
   const g = s.gazetteer; if (!g || g.place !== s.place.full) return officialsBlock(s);
   const ob = officialsBlock(s);
-  return (ob ? ob + '\n' : '') + `【本地志（${g.place}，${g.y}年前后；${g.src === '检索' ? '据检索资料整理' : 'AI 据通行史书整理'}，写本地的人、地、事照这里）】\n衙署：${g.admin}${officialsBlock(s) ? '' : '\n官员：' + arr(g.officials).map(o => `${o.post}${o.name ? ' ' + o.name : ''}${o.note ? '（' + o.note + '）' : ''}`).join('；')}\n经济：${g.economy}\n士绅：${g.families}\n地方：${g.places}\n风俗：${g.customs}\n时事：${g.current}`;
+  return (ob ? ob + '\n' : '') + `【本地志（${g.place}，${g.y}年前后；${g.src === '检索' ? '据检索资料整理' : 'AI 据通行史书整理'}，写本地的人、地、事照这里）】\n衙署：${g.admin}${officialsBlock(s) ? '' : '\n官员：' + arr(g.officials).map(o => `${o.post}${o.name ? ' ' + o.name : ''}${o.note ? '（' + o.note + '）' : ''}`).join('；')}\n经济：${g.economy}\n士绅：${g.families}\n地方：${g.places}\n风俗：${g.customs}\n时事：${g.current}${g.terrain ? '\n山川道路：' + g.terrain : ''}`;
 }
 
 /* ========== 联网自建史料：没有内置史料的年代，按十来年一段查年表、君主、重臣、战事、灾荒、制度，整理成同样格式 ========== */
@@ -1719,6 +1746,7 @@ function worldInput(s) {
 3. 大势难改，人事易变：财政、天灾、边患、土地兼并、军制这类根子上的原因还在，史书上的大事即使换了人、换了时间、换了地点，也多半会以别的样子发生（比如领头的人没了，会有别人顶上）；只有根子被动了，大势才会真正转向。
 4. 别人也在动：各方势力、朝中各派、真实人物都照自己的利害对本局的变化作出反应——警觉、拉拢、打压、趁乱、观望。
 5. 已经发生的不能撤回；玩家造成的变化不能被「拉回」史书原样。新出的事必须有本局的因可循，不凭空造。
+6. 你只推演主角以外的世界：朝廷、各方势力、边地、邻近州县、不在主角身边的人。不写主角做什么、想什么、该怎么办，不替主角拿主意，也不给他派事；外面的事会不会传到主角那里、怎么传，由程序按路程算。
 
 ${influenceBlock(s) ? influenceBlock(s) + '\n\n' : ''}${eventDetailBlock(s) ? eventDetailBlock(s) + '\n\n' : ''}【天下大势（上次写的）】${w.overview || ''}
 【已经发生（近来）】
@@ -1748,8 +1776,9 @@ ${arr(s.summaries).slice(-8).map(x => `第${x.turn}回合（${x.when}）：${x.t
 - factions：朝中与地方的派系、利益集团（三到八个；照真实情形，议题不同可以重新组合，不必非忠即奸），各自的头面人物、成员、诉求、对主角的态度、实力与近来的动作。
 - upcoming 里每条可加 needs：它要发生需要的前提（谁在位、谁活着、哪里缺粮、谁掌兵……）；前提已经没了的事要标「取消」或「已变」。
 - powers：各方势力此刻的样子（三到八个，整组给出），没有变化可以省略。
+- outside：从上次推演到现在，主角不在场的地方照史书与因果发生的具体的事（三到六条）：谁、在哪（写当时的州县或京城名）、做了什么；年月写在这段日子里，不写将来的事；与 upcoming 里史书原有的条目不重复。
 只输出一个 JSON 对象，不加代码块：
-{"overview":"","upcoming":[{"key":"","y":0,"m":0,"text":"","status":"照史/已变/取消/新出","why":"","needs":""}],"figures":[{"name":"","post":"","age":0,"where":"","stance":"","alive":true,"note":""}],"ripples":[{"cause":"","effect":"","when":""}],"npcMoves":[{"name":"","did":"这段时间里他照自己的盘算做了什么","why":"","plan":"他接下来的打算"}],"factions":[{"name":"派系或利益集团","leader":"","members":"要紧成员","aims":"他们要什么","stance":"对主角","strength":"强/中/弱","note":"近来的动作"}],"powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}]}`;
+{"overview":"","upcoming":[{"key":"","y":0,"m":0,"text":"","status":"照史/已变/取消/新出","why":"","needs":""}],"figures":[{"name":"","post":"","age":0,"where":"","stance":"","alive":true,"note":""}],"ripples":[{"cause":"","effect":"","when":""}],"outside":[{"y":0,"m":0,"where":"","text":""}],"npcMoves":[{"name":"","did":"这段时间里他照自己的盘算做了什么","why":"","plan":"他接下来的打算"}],"factions":[{"name":"派系或利益集团","leader":"","members":"要紧成员","aims":"他们要什么","stance":"对主角","strength":"强/中/弱","note":"近来的动作"}],"powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}]}`;
 }
 /** 推演一次：成功就替换将来的史线、人物、大势，并把有变化的列出来 */
 /* ========== 玩家对历史的影响：每回记下主角的作为碰到了哪件大事的哪个条件、分量多重；程序按主角的身份折算、累计，到了门槛才让天下推演改写那件事 ========== */
@@ -1774,6 +1803,18 @@ function addInfluence(s, touches, turn) {
 }
 const INF_STEP = 4;
 const influencePending = s => Object.values(s.influence || {}).filter(o => Math.floor(o.score / INF_STEP) > (o.applied || 0));
+/** 主角在这世上留下的痕迹：做过的要紧事、引起的连锁变化、对大事的影响、谁记着他——每回都给推演和写正文，别人照此反应 */
+function footprintBlock(s) {
+  const D = arr(s.deeds).slice(-10), RP = arr(s.world && s.world.ripples).slice(-6), INF = Object.values(s.influence || {}).filter(o => o && o.score >= 1).slice(-5), HC = arr(s.history).slice(-4);
+  const who = Object.entries(s.people || {}).filter(([k, v]) => v && (Math.abs(Number(v.favor) || 0) >= 40 || v.knows)).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 6);
+  if (!D.length && !RP.length && !INF.length && !HC.length && !who.length) return '';
+  return '【主角在这世上留下的痕迹（这些事外面的人记得、在传、在照着应对；这一回出场的人对主角的态度、消息、处境，要跟这些对得上，不能当没发生过）】'
+    + (D.length ? '\n做过的要紧事：' + D.map(x => `第${x.turn}回${x.what}${x.effect ? '（' + x.effect + '）' : ''}${x.done ? '（已了结）' : ''}`).join('；') : '')
+    + (RP.length ? '\n引起的连锁：' + RP.map(r => `${r.cause}→${r.effect}`).join('；') : '')
+    + (INF.length ? '\n碰到的大事：' + INF.map(o => `${o.text}（分量${o.score}）`).join('；') : '')
+    + (HC.length ? '\n因主角改了样子的史事：' + HC.map(h => `${h.event}→${h.now}`).join('；') : '')
+    + (who.length ? '\n记着主角的人：' + who.map(([k, v]) => `${k}（${v.attitude || (Number(v.favor) > 0 ? '有好感' : '有怨')}${v.knows ? '，知道' + cut(v.knows, 24) : ''}）`).join('；') : '');
+}
 function influenceBlock(s) {
   const L = Object.values(s.influence || {}).filter(o => o.score >= 1);
   if (!L.length) return '';
@@ -1831,6 +1872,14 @@ async function worldTick(s) {
   if (Array.isArray(d.figures) && d.figures.length) s.figures = d.figures.filter(f => f && f.name).slice(0, 18).map(f => ({ name: one(f.name, 10), post: one(f.post, 40), age: num(f.age), where: one(f.where, 20), stance: one(f.stance, 40), alive: f.alive !== false, note: one(f.note, 60) }));
   const rp = arr(d.ripples).filter(r => r && r.cause && r.effect && !arr(w.ripples).some(o => one(o.effect, 12) === one(r.effect, 12))).slice(0, 6).map(r => ({ turn: s.turn, cause: one(r.cause, 60), effect: one(r.effect, 100), when: one(r.when, 20) }));
   w.ripples = arr(w.ripples).concat(rp).slice(-40);
+  // 外面发生的事：记成带地点的事件，由「消息传到此地」按路程变成风闻、确报，写进以后的正文
+  for (const o of arr(d.outside).filter(o => o && o.text).slice(0, 6)) {
+    let y = num(o.y) ?? s.clock.y, m = Math.min(12, Math.max(0, num(o.m) || 0));
+    if (y * 12 + (m || 6) > ymOf(s.clock)) { y = s.clock.y; m = s.clock.m; }
+    const text = one(o.text, 100), key = 'o' + y + ':' + text.slice(0, 14);
+    if (!arr(w.events).some(e => e.key === key || one(e.text, 10) === one(text, 10))) w.events.push({ y, m, text, where: one(o.where, 20), scope: /京|朝|天下|诏|帝|皇/.test(String(o.where) + text) ? '天下' : '地方', key, changed: true, outside: true });
+  }
+  w.events = w.events.slice(-120);
   const moves = arr(d.npcMoves).filter(m => m && m.name && m.did).slice(0, 6).map(m => ({ name: one(m.name, 12), did: one(m.did, 100), why: one(m.why, 60), plan: one(m.plan, 60) }));
   for (const m of moves) {
     const o = s.people[m.name]; if (o) { o.status = m.did; if (m.plan) o.plan = m.plan; }
@@ -2151,8 +2200,8 @@ function heatBlock(s) {
     : '【这一回的烈度：平常年景】此时此地没有战乱。写平常日子里的正经事——公事、营生、人情、家事、此时的政局风气与制度；天下的大事以邸报、传闻、政令、物价的样子远远传到这里，人们照常过日子、议论、盘算。意外照样会有，但要有来由：史料里此时此地真有的，前文埋下的，有人记恨、惦记、算计的，主角自己惹出来的，这个季节这个地方常有的（水旱、春荒、时疫、走水、盗贼，合本地志）；凭空天降的乱兵急报不写。';
 }
 function directorBlock(s, said) {
-  const mb = s.mainNow, ban = bannedTopics(s, said), ab = arcBlock(s);
-  return heatBlock(s) + '\n' + (ab ? ab + '\n' : '') + (mb ? `【眼下的历史背景（程序据史料挑的；玩家做的事是正戏，这件大事是背景：到了日子写它砸下来，没到日子只在此地真能感到时露一点，与玩家这一步无关就少写）】\n${mb.text}\n${mb.phase}。牵涉的真人照史料写真名真事。\n` : '')
+  const mb = s.mainNow, ban = bannedTopics(s, said), ab = arcBlock(s), fp = footprintBlock(s);
+  return heatBlock(s) + '\n' + (ab ? ab + '\n' : '') + (fp ? fp + '\n' : '') + (mb ? `【眼下的历史背景（程序据史料挑的；玩家做的事是正戏，这件大事是背景：到了日子写它砸下来，没到日子只在此地真能感到时露一点，与玩家这一步无关就少写）】\n${mb.text}\n${mb.phase}。牵涉的真人照史料写真名真事。\n` : '')
     + (eventDetailBlock(s) ? eventDetailBlock(s) + '\n' : '') + newsBlock(s)
     + (ban.length ? `【这一回不许再写的题材（最近写得太多了）】${ban.join('、')}——一个字都不要提，换别的事。\n` : '');
 }
@@ -2281,7 +2330,7 @@ function openingStoryInput(sentence, sys, custom, mat) {
 【开局】玩家想当的人：「${sentence}」${customBlock(custom)}
 先替玩家把这个人落到真实历史里：没说年代就挑这个身份最有戏、史料最清楚的年份；没说地点就挑当时真实存在、与身份相称的地方。真实人物用他本人此时的真实身份、年龄、家人；虚构人物起一个合乎时代、不与史载真人同名的名字，家人也虚构。
 然后写开场，分两段来：
-一、先交代（一段，五到八句，平实的叙述，像历史小说的开篇，不是履历表）：何年何月何日（年号纪年与农历月日）；此刻的天下——谁在位、谁当权、眼下正在发生或将要发生的大事（照上面的史料，写真名真事，让人一读就知道自己站在历史的哪个关口）；本地此时的光景；你是谁（姓名、年纪、出身、身份）、家里有谁、靠什么立身。
+一、先交代（一段，五到八句，平实的叙述，像历史小说的开篇，不是履历表）：何年何月何日（年号纪年与农历月日）；此刻的天下——谁在位、谁当权、眼下正在发生的大事（只写此刻已经发生、当时人知道的；不预告将来）（照上面的史料，写真名真事，让人一读就知道自己站在历史的哪个关口）；本地此时的光景；你是谁（姓名、年纪、出身、身份）、家里有谁、靠什么立身。
 二、再进场面：一个具体的时辰、一处具体的地方，身边的人在说话做事。烈度照【这一回的烈度】——平常年景就从平常日子里的一件正经事写起（公事、营生、学业、家事、此时的政局风气与制度落在这个人身上的样子），天下大事只是远远传来的消息、政令、物价；只有史料里此时此地真在战乱中，才写兵戈。不要拿家产清点、雇工民夫、算账讨债开场，也不要凭空塞进乱兵、盗匪、命案、急报这类祸事。
 停在一件刚刚展开的事上（它和此刻的时代大势有牵连）——别人已经动起来了，不是一屋子人等着请示主角。`;
 }
@@ -2393,24 +2442,56 @@ function openingHist(sentence) {
 }
 /* ========== 真人档案：玩家提到、场面里要出现的真实人物，先按史实（桌面版先读维基）立档，写戏与核实照它 ========== */
 const knownFig = (s, n) => HALL(s).some(h => arr(h.figures).some(f => f.name === n));
+/** CBDB（哈佛中国历代人物传记资料库）：按名字查人，取生卒、籍贯、任官（年份、地点）；同名的取年代最近的那位 */
+const CBDB_CACHE = {};
+async function cbdbPerson(name, y) {
+  if (name in CBDB_CACHE) return CBDB_CACHE[name];
+  const c = new AbortController(), t = setTimeout(() => c.abort(), 12000);
+  try {
+    const r = await fetch('https://cbdb.fas.harvard.edu/cbdbapi/person.php?o=json&name=' + encodeURIComponent(name), { signal: c.signal });
+    const j = await r.json();
+    let P = j && j.Package && j.Package.PersonAuthority && j.Package.PersonAuthority.PersonInfo && j.Package.PersonAuthority.PersonInfo.Person;
+    P = arr(Array.isArray(P) ? P : P ? [P] : []);
+    const yr = p => +((p.BasicInfo || {}).IndexYear || (p.BasicInfo || {}).YearBirth || 0);
+    const p = P.filter(x => x && x.BasicInfo).sort((a, b) => Math.abs(yr(a) - y) - Math.abs(yr(b) - y))[0];
+    if (!p || Math.abs(yr(p) - y) > 90) return (CBDB_CACHE[name] = null);
+    const b = p.BasicInfo, po = arr(p.PersonPostings && p.PersonPostings.Posting);
+    const posts = arr(Array.isArray(po) ? po : [po]).filter(x => x && x.OfficeName).map(x => ({ o: x.OfficeName, a: x.AddrName && !/未詳/.test(x.AddrName) ? x.AddrName : '', f: +x.FirstYear || 0, l: +x.LastYear || 0 }))
+      .sort((a, b2) => (a.f || 9999) - (b2.f || 9999));
+    const near = posts.filter(x => x.f && Math.abs(x.f - y) <= 15).slice(0, 10), rest = posts.filter(x => !near.includes(x)).slice(0, 8);
+    const fmt = x => `${x.f ? x.f + (x.l && x.l !== x.f ? '—' + x.l : '') + '年 ' : ''}${x.o}${x.a ? '（' + x.a + '）' : ''}`;
+    const text = `「${b.ChName || name}」${b.YearBirth && b.YearBirth !== '0' ? '生于' + b.YearBirth : ''}${b.YearDeath && b.YearDeath !== '0' ? '，卒于' + b.YearDeath : ''}${b.IndexAddr ? '，籍贯' + b.IndexAddr : ''}。任官（年份为大致）：${near.map(fmt).join('；') || '（此时前后无记载）'}${rest.length ? '。其他任官（年份不详或较远）：' + rest.map(fmt).join('；') : ''}`;
+    return (CBDB_CACHE[name] = { name: b.ChName || name, born: +b.YearBirth || null, died: +b.YearDeath || null, text });
+  } catch (_) { return null; } finally { clearTimeout(t); }
+}
 async function ensureDossiers(s, names) {
   const fresh = n => s.dossiers && s.dossiers[n] && Math.abs((s.dossiers[n].y || 0) - s.clock.y) < 2;
   const want = [...new Set(arr(names).map(x => one(x, 12)).filter(n => n.length >= 2 && n !== s.protagonist.name))].filter(n => !knownFig(s, n) && !fresh(n)).slice(0, 3);
   if (!want.length) return [];
-  let ev = '';
+  let ev = '', cb = [];
   if (canSearch()) {
-    try { await wikiRead(s, want); } catch (e) { if (e && e.code === 'cancelled') throw e; }
-    ev = arr(s.research).filter(x => x.wiki && want.some(n => String(x.q).includes(n) || String(x.text).slice(0, 80).includes(n))).map(x => `· ${x.q}：${cut(x.text, 1500)}`).join('\n');
+    // 三路一起查：博查（此时的官职、处境）、维基（生平）、CBDB 中国历代人物传记资料库（任官年份、地点，推断此刻在任何职最有用）
+    const yl = s.clock.yearLabel || (s.clock.y + '年');
+    const tmp = { research: [], wikiDone: [], turn: s.turn, clock: s.clock, place: s.place, title: s.title };
+    await Promise.all([
+      wikiRead(s, want).catch(e => { if (e && e.code === 'cancelled') throw e; }),
+      doLookups(tmp, want.flatMap(n => [`${n} ${yl} 官职`, `${n} 生平 任职 年表`])).catch(e => { if (e && e.code === 'cancelled') throw e; }),
+      Promise.all(want.map(n => cbdbPerson(n, s.clock.y))).then(r => { cb = r.filter(Boolean); }).catch(() => {}),
+    ]);
+    ev = arr(s.research).filter(x => x.wiki && want.some(n => String(x.q).includes(n) || String(x.text).slice(0, 80).includes(n))).map(x => `· ${x.q}：${cut(x.text, 1500)}`).join('\n')
+      + arr(tmp.research).filter(x => x.text).map(x => `\n· 博查「${x.q}」：${cut(x.text, 600)}`).join('')
+      + cb.map(x => '\n· CBDB（中国历代人物传记资料库）' + x.text).join('');
+    if (cb.length) feedAdd(cb.map(x => ({ t: 'CBDB 人物：' + x.name, site: 'CBDB' })));
   }
   const { text } = await callClaude(`下面这些名字是一局历史模拟游戏里玩家这一回提到、或场面里要出现的人，可能是真实历史人物。请按史实给每个人立一份档案，并写出他在${timeText(s.clock)}这一刻的状态。主角：${s.protagonist.name || '（玩家扮演的人）'}${s.protagonist.gender ? '（' + s.protagonist.gender + '）' : ''}，${s.protagonist.role}，在${s.place.full}（${s.place.polity || ''}）。
 名字：${want.join('、')}
-${ev ? '【维基百科条目（以此为准）】\n' + ev + '\n' : ''}要求：只写史书确有记载的；拿不准的写「不详」，绝不编造官职、地点、年份。同名的取与这个年代、这个地方相关的那一位。查无此人、或此时尚未出生、早已去世的，照实写。
+${ev ? '【查到的资料（维基、博查、CBDB；CBDB 的任官年份最可靠，照它推算此刻他在任什么官、在哪）】\n' + ev + '\n' : ''}要求：只写史书确有记载的；此刻的官职照任官年份推算（某年任甲官、某年改乙官，此刻就在两者之间那一任），推算出来的照写，不要因为没有「此刻」二字就写不详；拿不准的写「不详」，绝不编造官职、地点、年份。同名的取与这个年代、这个地方相关的那一位。查无此人、或此时尚未出生、早已去世的，照实写。
 只输出一个 JSON 对象：{"people":[{"name":"","real":true,"born":0,"died":0,"native":"籍贯","identity":"一句话：他是谁、凭什么出名","state":"此刻：在世/未生/已故","age":0,"post":"此刻的官职或身份","where":"此刻大约在哪（写到州县）","doing":"此刻在做什么、处境如何","ties":"此刻与他相关的要紧人物与派系","reach":"以主角此刻的身份、所在，见不见得到他、要经谁引荐、要走多远多久；他会怎么看待主角这样的人"}]}。born、died 不知道写 null。`, null, { maxTokens: 3000, temperature: 0.1, kind: '档案' });
   const d = parseJSON(text), got = [];
   s.dossiers = s.dossiers || {};
   for (const p of arr(d && d.people)) if (p && p.name) {
     const k = one(p.name, 12);
-    s.dossiers[k] = { real: p.real !== false, born: num(p.born), died: num(p.died), native: one(p.native, 20), identity: one(p.identity, 80), state: one(p.state, 10), age: num(p.age), post: one(p.post, 50), where: one(p.where, 30), doing: one(p.doing, 100), ties: one(p.ties, 100), reach: one(p.reach, 140), y: s.clock.y, src: ev ? '维基百科 + 史书' : '史书（AI 据史识整理，未联网）' };
+    s.dossiers[k] = { real: p.real !== false, born: num(p.born), died: num(p.died), native: one(p.native, 20), identity: one(p.identity, 80), state: one(p.state, 10), age: num(p.age), post: one(p.post, 50), where: one(p.where, 30), doing: one(p.doing, 100), ties: one(p.ties, 100), reach: one(p.reach, 140), y: s.clock.y, src: ev ? (cb.length ? 'CBDB + 博查 + 维基' : '博查 + 维基')  : '史书（AI 据史识整理，未联网）' };
     got.push(k);
     feedAdd([{ t: `真人档案：${k}${p.real === false ? '（查无此人）' : ''}`, site: ev ? '维基百科' : '史识' }]);
   }
@@ -2965,7 +3046,7 @@ function extrasHtml(x) {
     const rows = arr(wt.changes).map(c => `<div><span class="badge ${c.status === '新出' ? 'b-doing' : 'b-bad'}">${esc(c.status === '新出' ? '本局新出' : c.status === '取消' ? '不会发生了' : '走向变了')}</span> ${esc(c.text)}${c.why ? `<div class="muted">因为：${esc(c.why)}</div>` : ''}</div>`)
       .concat(arr(wt.ripples).map(r => `<div><span class="badge b-doing">连锁</span> <b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`))
       .concat(arr(wt.moves).slice(0, 0).map(m => `<div><span class="badge">动向</span> <b>${esc(m.name)}</b>：${esc(m.did)}${m.why ? `<span class="muted">（${esc(m.why)}）</span>` : ''}${m.plan ? `<div class="muted">接下来：${esc(m.plan)}</div>` : ''}</div>`));
-    if (rows.length || wt.overview) top.push(`<div class="ex news wide"><div class="eh">天下推演<span>这段日子里天下与你周围的变化；</span></div>${wt.overview ? `<div class="muted" style="margin-bottom:4px">${esc(wt.overview)}</div>` : ''}${rows.join('')}</div>`);
+    if (false && (rows.length || wt.overview)) top.push(`<div class="ex news wide"><div class="eh">天下推演<span>这段日子里天下与你周围的变化；</span></div>${wt.overview ? `<div class="muted" style="margin-bottom:4px">${esc(wt.overview)}</div>` : ''}${rows.join('')}</div>`);
   }
   if (SETTINGS.showWork && x.ruling && arr(x.ruling.steps).length) {
     const r = x.ruling;
@@ -2974,6 +3055,12 @@ function extrasHtml(x) {
   if (arr(x.refs).length) {
     sum.push(`参阅资料 ${x.refs.length} 条`);
     book.push(`<div class="ex refs"><div class="eh">本回参阅<span>写这一回前联网翻过的</span></div>${x.refs.map(f => `<div><span class="fs">${esc(f.site || '资料')}</span>${/^https?:\/\//.test(f.u || '') ? `<a href="${esc(f.u)}" target="_blank" rel="noopener">${esc(f.t)}</a>` : esc(f.t)}</div>`).join('')}</div>`);
+  }
+  if (x.looked && arr(x.looked.shown).some(q => arr(q.titles).length)) {   // 这一回自动查了什么：摆在明处，不折起来
+    const qs = x.looked.shown.filter(q => arr(q.titles).length), n = qs.reduce((a, q) => a + q.titles.length, 0);
+    top.push(`<div class="ex refs"><div class="eh">这一回自动查证<span>${esc(x.looked.provider === 'bocha' ? '博查' : x.looked.provider === 'wikipedia' ? '维基百科' : (x.looked.provider || '联网'))}，查了 ${qs.length} 项、用到 ${n} 条</span></div><div class="muted" style="font-size:13px">${qs.slice(0, 8).map(q => esc(q.q)).join('　·　')}</div></div>`);
+  }
+  if (arr(x.refs).length) {
   } else if (x.looked && !arr(x.looked.shown).some(q => arr(q.titles).length) && x.looked.err) { sum.push('这一回联网没查成，按内置史料和已核查的名册写');
   } else if (x.looked && arr(x.looked.shown).length) {
     const n = x.looked.shown.reduce((a, q) => a + arr(q.titles).length, 0);
@@ -3142,10 +3229,10 @@ function pane(tab) {
     const w = s.world, badge = st => st && st !== '照史' ? `<span class="badge ${st === '新出' ? 'b-doing' : 'b-bad'}">${esc(st)}</span> ` : '';
     const A0 = arcsNow(s)[0];
     return `${A0 ? `<div class="h" style="margin-top:6px"><span class="seal">线</span>你身在的大势<span class="note">${esc(A0.a.title)}</span></div><div class="overview"><b>${esc((A0.st && A0.st.name) || '')}</b>　${esc((A0.st && A0.st.what) || '')}${A0.st && A0.st.felt && A0.st.felt[roleKey(s)] ? `<div class="muted" style="margin-top:4px">${esc(A0.st.felt[roleKey(s)])}</div>` : ''}</div>${arcsNow(s).slice(1, 3).map(o => `<div class="muted" style="font-size:13px">同时：${esc(o.a.title)}——${esc((o.st && o.st.name) || '')}</div>`).join('')}` : ''}<div class="h" style="margin-top:6px"><span class="seal">势</span>天下大势<span class="note">${w.tickAt ? '推演于' + esc(w.tickAt.label) : '开场时写的'}</span></div><div class="overview">${esc(w.overview || '开场后出现。')}</div>
-      <div class="row" style="margin-top:4px"><button id="bTick" ${BUSY || !SAMPLE ? 'disabled' : ''}>现在推演一次天下大势</button><span class="muted" style="font-size:12px">${esc(TICKMSG || '每过半年、或你做了波及天下的事，会自动推演')}</span></div>
+      <div class="muted" style="font-size:12px;margin-top:4px">天下大势由程序在后台自动推演：外面发生的事照路程变成消息传到你这里，不用你管。</div>
       ${arr(w.ripples).length ? `<div class="h"><span class="seal">果</span>你引起的连锁变化</div><div class="list">${w.ripples.slice().reverse().map(r => `<div><span class="when">第${r.turn}回合</span><b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`).join('')}</div>` : ''}
-      <div class="h"><span class="seal">后</span>将要发生<span class="note">你知道，书中人不知道；红的是被本局改了的</span></div>
-      <div class="list">${w.upcoming.map(x => `<div><span class="when">${esc(x.y)}年${x.m ? (x.leap ? '闰' : '') + x.m + '月' + (x.d ? x.d + '日' : '') : ''}</span>${x.ref ? '<span class="badge" title="按月联网查到：' + esc(x.ref) + '">查</span> ' : ''}${badge(x.status)}${esc(x.text)}${x.why && x.status && x.status !== '照史' ? `<div class="muted">${esc(x.why)}</div>` : ''}${x.needs ? `<div class="muted">前提：${esc(x.needs)}</div>` : ''}</div>`).join('') || '<div class="muted">下一回合会补上。</div>'}</div>
+      <div class="h"><span class="seal">闻</span>已经传到你这里的天下事</div>
+      <div class="list">${arr(w.events).filter(e => !e.key || (s.heard || {})[e.key]).slice(-30).reverse().map(x => `<div><span class="when">${esc(x.y)}年${x.m ? x.m + '月' : ''}</span>${(s.heard || {})[x.key] === 1 ? '<span class="badge b-doing">风闻</span> ' : ''}${esc(x.text)}${x.changed ? ' <span class="mine">（本局）</span>' : ''}</div>`).join('') || '<div class="muted">还没有。</div>'}</div>
       ${s.hsLast ? `<div class="muted" style="font-size:12px">史事每回合自动按月联网同步（${MODE === 'local' && KEY.bocha ? '博查 + 维基' : '维基'}）：上次在${esc(s.hsLast.at)}，查了${esc(s.hsLast.months.join('、'))}，新补 ${s.hsLast.n} 件（标「查」）</div>` : ''}
       ${HBMSG ? `<div class="muted" style="font-size:12px">${esc(HBMSG)}</div>` : ''}
       ${hasHist(s) ? (() => { const fs = figuresAt(s, s.clock.y).filter(f => f.alive && f.post).slice(0, 40); return fs.length ? `<div class="h"><span class="seal">人</span>此时在世的要紧人物<span class="note">内置史料；本局改过的标出</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此时官职</th><th>籍贯</th></tr>${fs.map(f => `<tr><td><b>${esc(f.name)}</b>${f.age ? `<div class="muted">${esc(f.age)}岁</div>` : ''}</td><td>${esc(f.post)}${f.changed ? ' <span class="badge b-bad">本局</span>' : ''}${f.note ? `<div class="muted">${esc(f.note)}</div>` : ''}</td><td>${esc(f.native)}</td></tr>`).join('')}</table></div>` : ''; })() : ''}
@@ -3188,6 +3275,9 @@ function pane(tab) {
     ${MODE === 'local' ? `<div class="h"><span class="seal">检</span>联网自检</div>
     <p class="muted" style="font-size:13px">用真实的请求把写剧情（DeepSeek）、搜索、维基百科读条目、历史地名库各试一遍，看你这台电脑上哪个通、拿到了什么。</p>
     <div class="row"><button id="bSelfTest">开始自检</button><span class="muted" id="selfMsg"></span></div><div id="selfBox">${SELFTEST}</div>` : ''}
+    ${MODE === 'claude' ? `<div class="h"><span class="seal">查</span>博查搜索</div>
+    <p class="muted" style="font-size:13px">${BOCHA_KEY ? '✓ 已填博查 Key（尾号 ' + esc(BOCHA_KEY.slice(-4)) + '），每回合先用博查查，查不到的再查维基。' : '现在只用维基百科。填上博查 Key（open.bochaai.com 申请），每回合就先用博查查政局、官职、人物、地理，中文资料多得多。'}Key 只存在这个浏览器里。</p>
+    <div class="row"><input id="wBocha" type="password" autocomplete="off" placeholder="博查 API Key" class="grow" style="min-width:0"><button id="bWBocha">保存并试搜</button>${BOCHA_KEY ? '<button class="link" id="bWBochaOff">不用博查</button>' : ''}<span class="muted" id="wBochaMsg" style="font-size:12px"></span></div>` : ''}
     <div class="h"><span class="seal">修</span>版本与问题报告</div>
     <p class="muted" style="font-size:13px">现在的版本：${esc(/^\d{8}/.test(BUILD) ? `${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : BUILD)}${MODE === 'local' && UPDINFO ? (UPDINFO.remote && String(UPDINFO.remote) > BUILD ? `；网上有更新的版本${UPDINFO.using === 'updated' ? '，已下载好，空下来时自动换上' : ''}` : UPDINFO.why ? `；上次查更新没成：${esc(UPDINFO.why)}` : UPDINFO.checked ? '；已是最新' : '') : ''}${UPDINFO && UPDINFO.needReinstall ? '；这次改动大，要重新下载安装包' : ''}</p>
     <div class="row">${MODE === 'local' ? `<button id="bUpdCheck" ${BUSY ? 'disabled' : ''}>检查更新</button>` : ''}<button id="bReport">导出问题报告</button><span class="muted" id="updMsg" style="font-size:12px"></span></div>
@@ -3585,6 +3675,14 @@ document.addEventListener('click', async e => {
     } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
     render(); return;
   }
+  if (t.id === 'bWBocha') {
+    const k = String(($('#wBocha') || {}).value || '').replace(/\s+/g, ''); const m = $('#wBochaMsg'); if (!k) return;
+    t.disabled = true; const old = BOCHA_KEY; BOCHA_KEY = k;
+    try { const items = await bochaFetch('苏轼'); lsSet('hrpg:bochakey', k); SEARCH_OFF = ''; SEARCH_DOWN = 0; render(); const m2 = $('#wBochaMsg'); if (m2) m2.textContent = `✓ 试搜成功（${items.length} 条），以后每回合先用博查`; }
+    catch (e) { BOCHA_KEY = old; t.disabled = false; if (m) m.textContent = '没通：' + (e.name === 'AbortError' ? '博查超时' : e.message); }
+    return;
+  }
+  if (t.id === 'bWBochaOff') { BOCHA_KEY = ''; lsSet('hrpg:bochakey', ''); render(); return; }
   if (t.id === 'bReport') { exportReport().catch(e => { const m = $('#updMsg'); if (m) m.textContent = '没导出来：' + (e.message || e); }); return; }
   if (t.id === 'bUpdCheck') {
     t.disabled = true; t.textContent = '查更新中…（最多一两分钟）';
