@@ -3213,7 +3213,12 @@ function applyReply(s, d, said) {
       else if (/有孕|有喜|怀上|身孕/.test(ch)) { const w = m || s.household.find(x => /妻|妾|室|通房/.test(x.relation) && !x.dead); if (w && !w.pregnant) { const ym = ymOf(s.clock); w.pregnant = { at: ym, due: ym + 9 + (seeded(ym + w.name.length) < 0.3 ? 1 : 0) }; } else if (!w && s.protagonist.gender === '女' && !s.preg) { const ym = ymOf(s.clock); s.preg = { at: ym, due: ym + 9 }; } }
       else if (/小产|落胎|滑胎/.test(ch)) { if (m && m.pregnant) { m.pregnant = null; m.note = '小产'; } }
       else if (/定亲|成婚|病|愈/.test(ch)) { if (m) m.note = one(ch + (h.note ? '，' + h.note : ''), 30); }
-      else if (!m) s.household.push({ relation: one(h.relation, 6), name: one(h.name, 8), age: num(h.age) ?? (/添丁|出生/.test(ch) ? 1 : null), mother: one(h.mother, 8), note: one(h.note || ch, 30) });
+      else if (!m) {
+        // 程序结算生下的孩子先记作「未取名」：账房后来给他起了名，就改这一条，不另添一个
+        const baby = /子|女/.test(h.relation || '') && (num(h.age) == null || num(h.age) <= 2) && s.household.find(x => /未取名/.test(x.name) && !x.dead && (/女/.test(h.relation) === /女/.test(x.relation)));
+        if (baby) { baby.name = one(h.name, 8); if (h.mother) baby.mother = one(h.mother, 8); }
+        else s.household.push({ relation: one(h.relation, 6), name: one(h.name, 8), age: num(h.age) ?? (/添丁|出生/.test(ch) ? 1 : null), mother: one(h.mother, 8), note: one(h.note || ch, 30) });
+      }
     }
     s.chronicle = s.chronicle.slice(-300);
     for (const o of arr(d.orders)) {
@@ -3309,11 +3314,11 @@ function applyReply(s, d, said) {
     // 政令：落到主角身上的新法、加派、禁令，按名目合并；废止的去掉
     for (const x of arr(d.policies).slice(0, 6)) { if (!x || !x.name) continue; const k = one(x.name, 20), o = arr(s.policies).find(p => p.name === k); if (x.gone === true) { s.policies = arr(s.policies).filter(p => p.name !== k); continue; } const v = { name: k, since: one(x.since || (o && o.since) || timeText(s.clock), 20), what: one(x.what || (o && o.what), 80), onYou: one(x.onYou || (o && o.onYou), 80), perMonth: N0(x.perMonth) ?? (o && o.perMonth) ?? 0 }; s.policies = arr(s.policies).filter(p => p.name !== k).concat([v]).slice(-12); }
     // 案子、生意、江湖与行会：按名字合并，gone 的去掉；收押与获释
-    const mergeBy = (list, rows2, keys, n) => { let L2 = arr(list); for (const x of arr(rows2).slice(0, 8)) { if (!x || !x.name) continue; const k = one(x.name, 20); if (x.gone === true) { L2 = L2.filter(o => o.name !== k); continue; } const o = L2.find(z => z.name === k) || {}; const v = { name: k }; for (const f of keys) v[f] = typeof x[f] === 'number' ? x[f] : (one(x[f], 80) || o[f] || ''); L2 = L2.filter(z => z.name !== k).concat([v]); } return L2.slice(-n); };
+    const mergeBy = (list, rows2, keys, n) => { let L2 = arr(list); for (const x of arr(rows2).slice(0, 8)) { if (!x || !x.name || /^(案名|字号或生意名|字号|生意名)$|帮会、镖局|会馆、教门名/.test(String(x.name))) continue;   // 账房照抄了格式里的占位字，不算 const k = one(x.name, 20); if (x.gone === true) { L2 = L2.filter(o => o.name !== k); continue; } const o = L2.find(z => z.name === k) || {}; const v = { name: k }; for (const f of keys) v[f] = typeof x[f] === 'number' ? x[f] : (one(x[f], 80) || o[f] || ''); L2 = L2.filter(z => z.name !== k).concat([v]); } return L2.slice(-n); };
     if (Array.isArray(d.cases) && d.cases.length) { const st0 = new Map(arr(s.cases).map(c => [c.name, c.stage])); s.cases = mergeBy(s.cases, d.cases, ['kind', 'role', 'stage', 'facts', 'suspects', 'next', 'deadline'], 12); const mv2 = s.cases.filter(c => st0.get(c.name) !== c.stage).map(c => `${c.name}：${c.stage}`); if (mv2.length) extra.cases = mv2; }
     if (Array.isArray(d.business) && d.business.length) { const old2 = new Map(arr(s.business).map(z => [z.name, z])); s.business = mergeBy(s.business, d.business, ['kind', 'stock', 'credit', 'partners', 'note'], 10); for (const z of s.business) { const o2 = old2.get(z.name) || {}; const x = arr(d.business).find(y => y && one(y.name, 20) === z.name) || {}; for (const f of ['capital', 'revenue', 'cost']) z[f] = N0(x[f]) ?? N0(o2[f]) ?? 0; } }
     if (Array.isArray(d.circles) && d.circles.length) s.circles = mergeBy(s.circles, d.circles, ['kind', 'leader', 'stance', 'tie'], 12);
-    if (d.jail && typeof d.jail === 'object') { if (d.jail.out === true || d.jail.in === false && s.jail && /出|放|释/.test(String(d.reply || ''))) { if (s.jail) extra.freed = `出了${s.jail.where || '监'}`; s.jail = null; } else if (d.jail.in === true) { s.jail = { where: one(d.jail.where, 20) || (s.jail && s.jail.where) || '监', charge: one(d.jail.charge, 30) || (s.jail && s.jail.charge) || '', since: (s.jail && s.jail.since) || timeText(s.clock), cost: N0(d.jail.cost) ?? (s.jail && s.jail.cost) ?? 0 }; } }
+    if (d.jail && typeof d.jail === 'object') { if (d.jail.out === true || d.jail.in === false && s.jail && /获释|开释|释放|放了出来|放出来|出了监|出狱|出监|保释|赎了出来|大赦/.test(String(d.reply || ''))) { if (s.jail) extra.freed = `出了${s.jail.where || '监'}`; s.jail = null; } else if (d.jail.in === true) { s.jail = { where: one(d.jail.where, 20) || (s.jail && s.jail.where) || '监', charge: one(d.jail.charge, 30) || (s.jail && s.jail.charge) || '', since: (s.jail && s.jail.since) || timeText(s.clock), cost: N0(d.jail.cost) ?? (s.jail && s.jail.cost) ?? 0 }; } }
     // 过了几个月就按每月进项开销结几次
     const months = Math.max(0, CAL.monthsBetween(beforeYM, s.clock));
     const inc = arr(s.estate.income).reduce((a, x) => a + (N0(x.amount) || 0), 0), exp = arr(s.estate.expense).reduce((a, x) => a + (N0(x.amount) || 0), 0);
