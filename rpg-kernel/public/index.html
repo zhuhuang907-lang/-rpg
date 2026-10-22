@@ -427,7 +427,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022054336';
+const BUILD = '20261022055928';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -2419,7 +2419,8 @@ function directorBlock(s, said) {
   const mb = s.mainNow, ban = bannedTopics(s, said), ab = arcBlock(s), fp = footprintBlock(s);
   return heatBlock(s) + '\n' + (ab ? ab + '\n' : '') + (fp ? fp + '\n' : '') + (mb ? `【这一回的历史主线（程序据史料挑的；玩家做的事是正戏，这条主线是他身处的历史：每回都要在此地露出样子，到了日子写它砸下来）】\n${mb.text}\n${mb.phase}。牵涉的真人照史料写真名真事。\n` : '')
     + (eventDetailBlock(s) ? eventDetailBlock(s) + '\n' : '') + newsBlock(s)
-    + (ban.length ? `【这一回不许再写的题材（最近写得太多了）】${ban.join('、')}——一个字都不要提，换别的事。\n` : '');
+    + (ban.length ? `【这一回不许再写的题材（最近写得太多了）】${ban.join('、')}——一个字都不要提，换别的事。\n` : '')
+    + (s.turn - (s.lastMove ?? s.turn) >= 2 ? `【局面已经 ${s.turn - s.lastMove} 回没有实在的进展】这一回玩家这一步要有实在的结果（办成、办砸、谈崩、得罪了人、钱粮名位变了），或者前文埋下的事发作；不要再写来回寒暄、观望、打听而无下文。\n` : '');
 }
 const BORING = [
   ['账本账目', /账本|账簿|账目|账册|对账|盘账|核账|查账|流水账/g],
@@ -2465,6 +2466,70 @@ ${text}
   // 七分以上的稿子不为小毛病整段重写（重写一次要多等两三分钟）；分低、或有致命的（替主角做主、死人出场）才打回
   return Number.isFinite(sc) && (sc >= 7 || sc >= 6 && probs.length <= 2) && !arr(r.problems).some(x => x && (+x.item === 1 || +x.item === 6)) ? [] : probs;
 }
+/* ========== DeepSeek 的老毛病，程序来查：AI 腔套话、答非所问、编造的年号与官员 ========== */
+/** AI 腔：大模型写小说最爱用、一看就假的套话 */
+const SLOP = /眼[中里底]闪过一[丝抹道]|闪过一丝|嘴角(微微)?(上扬|勾起|扬起|一勾|抽动|浮起)|勾起一抹|一抹(笑|苦笑|冷笑|弧度)|不禁|不由得|不由自主|深吸(了)?一口气|倒吸一口凉气|心中一[凛动震紧沉]|心头一[震紧沉凛]|暗[自暗]?(思忖|忖道|道：)|意味深长|若有所思|一字一[顿句]|目光如炬|掷地有声|空气(仿佛|似乎)?(凝固|凝滞)|时间(仿佛|似乎)?(静止|凝固)|仿佛|宛如|犹如|一股[^，。]{0,6}(涌上|涌起|袭来|油然而生)|命运的齿轮|历史的车轮|注定(是|要)?(不平凡|不寻常)|这一刻|(声音|语气)不大[，,]?却|透着一股|带着几分|似笑非笑|眸[中子光]|瞳孔(骤然)?(一缩|收缩|骤缩)|心[中里]五味杂陈|百感交集|久久不能平静|一切(才刚刚|都将)/g;
+/** 改稿之后还剩的几个最机械的虚词：直接删（「他不禁笑了」→「他笑了」），不动意思 */
+const deslop = t => String(t || '').replace(/不由自主地?|不由得|不禁/g, '').replace(/，\s*，/g, '，');
+/** 戏外问答的客服腔：开头的「好的」「当然」「这是个好问题」，结尾的「希望对你有帮助」「如有需要」、总结套话，都剥掉 */
+const TALK_OPEN = /^\s*(好的|当然(可以|了)?|没问题|这是一个(很|非常)?好的问题|这个问题(问得)?很好|好问题|明白了?|了解)[！!，,。：:\s]*/;
+const cleanTalk = t => { let x = String(t || ''); for (let i = 0; i < 3 && TALK_OPEN.test(x); i++) x = x.replace(TALK_OPEN, ''); return deslop(x
+  .replace(/\n*[^\n]*(希望(以上|这些|这)?.{0,8}(对你|对您|能)(有所)?帮助|如(果)?(你|您)?(还)?有(其他|任何|别的)?(问题|需要)|随时(问我|告诉我)|祝你游戏愉快)[^\n]*\s*$/, '')
+  .replace(/\n*(总之|综上所述|总而言之|简而言之)[，,：:][^\n]*\s*$/, '')).trim(); };
+const slopHits = t => [...new Set(String(t || '').match(SLOP) || [])];
+/** 玩家这一步正文接住了没有：玩家说的要紧字眼（人、地、物、事），正文里一个都没有 */
+function missedAction(s, said, text) {
+  const t = String(said || '').replace(/^戏外[：:]?/, '').replace(/[「“"][^」”"]*[」”"]/g, '').replace(/[，。！？、；：\s]/g, '');
+  if (t.length < 4 || /^(在家|歇|等|看看|四处|随便|继续|接着|嗯|好)/.test(t)) return false;
+  const STOP = /^(我去|我要|我想|去找|然后|一下|看看|一起|这个|那个|他们|我们|自己|问问|一趟)$/;
+  const grams = []; for (let i = 0; i < t.length - 1; i++) { const g = t.slice(i, i + 2); if (/^[一-鿿]{2}$/.test(g) && !STOP.test(g) && !/^我|我$/.test(g)) grams.push(g); }
+  if (grams.length < 2) return false;
+  const hit = grams.filter(g => String(text).includes(g)).length;
+  return hit / grams.length < 0.12;
+}
+/** 唐、宋、明、清的年号与元年（内置史料不全时用来查编出来的年号）；同名的取最早的 */
+const ERA_TABLE = '武德618贞观627永徽650显庆656龙朔661麟德664乾封666总章668咸亨670仪凤676调露679永隆680开耀681永淳682弘道683垂拱685永昌689神龙705景龙707景云710先天712开元713天宝742至德756乾元758宝应762广德763永泰765大历766建中780兴元784贞元785永贞805元和806长庆821宝历825大和827开成836会昌841大中847咸通860乾符874广明880中和881光启885文德888龙纪889大顺890景福892乾宁894光化898天复901天祐904'
+  + '建隆960乾德963开宝968雍熙984端拱988淳化990至道995咸平998景德1004天禧1017乾兴1022天圣1023明道1032景祐1034宝元1038康定1040庆历1041皇祐1049至和1054嘉祐1056治平1064熙宁1068元丰1078元祐1086绍圣1094元符1098崇宁1102大观1107政和1111重和1118宣和1119靖康1126'
+  + '建炎1127绍兴1131隆兴1163乾道1165淳熙1174绍熙1190庆元1195嘉泰1201开禧1205嘉定1208宝庆1225绍定1228端平1234嘉熙1237淳祐1241宝祐1253开庆1259景定1260咸淳1265德祐1275景炎1276祥兴1278'
+  + '洪武1368建文1399永乐1403洪熙1425宣德1426正统1436景泰1450天顺1457成化1465弘治1488正德1506嘉靖1522隆庆1567万历1573泰昌1620天启1621崇祯1628'
+  + '顺治1644康熙1662雍正1723乾隆1736嘉庆1796道光1821咸丰1851同治1862光绪1875宣统1909';
+const ERA_START = (() => { const m = new Map(); for (const [, n, y] of ERA_TABLE.matchAll(/([\u4e00-\u9fff]{2})(\d{3,4})/g)) if (!m.has(n)) m.set(n, +y); return m; })();
+const CN = { 元: 1, 正: 1, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+const cnNum = x => { const t = String(x); if (/^\d+$/.test(t)) return +t; if (t.length === 1) return CN[t] || 0; let n = 0; const i = t.indexOf('十'); if (i < 0) return [...t].reduce((a, c) => a * 10 + (CN[c] || 0), 0); n = (i === 0 ? 1 : CN[t[i - 1]] || 1) * 10 + (CN[t[i + 1]] || 0); return n; };
+/** 正文写到的年号年份在将来（未卜先知）、或年号是这个政权此时还没有的：编的 */
+function futureEras(s, text) {
+  const y = s.clock && s.clock.y; if (y == null) return [];
+  const starts = new Map();
+  for (const h of HALL(s)) for (const r of arr(h.rulers)) for (const rg of arr(r.reigns)) if (rg && rg[0]) { const n = String(rg[0]); if (!starts.has(n) || starts.get(n) > rg[1]) starts.set(n, rg[1]); }
+  if (y >= 600) for (const [n, st] of ERA_START) if (!starts.has(n) || starts.get(n) > st) starts.set(n, st);   // 隋以前同名的年号多，只拿内置史料查
+  const out = [];
+  for (const m of String(text || '').matchAll(/([一-鿿]{2})(元|[一二三四五六七八九十]{1,3})年/g)) {
+    const st = starts.get(m[1]); if (st == null) continue;
+    const yy = st + cnNum(m[2]) - 1; if (yy > y + 0) out.push(`「${m[0]}」是公元 ${yy} 年，此时才 ${y} 年`);
+  }
+  return [...new Set(out)].slice(0, 3);
+}
+/** 名册上在任的官员，正文却写成了别的姓 */
+function rosterMismatch(s, text) {
+  const out = [], t = String(text || '');
+  for (const o of officialsHere(s)) {
+    if (!o.post || o.post.length < 2 || !o.name || t.includes(o.name)) continue;
+    for (const m of t.matchAll(new RegExp(o.post.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([\\u4e00-\\u9fff])(大人|老爷|相公|公|某|使君|明府)', 'g'))) if (m[1] !== o.name[0]) out.push(`名册上${o.post}是${o.name}，正文写成了「${m[0]}」`);
+  }
+  return [...new Set(out)].slice(0, 3);
+}
+/** 地名库（CHGIS）里此时查不到的县州府名：多半是编的或朝代用错，交给核实 */
+function unknownPlaces(s, text) {
+  if (!geoData().length) return [];
+  const y = s.clock && s.clock.y, known = new Set([...Object.keys(s.places || {}), ...arr(s.geo && s.geo.units).map(u => u.name)].map(geoStem));
+  const out = [];
+  for (const m of String(text || '').matchAll(/([一-鿿]{2})(县|州|府|军|郡)(?![一-鿿]{0,1}(衙|学|城门))/g)) {
+    const st = m[1]; if (/[知本该此官王相侯公帅首贵寒全各邻外满诸入出回到在去往赴过离两三几数一上下这那哪每某同州县府郡军]/.test(st)) continue;
+    if (known.has(st) || known.has(geoStem(m[0]))) continue;
+    if (!geoFind(st, y)) out.push(m[0]);
+  }
+  return [...new Set(out)].slice(0, 5);
+}
 /** 正文的毛病：一再请示、又写回禁写的题材 */
 function draftFaults(s, said, text, span) {
   const out = [], asks = countIn(text, BORING[3][1]);
@@ -2488,6 +2553,12 @@ function draftFaults(s, said, text, span) {
   const en = (String(text).match(/[A-Za-z]{4,}/g) || []).filter(w => !/^(DeepSeek)$/i.test(w));
   if (en.length >= 2) out.push(`正文里夹了英文（${en.slice(0, 3).join('、')}）：全程用中文`);
   for (const name of bannedTopics(s, said)) { const re = BORING.find(x => x[0] === name)[1]; if (countIn(text, re) >= 1) out.push(`又写了「${name}」这类题材：这一回不许写，换成别的事`); }
+  // AI 腔：套话一多就打回（每千字超过两处，或一共四处以上）
+  const sl = slopHits(text), sn = countIn(text, SLOP);
+  if (sn >= 4 || sn >= 2 && sn * 1000 / Math.max(1, String(text).length) > 2) out.push(`AI 腔套话太多（${sl.slice(0, 6).join('、')}，共 ${sn} 处）：一律删掉，换成具体的动作、话、物件；人的心思从他做了什么、说了什么里看出来`);
+  if (!/^戏外/.test(String(said || '').trim()) && missedAction(s, said, text)) out.push(`没接住玩家这一步：玩家说「${one(said, 40)}」，正文几乎没写这件事——先写这一步怎么做、谁怎么回应`);
+  const fe = futureEras(s, text); if (fe.length) out.push(`年号年份写错了（${fe.join('；')}）：照【时间】改，书中人不知道将来的年号`);
+  const rm = rosterMismatch(s, text); if (rm.length) out.push(`官员写错了人（${rm.join('；')}）：照【本地官员名册】改`);
   return out;
 }
 /** 一下过很久（玩家选了一季一年，或说「过到年底」「过两年」）：把这段日子里照史料要来的事和主线阶段列出来，按日子写进去 */
@@ -2552,7 +2623,7 @@ const IRON_HEAD = `【这一回的铁律】
 5. 年纪照材料；全程中文，不写标题、选项、按语。
 
 `;
-const IRON_TAIL = '\n\n【再说一遍最要紧的三条】主角只说玩家给的话，轮到主角开口就停；人名、官名、地名只用材料里有的；时间只推进到这一步做完。';
+const IRON_TAIL = '\n\n【再说一遍最要紧的四条】主角只说玩家给的话，轮到主角开口就停；人名、官名、地名、年号、数目只用材料里有的，材料里没有的不编，宁可不写；时间只推进到这一步做完；不用「仿佛」「不禁」「一丝」「深吸一口气」「嘴角上扬」「眼中闪过」「心中一凛」「意味深长」这类套话，人的心思从动作和话里看出来。';
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
   const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : ''));
@@ -2794,9 +2865,11 @@ function nameFixes(s, text) {
 let DRAFTN = 0, CUR_SAID = '';   // 写稿时只显示写了多少字，不显示没核实的文字
 const draftCb = t => { DRAFTN = String(t || '').length; const el = $('#draftN'); if (el) el.textContent = DRAFTN; else render(); };
 function verifyMaterials(s, said, text) {
+  const up = unknownPlaces(s, text);
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-6).map(x => ({ ...x, text: cut(x.text, x.wiki ? 500 : 280) }));   // 写正文只要这一回新查到的要点，别把整页资料塞进去
   return [said ? `【玩家这回说】${said}` : '', arr(s.canon).length ? '【定本】' + s.canon.slice(-15).map(c => c.text).join('；') : '', histBlock(s), dossierBlock(s, said + text), gazBlock(s), instPoints(s, said, text), mentionedFigures(s, text), modernInStory(text),
-    fresh.length ? researchBlock({ ...s, research: fresh, locals: [] }) : '', almanacBlock(s)].filter(Boolean).join('\n\n');
+    fresh.length ? researchBlock({ ...s, research: fresh, locals: [] }) : '', almanacBlock(s),
+    up.length ? `【历史地名库里 ${s.clock && s.clock.y} 年前后查不到这些地名（多半是编的，或用了别的朝代的名字）：逐个核实，不对的放进 doubts 或改成真实的】${up.join('、')}` : ''].filter(Boolean).join('\n\n');
 }
 async function verifyText(s, said, text, rewrite) {
   // 核实是锦上添花：出任何岔子、或拖得太久（三分钟），都照原稿给玩家，不能让这一回整个作废
@@ -3147,6 +3220,8 @@ function applyReply(s, d, said) {
   for (const u of arr(d.worldUpcoming)) if (u && u.text && !s.world.upcoming.some(x => x.text === one(u.text, 100))) s.world.upcoming.push({ y: num(u.y) ?? s.clock.y, m: num(u.m) || 0, text: one(u.text, 100), status: /变|新/.test(u.status || '') ? one(u.status, 4) : '照史', why: one(u.why, 80) });
   s.world.upcoming.sort((a, b) => a.y - b.y || a.m - b.m); s.world.upcoming = s.world.upcoming.slice(0, 30);
   if (play && !extra.identity) autoIdentity(s, extra);   // 账上已经是另一种人了，模型却没报身份变化：程序照账册改过来
+  // 局面有没有往前走：钱粮名位变了、办成或砸了事、结了新的恩怨约定、打了仗、得失了兵马地盘、目标有了结果、换了身份或地方
+  if (play && (arr(extra.acc).some(a => !/现钱|军粮|国库|存粮/.test(a.k)) || arr(d.ledger).some(l => l && Math.abs(Number(l.amount) || 0) > 0 && !/家用|日用|月例|开销|口粮|伙食|杂费/.test(l.item || '')) || arr(d.deeds).some(x => x && x.what) || arr(d.canon).some(Boolean) || extra.army || extra.battle || extra.identity || extra.moved || (extra.goals && (arr(extra.goals.done).length || arr(extra.goals.lost).length)) || arr(d.orders).some(o => o && /办妥|办砸|成|败/.test(o.status || '')))) s.lastMove = s.turn;
   if (String(said || '').trim()) s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'me', text: String(said).trim(), turn: s.turn });
   s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'gm', kind: play ? 'play' : 'talk', text: String(d.reply || d.scene || '').trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null, cur: play ? curStatus(s, d) : null,
     hints: arr(d.hints).map(h => one(h, 50)).filter(Boolean).slice(0, 5) });
@@ -3712,7 +3787,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     }
     const fx = applyFixes(st.text, d.fixes);
     if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
-    Object.assign(d, { reply: fx.text, mode: 'play', elapsedDays: 0, ledger: [] });
+    Object.assign(d, { reply: deslop(fx.text), mode: 'play', elapsedDays: 0, ledger: [] });
     applyReply(s, d, '');
     if (fx.done.length) { const g = s.chat[s.chat.length - 1]; g.audit = fx.done; }
     if (pre && pre.fake && pre.fake.dossiers) s.dossiers = Object.assign({}, pre.fake.dossiers, s.dossiers || {});
@@ -3878,7 +3953,7 @@ async function send(said, span, note, resume) {
     PHASE = 'verify'; render();
     if (st.talk) {
       lsSet('hrpg:pending', null);
-      applyReply(S, { reply: st.text, mode: 'talk' }, said); PENDING_SAID = ''; S.mainNow = null;
+      applyReply(S, { reply: cleanTalk(st.text), mode: 'talk' }, said); PENDING_SAID = ''; S.mainNow = null;
       if (FEED.length) { const g1 = S.chat[S.chat.length - 1]; g1.extra = Object.assign(g1.extra || {}, { refs: FEED.slice(-16).map(f => ({ t: f.t, site: f.site, u: f.u })) }); }
       if (arr(st.audit).length) { const g0 = S.chat[S.chat.length - 1]; g0.audit = st.audit; }
     } else {
@@ -3895,8 +3970,8 @@ async function send(said, span, note, resume) {
       if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
       // 账里哪一项格式怪到程序出错：正文照样留下，这一回标成「账没记上」，可以补记，不让整回作废
       const snap = clone(S);
-      try { applyReply(S, Object.assign(d, { reply: fx.text, mode: 'play', span }), said); }
-      catch (e) { if (e && e.code === 'cancelled') throw e; S = snap; applyReply(S, { elapsedDays: 0, reply: fx.text, mode: 'play' }, said); ok = false; }
+      try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said); }
+      catch (e) { if (e && e.code === 'cancelled') throw e; S = snap; applyReply(S, { elapsedDays: 0, reply: deslop(fx.text), mode: 'play' }, said); ok = false; }
       PENDING_SAID = '';
       if (S.mainNow) { S.mainLog = arr(S.mainLog).concat([{ key: S.mainNow.key, turn: S.turn }]).slice(-30); S.mainNow = null; }
       const g = S.chat[S.chat.length - 1];
