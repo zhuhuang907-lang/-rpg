@@ -335,6 +335,18 @@ const routes = {
     };
   },
   'GET /api/health': async () => ({ ok: true, node: process.version }),
+  /* CBDB（哈佛中国历代人物传记资料库）代查：页面直连常被跨域拦下、国内也慢；这里查一次存本机 */
+  'GET /api/cbdb': async (_b, q) => {
+    const name = String(q.get('name') || '').slice(0, 12); if (!name) return { ok: false, why: '没给名字' };
+    const dir = path.join(ROOT, 'data', 'cache', 'cbdb'); fs.mkdirSync(dir, { recursive: true });
+    const cf = path.join(dir, require('crypto').createHash('md5').update(name).digest('hex') + '.json');
+    try { return { ok: true, data: JSON.parse(fs.readFileSync(cf, 'utf8')) }; } catch (_) { /* 没缓存 */ }
+    try {
+      const r = await require('./core/net').fetchX('https://cbdb.fas.harvard.edu/cbdbapi/person.php?o=json&name=' + encodeURIComponent(name), { signal: AbortSignal.timeout(15000) });
+      if (!r.ok) return { ok: false, why: 'HTTP ' + r.status };
+      const data = await r.json(); try { fs.writeFileSync(cf, JSON.stringify(data)); } catch (_) { /* 存不下就算了 */ } return { ok: true, data };
+    } catch (e) { return { ok: false, why: String(e && e.message || e).slice(0, 120) }; }
+  },
   /* 问题报告用：版本、更新、最近出过的错、模型与搜索的状态（不含 Key） */
   'GET /api/diag': async () => {
     const c = await adapters.loadAdapterConfig(), d = (c.configs || {})[c.selected || 'deepseek'] || {}, sc = await search.loadConfig();

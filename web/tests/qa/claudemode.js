@@ -18,7 +18,7 @@ const { chromium } = require('playwright');
   await ctx.route('https://zh.wikipedia.org/**', async route => { wikiHits++; const u = new URL(route.request().url()); const q = u.searchParams.get('srsearch') || u.searchParams.get('gsrsearch') || '';
     const body = u.searchParams.get('list') === 'search' ? { query: { search: [{ title: q.split(' ')[0] + '（条目）', snippet: '<span class=\"searchmatch\">' + q + '</span> 的史事摘要' }] } } : { query: { pages: { 1: { title: q + '（条目）', extract: q + '：维基正文……'.repeat(30) } } } };
     await route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify(body) }); });
-  const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
+  const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message)); let ext = false; p.on('console', m => { if (m.type() !== 'error') return; const t = m.text(); if (/cbdb\.fas\.harvard|wikipedia\.org|wikisource\.org|bocha/i.test(t)) { ext = true; return; } if (ext && /Failed to load resource: net::ERR_FAILED/.test(t)) { ext = false; return; } errs.push('console: ' + t); });   // 外部查证站点连不上只是网络问题，游戏会跳过
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
   console.log('start disabled?', await p.evaluate(() => document.querySelector('#bStart') && document.querySelector('#bStart').disabled));
   await p.fill('#qText', '天宝十四载范阳的一个小校'); await p.click('#bStart');
