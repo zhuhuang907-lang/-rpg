@@ -33,7 +33,7 @@ function renameRetry(a, b) {
   }
 }
 // 接口版本：游戏页面要用到新的服务端接口时加一；自动更新只换页面，页面要求的接口比这里新就提示重新安装
-const API_VER = 2;
+const API_VER = 3;   // 3：联网改了服务端（代理坏了自动直连），只换页面不够，旧装的要提示重装
 let SELFTEST_RUN = null;   // 自检一次只跑一个：连点几下就等同一次的结果
 /* —— 自动更新：游戏的全部玩法都在 index.html 里。启动时去 GitHub 看有没有新版，有就下载到 data/update，下次打开直接用新版，不用重新安装 —— */
 const UPDATE_DIR = path.join(ROOT, 'data', 'update');

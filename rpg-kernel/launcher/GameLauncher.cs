@@ -212,6 +212,7 @@ static class GameLauncher
     // 只关「占着端口的 node 进程」，不碰别的程序
     static void KillOldServer(int port)
     {
+        KillStrayGameNodes();
         // 先请旧服务自己退出（它会连同守护它的父进程一起退），再按端口兜底
         try
         {
@@ -244,6 +245,27 @@ static class GameLauncher
             }
         }
         catch { }
+    }
+
+    // 关掉所有「游戏自带的 runtime\node.exe」：旧版本、别的文件夹里解压的旧包、守护进程连同它拉起的服务一起关，
+    // 免得旧服务一秒后又被守护进程拉起来抢占端口，双击新版打开的却还是旧版。系统里别的 node 不碰。
+    static void KillStrayGameNodes()
+    {
+        int n = 0;
+        foreach (var proc in Process.GetProcessesByName("node"))
+        {
+            try
+            {
+                string f = proc.MainModule.FileName ?? "";
+                if (!f.EndsWith("\\runtime\\node.exe", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!File.Exists(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(f)), "server.js"))) continue;
+                var k = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + proc.Id) { UseShellExecute = false, CreateNoWindow = true });
+                k.WaitForExit(3000); n++;
+                Log("关掉旧的游戏服务 pid " + proc.Id + "（" + f + "）");
+            }
+            catch { }
+        }
+        if (n > 0) Thread.Sleep(800);
     }
 
     // 守护进程一秒后又拉起了一个：再按端口关一次
