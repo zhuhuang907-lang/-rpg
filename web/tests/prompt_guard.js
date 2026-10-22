@@ -25,6 +25,10 @@ const checks = [
   ['开局立家业（后台照开场立）', /s\.estateDue = true; s\.estateStory = /.test(src) && /buildEstate\(s0, s0\.estateStory/.test(src) && /const cashCap = /.test(src)],
   // 一回合别再一步接一步地干等：后台活最多等三秒；审读、核实、记账一起做；整段重写最多一次
   ['回合不干等', /Date\.now\(\) - t0 < 3000/.test(src) && !/Date\.now\(\) - t0 < 20000/.test(src) && /const critP = par \? critic\(\) : null/.test(src) && /function within\(/.test(src) && !/verifyText\(S, said, st\.text, rewrite\)/.test(src)],
+  ['没有自家兵马也能打仗（随军、守城、统带朝廷的兵）', /ourTroops/.test(src) && /virtual: true/.test(src)],
+  ['统带的兵也记进兵马账、编制照本朝', /主角统带、管着的兵/.test(src) && /function unitsText/.test(src) && /unitsBlock\(s\)/.test(src)],
+  ['离谱的数标出来交账房改', /function dataDoubts/.test(src) && /账上这些数不合史实/.test(src)],
+  ['兵马地盘增减摆在正文下面', /extra\.army = /.test(src) && /兵马与地盘/.test(src)],
   ['开局不派差事', /开场不安排人来给主角派差事/.test(src) && /「眼下」「今年」开局不给/.test(src) && !/可以奔的目标<\/b>/.test(src)],
   ['差事是偶尔的', /别人找上门托事、派差事是偶尔的/.test(rules)],
   ['历史主线每回都露样子', /主线也一直在走：每回都让它在此地/.test(rules)],
