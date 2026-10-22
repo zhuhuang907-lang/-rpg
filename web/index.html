@@ -427,7 +427,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022120810';
+const BUILD = '20261022130513';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -2095,6 +2095,8 @@ function splitStory(text) {
   let t = String(text || '').trim();
   // AI 偶尔把正文包成 JSON、或在末尾跟一段代码块：取出正文，代码块去掉
   if (/^\{\s*"(reply|scene|story|text)"/.test(t)) { const j = parseJSON(t); const v = j && (j.reply || j.scene || j.story || j.text); if (typeof v === 'string' && v.trim()) t = v; }
+  // 整段是账房那种数据（正文却是空的）：不能当正文给玩家看，当作没写出来，重写
+  if (/^\{\s*"/.test(t) && /"(elapsedDays|ledger|reply|meters|scene|turnSummary)"\s*:/.test(t)) t = '';
   t = t.replace(/^\s*(审读|审稿|存疑|核查|自检|修改说明|改动说明|编辑意见)[：:][^\n]*\n?/gm, '');
   t = t.replace(/\n?【当前情况】[\s\S]*$/, '').replace(/^\s*【[^】\n]{4,60}·[^】\n]{1,40}】\s*\n/, '');   // 这两块由程序加，AI 自己写了就去掉，免得重复   // 模型偶尔把审稿、核查的话写进正文：整行去掉
   t = t.replace(/^```\w*\s*/, '').replace(/\n?```(?:json)?\s*\{[\s\S]*$/, '').replace(/```\s*$/, '');
@@ -2630,6 +2632,8 @@ function draftFaults(s, said, text, span) {
   if (sn >= 4 || sn >= 2 && sn * 1000 / Math.max(1, String(text).length) > 2) out.push(`AI 腔套话太多（${sl.slice(0, 6).join('、')}，共 ${sn} 处）：一律删掉，换成具体的动作、话、物件；人的心思从他做了什么、说了什么里看出来`);
   if (!/^戏外/.test(String(said || '').trim()) && missedAction(s, said, text)) out.push(`没接住玩家这一步：玩家说「${one(said, 40)}」，正文几乎没写这件事——先写这一步怎么做、谁怎么回应`);
   const fe = futureEras(s, text); if (fe.length) out.push(`年号年份写错了（${fe.join('；')}）：照【时间】改，书中人不知道将来的年号`);
+  const prevG = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk' && c.text);
+  if (prevG && simText(prevG.text, text) > 0.85) out.push('这一回和上一回的正文几乎一样：照玩家这一步重新写，场面往前走');
   const ln = leakedNews(s, text); if (ln.length) out.push(`书中人此时不该知道的事（消息还没传到，或者还没发生），正文里却有人说起了（${ln.join("；")}）：删掉`);
   const rm = rosterMismatch(s, text); if (rm.length) out.push(`官员写错了人（${rm.join('；')}）：照【本地官员名册】改`);
   return out;
