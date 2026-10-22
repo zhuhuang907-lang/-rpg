@@ -101,6 +101,9 @@ http.createServer((req, res) => {
       const q = decodeURIComponent((req.url.split('q=')[1] || '').split('&')[0]);
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ results: [{ title: q + ' - 百度百科', url: 'https://baike.baidu.com/x', content: q + '：乾隆年间……'.repeat(8) }, { title: q + ' 小说全文阅读', url: 'http://novel/x', content: '虚构' }] }));
     }
+    // 试 Key：sk-bad 开头的当成无效 Key；博查：bk-bad 开头的无效（博查无效时 HTTP 照样 200，错在 code 里）
+    if (/Bearer sk-bad/.test(req.headers.authorization || '') && !req.url.startsWith('/v1/web-search')) { res.writeHead(401, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"Authentication Fails"}}'); }
+    if (req.url.startsWith('/v1/web-search')) { res.writeHead(200, { 'content-type': 'application/json' }); if (/Bearer bk-bad/.test(req.headers.authorization || '')) return res.end('{"code":401,"message":"Invalid API KEY"}'); fs.appendFileSync('bocha.log', (req.headers.authorization || '') + '\n'); return res.end(JSON.stringify({ code: 200, data: { webPages: { value: [{ name: '苏轼 - 博查', url: 'https://baike.baidu.com/item/苏轼', summary: '苏轼，字子瞻，北宋文学家。'.repeat(5) }] } } })); }
     if (req.url.includes('/models')) { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ data: [{ id: 'deepseek-v4-pro' }, { id: 'deepseek-v4-flash' }] })); }
     const body = JSON.parse(b || '{}'); const msgs = body.messages || []; if (!msgs.length) { res.writeHead(404); return res.end("{}"); }
     const p = msgs.map(m => m.content).join('\n'); n++; if (p.includes('照规则写正文')) fs.writeFileSync('last_story_prompt.txt', p);

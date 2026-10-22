@@ -16,11 +16,11 @@ start() {   # $1 = 模拟 AI 的脚本名
   rm -rf "$WORK/rk" && mkdir -p "$WORK/rk" "$WORK/mock"
   tar --exclude=./data --exclude=./node_modules -C "$ROOT/rpg-kernel" -cf - . | tar -C "$WORK/rk" -xf -
   mkdir -p "$WORK/rk/data"
-  printf '{"selected":"deepseek","configs":{"deepseek":{"apiKey":"sk-test1234","model":"deepseek-v4-pro","baseUrl":"http://127.0.0.1:%s"}}}' "$MOCK_PORT" > "$WORK/rk/data/adapter-config.json"
+  printf '{"selected":"deepseek","configs":{"deepseek":{"apiKey":"%s","model":"deepseek-v4-pro","baseUrl":"http://127.0.0.1:%s"}}}' "${KEYVAL-sk-test1234}" "$MOCK_PORT" > "$WORK/rk/data/adapter-config.json"
   sed "s/MOCKPORT/$MOCK_PORT/g" "$QA/search.json" > "$WORK/rk/data/search.json"
   cp "$QA"/*.js "$WORK/mock/"
   (cd "$WORK/mock" && exec node "./$1" > "$WORK/mock.out" 2>&1) & PIDS+=($!)
-  (cd "$WORK/rk" && RPG_NO_UPDATE=1 PORT=$GAME_PORT WIKI_BASE=http://127.0.0.1:$MOCK_PORT TGAZ_BASE=http://127.0.0.1:$MOCK_PORT NO_PROXY=127.0.0.1 exec node ./server.js > "$WORK/srv.out" 2>&1) & PIDS+=($!)
+  (cd "$WORK/rk" && BOCHA_BASE=http://127.0.0.1:$MOCK_PORT RPG_NO_UPDATE=1 PORT=$GAME_PORT WIKI_BASE=http://127.0.0.1:$MOCK_PORT TGAZ_BASE=http://127.0.0.1:$MOCK_PORT NO_PROXY=127.0.0.1 exec node ./server.js > "$WORK/srv.out" 2>&1) & PIDS+=($!)
   for i in $(seq 1 40); do curl -s "http://127.0.0.1:$GAME_PORT/api/health" >/dev/null && return 0; sleep 0.5; done
   bad "游戏服务起不来"; tail -20 "$WORK/srv.out"; return 1
 }
@@ -36,6 +36,7 @@ run() {   # $1 = 名字，$2 = 超时秒，$3... = 命令；输出里必须没�
 say "构建"; (cd "$ROOT" && python3 web/build.py) | tail -1 || bad "构建失败"
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
+KEYVAL= start ai.js && run "填 Key：粘贴、保存、换 Key、型号、博查、开关、输入不丢" 300 node keyflow.js
 start ai.js && {
   run "巡检（开局 + 三回合 + 十个侧栏）" 600 node tour.js
   run "家业（流民开局现钱不离谱、逐项立账）" 600 node estate.js
