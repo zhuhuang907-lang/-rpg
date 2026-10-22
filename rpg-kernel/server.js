@@ -299,7 +299,8 @@ const routes = {
         recordTest(true);
       } catch (e) {
         let why = String(e.message || e).split(' :: ')[0].slice(0, 300);
-        if (!/^连不上/.test(why) && /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(why)) why += '（连不上 api.deepseek.com：请检查网络、代理或防火墙）';
+        if (/TimeoutError|aborted due to timeout|operation was aborted|超时/i.test(why) && !/^连不上/.test(why)) why = 'DeepSeek 一分钟内没回话（多半是服务繁忙，不是 Key 的问题）。Key 已存好，可以直接开始玩；还不行就在「换 Key」的型号框里填 deepseek-v4-flash 试试';
+        else if (!/^连不上/.test(why) && /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(why)) why += '（连不上 api.deepseek.com：请检查网络、代理或防火墙）';
         out.test = { ok: false, why };
         recordTest(false, why);
       }

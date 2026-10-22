@@ -590,7 +590,7 @@ async function resolveAdapter(id, runtimeConfig) {
 async function testAdapter(id, runtimeConfig) {
   const { adapter, config } = await resolveAdapter(id, runtimeConfig);
   const t0 = Date.now();
-  const res = await adapter.call({ system: '你是一个连通性测试。', prompt: '只回复两个字：正常' }, { ...(config || {}), timeoutMs: 30000 });   // 试连最多等半分钟，不让保存按钮卡五分钟
+  const res = await adapter.call({ system: '你是一个连通性测试。', prompt: '只回复两个字：正常' }, { ...(config || {}), timeoutMs: 60000 });   // 试连最多等一分钟（V4 Pro 忙时头一句要等半分钟以上），不让保存按钮卡五分钟
   if (!String(res.text || '').trim()) throw new Error('模型连上了，但返回的正文是空的');
   return { ok: true, ms: Date.now() - t0, adapter: adapter.id, model: res.meta && res.meta.model, switched: res.meta && res.meta.switched, preview: String(res.text).slice(0, 200) };
 }
