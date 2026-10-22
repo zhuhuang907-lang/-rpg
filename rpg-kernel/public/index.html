@@ -368,10 +368,10 @@ function ledgerRules() {
 记账规则：
 1. elapsedDays：这一回正文里过了多少天（一场谈话 0–1 天；按正文说的时间算）。yearLabel：过完后的年号纪年。主角搬到别处常住才填 moveTo（新地方的全称）；搬到了另一个政权的地界（投奔、逃亡、出使后留下）再填 moveToPolity（那个政权的名字，如「金」「北魏」）。
 2. 一切量化，数字用阿拉伯数字。钱一律折成【家业账】的本位单位。现钱由程序结算——你不报现钱，只把本回合正文里每一笔钱的进出（买卖、工钱、赋税摊派、送礼打点、借贷、赏赐、被偷被抢、事业投入与收获……）在 ledger 里一笔一笔报，收入为正、支出为负，与正文的数对得上；正文没写数但确实花了钱的，按【本地行情】估一个合理的数。每月固定的进出写在 estate 的 income / expense（每月多少），程序过月自动结，不要再在 ledger 里重复报月收支。若【家业账】写着现钱尚未定数，用 setCash 给出现钱多少。
-3. 产业（田地、铺面、宅子、作坊、船、牲口、存货、借出的钱）有数量与估值；在做的事业有状态、进度、下一步。estate 里给出的组整组替换，没变化的组不给。本地行情随季节、年景、战事变化时在 prices 里给出（米、麦、布、盐、肉、田价、房价、雇工日钱、银钱比价等）。
+3. 产业（田地、铺面、宅子、作坊、船、牲口、存货、借出的钱）有数量与估值；在做的事业有状态、进度、下一步。estate 里只给变了的那几项（按名目合并：新的、改的照给；卖掉、停了的写 "gone":true，进项开销停了的数额写 0），没提到的照旧。本地行情随季节、年景、战事变化时在 prices 里给出（米、麦、布、盐、肉、田价、房价、雇工日钱、银钱比价等）。
 4. identity：主角的身份这一回变了才给（考中功名、授官、升到另一层、罢官、致仕、从军、退伍、改行经商、出家还俗、落草、受招安、称王称帝、出嫁成了主母……），role 写新身份，identityModule 照新身份选，meters 给新身份要紧的五六项数值初值（旧身份的数值不再用）；没变就不给。
    meters：这个身份要紧的五六项数值（值里带数，如「存粮 120 石」），有变化才给，写变化方向和原因。groups：人群对主角的满意度 0–100。presentNpcs：本回合出场或有变化的人，favor 是对主角的好感（-100 到 100），随来往增减。
-5. lifeEvents：身边人和世界的变化（谁、怎么了）；household：家里人口变化；orders：交代下去的事和办的结果（在办/办妥/办砸/搁下）；deeds：玩家这回做的、可能有后续的事，deedsDone：以前的作为在本回合有了下文的（开头几个字）。
+5. lifeEvents：身边人和世界的变化（谁、怎么了）；household：家里人的变化——娶进、纳妾、有孕（只写有孕，生产由程序到日子结算，不要自己写生了）、小产、定亲、成婚、嫁出、入赘、过继、生病、病愈、离家、回家、过世；relation 写清名分（正室、侧室、妾、通房；嫡子、庶子、嫡女、庶女；生母是谁写在 mother）；policies：朝廷或地方新的政令、加派、禁令、赋役改动这一回落到了主角身上才给（照史实的名目），perMonth 写它每月叫主角多出（负数）或少出（正数）多少钱（折本位单位，没有就 0），废止了写 "gone":true；orders：交代下去的事和办的结果（在办/办妥/办砸/搁下）；deeds：玩家这回做的、可能有后续的事，deedsDone：以前的作为在本回合有了下文的（开头几个字）。
 6. touches：主角这一回的作为真正碰到了某件天下大事的关键条件（照【这件大事的底细】里列的条件；比如劝动了掌兵的人、截了粮道、递了奏疏让皇帝起疑、杀了或救了要角）才给，写清碰到哪条、分量轻中重；没碰到就给 []。小人物在远处议论、打听不算碰到。程序会按主角的身份折算、累计，够了分量才改写历史。
 6c. 这一回若有【这一仗的结果】，参战兵马的伤亡和得失地盘程序已经结算过，forces、territory 里不要再减一遍。
 6b. worldEvents：这段时间里按史书发生、或正文里传来的天下大事（年月；被本局改变的写实际样子，changed 填 true）；【按史书将要发生】快用完时，在 worldUpcoming 补上之后五年按史书会发生的大事。historyChanges：玩家使史书上的事没照原样发生时记下。
@@ -392,13 +392,13 @@ function ledgerRules() {
 只输出一个 JSON 对象，不加代码块、不加说明。没有变化的项给 [] 或省略：
 {"elapsedDays":0,"yearLabel":"","moveTo":"","moveToPolity":"","setCash":null,
 "ledger":[{"item":"这一笔是什么","amount":0,"note":""}],
-"estate":{"assets":[{"name":"","qty":"","value":0,"note":""}],"income":[{"item":"","amount":0}],"expense":[{"item":"","amount":0}],"projects":[{"name":"","status":"筹划/在做/停了/成了/败了","progress":"进度与下一步","note":""}]},
+"estate":{"assets":[{"name":"","qty":"","value":0,"note":"","gone":false}],"income":[{"item":"","amount":0}],"expense":[{"item":"","amount":0}],"projects":[{"name":"","status":"筹划/在做/停了/成了/败了","progress":"进度与下一步","note":""}]},
 "prices":[{"item":"米","price":0,"per":"石"}],
 "meters":[{"项":"","值":"","变":"↑/↓","因":""}],"groups":[{"人群":"","值":50,"因":""}],
 "officials":[{"post":"职位","place":"哪个府州县","name":"全名","since":"到任年.月","until":"","src":"正文"}],
 "presentNpcs":[{"name":"","role":"","tie":"与主角的关系","personality":"性格几个字","ability":"高/中/低","attitude":"对主角的态度一词","favor":0,"want":"眼下想要什么","goal":"长远的盘算","plan":"接下来打算做什么","knows":"他知道主角的哪些事（只写他确实能知道的）","status":"近况一句","where":"此刻在哪"}],
 "settlement":{"回报":[{"who":"","text":"办事人怎么回的话"}],"风声":["街谈巷议，一句一条"]},
-"lifeEvents":[{"who":"","what":""}],"household":[{"change":"添丁/娶进/嫁出/过世/离家/回家","relation":"","name":"","age":0,"note":""}],
+"lifeEvents":[{"who":"","what":""}],"household":[{"change":"娶进/纳妾/有孕/小产/定亲/成婚/嫁出/入赘/过继/生病/病愈/离家/回家/过世","relation":"正室/侧室/妾/嫡子/庶子/嫡女/庶女/母/父/兄弟……","name":"","age":0,"mother":"","note":""}],"policies":[{"name":"","since":"","what":"内容一句","onYou":"落到主角身上的样子","perMonth":0,"gone":false}],
 "orders":[{"who":"","what":"","status":"在办/办妥/办砸/搁下","result":""}],
 "deeds":[{"what":"","effect":"眼下的影响","later":"可能的后续"}],"deedsDone":[""],
 "worldEvents":[{"y":0,"m":0,"text":"","changed":false}],"worldUpcoming":[{"y":0,"m":0,"text":""}],"historyChanges":[{"event":"","now":"","cause":""}],"touches":[{"event":"主角这回的作为碰到的那件大事（照【这件大事的底细】或【将要发生】里的原文开头写）","lever":"碰到了它的哪个关键条件","how":"主角做了什么","weight":"轻/中/重"}],
@@ -427,7 +427,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022061405';
+const BUILD = '20261022120810';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -2037,7 +2037,8 @@ function blocks(s, forStory) {
   const st = Object.entries(s.status || {}).map(([k, v]) => `${k}：${v}`).join('；');
   L.push(`【主角】${p.name}，${p.gender || ''}，${p.age != null ? p.age + '岁' : '年岁不详'}，${p.role}${p.nativePlace ? '，' + p.nativePlace + '人' : ''}${p.real ? '，史载真人' : '，虚构人物'}。${st ? '名位功名等：' + st + '。' : ''}`);
   const hh = arr(s.household);
-  if (hh.length) L.push('【家里人】' + hh.map(m => `${m.relation} ${m.name}${m.age != null ? '（' + m.age + '岁）' : ''}${m.dead ? '，已故' : m.away ? '，不在家' : ''}${m.note && !m.dead ? '，' + m.note : ''}`).join('；'));
+  const fb = familyBlock(s), pb = policiesBlock(s); if (fb) L.push(fb); if (pb) L.push(pb.trim());
+  if (false && hh.length) L.push('【家里人】' + hh.map(m => `${m.relation} ${m.name}${m.age != null ? '（' + m.age + '岁）' : ''}${m.dead ? '，已故' : m.away ? '，不在家' : ''}${m.note && !m.dead ? '，' + m.note : ''}`).join('；'));
   const e = s.estate || {}, mo = s.money || {}, u = mo.unit || '两';
   const inc = arr(e.income).reduce((a, x) => a + (N0(x.amount) || 0), 0), exp = arr(e.expense).reduce((a, x) => a + (N0(x.amount) || 0), 0);
   if (forStory) L.push(`【家底（细账归账房，正文不必盘账）】现钱 ${mo.cash == null ? '未定' : fmtN(mo.cash, u)}；产业：${arr(e.assets).map(a => a.name + (a.qty ? a.qty : '')).slice(0, 8).join('、') || '无'}${arr(e.projects).length ? '；在做：' + e.projects.map(x => x.name + '（' + x.status + '）').join('、') : ''}`);
@@ -2277,6 +2278,54 @@ function eventDetailBlock(s) {
 }
 
 
+/* ========== 家室：生产、病故、子女长成由程序照日子结算，写正文的照着接 ========== */
+const FAMILY_REL = /妻|妾|室|通房|子|女|母|父|兄|弟|姐|妹|孙|媳|婿|侄|祖/;
+function familyTick(s, years, extra) {
+  const ym = ymOf(s.clock), y = s.clock.y, ev = [], when = timeText(s.clock), male = s.protagonist.gender !== '女';
+  const birth = (mother, due) => {
+    const r1 = seeded(due * 7 + String(mother).length * 13), r2 = seeded(due * 11 + 5), r3 = seeded(due * 17 + 3);
+    const boy = r1 < 0.51, lives = r2 > (y < 1500 ? 0.22 : y < 1800 ? 0.18 : 0.15), momDies = r3 < 0.02;
+    const rel = (boy ? '' : '') + (/正室|妻/.test(mother.relation || '') || mother === s.protagonist ? (boy ? '嫡子' : '嫡女') : (boy ? '庶子' : '庶女'));
+    const mname = mother === s.protagonist ? s.protagonist.name : mother.name;
+    if (lives) { s.household.push({ relation: male || mother === s.protagonist ? rel : (boy ? '子' : '女'), name: `（未取名的${boy ? '儿子' : '女儿'}·${s.clock.m}月生）`, age: 1, mother: mname, bornYM: due, note: '新生' }); ev.push(`${mname}生下一个${boy ? '儿子' : '女儿'}${momDies ? '，产后血崩，没能救回来' : '，母子平安'}`); }
+    else ev.push(`${mname}生产，孩子没保住${momDies ? '，大人也没救回来' : '，大人保住了'}`);
+    if (momDies && mother !== s.protagonist) { mother.dead = true; mother.deadTurn = s.turn; }
+    s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when, who: mname, what: ev[ev.length - 1] }]);
+  };
+  for (const m of arr(s.household)) if (m.pregnant && !m.dead && ym >= m.pregnant.due) { const due = m.pregnant.due; m.pregnant = null; birth(m, due); }
+  if (s.preg && ym >= s.preg.due) { const due = s.preg.due; s.preg = null; birth(s.protagonist, due); }
+  // 过了年：年老的家人照那个年代的寿数，有一定的机会病故（不是凭空的祸事，是那个年代的常事）
+  if (years > 0) for (const m of arr(s.household)) {
+    if (m.dead || m.age == null || m.age < 56 || !FAMILY_REL.test(m.relation || '')) continue;
+    const pDie = Math.min(0.5, 0.03 + (m.age - 56) * 0.012) * Math.min(3, years);
+    if (seeded(ym * 3 + m.name.length * 101 + m.age) < pDie) { m.dead = true; m.deadTurn = s.turn; ev.push(`${m.relation}${m.name}病故，享年${m.age}`); s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when, who: m.name, what: `病故，享年${m.age}` }]); }
+  }
+  // 子女到了年纪：开蒙、议亲、成年，记一笔（只是事实，不派事）
+  for (const m of arr(s.household)) {
+    if (m.dead || m.age == null || !/子|女/.test(m.relation || '') || /妻|妾|室/.test(m.relation)) continue;
+    m.marks = m.marks || {};
+    const girl = /女/.test(m.relation);
+    for (const [k, a, t] of [['meng', 6, '到了开蒙的年纪'], ['qin', girl ? 14 : 16, '到了议亲的年纪'], ['guan', girl ? 15 : 20, girl ? '及笄' : '加冠成年']]) if (m.age >= a && !m.marks[k]) { m.marks[k] = s.turn; if (m.age - a <= 1) ev.push(`${m.relation}${m.name}${t}`); }
+  }
+  for (const m of arr(s.household)) if (m.pregnant && ym - m.pregnant.at >= 1 && !m.pregnant.told) { m.pregnant.told = 1; }
+  if (ev.length) { extra.family = ev.slice(0, 6); s.familyLog = arr(s.familyLog).concat(ev.map(t => ({ turn: s.turn, when, t }))).slice(-30); }
+}
+function familyBlock(s) {
+  const hh = arr(s.household); if (!hh.length && !s.preg) return '';
+  const ym = ymOf(s.clock);
+  const row = m => `${m.relation} ${m.name}${m.age != null ? '（' + m.age + '岁）' : ''}${m.mother ? '，生母' + m.mother : ''}${m.dead ? '，已故' : m.away ? '，不在家' : ''}${m.pregnant ? `，有孕${Math.max(1, ym - m.pregnant.at)}个月（约${m.pregnant.due - ym > 0 ? m.pregnant.due - ym + '个月后' : '这几天'}临盆）` : ''}${m.note && !m.dead ? '，' + m.note : ''}`;
+  const recent = arr(s.familyLog).filter(x => x.turn >= s.turn - 1);
+  return '【家室（程序记的账：名分、年岁、生母、有孕几个月都照这个；生产、病故由程序到日子结算，正文照结果写，不另编）】' + hh.filter(m => !m.dead || s.turn - (m.deadTurn || 0) < 3).map(row).join('；')
+    + (s.preg ? `；主角本人有孕${Math.max(1, ym - s.preg.at)}个月` : '')
+    + (recent.length ? '\n【这几天家里出的事（程序结算的，正文里要接住：报喜报丧的人、请稳婆郎中、洗三满月、发丧守孝、各房的心思）】' + recent.map(x => x.t).join('；') : '');
+}
+function policiesBlock(s) {
+  const P = arr(s.policies), y = s.clock && s.clock.y, nym = s.clock ? ymOf(s.clock) : 0;
+  const H = typeof hasHist === 'function' && hasHist(s) ? histEvents(s, nym - 18, nym).filter(e => /法|令|诏|税|赋|役|禁|饷|钞|引|盐|茶|科举|括|籍/.test(e.text)).slice(-5).map(e => `${e.y}年${e.m ? e.m + '月' : ''}：${e.text}`) : [];
+  return (P.length ? '【落到主角身上的政令（照这个记账、写正文）】' + P.map(p => `${p.name}（${p.since}起）：${p.what || ''}${p.onYou ? '；对主角：' + p.onYou : ''}${N0(p.perMonth) ? '；每月' + (N0(p.perMonth) > 0 ? '少出' : '多出') + fmtN(Math.abs(N0(p.perMonth))) : ''}`).join('；') + '\n' : '')
+    + (H.length ? `【这一年半里朝廷的政令与财赋大事（照史料；要想想它怎样落到主角这样的人身上：赋税、徭役、物价、生意、仕途；${y}年此时已经在施行的才算）】` + H.join('；') + '\n' : '');
+}
+
 /* ========== 数目要合史实：各朝军队编制、米价常见区间；离谱的数标出来，下一回让账房照史料改 ========== */
 function unitsText(y) {
   return y < 220 ? '汉制：将军营下有部（校尉、军司马，约千人）、曲（军候，约二百人）、屯（屯长，五十人）、什、伍'
@@ -2421,11 +2470,14 @@ function heatBlock(s) {
     ? '【这一回的烈度：此地正在兵戈之中（照史料）】战乱、征发、逃难、军令是眼前的日子；写得真实，写到具体的兵、粮、路、城，但不要比史料写的更惨烈，也不要每回都写厮杀。'
     : '【这一回的烈度：平常年景】此时此地没有战乱。写平常日子里的正经事——公事、营生、人情、家事、此时的政局风气与制度；天下的大事以邸报、传闻、政令、物价的样子远远传到这里，人们照常过日子、议论、盘算。意外照样会有，但要有来由：史料里此时此地真有的，前文埋下的，有人记恨、惦记、算计的，主角自己惹出来的，这个季节这个地方常有的（水旱、春荒、时疫、走水、盗贼，合本地志）；凭空天降的乱兵急报不写。';
 }
+/** 家里人好几回都没在正文里出现 */
+const familyQuiet = s => { const hh = arr(s.household).filter(m => !m.dead && !m.away && m.name && !/未取名/.test(m.name)); if (!hh.length || s.turn < 4) return false; const t = arr(s.chat).filter(c => c.role === 'gm' && c.kind !== 'talk').slice(-4).map(c => c.text).join(''); return !hh.some(m => t.includes(m.name) || t.includes(m.name.slice(-1) + '儿')) && !/夫人|娘子|太太|姨娘|少爷|小姐|孩子|儿子|女儿|老太太|老爷子/.test(t); };
 function directorBlock(s, said) {
   const mb = s.mainNow, ban = bannedTopics(s, said), ab = arcBlock(s), fp = footprintBlock(s);
   return heatBlock(s) + '\n' + (ab ? ab + '\n' : '') + (fp ? fp + '\n' : '') + (mb ? `【这一回的历史主线（程序据史料挑的；玩家做的事是正戏，这条主线是他身处的历史：每回都要在此地露出样子，到了日子写它砸下来）】\n${mb.text}\n${mb.phase}。牵涉的真人照史料写真名真事。\n` : '')
     + (eventDetailBlock(s) ? eventDetailBlock(s) + '\n' : '') + newsBlock(s)
     + (ban.length ? `【这一回不许再写的题材（最近写得太多了）】${ban.join('、')}——一个字都不要提，换别的事。\n` : '')
+    + (familyQuiet(s) ? `【家里】已经好几回没写家里了：这一回若顺得进去，带一笔家里人（${arr(s.household).filter(m => !m.dead && !m.away).slice(0, 4).map(m => m.relation + m.name).join('、')}）此刻的样子，各有各的心思和难处；主角在外面办事就不硬拉回家。\n` : '')
     + (s.turn - (s.lastMove ?? s.turn) >= 2 ? `【局面已经 ${s.turn - s.lastMove} 回没有实在的进展】这一回玩家这一步要有实在的结果（办成、办砸、谈崩、得罪了人、钱粮名位变了），或者前文埋下的事发作；不要再写来回寒暄、观望、打听而无下文。\n` : '');
 }
 const BORING = [
@@ -3027,7 +3079,11 @@ function applyReply(s, d, said) {
     const idc = d.identity && typeof d.identity === 'object' && String(d.identity.role || '').trim().length >= 2 && !/没变|未变|不变|^无$|才填|一句话/.test(String(d.identity.role)) ? d.identity : null;
     if (idc) {
       const from = s.protagonist.role, to = one(idc.role, 40);
-      if (to !== from) {
+      // 只是换个说法（「扬州盐商」→「扬州两淮盐商」）、身份大类没变：改个称呼就行，不清数值、不清目标、不重立家底
+      const realChange = /考中|中了|授|任为|除为|升|降|罢|革|成了|改做|改行|入了|出家|还俗|从军|退伍|落草|招安|嫁|入赘|过继|袭|封|纳捐|捐了/.test(String(idc.why || '') + to);
+      const sameKind = !realChange && (!IDM[idc.identityModule] || idc.identityModule === s.idm) && (simText(from, to) >= 0.5 || String(to).includes(String(from).slice(-2)));
+      if (to !== from && sameKind) { s.protagonist.role = to; s.title = `${s.protagonist.name} · ${one(to, 14)}`; }
+      else if (to !== from) {
         s.protagonist.role = to; if (IDM[idc.identityModule]) s.idm = idc.identityModule;
         s.title = `${s.protagonist.name} · ${one(to, 14)}`;
         const im = arr(idc.meters).filter(x => x && typeof x === 'object'); if (im.length) { s.meters = {}; d.meters = im.concat(arr(d.meters).filter(m => m && typeof m === 'object' && !im.some(x => (x.项 || x.name) === (m.项 || m.name)))); }
@@ -3055,7 +3111,13 @@ function applyReply(s, d, said) {
     }
     if (d.estate && typeof d.estate === 'object') {
       const e = s.estate;
-      for (const k of ['assets', 'income', 'expense', 'projects']) if (Array.isArray(d.estate[k])) { const rows = d.estate[k].filter(x => x && (x.name || x.item)).slice(0, 30).map(x => Object.fromEntries(Object.entries(x).map(([a, b]) => [a, typeof b === 'number' ? b : one(b, 80)]))); if (rows.length) e[k] = rows; }
+      // 按名目合并：账房只报了变的那几项，别的照旧（以前整张替换，报一条就把其余的进项开销都丢了）；写了 gone 或数额为 0 的才删
+      for (const k of ['assets', 'income', 'expense', 'projects']) if (Array.isArray(d.estate[k])) {
+        const rows = d.estate[k].filter(x => x && (x.name || x.item)).slice(0, 30).map(x => Object.fromEntries(Object.entries(x).map(([a, b]) => [a, typeof b === 'number' || typeof b === 'boolean' ? b : one(b, 80)])));
+        const key = x => one(x.name || x.item, 24), m = new Map(arr(e[k]).map(x => [key(x), x]));
+        for (const x of rows) { const kk = key(x); if (x.gone === true || /^(gone|删|没了|卖了|停了)$/.test(String(x.gone || '')) || (k === 'income' || k === 'expense') && N0(x.amount) === 0) m.delete(kk); else m.set(kk, { ...(m.get(kk) || {}), ...x }); }
+        e[k] = [...m.values()].slice(-40);
+      }
       if (s.money.cash == null && N0(d.estate.cash) != null) s.money.cash = N0(d.estate.cash);
     }
     // 钱：程序记账——本回合一笔笔的进出 + 过月的固定进出
@@ -3079,10 +3141,13 @@ function applyReply(s, d, said) {
     for (const h of arr(d.household).slice(0, 6)) {
       if (!h || !h.name) continue;
       const ch = String(h.change || ''), m = s.household.find(x => x.name === h.name);
-      if (/过世|去世|身故|病故|亡故|殁|夭折|死/.test(ch) && !/逃亡|流亡|亡命|故乡|故里|死里逃生|没死/.test(ch)) { if (m) m.dead = true; }
-      else if (/嫁出|离家/.test(ch)) { if (m) { m.away = true; m.note = one(ch + (h.note ? '，' + h.note : ''), 30); } }
+      if (/过世|去世|身故|病故|亡故|殁|夭折|死/.test(ch) && !/逃亡|流亡|亡命|故乡|故里|死里逃生|没死/.test(ch)) { if (m) { m.dead = true; m.deadTurn = s.turn; m.pregnant = null; } }
+      else if (/嫁出|离家|入赘/.test(ch)) { if (m) { m.away = true; m.note = one(ch + (h.note ? '，' + h.note : ''), 30); } }
       else if (/回家/.test(ch)) { if (m) m.away = false; }
-      else if (!m) s.household.push({ relation: one(h.relation, 6), name: one(h.name, 8), age: num(h.age) ?? (/添丁|出生/.test(ch) ? 0 : null), note: one(h.note || ch, 30) });
+      else if (/有孕|有喜|怀上|身孕/.test(ch)) { const w = m || s.household.find(x => /妻|妾|室|通房/.test(x.relation) && !x.dead); if (w && !w.pregnant) { const ym = ymOf(s.clock); w.pregnant = { at: ym, due: ym + 9 + (seeded(ym + w.name.length) < 0.3 ? 1 : 0) }; } else if (!w && s.protagonist.gender === '女' && !s.preg) { const ym = ymOf(s.clock); s.preg = { at: ym, due: ym + 9 }; } }
+      else if (/小产|落胎|滑胎/.test(ch)) { if (m && m.pregnant) { m.pregnant = null; m.note = '小产'; } }
+      else if (/定亲|成婚|病|愈/.test(ch)) { if (m) m.note = one(ch + (h.note ? '，' + h.note : ''), 30); }
+      else if (!m) s.household.push({ relation: one(h.relation, 6), name: one(h.name, 8), age: num(h.age) ?? (/添丁|出生/.test(ch) ? 1 : null), mother: one(h.mother, 8), note: one(h.note || ch, 30) });
     }
     s.chronicle = s.chronicle.slice(-300);
     for (const o of arr(d.orders)) {
@@ -3118,6 +3183,7 @@ function applyReply(s, d, said) {
       const nd = CAL.addDays(s.clock, days), years = Math.max(0, nd.y - s.clock.y);
       Object.assign(s.clock, nd);
       if (years) { if (s.protagonist.age != null) s.protagonist.age += years; for (const m of s.household) if (m.age != null && !m.dead) m.age += years; }
+      familyTick(s, years, extra);
       realmUpkeep(s, days, acc);
     }
     // 到了日子的史线：照它发生（不再悄悄丢掉）；被改写的、新出的照本局的样子
@@ -3174,10 +3240,13 @@ function applyReply(s, d, said) {
       s.annals = arr(s.annals).concat([{ y: y0, label: eraLabel(s, y0) || (y0 + '年'), world: ev.slice(0, 12), mine: y0 === beforeYM.y ? mine.slice(0, 12) : [], sum: y0 === beforeYM.y ? cut(sumT.join('；'), 400) : '', cash: mo.cash }]).slice(-600);
     }
     if (s.clock.y > beforeYM.y) s.annalTurn = turn;
+    // 政令：落到主角身上的新法、加派、禁令，按名目合并；废止的去掉
+    for (const x of arr(d.policies).slice(0, 6)) { if (!x || !x.name) continue; const k = one(x.name, 20), o = arr(s.policies).find(p => p.name === k); if (x.gone === true) { s.policies = arr(s.policies).filter(p => p.name !== k); continue; } const v = { name: k, since: one(x.since || (o && o.since) || timeText(s.clock), 20), what: one(x.what || (o && o.what), 80), onYou: one(x.onYou || (o && o.onYou), 80), perMonth: N0(x.perMonth) ?? (o && o.perMonth) ?? 0 }; s.policies = arr(s.policies).filter(p => p.name !== k).concat([v]).slice(-12); }
     // 过了几个月就按每月进项开销结几次
     const months = Math.max(0, CAL.monthsBetween(beforeYM, s.clock));
     const inc = arr(s.estate.income).reduce((a, x) => a + (N0(x.amount) || 0), 0), exp = arr(s.estate.expense).reduce((a, x) => a + (N0(x.amount) || 0), 0);
     if (months && (inc || exp)) ledger.push({ item: `月结 ${months} 个月（进项 ${fmtN(inc)} − 开销 ${fmtN(exp)}）`, amount: months * (inc - exp), note: '' });
+    if (months) for (const p of arr(s.policies)) if (N0(p.perMonth)) ledger.push({ item: `政令：${p.name}（${months} 个月）`, amount: months * N0(p.perMonth), note: one(p.onYou, 30) });
     if (mo.cash != null) {
       const before = mo.cash; mo.cash = Math.round((mo.cash + ledger.reduce((a, x) => a + x.amount, 0)) * 100) / 100;
       if (ledger.length) acc.unshift({ k: '现钱', from: fmtN(before, u), to: fmtN(mo.cash, u), why: '' });
@@ -3313,7 +3382,13 @@ function render() {
   const keep = {}, ae = document.activeElement, foc = ae && ae.id && /^(INPUT|TEXTAREA)$/.test(ae.tagName) ? ae.id : '';
   let selr = null; if (foc) try { selr = [ae.selectionStart, ae.selectionEnd]; } catch (_) { /* 有的输入框没有光标位置 */ }
   document.querySelectorAll('#app input[id], #app textarea[id]').forEach(el => { if (!/checkbox|radio|file/.test(el.type) && el.value) keep[el.id] = el.value; });
+  // 页面和右边册子正看到哪儿：重画后回到原处，不跳（后台每做完一步都会重画）
+  const sv = { view: VIEW, tab: typeof TAB !== 'undefined' ? TAB : '', y: window.scrollY, side: (document.querySelector('.side') || {}).scrollTop || 0, pane: (document.querySelector('.side .pane') || {}).scrollTop || 0 };
   const r = renderNow();
+  if (sv.view === VIEW) {
+    if (Math.abs(window.scrollY - sv.y) > 2) window.scrollTo(0, sv.y);
+    if (sv.tab === (typeof TAB !== 'undefined' ? TAB : '')) { const sd = document.querySelector('.side'); if (sd && sv.side) sd.scrollTop = sv.side; const pn = document.querySelector('.side .pane'); if (pn && sv.pane) pn.scrollTop = sv.pane; }
+  }
   for (const [id, v] of Object.entries(keep)) { const el = document.getElementById(id); if (el && !el.value && !/checkbox|radio|file/.test(el.type)) el.value = v; }
   if (foc) { const el = document.getElementById(foc); if (el && document.activeElement !== el) { try { el.focus({ preventScroll: true }); if (selr) el.setSelectionRange(selr[0], selr[1]); } catch (_) { /* 不要紧 */ } } }
   return r;
@@ -3436,6 +3511,7 @@ function extrasHtml(x) {
   if (x.goals && (arr(x.goals.done).length || arr(x.goals.lost).length || arr(x.goals.fresh).length)) top.push(`<div class="ex goal"><div class="eh">目标</div>${arr(x.goals.done).map(g => `<div><span class="badge b-done">做成</span> ${esc(g.text)}</div>`).join('')}${arr(x.goals.lost).map(g => `<div><span class="badge b-bad">落空</span> ${esc(g.text)}</div>`).join('')}${arr(x.goals.fresh).map(g => `<div><span class="badge b-doing">新·${esc(g.term)}</span> ${esc(g.text)}</div>`).join('')}</div>`);
   if (arr(x.news).length) top.push(`<div class="ex news"><div class="eh">天下事<span>传到你这里的</span></div>${x.news.map(r => r.st === 1 ? `<div><span class="badge b-doing">风闻</span> ${esc(String(r.text).split(/[，；。,]/)[0])}……<span class="muted">（${esc(r.where || '外地')}传来，未必确）</span></div>` : `<div>${r.st === 2 ? '<span class="badge b-done">确报</span> ' : ''}${esc(r.y)}年${r.m ? r.m + '月' : ''}：${esc(r.text)}${r.changed ? ' <span class="mine">（本局）</span>' : ''}</div>`).join('')}</div>`);
   if (x.battle) { const b = x.battle; top.push(`<div class="ex news"><div class="eh">战报<span>程序按兵力、精粗、粮草、地形结算</span></div><div><b>${esc(b.outcome)}</b>　在${esc(b.place || '阵前')}（${esc(b.terrain || '野战')}）：我方 ${esc(b.ours)} 人对${esc(b.enemy || '敌军')}约 ${esc(b.enemyTroops)} 人；我方死伤约 ${esc(b.deadUs)}，敌方约 ${esc(b.deadThem)}${b.take ? '；拿下' + esc(b.take) : ''}${b.lose ? '；丢了' + esc(b.lose) : ''}</div>${b.basis ? `<div class="muted" style="font-size:12px">敌情依据：${esc(b.basis)}</div>` : ''}</div>`); }
+  if (arr(x.family).length) top.push(`<div class="ex life"><div class="eh">家里<span>程序照日子结算</span></div><div>${x.family.map(esc).join('；')}</div></div>`);
   if (arr(x.army).length) top.push(`<div class="ex news"><div class="eh">兵马与地盘<span>这一回的增减，细账在「势力」册子里</span></div><div>${x.army.map(esc).join('；')}</div></div>`);
   if (x.moved) top.push(`<div class="ex"><div class="eh">搬到了</div><div>${esc(x.moved)}</div></div>`);
   if (x.succession) top.push(`<div class="ex news"><div class="eh">传承</div><div>${esc(x.succession)}</div></div>`);
@@ -3564,7 +3640,9 @@ function pane(tab) {
   if (tab === 'people') {
     const P = Object.entries(s.people).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const fam = s.household.filter(m => !s.people[m.name]);
-    return `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
+    const ymN = ymOf(s.clock), HH = arr(s.household);
+    const famTbl = HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b></td><td>${m.age != null ? esc(m.age) + '岁' : ''}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(m.note || '')}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '';
+    return famTbl + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
       ${fam.map(m => `<div class="pc"><div class="pn"><b>${esc(m.name)}</b><span class="att">${esc(m.relation)}</span></div><div class="pr">${m.age != null ? m.age + '岁' : ''}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
       ${P.map(([k, v]) => `<div class="pc"><div class="pn"><b>${esc(k)}</b>${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
         <div class="pr">${esc(v.role)}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''}</div>
@@ -3592,6 +3670,7 @@ function pane(tab) {
       <div class="h"><span class="seal">出</span>每月开销</div>${t(arr(e.expense), ['项目', '每月', '依据'], ['item', 'amount', 'note'], ['amount'])}
       ${arr(e.debts).length ? `<div class="h"><span class="seal">债</span>欠债与典当</div>${t(arr(e.debts), ['欠谁', '多少', '说明'], ['to', 'amount', 'note'], ['amount'])}` : ''}
       <div class="h"><span class="seal">业</span>在做的事业</div>${arr(e.projects).length ? `<div class="list">${e.projects.map(p => `<div><span class="badge ${/成/.test(p.status) ? 'b-done' : /败|停/.test(p.status) ? 'b-bad' : /在做/.test(p.status) ? 'b-doing' : 'b-todo'}">${esc(p.status || '')}</span> <b>${esc(p.name)}</b>${p.progress ? '：' + esc(p.progress) : ''}${p.note ? `<span class="muted">（${esc(p.note)}）</span>` : ''}</div>`).join('')}</div>` : '<div class="muted">无</div>'}
+      <div class="h"><span class="seal">令</span>落到你身上的政令<span class="note">新法、加派、禁令；每月的多出少出程序照日子结算</span></div>${arr(s.policies).length ? `<div class="tblwrap"><table class="tbl"><tr><th>政令</th><th>起于</th><th>对你</th><th>每月</th></tr>${s.policies.map(p => `<tr><td><b>${esc(p.name)}</b>${p.what ? `<div class="muted" style="font-size:12px">${esc(p.what)}</div>` : ''}</td><td>${esc(p.since || '')}</td><td>${esc(p.onYou || '')}</td><td class="num">${N0(p.perMonth) ? (N0(p.perMonth) > 0 ? '+' : '−') + esc(fmtN(Math.abs(N0(p.perMonth)), u)) : ''}</td></tr>`).join('')}</table></div>` : '<div class="muted">眼下没有专门落到你身上的政令。</div>'}
       <div class="h"><span class="seal">市</span>本地行情<span class="note">随季节、年景、战事涨落</span></div>${arr(s.prices).length ? `<div class="tblwrap"><table class="tbl"><tr><th>货</th><th>价</th></tr>${s.prices.map(x => `<tr><td>${esc(x.item)}</td><td class="num">${esc(fmtN(x.price, u))} / ${esc(x.per || '')}</td></tr>`).join('')}</table></div>` : '<div class="muted">下一回合给出。</div>'}`;
   }
   if (tab === 'power') {

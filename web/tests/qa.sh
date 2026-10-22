@@ -41,6 +41,7 @@ start ai.js && {
   run "巡检（开局 + 三回合 + 十个侧栏）" 600 node tour.js
   run "家业（流民开局现钱不离谱、逐项立账）" 600 node estate.js
   run "军队：募兵进账、守城有战报、出战扣伤亡、离谱数目交账房" 600 node army.js
+  run "后宅子嗣、政令、经济账：纳妾、有孕生产、政令月结、只报一项不丢" 900 node family.js
   [ -z "${QUICK:-}" ] && run "自定开局" 600 node custom.js
   [ -z "${QUICK:-}" ] && run "网页版模式" 600 node claudemode.js
   [ -z "${QUICK:-}" ] && run "连玩几十回合" 1500 node drive.js
