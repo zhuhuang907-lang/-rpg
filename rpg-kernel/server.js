@@ -444,6 +444,8 @@ const routes = {
       // 第一层：维基百科，查不到再查维基文库（史书原文）；第二层：博查。both（查官员、真人这种要卡准年份的）两层都查，博查放前面
       const netDown = e => /超时|ENOTFOUND|ECONN|fetch failed|timeout|abort|socket|连不上/i.test(String(e || ''));
       let w = { results: [] };
+      // 有博查就和维基同时查（不再等维基超时了才查博查）：两边都有的，维基在前、博查跟上，矛盾时写的人照博查
+      const bP = isBocha ? race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(12000, left())) : null;
       if (Date.now() - WIKI_DOWN_AT > 300000) {
         w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(6000, left()));
         if (!(w.results || []).length && !netDown(w.error)) { const ws = await race(search.search(q, { provider: 'wikisource' }), Math.min(5000, left())); if ((ws.results || []).length) w = { ...ws, provider: 'wikisource' }; }
@@ -451,9 +453,8 @@ const routes = {
       }
       const wOk = (w.results || []).length;
       if (!isBocha) return { query: q, ...w, provider: w.provider || 'wikipedia' };
-      if (wOk && !both) return { query: q, ...w, provider: w.provider || 'wikipedia' };
-      const b = await race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(12000, left()));
-      if (wOk && (b.results || []).length) return { query: q, results: [...b.results.slice(0, 3), ...w.results.slice(0, 2)], provider: 'mixed' };
+      const b = await bP;
+      if (wOk && (b.results || []).length) return { query: q, results: both ? [...b.results.slice(0, 3), ...w.results.slice(0, 2)] : [...w.results.slice(0, 2), ...b.results.slice(0, 3)], provider: 'mixed' };
       return (b.results || []).length || !wOk ? { query: q, ...b, provider: 'bocha' } : { query: q, ...w, provider: w.provider || 'wikipedia' };
     };
     // 没搜到（不是出错）：把查询改短再搜，维基这类搜索框只认简单的词（「扬州府 乾隆二十二年 知府」→「扬州府 知府」→「扬州府」）

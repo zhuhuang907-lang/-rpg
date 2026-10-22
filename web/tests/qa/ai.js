@@ -16,6 +16,12 @@ function story(talk) {
   return t + '\n【幕后】周四其实收了江家二十两银子。';
 }
 function ledger(p) {
+  if (/【玩家这回说】[^\n]*告状/.test(p)) return JSON.stringify({ elapsedDays: 1, cases: [{ name: '周四盗盐案', kind: '盗案', role: '苦主', stage: '报案', facts: '瓜洲卸盐二百引', suspects: '江家管事', next: '县里派捕快拘周四', deadline: '十日' }], turnSummary: '告状' });
+  if (/【玩家这回说】[^\n]*开铺/.test(p)) return JSON.stringify({ elapsedDays: 2, ledger: [{ item: '盘铺面', amount: -800 }], business: [{ name: '汪记盐栈', kind: '铺面', capital: 800, stock: '盐三百引', credit: '赊给镇江客商一百两', revenue: 400, cost: 150, partners: '掌柜程立德' }], turnSummary: '开铺' });
+  if (/【玩家这回说】[^\n]*入漕帮/.test(p)) return JSON.stringify({ elapsedDays: 1, circles: [{ name: '扬州漕帮', kind: '帮会', leader: '翁老大', stance: '观望', tie: '递了门槛' }], turnSummary: '入帮' });
+  if (/【玩家这回说】[^\n]*被抓/.test(p)) return JSON.stringify({ elapsedDays: 1, jail: { in: true, where: '江都县监', charge: '私贩官盐', cost: 30 }, cases: [{ name: '周四盗盐案', stage: '审讯', facts: '周四反咬一口' }], turnSummary: '收押' });
+  if (/【玩家这回说】[^\n]*熬日子/.test(p)) return JSON.stringify({ elapsedDays: 40, turnSummary: '熬' });
+  if (/【玩家这回说】[^\n]*托人保释/.test(p)) return JSON.stringify({ elapsedDays: 3, jail: { out: true }, cases: [{ name: '周四盗盐案', stage: '结案' }], turnSummary: '出监' });
   if (/【玩家这回说】[^\n]*纳/.test(p)) return JSON.stringify({ elapsedDays: 3, ledger: [{ item: '纳妾聘礼', amount: -200 }], household: [{ change: '纳妾', relation: '妾', name: '柳氏', age: 19 }], estate: { income: [{ item: '典铺利钱', amount: 150 }] }, turnSummary: '纳妾' });
   if (/【玩家这回说】[^\n]*有喜/.test(p)) return JSON.stringify({ elapsedDays: 1, household: [{ change: '有孕', relation: '妾', name: '柳氏' }], policies: [{ name: '盐引加课', since: '乾隆二十二年', what: '每引加银三钱', onYou: '三千引每年多出九百两', perMonth: -75 }], turnSummary: '有喜' });
   if (/【玩家这回说】[^\n]*过日子/.test(p)) return JSON.stringify({ elapsedDays: 95, turnSummary: '过日子' });
