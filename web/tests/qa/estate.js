@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 (async () => { const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
   await p.fill('#qText', '靖康元年东京城外的流民'); await p.click('#bStart');
-  for (let i = 0; i < 300 && await p.evaluate(() => BUSY || VIEW !== 'game'); i++) await p.waitForTimeout(1000);
+  for (let i = 0; i < 300 && await p.evaluate(() => BUSY || VIEW !== 'game' || !!BG); i++) await p.waitForTimeout(1000);   // 家底在后台立：等后台做完
   const rich = await p.evaluate(() => ({ cash: S.money.cash, assets: arr(S.estate.assets).length, standing: S.estate.standing || '' }));
   // 再把身份换成流民，单独跑一次立家业：模拟 AI 第一次故意给八万文，程序必须退回重立
   await p.evaluate(async () => { S.protagonist.role = '东京城外的流民'; S.money.cash = null; await buildEstate(S); });

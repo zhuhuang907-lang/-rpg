@@ -427,7 +427,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022013649';
+const BUILD = '20261022021358';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -726,6 +726,13 @@ function partial(text) {
     out += c;
   }
   return out;
+}
+/** 慢的那一步只等这么久：到点先往下走（拿不到就当没有），它自己在后头做完，结果留给下一回。hrpg:tscale 只给测速用 */
+const TSCALE = (() => { try { return Number(localStorage.getItem('hrpg:tscale')) || 1; } catch (_) { return 1; } })();
+function within(p, ms, dflt = null) {
+  let t; const cap = new Promise(r => { t = setTimeout(() => r(dflt), ms * TSCALE); });
+  p.catch(() => { /* 到点以后才出错的不管 */ });
+  return Promise.race([p, cap]).finally(() => clearTimeout(t));
 }
 async function callClaude(input, onReply, extra, tier) {
   if (MODE === 'local' && !KEY.has) throw { code: 'no_key', message: '还没填 DeepSeek 的 Key：在首页把 Key 粘贴进去点「保存」' };
@@ -2407,11 +2414,12 @@ ${text}
 9 数目与器物：钱粮、兵力、价格、距离的量级合这个年代；没有这个年代没有的东西、说法
 10 有戏而不硬造：局面往前走了一步，不是流水账；意外有来由（前文埋下的、得罪的人、本地这季节常有的事），没有凭空天降的；该出事的地方没有回避；没有无事硬跳日子、也没有有事硬跳日子
 只输出一个 JSON 对象：{"score":总分,"problems":[{"item":条目编号,"quote":"出问题的那句（原样摘出，三十字以内）","why":"为什么不合理","fix":"应当怎样"}]}。只列确实的毛病，最多六条；没有就给 []。`, null, { maxTokens: 2500, temperature: 0.1, kind: '审读' });
-  const r = await Promise.race([job.then(x => parseJSON(x.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }), new Promise(res => setTimeout(() => res(null), 150000))]);
+  const r = await Promise.race([job.then(x => parseJSON(x.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }), new Promise(res => setTimeout(() => res(null), 120000 * TSCALE))]);
   if (!r) return [];
   const probs = arr(r.problems).filter(x => x && x.why && !/可保留|可以保留|无妨|不必改|无伤大雅/.test(String(x.why) + String(x.fix || ''))).slice(0, 6).map(x => `第${x.item || '?'}条：${x.quote ? '「' + one(x.quote, 40) + '」' : ''}${one(x.why, 80)}${x.fix ? '——应当：' + one(x.fix, 80) : ''}`);
   const sc = Number(r.score);
-  return Number.isFinite(sc) && sc >= 8 && probs.length <= 1 ? [] : probs;
+  // 七分以上的稿子不为小毛病整段重写（重写一次要多等两三分钟）；分低、或有致命的（替主角做主、死人出场）才打回
+  return Number.isFinite(sc) && (sc >= 7 || sc >= 6 && probs.length <= 2) && !arr(r.problems).some(x => x && (+x.item === 1 || +x.item === 6)) ? [] : probs;
 }
 /** 正文的毛病：一再请示、又写回禁写的题材 */
 function draftFaults(s, said, text, span) {
@@ -2748,7 +2756,7 @@ async function verifyText(s, said, text, rewrite) {
   const orig = text;
   let timer;
   const gate = { expired: false };
-  const cap = new Promise(res => { timer = setTimeout(() => { gate.expired = true; res({ text: orig, audit: [], timedOut: true }); }, rewrite ? 300000 : 180000); });
+  const cap = new Promise(res => { timer = setTimeout(() => { gate.expired = true; res({ text: orig, audit: [], timedOut: true }); }, (rewrite ? 300000 : 150000) * TSCALE); });
   // 超时以后核实就作废：不再整段重写（不然会在下一回合里多花一次写稿、改乱进度）
   const rw = rewrite ? async p => (gate.expired ? null : rewrite(p)) : null;
   let r;
@@ -2792,13 +2800,15 @@ major 只放改几个字解决不了的大毛病：已故或尚未出生的真�
     }
   }
   const fx1 = applyFixes(text, A && A.fixes); text = fx1.text; audit.push(...fx1.done);
+  // 没交给这里重写的：大毛病和查定的错字交回去，由那边合在一起重写一次
+  const back = rewrite ? {} : { major, rawFixes: arr(A && A.fixes) };
   const doubts = arr(A && A.doubts).filter(x => x && x.quote && text.includes(String(x.quote).trim())).slice(0, 6);
-  if (!doubts.length) return { text, audit };
+  if (!doubts.length) return { ...back, text, audit };
   // 第二步：拿不准的联网查，再定改不改
   let ev = '';
   if (canSearch()) {
     const tmp = { research: [], turn: s.turn, clock: s.clock, place: s.place };
-    await doLookups(tmp, doubts.map(x => one(x.query, 40)).filter(Boolean));
+    await within(doLookups(tmp, doubts.map(x => one(x.query, 40)).filter(Boolean)), 20000);
     ev = arr(tmp.research).map(x => `· 查「${x.q}」：${x.text}`).join('\n');
     for (const x of arr(tmp.research)) s.research = arr(s.research).filter(o => o.q !== x.q).concat([x]).slice(-40);
   }
@@ -2814,9 +2824,10 @@ ${ev ? '【查到的资料】\n' + ev : '（这次没有联网资料，只能凭
 ${text}
 
 只输出一个 JSON 对象：{"fixes":[{"wrong":"原样摘出的原文","right":"改成","why":"依据"}]}；都不用改就给 {"fixes":[]}。`, null, { maxTokens: 2500, temperature: 0.1, kind: '审校' });
-    const fx2 = applyFixes(text, (parseJSON(r.text) || {}).fixes); text = fx2.text; audit.push(...fx2.done);
+    const f2 = arr((parseJSON(r.text) || {}).fixes); if (back.rawFixes) back.rawFixes = back.rawFixes.concat(f2);
+    const fx2 = applyFixes(text, f2); text = fx2.text; audit.push(...fx2.done);
   } catch (e) { if (e && e.code === 'cancelled') throw e; }
-  return { text, audit };
+  return { ...back, text, audit };
 }
 
 /** 审校改掉的字，账册里也照改：整句照改，再把改动的核心（去掉两头相同的字）照改——「冯掌柜的二儿子→冯家主人的二儿子」也会把账里别处的「冯掌柜」改掉 */
@@ -3542,7 +3553,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
       PHASE = 'search'; render();
       pre = { research: [], almanac: [], wikiDone: [], turn: 0, clock: { y: 0, m: 1, d: 1, yearLabel: '' }, place: { full: '' } };
       const oq = openingQueries(sentence);
-      [looked] = await Promise.all([doLookups(pre, oq), wikiRead(pre, [sentence.replace(/^(我想当|当|做)/, '').replace(/的.*$/, ''), ...oq.slice(2, 4).map(q => q.split(/\s+/)[0])])]);
+      [looked] = await Promise.all([within(doLookups(pre, oq), 40000), within(wikiRead(pre, [sentence.replace(/^(我想当|当|做)/, '').replace(/的.*$/, ''), ...oq.slice(2, 4).map(q => q.split(/\s+/)[0])]), 30000, [])]);
       pre.place = { full: '' }; pre.title = sentence;
       PHASE = ''; render();
     }
@@ -3558,10 +3569,10 @@ async function startGame(sentence, have, havePre, custom, spec) {
           const yl = fake.clock.yearLabel || r.y + '年', pl = r.placeShort || r.place;
           const q = [...new Set([r.real ? `${r.name} 生平` : '', r.real ? `${r.name} ${yl}` : '', `${pl} ${yl}`, `${pl} ${r.polity}代 县志`, `${yl} ${r.polity} 大事`, `${yl} ${r.polity} 朝政 局势`, `${r.y}年 天下形势`, `${r.polity}代 ${({ 官: '官制 职掌', 兵: '兵制 军镇', 商: '商业 商税', 士: '科举 学校', 农: '赋役 田制', 贵: '宫廷 宗室' })[roleKey(fake)] || '制度'}`, ...(A0 => A0 && A0.st ? [`${A0.a.title} ${A0.st.name}`] : [])(arcsNow(fake)[0]), `${r.polity}代 ${String(r.role).slice(0, 12)}`, ...r.queries].filter(x => x && x.trim().length >= 3))].slice(0, 12);
           PHASE = 'search'; render();
-          await Promise.all([doLookups(fake, q), wikiRead(fake, [r.real ? r.name : '', pl, (r.y < 0 ? '前' + -r.y : r.y) + '年'].filter(Boolean))]);
+          await Promise.all([within(doLookups(fake, q), 40000), within(wikiRead(fake, [r.real ? r.name : '', pl, (r.y < 0 ? '前' + -r.y : r.y) + '年'].filter(Boolean)), 30000, [])]);
         }
         PHASE = 'dossier'; render();
-        try { await ensureDossiers(fake, (r.real ? [r.name] : []).concat(r.people)); } catch (e) { if (e && e.code === 'cancelled') throw e; }
+        try { await within(ensureDossiers(fake, (r.real ? [r.name] : []).concat(r.people)), 60000); } catch (e) { if (e && e.code === 'cancelled') throw e; }
         pre = Object.assign(pre || {}, { research: fake.research, almanac: fake.almanac, wikiDone: fake.wikiDone, setting: r, fake });
       }
     }
@@ -3582,26 +3593,26 @@ async function startGame(sentence, have, havePre, custom, spec) {
       // 核实和立账册一起做：账册照初稿立，核实改掉的字再照改到账里
       if (MODE === 'local') { ledP = callClaude(openingLedgerInput(sentence, draft.text, draft.hidden, custom, sb), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' }); ledP.catch(() => { /* 下面 await 时再处理 */ }); }
       const vs = fake ? { ...fake, research: arr(pre.research), almanac: arr(pre.almanac) } : { ...(pre || {}), research: arr(pre && pre.research), almanac: arr(pre && pre.almanac), clock: { y: oy ?? 0, m: 6, d: 1, yearLabel: '' }, place: { full: '', polity: '' }, protagonist: { name: '', role: sentence }, chat: [], world: {}, figOver: {}, turn: 0, noTime: oy == null, yearOnly: oy != null };
-      // 核实发现情理上的大毛病（死人出场、见不到的大人物凭空在身边……）：带着问题把开场重写一次
-      const rw = async probs => {
+      // 核实、情理审读、立账册一起做（网页版依次做）；有大毛病的，两边的意见合在一起把开场重写一次（只一次），账册照新稿重立
+      const critP = SETTINGS.critic !== false ? storyCritic({ ...vs, protagonist: { name: r ? r.name : '', gender: r ? r.gender : '', age: r ? r.age : null, role: r ? r.role : sentence } }, sentence + (custom ? '\n' + custom : ''), draft.text).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
+      if (MODE !== 'local') await critP;
+      const vr = await verifyText(vs, sentence + (custom ? '\n' + custom : '') + (sb ? '\n' + sb : ''), draft.text);
+      const probs = (await critP).concat(arr(vr.major).map(x => `${x.problem}${x.fix ? '——应当：' + x.fix : ''}`));
+      draft.text = vr.text; draft.audit = vr.audit;
+      if (probs.length) {
         PHASE = 'rewrite'; DRAFTN = 0; render();
-        const why = probs.map((x, i) => `${i + 1}. ${x.problem}${x.fix ? '——应当：' + x.fix : ''}`).join('\n');
-        const r3 = await callClaude(inp() + `\n\n【你的上一稿】\n${draft.text}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留）】\n` + why, draftCb, { json: false, temperature: sys ? 0.9 : 1.1, maxTokens: 6000, system: sys ? storyRules() : '' });
-        const t3 = splitStory(r3.text); PHASE = 'verify'; render();
-        if (t3.text.length < 40) return null;
-        if (t3.hidden) draft.hidden = t3.hidden;
-        return t3.text;
-      };
-      // 开场也先过一遍情理审读，不够格的整段重写
-      if (SETTINGS.critic !== false) {
-        PHASE = 'critic'; render();
-        let cp = []; try { cp = await storyCritic({ ...vs, protagonist: { name: r ? r.name : '', gender: r ? r.gender : '', age: r ? r.age : null, role: r ? r.role : sentence } }, sentence + (custom ? '\n' + custom : ''), draft.text); } catch (e) { if (e && e.code === 'cancelled') throw e; }
-        if (cp.length) { try { const t = await rw(cp.map(x => ({ problem: x }))); if (t) { draft.text = t; if (MODE === 'local') ledP = null; } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
-        PHASE = 'verify'; render();
+        try {
+          const r3 = await callClaude(inp() + `\n\n【你的上一稿】\n${draft.text}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留）】\n` + probs.map((x, i) => `${i + 1}. ${x}`).join('\n'), draftCb, { json: false, temperature: sys ? 0.9 : 1.1, maxTokens: 6000, system: sys ? storyRules() : '' });
+          const t3 = splitStory(r3.text);
+          if (t3.text.length >= 40) {
+            const fx = applyFixes(t3.text, vr.rawFixes);
+            draft.text = fx.text; draft.audit = [{ wrong: '（整段改写）', right: probs.map(x => one(x, 40)).join('；'), why: '审读' }].concat(fx.done);
+            if (t3.hidden) draft.hidden = t3.hidden;
+            ledP = null;
+          }
+        } catch (e) { if (e && e.code === 'cancelled') throw e; }
       }
-      const vr = await verifyText(vs, sentence + (custom ? '\n' + custom : '') + (sb ? '\n' + sb : ''), draft.text, rw);
-      draft.text = vr.text; draft.audit = vr.audit; st = draft;
-      if (vr.rewrote) ledP = null;   // 开场整段重写过：账册照新稿重立
+      st = draft;
     }
     STREAM = st.text; PHASE = 'ledger'; render();
     LAST_ACTION = () => startGame(sentence, st, pre, custom, spec);
@@ -3636,8 +3647,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (pre && pre.fake && pre.fake.dossiers) s.dossiers = Object.assign({}, pre.fake.dossiers, s.dossiers || {});
     if (pre) { s.research = arr(pre.research).concat(arr(s.research)); const got = arr(s.almanac); s.almanac = arr(pre.almanac); addAlmanac(s, got); }
     if (looked) { const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { looked }); }
-    PHASE = 'estate'; render();
-    try { await buildEstate(s, st.text); } catch (e) { if (e && e.code === 'cancelled') throw e; noteErr('立家业没成', (e && (e.message || e.code)) || String(e)); }
+    s.estateDue = true; s.estateStory = cut(st.text, 3000);   // 家底在后台照开场细立（玩家读开场的工夫就立好了），不让开局再多等一步
     { const g = s.chat[s.chat.length - 1], P = s.protagonist; g.extra = Object.assign(g.extra || {}, { intro: { name: P.name, gender: P.gender, age: P.age, role: P.role, native: P.nativePlace, real: P.real, when: timeText(s.clock), place: s.place.full, polity: s.place.polity, family: arr(s.household).map(m => `${m.relation}${m.name}${m.age != null ? '（' + m.age + '）' : ''}`).join('、'), cash: s.money.cash != null ? fmtN(s.money.cash, s.money.unit || '两') : '', overview: cut((s.world || {}).overview, 300), goals: arr(s.goals).map(x => ({ term: x.term, text: x.text })), adjust: arr(pre && pre.setting && pre.setting.adjust), arc: (A => A ? A.a.title + '——' + ((A.st && A.st.name) || '') : '')(arcsNow(s)[0]) } }); syncArc(s); }
     if (FEED.length) { const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { refs: FEED.slice(-16).map(f => ({ t: f.t, site: f.site, u: f.u })) }); }
     S = s; VIEW = 'game'; LAST_ACTION = null; TAB = 'board';
@@ -3666,6 +3676,7 @@ async function afterTurn(s0, d, g, gen = BG_GEN) {
   // 玩家等不及了（BG_STOP）就不再开新的一步；没做完的下一回合再做
   const step = async (msg, f) => { if (!live() || BG_STOP) return false; BGMSG = msg; BG_STEP = msg; render(); try { await f(); } catch (e) { /* 下回合再做 */ } return live() && !BG_STOP; };
   // 开局查到的资料：开场写完后再慢慢研读成年代志（不挡开场）
+  if (s0.estateDue && !(await step('立家底', async () => { try { await buildEstate(s0, s0.estateStory || undefined); } finally { if (!s0.estateDue) delete s0.estateStory; } }))) return;
   if (!d && arr(s0.research).length && arr(s0.almanac).length < 5 && !(await step('研读开局查到的资料，整理成年代志', () => digestResearch(s0)))) return;
   if (arr(s0.summaries).length > 60 && !(await step('整理较早的经过', () => compactMemory(s0)))) return;
   if (packNeed(s0) && !(await step('联网整理这几年的史料', () => ensureHistPack(s0)))) return;
@@ -3684,10 +3695,10 @@ async function send(said, span, note, resume) {
   EDITING = false;
   if (BG) {   // 上一回的后台活还没完：等它做完再开始（不然两边同时改存档）
     BUSY = true; BGWAIT = true; PENDING_SAID = String(said || '').trim(); render();
-    // 最多等 20 秒：查资料、同步史事、本地志这些可以留到下一回；推演天下会改「将要发生」，要等它做完
+    // 最多等三秒：后台没做完的那一步自己在后头做完（结果照样记上），没开始的留到下一回；玩家不用干等
     const t0 = Date.now();
-    while (BG && Date.now() - t0 < 20000) await new Promise(r => setTimeout(r, 400));
-    if (BG) { BG_STOP = true; if (/推演天下/.test(BG_STEP)) { try { await BG; } catch (_) { /* 后台出错不影响这一回 */ } } }
+    while (BG && Date.now() - t0 < 3000) await new Promise(r => setTimeout(r, 200));
+    if (BG) BG_STOP = true;
     BUSY = false; BGWAIT = false;
     if (STOP_PENDING) { STOP_PENDING = false; PENDING_SAID = ''; if (resume && resume.orig) S = resume.orig; render(); const el = $('#said'); if (el) el.value = String(said || ''); return; }
     if (!S) return;
@@ -3701,7 +3712,7 @@ async function send(said, span, note, resume) {
   setBusy(true);
   const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), baseTurn: S.turn, baseChat: S.chat.length, baseSig: chatSig(S), redo: !!orig, ...o }));
   if (!(resume && (resume.job || resume.story))) pend({});   // 一开始就记下：查资料那半分钟里刷新了，玩家写的话也不丢
-  let st = resume && resume.story ? resume.story : null, looked = null, ruling = (resume && resume.ruling) || null, postTurn = null;
+  let st = resume && resume.story ? resume.story : null, looked = null, ruling = (resume && resume.ruling) || null, postTurn = null, preFaults = [];
   try {
     // 写之前：AI 先看玩家这一步，裁定能不能办、决定要查什么；同时把本地、天下的消息搜一轮；再搜 AI 点名要查的
     if (!st) { syncArc(S); newsArrive(S); S.mainNow = mainlineBeat(S); }   // 这一回的历史主线（重试、续写也照算）
@@ -3709,32 +3720,33 @@ async function send(said, span, note, resume) {
       const wantPlan = needRuling(said) && (SETTINGS.ruling !== false || canSearch());
       PHASE = canSearch() ? 'search' : 'ruling'; render();
       const [lk, rl] = await Promise.all([
-        canSearch() ? doLookups(S, lookupQueries(S, said)) : Promise.resolve(null),
-        wantPlan ? getRuling(S, said) : Promise.resolve(null),
-        ensureEventDetail(S).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }),   // 大事深挖，和别的查询一起做
-        officialsDue(S) ? ensureOfficials(S).catch(e => { if (e && e.code === 'cancelled') throw e; S.offFail = S.turn; return null; }) : Promise.resolve(null),   // 本地官员名册：查、推断，人人有名字
+        canSearch() ? within(doLookups(S, lookupQueries(S, said)), 25000) : Promise.resolve(null),
+        wantPlan ? within(getRuling(S, said), 150000) : Promise.resolve(null),
+        // 大事深挖、本地官员名册：和别的一起做，但只等这么久；没做完的在后头接着做，名册下一回就有
+        within(ensureEventDetail(S).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }), 45000),
+        officialsDue(S) ? within(ensureOfficials(S).catch(e => { if (e && e.code === 'cancelled') throw e; S.offFail = S.turn; return null; }), 45000) : Promise.resolve(null),
       ]);
       looked = lk; ruling = rl;
       if (ruling && ruling.battle && !ruling.battleResult) { ruling.battleResult = resolveBattle(S, ruling.battle); if (ruling.battleResult) feedAdd([{ t: `战事结算：${ruling.battleResult.outcome}（胜算约 ${ruling.battleResult.odds}%）`, site: '程序' }]); }
       if (ruling && SETTINGS.ruling === false) ruling = { steps: [], risks: [], alt: '', search: ruling.search, scene: ruling.scene, brief: ruling.brief, places: ruling.places, realPeople: ruling.realPeople };
       // 这一回牵涉的真人：先立档（生卒、此刻在哪、做什么、见不见得到），和下面的联网查证一起做
       const dosNames = arr(ruling && ruling.realPeople);
-      const dosP = dosNames.length ? (PHASE = 'dossier', render(), ensureDossiers(S, dosNames).catch(e => { if (e && e.code === 'cancelled') throw e; return []; })) : Promise.resolve([]);
+      const dosP = dosNames.length ? (PHASE = 'dossier', render(), within(ensureDossiers(S, dosNames).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }), 30000, [])) : Promise.resolve([]);
       const more = canSearch() && ruling ? arr(ruling.search).filter(q => !arr(S.searchedQ).includes(q)) : [];
       // 维基深读：这一回牵涉的地方、人物、事件、制度，各读一篇条目正文
       const figs = HALL(S).flatMap(h => arr(h.figures)).filter(f => f.name.length >= 2 && String(said || '').includes(f.name)).map(f => f.name).slice(0, 2);
       const wq = canSearch() ? arr(ruling && ruling.places).slice(0, 2).concat(figs, arr(ruling && ruling.search).slice(0, 2).map(q => q.split(/\s+/)[0])) : [];
       if (more.length || wq.length) {
         PHASE = 'search2'; render();
-        const [lk2] = await Promise.all([more.length ? doLookups(S, more) : Promise.resolve(null), wq.length ? wikiRead(S, wq) : Promise.resolve([])]);
+        const [lk2] = await Promise.all([more.length ? within(doLookups(S, more), 20000) : Promise.resolve(null), wq.length ? within(wikiRead(S, wq), 20000, []) : Promise.resolve([])]);
         if (lk2) looked = { shown: arr(looked && looked.shown).concat(arr(lk2.shown).map(x => ({ ...x, ai: true }))), err: (looked && looked.err) || lk2.err, provider: lk2.provider };
       }
       // 玩家说到的地方地图上还没有：到历史地名库里查出来补上，好算里程和沿途
-      if (canGeo() && S.geo && ruling && arr(ruling.places).length && !(S.geoFail != null && S.turn - S.geoFail < 5)) {
+      if (canGeo() && S.geo && ruling && arr(ruling.places).length && !(S.geoFail != null && S.turn - S.geoFail < 5)) await within((async () => {
         const stem = x => String(x).replace(/[县縣州府郡军道路城]+$/, '');
         const miss = ruling.places.filter(n => !S.geo.units.some(u => u.name === n || stem(u.name) === stem(n) || u.name.startsWith(stem(n)) && stem(n).length >= 2));
         for (const n of miss.slice(0, 4)) { const rs = arr(await tgaz({ n, yr: S.clock.y })).filter(u => geoValid(u, S.clock.y)); if (rs.length) { const u = rs.sort((a, b) => hav(S.geo.here, a) - hav(S.geo.here, b))[0]; feedAdd([{ t: `${u.name}（属${u.parent || '？'}，${S.clock.y}年前后）`, site: '历史地名库' }]); if (!S.geo.units.some(x => x.id === u.id)) S.geo.units.push({ id: u.id, name: u.name, type: u.type, parent: u.parent, lat: +u.lat, lon: +u.lon }); } }
-      }
+      })().catch(() => { /* 地名库连不上：下回再补 */ }), 12000);
       await dosP;
       PHASE = ''; render();
     }
@@ -3750,56 +3762,58 @@ async function send(said, span, note, resume) {
         st = splitStory(r2.text);
         if (!st.text) throw { code: 'empty_completion' };
       }
-      // 程序查一遍（一再请示、又写回禁写的题材），再过一遍情理审读（十条）；不够格的打回去重写一次
-      let faults = st.talk ? [] : draftFaults(S, said, st.text, span);
-      if (!st.talk && ruling && ruling.battleResult && !/伤|死|阵亡|折了/.test(st.text)) faults.push(`这一仗写成了只有胜负：照【这一仗的结果】写出伤亡（我方约 ${ruling.battleResult.deadUs}、敌方约 ${ruling.battleResult.deadThem}）、士气、粮草和战后的事`);
-      if (faults.length) noteErr('审稿退回', faults.map(f => f.slice(0, 40)).join(' / '), { said: cut(said, 60) });   // 记下来，问题报告里能看到常犯哪几条
-      if (!st.talk && SETTINGS.critic !== false) { PHASE = 'critic'; render(); try { faults = faults.concat(await storyCritic(S, said, st.text)); } catch (e) { if (e && e.code === 'cancelled') throw e; } PHASE = 'draft'; }
-      if (faults.length) {
-        DRAFTN = 0; render();
+      // 程序查一遍（一再请示、又写回禁写的题材、打仗没写伤亡）：毛病留到下面和审读、核实的意见一起，只重写一次
+      preFaults = st.talk ? [] : draftFaults(S, said, st.text, span);
+      if (!st.talk && ruling && ruling.battleResult && !/伤|死|阵亡|折了/.test(st.text)) preFaults.push(`这一仗写成了只有胜负：照【这一仗的结果】写出伤亡（我方约 ${ruling.battleResult.deadUs}、敌方约 ${ruling.battleResult.deadThem}）、士气、粮草和战后的事`);
+      if (preFaults.length) noteErr('审稿退回', preFaults.map(f => f.slice(0, 40)).join(' / '), { said: cut(said, 60) });   // 记下来，问题报告里能看到常犯哪几条
+    }
+    // 给玩家看之前：核实史实、情理审读、记账，桌面版三件一起做（网页版一次只发一个请求，依次做）；
+    // 有毛病的，把程序、审读、核实挑出的毛病合在一起，整段重写一次（只一次）；重写了，账照新稿重记
+    const ledgerFor = async (txt, hid) => {
+      let d0 = null;
+      for (let k = 0; k < 3 && !d0; k++) {
+        try { const { text: lt } = await callClaude(ledgerInput(S, said, txt, hid, span, ruling) + (k ? '\n\n（上一次的回答不是合法的 JSON 或被截断了。这次只输出那一个 JSON 对象，括号配对，没变的字段不要给，写短些。）' : ''), null, { maxTokens: 8000, temperature: 0.3, kind: '记账' }); d0 = parseJSON(lt); } catch (e) { if (e && e.code === 'cancelled') throw e; }
+      }
+      return d0;
+    };
+    let ledgerP = null;
+    const startLedger = () => { ledgerP = ledgerFor(st.text, st.hidden); ledgerP.catch(() => { /* 下面 await 时再处理 */ }); };
+    if (!st.verified && !(resume && resume.story)) {
+      const sysR = MODE === 'local', par = MODE === 'local';
+      PHASE = 'verify'; render();
+      if (par && !st.talk) startLedger();
+      const critic = () => !st.talk && SETTINGS.critic !== false ? storyCritic(S, said, st.text).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
+      const critP = par ? critic() : null;
+      const vr = await verifyText(S, said, st.text);
+      const crit = critP ? await critP : await critic();
+      const probs = st.talk ? [] : preFaults.concat(crit, arr(vr.major).map(x => `${x.problem}${x.fix ? '——应当：' + x.fix : ''}`));
+      let next = { ...st, text: vr.text, audit: arr(vr.audit), verified: true, rewrote: false };
+      if (probs.length) {
+        PHASE = 'rewrite'; DRAFTN = 0; render();
         try {
-          const r3 = await callClaude(storyInput(S, said, span, note, sys, ruling, { draft: st.text, why: faults.map((x, i) => `${i + 1}. ${x}`).join('\n') }), draftCb, { json: false, temperature: 0.8, maxTokens: 6000, system: sys ? storyRules() : '' });
-          const t3 = splitStory(r3.text); if (t3.text && t3.text.length > 200) st = t3;
+          const r3 = await callClaude(storyInput(S, said, span, note, sysR, ruling, { draft: st.text, why: probs.map((x, i) => `${i + 1}. ${x}`).join('\n') }), draftCb, { json: false, temperature: 0.8, maxTokens: 6000, system: sysR ? storyRules() : '' });
+          const t3 = splitStory(r3.text);
+          if (t3.text && t3.text.length > 200 && !t3.talk) {
+            // 核实时查定的错字，新稿里还在的照改；占位称呼照样起名
+            const fx = applyFixes(t3.text, vr.rawFixes); let t = fx.text;
+            const nf = nameFixes(S, t).sort((x, y) => y.wrong.length - x.wrong.length); for (const x of nf) t = t.split(x.wrong).join(x.right);
+            next = { ...next, text: t, hidden: t3.hidden || st.hidden, rewrote: true, audit: [{ wrong: '（整段改写）', right: probs.map(x => one(x, 40)).join('；'), why: '审读' }].concat(fx.done, nf) };
+          }
         } catch (e) { if (e && e.code === 'cancelled') throw e; }
       }
+      st = next;
+      if (!st.talk) pend({ story: st, ruling });
     }
-    // 给玩家看之前先核实、改正；戏里的同时让账房记账（两件事一起做，省一半的等）
-    // 核实时发现情理上的大毛病（死人出场、人在别处、路程说不通、替玩家做主……）：带着问题重写一次
-    let newHidden = null;
-    const rewrite = st.talk ? null : async probs => {
-      PHASE = 'rewrite'; render();
-      const sysR = MODE === 'local';
-      const why = probs.map((x, i) => `${i + 1}. ${x.problem}${x.fix ? '——应当：' + x.fix : ''}`).join('\n');
-      const r = await callClaude(storyInput(S, said, span, note, sysR, ruling, { draft: st.text, why }), draftCb, { json: false, temperature: 0.8, maxTokens: 6000, system: sysR ? storyRules() : '' });
-      const t = splitStory(r.text); if (t.hidden) newHidden = t.hidden;
-      PHASE = 'verify'; render();
-      return t.talk ? null : t.text;
-    };
-    const vrP = st.verified || resume && resume.story ? null : verifyText(S, said, st.text, rewrite).then(vr => { st = { ...st, text: vr.text, audit: vr.audit, verified: true, rewrote: !!vr.rewrote, hidden: vr.rewrote && newHidden ? newHidden : st.hidden }; if (!st.talk) pend({ story: st, ruling }); return vr; });
     PHASE = 'verify'; render();
     if (st.talk) {
-      if (vrP) await vrP;
       lsSet('hrpg:pending', null);
       applyReply(S, { reply: st.text, mode: 'talk' }, said); PENDING_SAID = ''; S.mainNow = null;
       if (FEED.length) { const g1 = S.chat[S.chat.length - 1]; g1.extra = Object.assign(g1.extra || {}, { refs: FEED.slice(-16).map(f => ({ t: f.t, site: f.site, u: f.u })) }); }
       if (arr(st.audit).length) { const g0 = S.chat[S.chat.length - 1]; g0.audit = st.audit; }
     } else {
-      // 网页版（claude.ai）不一定能同时发两个请求：先核实完再记账；桌面版两件一起做
-      if (vrP && MODE !== 'local') await vrP;
-      const ledgerFor = async (txt, hid) => {
-        let d0 = null;
-        for (let k = 0; k < 3 && !d0; k++) {
-          try { const { text: lt } = await callClaude(ledgerInput(S, said, txt, hid, span, ruling) + (k ? '\n\n（上一次的回答不是合法的 JSON 或被截断了。这次只输出那一个 JSON 对象，括号配对，没变的字段不要给，写短些。）' : ''), null, { maxTokens: 8000, temperature: 0.3, kind: '记账' }); d0 = parseJSON(lt); } catch (e) { if (e && e.code === 'cancelled') throw e; }
-        }
-        return d0;
-      };
-      const ledEarly = !!vrP && !st.verified;   // 账是不是在核实完之前、照初稿记的
-      const ledgerP = ledgerFor(st.text, st.hidden);
-      ledgerP.catch(() => { /* 下面 await 时再处理 */ });
-      if (vrP) { await vrP; }
+      if (!ledgerP || st.rewrote) startLedger();
       STREAM = st.text; PHASE = 'ledger'; render();
-      // 正文整段改写过：照初稿记的账作废，照改写后的重记
-      let d = st.rewrote && ledEarly ? await ledgerFor(st.text, st.hidden) : await ledgerP;
+      let d = await ledgerP;
       // 账是照初稿记的：核实时改掉的字，账里也照改（人名、官名、地名不能一处对一处错）
       if (d && arr(st.audit).length) d = auditSweep(d, st.audit);
       if (arr(st.audit).length) for (const k of ['people', 'canon', 'gmNotes', 'estate', 'chronicle', 'summaries', 'orders', 'deeds', 'goals', 'places']) if (S[k]) S[k] = auditSweep(S[k], st.audit);
