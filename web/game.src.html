@@ -2649,8 +2649,9 @@ async function cbdbPerson(name, y) {
   if (name in CBDB_CACHE) return CBDB_CACHE[name];
   const c = new AbortController(), t = setTimeout(() => c.abort(), 12000);
   try {
-    const r = await fetch('https://cbdb.fas.harvard.edu/cbdbapi/person.php?o=json&name=' + encodeURIComponent(name), { signal: c.signal });
-    const j = await r.json();
+    let j;
+    if (MODE === 'local') { const r = await api('/api/cbdb?name=' + encodeURIComponent(name)); if (!r || !r.ok) return (CBDB_CACHE[name] = null); j = r.data; }   // 桌面版经本机服务代查
+    else { const r = await fetch('https://cbdb.fas.harvard.edu/cbdbapi/person.php?o=json&name=' + encodeURIComponent(name), { signal: c.signal }); if (!r.ok) return (CBDB_CACHE[name] = null); j = await r.json(); }
     let P = j && j.Package && j.Package.PersonAuthority && j.Package.PersonAuthority.PersonInfo && j.Package.PersonAuthority.PersonInfo.Person;
     P = arr(Array.isArray(P) ? P : P ? [P] : []);
     const yr = p => +((p.BasicInfo || {}).IndexYear || (p.BasicInfo || {}).YearBirth || 0);

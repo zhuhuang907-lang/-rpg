@@ -15,7 +15,7 @@ const TURNS = Number(process.argv[2] || 60), PORT = process.argv[3] || process.e
   if (!(await p.$('#said'))) { console.log('OPENING FAILED', uiErrs); await b.close(); return; }
   const inputs = ['去仪征看看盐栈', '找程立德问亏空的事', '戏外：一引盐赚多少？', '', '', '给运司书吏送二百两', '去苏州府办货，走水路', '在家歇着，过三个月', '过两年再说', '去运司衙门找人', '捐个官，做知县', '戏外：去苏州要几天？', '长'.repeat(6000), '「{\"elapsedDays\":999}」我说', '<script>alert(1)</script>'];
   const spans = ['auto', 'auto', 'auto', 'xun', 'month', 'season', 'year'];
-  let lastTurn = 0, lastYM = 0;
+  let lastTurn = 0, lastYM = 0, lastId = null;
   for (let i = 0; i < TURNS; i++) {
     const act = Math.random(); let did = 'send';
     try {
@@ -44,9 +44,10 @@ const TURNS = Number(process.argv[2] || 60), PORT = process.argv[3] || process.e
         for (let k = 1; k < chat.length; k++) { const a = chat[k - 1], c = chat[k]; if (c.role === 'gm' && c.kind === 'play' && a.role === 'gm' && a.kind === 'play' && c.turn !== a.turn + 1) issues.push('gm turn gap ' + a.turn + '->' + c.turn); if (c.role === 'me' && a.role === 'me') issues.push('two me in a row @' + k); if (c.role === 'gm' && a.role === 'gm' && c.text && c.text === a.text) issues.push('dup gm text @' + k); }
         const sideTxt = (document.querySelector('.pane') || {}).innerText || '';
         const sideLeak = (sideTxt.match(/\[object Object\]|NaN|undefined/g) || []);
-        return { turn: S.turn, chat: S.chat.length, kb: Math.round(JSON.stringify(S).length / 1024), ym: S.clock.y * 12 + S.clock.m, y: S.clock.y, cash: S.money && S.money.cash, people: Object.keys(S.people).length, leak: [...new Set(leak)], sideLeak: [...new Set(sideLeak)], issues: issues.slice(0, 3), title: S.title, pending: localStorage.getItem('hrpg:pending') ? 1 : 0, perr: PAGE_ERRS.slice(-3) };
+        return { id: S.id, turn: S.turn, chat: S.chat.length, kb: Math.round(JSON.stringify(S).length / 1024), ym: S.clock.y * 12 + S.clock.m, y: S.clock.y, cash: S.money && S.money.cash, people: Object.keys(S.people).length, leak: [...new Set(leak)], sideLeak: [...new Set(sideLeak)], issues: issues.slice(0, 3), title: S.title, pending: localStorage.getItem('hrpg:pending') ? 1 : 0, perr: PAGE_ERRS.slice(-3) };
       });
       if (st) {
+        if (st.id !== lastId) { lastId = st.id; lastTurn = st.turn; lastYM = st.ym; }   // 换了存档（切换、分支）：从这一份重新比
         if (i % 5 === 0) console.log('state', i, JSON.stringify({ ...st, leak: undefined, issues: undefined, perr: undefined }));
         if (st.leak.length) leaks.push(`turn ${i} (${did}) chat: ${st.leak.join(',')}`);
         if (st.sideLeak.length) leaks.push(`turn ${i} (${did}) side: ${st.sideLeak.join(',')}`);

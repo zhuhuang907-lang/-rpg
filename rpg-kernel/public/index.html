@@ -427,7 +427,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261021235827';
+const BUILD = '20261022005352';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -2649,8 +2649,9 @@ async function cbdbPerson(name, y) {
   if (name in CBDB_CACHE) return CBDB_CACHE[name];
   const c = new AbortController(), t = setTimeout(() => c.abort(), 12000);
   try {
-    const r = await fetch('https://cbdb.fas.harvard.edu/cbdbapi/person.php?o=json&name=' + encodeURIComponent(name), { signal: c.signal });
-    const j = await r.json();
+    let j;
+    if (MODE === 'local') { const r = await api('/api/cbdb?name=' + encodeURIComponent(name)); if (!r || !r.ok) return (CBDB_CACHE[name] = null); j = r.data; }   // 桌面版经本机服务代查
+    else { const r = await fetch('https://cbdb.fas.harvard.edu/cbdbapi/person.php?o=json&name=' + encodeURIComponent(name), { signal: c.signal }); if (!r.ok) return (CBDB_CACHE[name] = null); j = await r.json(); }
     let P = j && j.Package && j.Package.PersonAuthority && j.Package.PersonAuthority.PersonInfo && j.Package.PersonAuthority.PersonInfo.Person;
     P = arr(Array.isArray(P) ? P : P ? [P] : []);
     const yr = p => +((p.BasicInfo || {}).IndexYear || (p.BasicInfo || {}).YearBirth || 0);
