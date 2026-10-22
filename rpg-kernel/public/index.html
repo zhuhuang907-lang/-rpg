@@ -427,7 +427,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022061317';
+const BUILD = '20261022061405';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -2536,6 +2536,20 @@ function unknownPlaces(s, text) {
   }
   return [...new Set(out)].slice(0, 5);
 }
+/** 消息还没传到此地的外地大事，正文里却有人说起了（未卜先知） */
+function leakedNews(s, text) {
+  const t = String(text || ''), out = [];
+  // 还没传到的外地消息，和还没发生的史事（书中人都不该知道）
+  const nym = s.clock ? ymOf(s.clock) : null;
+  const fut = nym != null && typeof hasHist === 'function' && hasHist(s) ? histEvents(s, nym + 1, nym + 36).map(e => e.text) : [];
+  for (const u of arr(s.newsUnheard).concat(fut)) {
+    const e = String(u).replace(/（出在[^）]*）$/, ''), gs = new Set();
+    for (let i = 0; i + 4 <= e.length; i++) { const g = e.slice(i, i + 4); if (/^[\u4e00-\u9fff]{4}$/.test(g)) gs.add(g); }
+    const hit = [...gs].filter(g => t.includes(g));
+    if (hit.length >= 2) out.push(one(e, 30));
+  }
+  return out.slice(0, 2);
+}
 /** 正文的毛病：一再请示、又写回禁写的题材 */
 function draftFaults(s, said, text, span) {
   const out = [], asks = countIn(text, BORING[3][1]);
@@ -2564,6 +2578,7 @@ function draftFaults(s, said, text, span) {
   if (sn >= 4 || sn >= 2 && sn * 1000 / Math.max(1, String(text).length) > 2) out.push(`AI 腔套话太多（${sl.slice(0, 6).join('、')}，共 ${sn} 处）：一律删掉，换成具体的动作、话、物件；人的心思从他做了什么、说了什么里看出来`);
   if (!/^戏外/.test(String(said || '').trim()) && missedAction(s, said, text)) out.push(`没接住玩家这一步：玩家说「${one(said, 40)}」，正文几乎没写这件事——先写这一步怎么做、谁怎么回应`);
   const fe = futureEras(s, text); if (fe.length) out.push(`年号年份写错了（${fe.join('；')}）：照【时间】改，书中人不知道将来的年号`);
+  const ln = leakedNews(s, text); if (ln.length) out.push(`书中人此时不该知道的事（消息还没传到，或者还没发生），正文里却有人说起了（${ln.join("；")}）：删掉`);
   const rm = rosterMismatch(s, text); if (rm.length) out.push(`官员写错了人（${rm.join('；')}）：照【本地官员名册】改`);
   return out;
 }
