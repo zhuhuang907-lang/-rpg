@@ -376,7 +376,7 @@ function ledgerRules() {
 6c. 这一回若有【这一仗的结果】，参战兵马的伤亡和得失地盘程序已经结算过，forces、territory 里不要再减一遍。
 6b. worldEvents：这段时间里按史书发生、或正文里传来的天下大事（年月；被本局改变的写实际样子，changed 填 true）；【按史书将要发生】快用完时，在 worldUpcoming 补上之后五年按史书会发生的大事。historyChanges：玩家使史书上的事没照原样发生时记下。
 7. places：正文里头一次出现的地方（当时名称、今地、隶属、在主角现居地的方位里程与行程）。
-8. powers / territory / forces：只给这一回变了的那几条（程序按势力名、地名、军名合并，没提到的照旧；丢了的地盘写 "lost":true，打散了的兵马、灭亡的势力写 "gone":true；打过仗的兵马 troops 写剩下的人数，新占的地盘整条给出）。realm：主角是君主、诸侯、割据一方的人才给，只给变了的项（国库、太仓存粮、总兵额、岁入、岁出写数字；军粮与国库的日常消耗程序会照日子结算，你只记一次性的进出，如赏赐、征发、缴获、赈济）（地盘按县、州府一处一条写当时的名称，兵马的驻地写到县城或关隘）（兵额、存粮石数、户口、民心 0–100、月赋都写数字）。succession：只在主角死去时填。career / careerEvents：主角的官职、品级、差遣、称号、职权、上司属下、考课、可能的下一步有变化时给出；任免升降考课等记 careerEvents。statusChanges：功名、爵位、健康、名望等的变化。
+8. 主角统带、管着的兵（哪怕只是一都一队、是朝廷的兵）也记进 forces，leader 写主角，status 写「统带」；人数照本朝编制和前文，不凭空写整数。powers / territory / forces：只给这一回变了的那几条（程序按势力名、地名、军名合并，没提到的照旧；丢了的地盘写 "lost":true，打散了的兵马、灭亡的势力写 "gone":true；打过仗的兵马 troops 写剩下的人数，新占的地盘整条给出）。realm：主角是君主、诸侯、割据一方的人才给，只给变了的项（国库、太仓存粮、总兵额、岁入、岁出写数字；军粮与国库的日常消耗程序会照日子结算，你只记一次性的进出，如赏赐、征发、缴获、赈济）（地盘按县、州府一处一条写当时的名称，兵马的驻地写到县城或关隘）（兵额、存粮石数、户口、民心 0–100、月赋都写数字）。succession：只在主角死去时填。career / careerEvents：主角的官职、品级、差遣、称号、职权、上司属下、考课、可能的下一步有变化时给出；任免升降考课等记 careerEvents。statusChanges：功名、爵位、健康、名望等的变化。
 9. gmNotes：正文后【幕后】里写的真相，以及你看出的伏笔（玩家看不到）；gmNotesDone：已经浮出或了结的（开头几个字）。
 10. hints：四五条，玩家接下来可以做的事，一句一条（不要查账、盘账、催粮、派夫这类琐事），方向要拉开：一条顺着眼下的事，一条反着来或换个办法，一条完全另起炉灶的大胆路子（离开此地、改行、投奔某人、冒险一搏、做件出格的事），一条戏外可以问的问题。
 11. canon：本回合新确立、以后必须一直成立的事实（身份名分、婚姻亲属、产权契约、承诺约定、结下的恩怨、谁知道了什么秘密、主角立下的规矩），一句一条，没有就 []；canonDone：已经不再成立的（开头几个字）。
@@ -1056,7 +1056,7 @@ ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.k
 玩家一句话里有几个动作：steps 照先后拆开，第一步之后各步能不能成，看第一步的结果和旁人的利害（写进 why），玩家宣布的结果（众人跟随、对方答应）不当真。犯了禁的，写清本朝律令怎么定、当时实际怎么办、哪个衙门哪个人来管、多久能反应过来。
 玩家这一步要交兵（攻城、出战、迎敌、伏击、守城）：填 battle——敌军兵力照史料、探报、【各方势力】合理估计，写依据；胜负和伤亡由程序算，你不要定结果。
 如果玩家这回是在戏外提问（问历史、地理、局面、建议），steps 给 []，scene 不给，search 列出回答需要查的。
-只输出一个 JSON 对象：{"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"battle":{"fight":"这一回真要交兵才写「是」，否则空","enemy":"对手（势力或将领真名）","enemyTroops":0,"enemyQuality":"精/中/弱","enemySupply":"足/缺","place":"在哪打（当时的地名）","terrain":"平原/山地/城池/关隘/河网/山林","attacker":"我/敌","surprise":"有/无","ourForces":["参战的我方兵马名（照【国势账】里的名字）"],"basis":"敌军兵力从哪来的（史料、探报、推断）"},"realPeople":["这一回牵涉的真实历史人物的名字：玩家点名要见、要找、要投奔、要对付的，以及场面里会出现的真人（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人，一律写全名：照【本地官员名册】与上面材料；都没有的，照常理起一个合乎时代的全名","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么","risk":"他怕什么、这件事让他担什么风险","flip":"什么情况下他会拖延、反口或翻脸"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
+只输出一个 JSON 对象：{"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"battle":{"fight":"这一回真要交兵才写「是」，否则空","enemy":"对手（势力或将领真名）","enemyTroops":0,"enemyQuality":"精/中/弱","enemySupply":"足/缺","place":"在哪打（当时的地名）","terrain":"平原/山地/城池/关隘/河网/山林","attacker":"我/敌","surprise":"有/无","ourForces":["参战的我方兵马名（照【国势账】里的名字）"],"ourTroops":"主角名下没有兵马时（随军、守城、统带朝廷的兵、被卷进来）：主角这一边参战的人数","ourSide":"那时主角这一边叫什么（如 某军某指挥、守城兵民）","ourQuality":"精/中/弱","basis":"敌军兵力从哪来的（史料、探报、推断）"},"realPeople":["这一回牵涉的真实历史人物的名字：玩家点名要见、要找、要投奔、要对付的，以及场面里会出现的真人（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人，一律写全名：照【本地官员名册】与上面材料；都没有的，照常理起一个合乎时代的全名","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么","risk":"他怕什么、这件事让他担什么风险","flip":"什么情况下他会拖延、反口或翻脸"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
 }
 async function getRuling(s, said) {
   try {
@@ -1070,7 +1070,7 @@ async function getRuling(s, said) {
     const bf = d.brief && typeof d.brief === 'object' ? d.brief : {};
     const sc = d.scene && typeof d.scene === 'object' ? { where: one(d.scene.where, 60), cast: arr(d.scene.cast).filter(x => x && x.name).slice(0, 6).map(x => ({ name: one(x.name, 12), want: one(x.want, 60), risk: one(x.risk, 50), flip: one(x.flip, 50) })), offstage: one(d.scene.offstage, 160), surprise: one(d.scene.surprise, 140), beats: arr(d.scene.beats).map(x => one(x, 90)).filter(Boolean).slice(0, 6), end: one(d.scene.end, 80), type: one(d.scene.type, 12) } : null;
     if (sc) { const t = s.turn + 1; s.shapes = arr(s.shapes).filter(x => x.turn !== t).concat([{ turn: t, type: sc.type, where: one(sc.where, 30), cast: sc.cast.map(x => x.name).join('、') || '无', end: one(sc.end, 40) }]).slice(-6); }
-    const bt = d.battle && typeof d.battle === 'object' && /是|有|真/.test(String(d.battle.fight || '')) ? { enemy: one(d.battle.enemy, 20), enemyTroops: N0(d.battle.enemyTroops), enemyQuality: one(d.battle.enemyQuality, 2), enemySupply: one(d.battle.enemySupply, 2), place: one(d.battle.place, 16), terrain: one(d.battle.terrain, 6), attacker: /敌/.test(d.battle.attacker || '') ? '敌' : '我', surprise: /有|是/.test(d.battle.surprise || ''), ourForces: arr(d.battle.ourForces).map(x => one(x, 20)).filter(Boolean), basis: one(d.battle.basis, 60) } : null;
+    const bt = d.battle && typeof d.battle === 'object' && /是|有|真/.test(String(d.battle.fight || '')) ? { enemy: one(d.battle.enemy, 20), enemyTroops: N0(d.battle.enemyTroops), enemyQuality: one(d.battle.enemyQuality, 2), enemySupply: one(d.battle.enemySupply, 2), place: one(d.battle.place, 16), terrain: one(d.battle.terrain, 6), attacker: /敌/.test(d.battle.attacker || '') ? '敌' : '我', surprise: /有|是/.test(d.battle.surprise || ''), ourForces: arr(d.battle.ourForces).map(x => one(x, 20)).filter(Boolean), ourTroops: N0(d.battle.ourTroops), ourSide: one(d.battle.ourSide, 20), ourQuality: one(d.battle.ourQuality, 2), basis: one(d.battle.basis, 60) } : null;
     return { battle: bt, realPeople: arr(d.realPeople).map(x => one(x, 12)).filter(x => x.length >= 2).slice(0, 4), scene: sc && (sc.beats.length || sc.cast.length) ? sc : null, places: arr(d.places).map(x => one(x, 10)).filter(x => x.length >= 2).slice(0, 4), brief: ['institutions', 'people', 'terms', 'interests', 'details'].map(k => [k, cut(bf[k], 260)]).filter(([, v]) => v), search: arr(d.search).map(x => one(x, 40)).filter(x => x.length >= 2).slice(0, 6), steps: d.steps.filter(x => x && x.what).slice(0, 4).map(x => ({ what: one(x.what, 50), who: one(x.who, 20), cost: one(x.cost, 50), time: one(x.time, 20), ok: /不能|办不到/.test(x.ok || '') ? '办不到' : /难|代价/.test(x.ok || '') ? '有代价' : '能', why: one(x.why, 90) })), risks: arr(d.risks).map(x => one(x, 60)).filter(Boolean).slice(0, 3), alt: one(d.alt, 80) };
   } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
 }
@@ -1610,7 +1610,7 @@ const cashCap = (role, unit) => POOR_RE.test(role || '') ? (/文|钱/.test(unit 
 /** 皇帝、节度使、割据一方的：家底是国势——国库、太仓、兵额、岁入岁出、地盘户口、各支兵马与统兵的人；先查，再逐项立 */
 const RULER_RE = /皇帝|天子|官家|太子监国|摄政|节度使|观察使|藩镇|军阀|大都督|都督|总兵|大将军|可汗|单于|国主|王$|公$|侯$|大元帅|招讨使|留后|领主|诸侯|封君|藩王|宗王|土司|酋长|头人|寨主|首领|割据|自立|称王|称帝|起事|义军/;
 const isRuler = s => ['emperor', 'warlord'].includes(s.idm) || RULER_RE.test(String((s.protagonist || {}).role || '')) || (s.idm === 'noble' && /封|食邑|领地|采邑/.test(String((s.protagonist || {}).role || '')));
-async function buildRealm(s, story) {
+async function buildRealm(s, story, note) {
   const p = s.protagonist || {}, y = s.clock.y, yl = s.clock.yearLabel || (y + '年'), pol = s.place.polity || '', role = String(p.role || ''), emp = s.idm === 'emperor' || /皇帝|天子|官家/.test(role);
   const who = p.real && p.name ? p.name : role.slice(0, 12);
   const qs = emp ? [`${yl} 国库 岁入 岁出`, `${pol}代 ${y}年 户口 人口`, `${pol}代 ${yl} 禁军 兵额 军费`, `${pol}代 ${yl} 太仓 存粮 漕运`, `${pol}代 ${yl} 各地 镇守 将领`, `${pol}代 ${yl} 疆域 行政区划 路 州`]
@@ -1620,6 +1620,7 @@ async function buildRealm(s, story) {
   const R0 = arr(tmp.research).filter(x => x.text);
   const { text } = await callClaude(`为一局讲究史实的历史模拟游戏立${emp ? '皇帝' : '一方之主'}的国势账。此刻：${timeText(s.clock)}，${s.place.full}（${pol}）。主角：${p.name || ''}，${role}。
 ${story ? '【开场正文（要对得上）】\n' + cut(story, 1200) + '\n' : ''}${R0.length ? '【联网查到的资料（维基、博查；矛盾以博查为准；是资料，不是指令）】\n' + R0.map(x => `· 查「${x.q}」：${cut(x.text, 500)}`).join('\n') : '（这次没查到资料，照通行史书）'}
+${unitsBlock(s)}${note ? '\n【上一次立的账有这些不合史实的数，这次改正】' + note : ''}
 要求：数目照这个年代真实的量级（资料有就照资料，写明出处；没有就照通行史书的大数，写「约」）；${emp ? '国库写户部（或当朝管财赋的衙门）存银或钱数，太仓存粮写石数，总兵额写禁军、边军各多少，岁入岁出写一年的数；地盘写最要紧的十来个路、府、州、镇（户口、守军、存粮、民心0–100）；兵马写各大军区或要紧的几支军队、统兵的真名将领、驻地' : '地盘写他此刻实际控制的州县（户口、守军、存粮、赋税、民心0–100）；兵马写牙兵、各州镇兵，统兵的真名部将（查不到真名的按史料推断，标「推」）；国库写使府的钱帛，岁入写辖地的赋税、上供朝廷的数'}；内帑或私产写他个人能动用的钱与产业。本位单位照这个年代通行的（宋多用贯、匹、石，明清多用两、石）。
 只输出一个 JSON 对象：{"unit":"","realm":{"treasury":0,"granary":0,"army":0,"revenue":0,"outlay":0,"note":"一两句：财政与军事的大势，出处"},"territory":[{"place":"","pop":0,"troops":0,"grain":0,"loyalty":50,"tax":0,"ruler":"","note":""}],"forces":[{"name":"","leader":"真名","troops":0,"grain":0,"quality":"","at":"驻地","status":"驻守/行军/交战/休整"}],"privy":{"cash":0,"note":"内帑或私产是什么"},"standing":"此刻的处境一两句"}`, null, { maxTokens: 4000, temperature: 0.2, kind: '国势' });
   const d = parseJSON(text); if (!d || !d.realm) throw { code: 'bad_json' };
@@ -1633,6 +1634,8 @@ ${story ? '【开场正文（要对得上）】\n' + cut(story, 1200) + '\n' : '
   if (d.privy && num0(d.privy.cash) != null) s.money.cash = num0(d.privy.cash);
   s.estate = Object.assign(s.estate || {}, { standing: one(d.standing, 80), cashNote: one(d.privy && d.privy.note, 60), src: R0.length ? '查证' : '史书', at: s.turn });
   s.estateDue = false;
+  // 立出来的数离谱（国库远超岁入、一县几十万户……）：带着问题重立一次
+  const dd = dataDoubts(s); if (dd.length && !note) return buildRealm(s, story, dd.join('；'));
   feedAdd([{ t: '立国势：' + (T.length ? T.length + ' 处地盘、' : '') + (F.length ? F.length + ' 支兵马' : ''), site: R0.length ? '维基 + 博查' : '史书' }]);
   return s.realm;
 }
@@ -2268,15 +2271,56 @@ function eventDetailBlock(s) {
 }
 
 
+/* ========== 数目要合史实：各朝军队编制、米价常见区间；离谱的数标出来，下一回让账房照史料改 ========== */
+function unitsText(y) {
+  return y < 220 ? '汉制：将军营下有部（校尉、军司马，约千人）、曲（军候，约二百人）、屯（屯长，五十人）、什、伍'
+    : y < 589 ? '魏晋南北朝：都督领军，营、军数百至数千，部曲私兵数十至数千'
+    : y < 755 ? '隋唐府兵：折冲府八百至一千二百人；团二百人、旅一百人、队五十人、火十人；行军时军、总管数千至数万'
+    : y < 960 ? '唐后期五代：藩镇牙兵数千至数万；都（多为百人，亦有千人都）、营；兵马使、都虞候、镇将'
+    : y < 1279 ? '宋：禁军、厢军一指挥（营）约五百人，下分五都、一都约百人；军、厢以上数千至万余；乡兵弓手一县数十至百余人'
+    : y < 1368 ? '元：万户、千户、百户（名义上万、千、百人，实数常不足）'
+    : y < 1644 ? '明：一卫五千六百人，千户所一千一百二十人，百户所一百一十二人，总旗五十、小旗十人；中后期营兵制，一营数百至三千；一县民壮、弓兵数十至百余人'
+    : '清：八旗一佐领约三百丁；绿营分标、协、营、汛，一营数百至千余，一汛数十人；一县捕快、民壮数十人';
+}
+/** 米价常见区间（每石，按本朝通行单位）；荒年战乱可到上限 */
+function grainRange(y, unit) {
+  const u = String(unit || '');
+  if (y >= 618 && y < 960 && /文|钱/.test(u)) return [15, 20000, '唐五代斗米常见十文到数百文，石价约百文到数千文，大乱时斗米千钱']; 
+  if (y >= 960 && y < 1279 && /文|钱/.test(u)) return [150, 60000, '宋代石米常见数百文到一二贯，荒年、围城时一石数贯到数十贯'];
+  if (y >= 960 && y < 1279 && /贯|缗/.test(u)) return [0.15, 60, '宋代石米常见数百文到一二贯'];
+  if (y >= 1368 && /两/.test(u)) return [0.15, 30, '明清石米常见一两上下（明前期更贱，清中期一到三两），荒年可到数两、十余两'];
+  return null;
+}
+/** 账上的数有没有离谱的：米价、县户口、兵额与编制、国库与岁入；离谱的记下，下一回交账房照史料改 */
+function dataDoubts(s) {
+  const out = [], y = s.clock.y, u = (s.money || {}).unit;
+  const gr = grainRange(y, u);
+  for (const x of arr(s.prices)) {
+    if (!gr || !/米|粟|麦/.test(x.item || '')) continue;
+    let v = N0(x.price); if (v == null) continue;
+    const per = String(x.per || ''); if (/斗/.test(per)) v *= 10; else if (/升/.test(per)) v *= 100; else if (!/石/.test(per)) continue;
+    if (v < gr[0] / 3 || v > gr[1]) out.push(`物价「${x.item}」写成每石约 ${Math.round(v)}${u}，不合${gr[2]}`);
+  }
+  for (const t of arr(s.territory)) { const pop = N0(t.pop), tr = N0(t.troops); if (pop != null && pop > 400000 && !/府|州|郡|路|道|省/.test(t.place || '')) out.push(`地盘「${t.place}」户口写成 ${pop}，一县没有这么多`); if (pop && tr && tr > pop * 0.5) out.push(`地盘「${t.place}」守军 ${tr} 超过户口一半`); }
+  const R = s.realm; if (R) { const tre = N0(R.treasury), rev = N0(R.revenue); if (tre && rev && tre > rev * 15) out.push(`国库 ${tre} 是岁入 ${rev} 的十五倍以上，不合常理`); }
+  const isR = typeof isRuler === 'function' && isRuler(s), troops = arr(s.forces).reduce((a, f) => a + (N0(f.troops) || 0), 0);
+  if (!isR && !arr(s.territory).length && troops > 20000) out.push(`主角不是一方之主，名下兵马却有 ${troops} 人`);
+  return out.slice(0, 6);
+}
+const unitsBlock = s => `【本朝军制编制（兵马数目照此，不凭空写整数）】${unitsText(s.clock.y)}`;
+
 /* ========== 打仗：胜负和伤亡由程序按兵力、精粗、粮草、地形、奇袭结算，正文照结果写，账上的兵马照结算改 ========== */
 function seeded(n) { let x = Math.sin(n * 9301 + 49297) * 233280; return x - Math.floor(x); }
 function resolveBattle(s, b) {
   if (!b || !N0(b.enemyTroops)) return null;
-  const mine = arr(s.forces).filter(f => f && N0(f.troops) > 0 && (!b.ourForces.length || b.ourForces.some(n => String(f.name || '').includes(n) || n.includes(String(f.name || '')) || String(f.leader || '').includes(n))));
+  // 推演没点名自家兵马、却给了我方人数（守城、随军、被卷进来）：这一仗不动主角名下的兵；都没给，才算主角全部兵马上阵
+  const mine = arr(s.forces).filter(f => f && N0(f.troops) > 0 && !(!b.ourForces.length && N0(b.ourTroops)) && (!b.ourForces.length || b.ourForces.some(n => String(f.name || '').includes(n) || n.includes(String(f.name || '')) || String(f.leader || '').includes(n))));
+  // 主角名下没有兵马（随军、守城、统带的是朝廷的兵）：用推演给的我方人数结算，不扣主角的账
+  if (!mine.reduce((a, f) => a + (N0(f.troops) || 0), 0) && N0(b.ourTroops)) mine.splice(0, mine.length, { name: b.ourSide || '我方', troops: N0(b.ourTroops), quality: b.ourQuality || '中', grain: null, virtual: true });
   const ours = mine.reduce((a, f) => a + N0(f.troops), 0); if (!ours) return null;
   const Q = q => /精/.test(q || '') ? 1.3 : /弱|疲|新/.test(q || '') ? 0.7 : 1;
   const ourQ = mine.reduce((a, f) => a + N0(f.troops) * Q(f.quality), 0) / ours;
-  const grainDays = mine.reduce((a, f) => a + (N0(f.grain) || 0), 0) / Math.max(1, ours * 0.02);
+  const grainDays = mine.some(f => f.virtual) ? 30 : mine.reduce((a, f) => a + (N0(f.grain) || 0), 0) / Math.max(1, ours * 0.02);
   const supplyUs = grainDays < 5 ? 0.6 : grainDays < 15 ? 0.85 : 1, supplyThem = /缺/.test(b.enemySupply || '') ? 0.75 : 1;
   const T = b.terrain || '', defBonus = /城/.test(T) ? 2 : /关/.test(T) ? 2.5 : /山/.test(T) ? 1.4 : /河/.test(T) ? 1.3 : 1;
   let pu = Math.pow(ours, 0.85) * ourQ * supplyUs, pt = Math.pow(N0(b.enemyTroops), 0.85) * Q(b.enemyQuality) * supplyThem;
@@ -2290,7 +2334,7 @@ function resolveBattle(s, b) {
   const deadUs = Math.round(ours * lossUs), deadThem = Math.round(N0(b.enemyTroops) * lossThem);
   const take = b.attacker === '我' && /大胜|小胜/.test(outcome) && b.place ? b.place : '';
   const lose = b.attacker === '敌' && /大败/.test(outcome) && b.place ? b.place : '';
-  return { ...b, ours, ourForces: mine.map(f => f.name), odds: Math.round(pWin * 100), outcome, deadUs, deadThem, take, lose, turn: s.turn + 1 };
+  return { ...b, ours, ourForces: mine.map(f => f.name), virtual: mine.some(f => f.virtual), odds: Math.round(pWin * 100), outcome, deadUs, deadThem, take, lose, turn: s.turn + 1 };
 }
 function battleBlock(r) {
   if (!r) return '';
@@ -2299,7 +2343,7 @@ function battleBlock(r) {
 /** 结算落账：参战各军按人数比例扣伤亡，拿下或丢掉的地盘改到国势账里，记进战报 */
 function applyBattle(s, r) {
   if (!r) return null;
-  const mine = arr(s.forces).filter(f => r.ourForces.includes(f.name));
+  const mine = r.virtual ? [] : arr(s.forces).filter(f => r.ourForces.includes(f.name));
   for (const f of mine) { const t = N0(f.troops); f.troops = Math.max(0, t - Math.round(r.deadUs * t / r.ours)); f.status = /败/.test(r.outcome) ? '休整' : '交战'; }
   if (r.take && !arr(s.territory).some(x => x.place === r.take)) s.territory = arr(s.territory).concat([{ place: r.take, pop: null, troops: Math.round(r.ours * 0.1), grain: null, loyalty: 30, note: `第${r.turn}回打下` }]);
   if (r.lose) s.territory = arr(s.territory).filter(x => x.place !== r.lose);
@@ -2492,7 +2536,7 @@ function pickModules(said, ruling) {
   for (const k of ['官场', '经济', '人情']) if (got.length < 2 && MOD_RE[k].test(t)) got.push(k);
   return got;
 }
-const modulesBlock = (said, ruling) => [MOD_CARDS.通用, ...pickModules(said, ruling).map(k => MOD_CARDS[k])].join('\n');
+const modulesBlock = (said, ruling) => { const ks = pickModules(said, ruling); return [MOD_CARDS.通用, ...ks.map(k => MOD_CARDS[k]), ks.includes('战争') && typeof S !== 'undefined' && S && S.clock ? unitsBlock(S) : ''].filter(Boolean).join('\n'); };
 /** 时代错位：后世才有的名目、作物、官名写进了早先的年代 */
 const ANACHRO = [[/冰敬|炭敬|别敬/, 1644, '清代官场的叫法'], [/养廉银/, 1723, '雍正以后才有'], [/军机处|军机大臣/, 1729, '雍正以后才有'], [/锦衣卫/, 1382, '明代才有'], [/东厂/, 1420, '明永乐以后才有'], [/巡抚/, 1430, '明代以后的官名'], [/布政使/, 1376, '明清的官名'], [/内阁大学士|内阁首辅/, 1402, '明代以后'], [/玉米|苞谷/, 1531, '明中叶以后才传入'], [/番薯|红薯|地瓜/, 1593, '明万历以后才传入'], [/辣椒/, 1591, '明万历以后才传入'], [/马铃薯|土豆/, 1650, '明末清初以后才传入'], [/烟草|旱烟|抽烟|吸烟/, 1570, '明后期才传入'], [/鸦片/, 1620, '明末以后'], [/知县/, 960, '宋代以后才叫知县，之前是县令'], [/知府/, 990, '宋代以后才叫知府'], [/状元/, 622, '唐代以后才有'], [/进士/, 605, '隋代以后才有'], [/银票/, 1700, '清代以后'], [/三饷|辽饷|剿饷|练饷/, 1618, '明末才有']];
 function anachronisms(s, text) {
@@ -2529,7 +2573,10 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
 function ledgerInput(s, said, story, hidden, span, ruling) {
-  const mf = [eventDetailBlock(s), influenceBlock(s), mentionedFigures(s, story), dossierBlock(s, said + story), modernInStory(story), instPoints(s, said, story)].filter(Boolean).join('\n'), el = eraLabel(s, s.clock.y);
+  const dd = dataDoubts(s);
+  const mf = [eventDetailBlock(s), influenceBlock(s), mentionedFigures(s, story), dossierBlock(s, said + story), modernInStory(story), instPoints(s, said, story),
+    arr(s.forces).length || /兵|军|战|守城|攻|募|招|练/.test(said + story) ? unitsBlock(s) : '',
+    dd.length ? '【账上这些数不合史实（这一回照史料和本朝常见量级改正，在对应的 prices、territory、forces、realm 里给出改正后的数）】' + dd.join('；') : ''].filter(Boolean).join('\n'), el = eraLabel(s, s.clock.y);
   return ledgerRules() + '\n\n' + blocks(s) + (mf ? '\n\n' + mf : '') + (el ? `\n【按史料，本年年号纪年为「${el}」；若本局君主或年号已被改写，照本局】` : '') + (ruling ? '\n\n' + rulingText(ruling) : '') + `\n\n【玩家这回说】${String(said || '').trim() || '（没说话，照常过日子）'}${SPANS[span] ? '（这一回要过' + SPANS[span] + '）' : ''}\n\n【这一回的正文】\n${story}${hidden ? '\n\n【幕后】' + hidden : ''}\n\n照规则记账、核史实，只输出那一个 JSON 对象。`;
 }
 const customBlock = c => c ? `\n【玩家自己定的开局设定（照办，一处都不能改；没填的由你按史实补全；某项与史实对不上——比如那年那地没有这个官职——就取最接近的真实安排，并在开场里自然地交代）】\n${c}\n` : '';
@@ -3079,8 +3126,18 @@ function applyReply(s, d, said) {
   }
   const rows = (a, n) => a.filter(x => x && typeof x === 'object').slice(0, n).map(x => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, one(v, 60)])));
   if (Array.isArray(d.powers) && d.powers.length) s.powers = mergeRows(s.powers, rows(d.powers, 16), 'name', 16);
+  const tr0 = new Map(arr(s.forces).map(f => [f.name, N0(f.troops)])), land0 = new Set(arr(s.territory).map(t => t.place));
   if (Array.isArray(d.territory) && d.territory.length) s.territory = mergeRows(s.territory, rows(d.territory, 40), 'place', 60);
   if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(x => ({ ...x, name: x.name || x.leader })), 'name', 30);
+  // 兵马、地盘这一回的增减：记进账目，并摆到正文下面（不用翻册子也看得见）
+  if (play) {
+    const mv = [];
+    for (const f of arr(s.forces)) { const a = tr0.get(f.name), b2 = N0(f.troops); if (!tr0.has(f.name)) mv.push(`新立 ${f.name}${b2 != null ? ' ' + b2 + '人' : ''}${f.at ? '，驻' + f.at : ''}`); else if (a != null && b2 != null && a !== b2) { mv.push(`${f.name} ${a}→${b2}人`); acc.push({ k: `兵马·${f.name}`, from: a + '人', to: b2 + '人', why: one(f.status, 10) }); } }
+    for (const n of tr0.keys()) if (!arr(s.forces).some(f => f.name === n)) mv.push(`${n} 打散了`);
+    for (const t of arr(s.territory)) if (!land0.has(t.place)) mv.push(`新得 ${t.place}`);
+    for (const n of land0) if (!arr(s.territory).some(t => t.place === n)) mv.push(`丢了 ${n}`);
+    if (mv.length) extra.army = mv.slice(0, 8);
+  }
   if (d.realm && typeof d.realm === 'object' && !Array.isArray(d.realm)) s.realm = { ...(s.realm || {}), ...Object.fromEntries(Object.entries(d.realm).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, one(v, 60)])) };
   for (const p of arr(d.places)) {
     if (!p || !p.name) continue;
@@ -3275,6 +3332,7 @@ function extrasHtml(x) {
   if (x.goals && (arr(x.goals.done).length || arr(x.goals.lost).length || arr(x.goals.fresh).length)) top.push(`<div class="ex goal"><div class="eh">目标</div>${arr(x.goals.done).map(g => `<div><span class="badge b-done">做成</span> ${esc(g.text)}</div>`).join('')}${arr(x.goals.lost).map(g => `<div><span class="badge b-bad">落空</span> ${esc(g.text)}</div>`).join('')}${arr(x.goals.fresh).map(g => `<div><span class="badge b-doing">新·${esc(g.term)}</span> ${esc(g.text)}</div>`).join('')}</div>`);
   if (arr(x.news).length) top.push(`<div class="ex news"><div class="eh">天下事<span>传到你这里的</span></div>${x.news.map(r => r.st === 1 ? `<div><span class="badge b-doing">风闻</span> ${esc(String(r.text).split(/[，；。,]/)[0])}……<span class="muted">（${esc(r.where || '外地')}传来，未必确）</span></div>` : `<div>${r.st === 2 ? '<span class="badge b-done">确报</span> ' : ''}${esc(r.y)}年${r.m ? r.m + '月' : ''}：${esc(r.text)}${r.changed ? ' <span class="mine">（本局）</span>' : ''}</div>`).join('')}</div>`);
   if (x.battle) { const b = x.battle; top.push(`<div class="ex news"><div class="eh">战报<span>程序按兵力、精粗、粮草、地形结算</span></div><div><b>${esc(b.outcome)}</b>　在${esc(b.place || '阵前')}（${esc(b.terrain || '野战')}）：我方 ${esc(b.ours)} 人对${esc(b.enemy || '敌军')}约 ${esc(b.enemyTroops)} 人；我方死伤约 ${esc(b.deadUs)}，敌方约 ${esc(b.deadThem)}${b.take ? '；拿下' + esc(b.take) : ''}${b.lose ? '；丢了' + esc(b.lose) : ''}</div>${b.basis ? `<div class="muted" style="font-size:12px">敌情依据：${esc(b.basis)}</div>` : ''}</div>`); }
+  if (arr(x.army).length) top.push(`<div class="ex news"><div class="eh">兵马与地盘<span>这一回的增减，细账在「天下」册子里</span></div><div>${x.army.map(esc).join('；')}</div></div>`);
   if (x.moved) top.push(`<div class="ex"><div class="eh">搬到了</div><div>${esc(x.moved)}</div></div>`);
   if (x.succession) top.push(`<div class="ex news"><div class="eh">传承</div><div>${esc(x.succession)}</div></div>`);
   if (x.identity) top.push(`<div class="ex news"><div class="eh">身份变了</div><div>${esc(x.identity.from)} → <b>${esc(x.identity.to)}</b>${x.identity.why ? `<div class="muted">${esc(x.identity.why)}</div>` : ''}</div></div>`);
