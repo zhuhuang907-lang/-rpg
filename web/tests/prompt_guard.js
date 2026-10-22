@@ -55,6 +55,11 @@ const checks = [
   ['时代错位嗅探', /anachronisms\(s, text\)/.test(src)],
   ['先维基后博查、矛盾信博查', /维基与博查说法矛盾时以博查为准/.test(src)],
   ['存档不存地理、上一版最后才丢', /const saveJSON = /.test(src) && /> 240000 && s\.prev\) s\.prev = null/.test(src)],
+  ['不逼着每回出事（不造意外、不硬加世界推进）', !/日子里会出事/.test(rules) && !/每回至少有一处来自世界的推进/.test(rules) && /不靠意外撑场面/.test(rules) && !/意外照样会有/.test(src)],
+  ['示范里没有硬塞的意外', !/缆绳断了/.test(rules)],
+  ['不回回拿钱账债做文章', /不回回拿钱粮账目、欠款做文章/.test(rules) && /\['欠债讨债'/.test(src) && /不要为了有戏编欠债/.test(src) && /不安排人来讨债催账/.test(src)],
+  ['影响剧情的开关一律开着', /critic: true, world: true, search: true, deep: true/.test(src) && !/id="sWorld"|id="sDeep"|id="sSearch"/.test(src)],
+  ['玩家定的设定每回都带', /s\.custom = cut\(custom/.test(src) && /玩家开局时亲手定的设定/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
