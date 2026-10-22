@@ -106,6 +106,8 @@ http.createServer((req, res) => {
     const p = msgs.map(m => m.content).join('\n'); n++; if (p.includes('照规则写正文')) fs.writeFileSync('last_story_prompt.txt', p);
     const kind = p.includes('挑剔的历史小说编辑') ? 'critic' : p.includes('还没给玩家看') ? 'verify' : p.includes('「本地志」') ? 'gaz' : p.includes('整理一段史料') ? 'histbuild' : p.includes('推演人') ? 'ruling' : p.includes('账房兼史官') ? 'ledger' : p.includes('深明因果') ? 'world' : p.includes('职官') ? 'inst' : p.includes('资料里') ? 'digest' : p.includes('四百字') ? 'memory' : 'story';
     fs.appendFileSync(LOG, `${n}\t${kind}\t${p.length}\t${msgs.length}\t${(msgs[0]||{}).role}	${req.url}\t${body.temperature}\t${JSON.stringify(body.thinking||null)}\t${body.model}\n`);
+    // LAT=1：照真实 DeepSeek 的慢（按十分之一缩短：写正文带思考约 9 秒，其他 3–6 秒），测一回要等多久
+    if (process.env.LAT) { const ms = { story: 9000, ruling: 4000, ledger: 6000, verify: 4000, critic: 3000, world: 6000 }[kind] || 3000; const t0 = Date.now(); await new Promise(r => setTimeout(r, ms * Number(process.env.LAT))); fs.appendFileSync('timeline.log', `${t0}\t${Date.now()}\t${kind}\t${String(msgs[msgs.length - 1].content).slice(0, 36).replace(/\s/g, ' ')}\n`); }
     if (kind === 'world' || kind === 'gaz') await new Promise(r => setTimeout(r, Number(process.env.WORLD_DELAY || 0)));
     if ((body.max_tokens || 9999) < 100) { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ choices: [{ message: { content: '正常' }, finish_reason: 'stop' }] })); }
     if (chance(0.04)) { res.writeHead(R([500, 503, 429])); return res.end('{"error":{"message":"busy"}}'); }
