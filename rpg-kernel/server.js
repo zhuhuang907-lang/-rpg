@@ -271,8 +271,11 @@ const routes = {
   async 'POST /api/quick-key'(body) {
     const b = body || {};
     // 粘贴时带进来的空格、换行一律去掉；有中文、全角字符的不是 Key（多半复制错了）
-    const k = String(b.apiKey || '').replace(/\s+/g, '');
-    const bk = String(b.bochaKey || '').replace(/\s+/g, '');
+    // 全角转半角，去掉空格、换行、看不见的字符、两头的引号、「Bearer」前缀
+    const clean = v => String(v || '').replace(/[\uFF01-\uFF5E]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[\s\u200B-\u200D\uFEFF\u3000]+/g, '').replace(/^["'“”‘’「」]+|["'“”‘’「」]+$/g, '').replace(/^Bearer/i, '').replace(/^(api[_-]?key|key)[:：=]/i, '');
+    const k = clean(b.apiKey);
+    const bk = clean(b.bochaKey);
+    if (b.bochaOn) { setStatus({ bochaOff: false }); const r = await search.search('苏轼', { provider: 'bocha', noCache: true }); if (!r.error) await search.saveConfig({ provider: 'bocha' }); return { ok: true, bochaOff: false, bocha: r.error ? { ok: false, why: friendlySearch(r.error, true) } : { ok: true, count: (r.results || []).length } }; }
     if (b.noBocha) { setStatus({ bochaOff: true }); await search.saveConfig({ provider: 'wikipedia' }); return { ok: true, saved: { bocha: false }, bochaOff: true }; }
     if (b.bochaKey) setStatus({ bochaOff: false });
     if (k && !/^[\x21-\x7e]+$/.test(k)) return { ok: false, why: 'DeepSeek Key 里有中文或全角字符，请从 DeepSeek 网页上重新复制（以 sk- 开头的一串英文数字）' };
@@ -304,7 +307,7 @@ const routes = {
     if (bk) {
       const r = await search.search('苏轼', { provider: 'bocha', noCache: true });
       if (!r.error) await search.saveConfig({ provider: 'bocha' });
-      out.bocha = r.error ? { ok: false, why: friendlySearch(r.error, true) + '（仍用维基百科搜索）' } : { ok: true, count: (r.results || []).length };
+      out.bocha = r.error ? { ok: false, why: friendlySearch(r.error, true) } : { ok: true, count: (r.results || []).length };
     }
     return out;
   },
@@ -330,7 +333,7 @@ const routes = {
       ok: true, model: aid, modelName: c.model || (aid === 'deepseek' ? 'deepseek-v4-pro' : ''),
       hasKey: !!c.apiKey || ['ollama', 'skeleton', 'mock'].includes(aid),
       keyTail: c.apiKey ? String(c.apiKey).slice(-4) : '',
-      search: scfg.provider, hasBocha: !!bochaKey && !readStatus().bochaOff, bochaSaved: !!bochaKey, bochaTestOk: scfg.provider === 'bocha', lookup: LOOKUP_STATUS,
+      search: scfg.provider, hasBocha: !!bochaKey && !readStatus().bochaOff, bochaSaved: !!bochaKey, bochaOff: !!readStatus().bochaOff, bochaTail: bochaKey ? String(bochaKey).slice(-4) : '', bochaTestOk: scfg.provider === 'bocha', lookup: LOOKUP_STATUS,
       lastTest: readStatus().lastTest || null,
     };
   },

@@ -3148,6 +3148,16 @@ function setBusy(on) { BUSY = on; if (on) THINK_T0 = Date.now(); render(); if (o
 setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = Math.round((Date.now() - THINK_T0) / 1000); } }, 1000);
 
 function render() {
+  // 页面重画时，玩家正在填的字（Key、型号、要做的事……）和光标不丢
+  const keep = {}, ae = document.activeElement, foc = ae && ae.id && /^(INPUT|TEXTAREA)$/.test(ae.tagName) ? ae.id : '';
+  let selr = null; if (foc) try { selr = [ae.selectionStart, ae.selectionEnd]; } catch (_) { /* 有的输入框没有光标位置 */ }
+  document.querySelectorAll('#app input[id], #app textarea[id]').forEach(el => { if (!/checkbox|radio|file/.test(el.type) && el.value) keep[el.id] = el.value; });
+  const r = renderNow();
+  for (const [id, v] of Object.entries(keep)) { const el = document.getElementById(id); if (el && !el.value && !/checkbox|radio|file/.test(el.type)) el.value = v; }
+  if (foc) { const el = document.getElementById(foc); if (el && document.activeElement !== el) { try { el.focus({ preventScroll: true }); if (selr) el.setSelectionRange(selr[0], selr[1]); } catch (_) { /* 不要紧 */ } } }
+  return r;
+}
+function renderNow() {
   if (S && S.clock) LI_KM = liKmFor(S.clock.y);
   $('#bHome').hidden = VIEW !== 'game';
   const sm = $('.brand small'); if (sm) sm.textContent = (MODE === 'claude' ? '网页版 · ' : '') + (/^\d{8}/.test(BUILD) ? `版本 ${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : '');
@@ -3204,24 +3214,26 @@ function customSpec() {
   return { short: one(short, 60), full: L.join('\n'), range: cy != null ? null : rg, c };
 }
 const EXAMPLES = ['万历年间苏州的绣娘', '熙宁二年杭州的知县', '乾隆年间扬州的盐商', '天宝十四载范阳的一个小校', '元丰年间汴京的太学生', '崇祯元年的崇祯皇帝'];
-let KEYMSG = '', KEY_OPEN = false, SELFTEST = '', SELFTESTING = false, NETCHECKING = false;
+let KEYMSG = '', KEY_OPEN = false, SELFTEST = '', SELFTESTING = false, NETCHECKING = false, KEYSAVING = '';
+/** 粘贴进来的 Key 常带空格、换行、引号、「Bearer 」、全角字符、看不见的字符：都清掉 */
+const cleanKey = v => String(v || '').replace(/[\uFF01-\uFF5E]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[\s\u200B-\u200D\uFEFF\u3000]+/g, '').replace(/^["'“”‘’「」]+|["'“”‘’「」]+$/g, '').replace(/^Bearer/i, '').replace(/^(api[_-]?key|key)[:：=]/i, '');
 function keyBox() {
   const open = !KEY.has || KEY_OPEN || !!KEY.bad;
   return `<div class="h"><span class="seal">钥</span>DeepSeek Key<span class="note">只存在你自己电脑上；剧情用你自己的 DeepSeek 额度来写</span></div>
-    ${KEY.has && !KEY_OPEN ? `<div class="row" style="margin-top:0">${KEY.bad ? `<span class="err" style="margin:0">✗ Key 试连没通：${esc(plainWhy(KEY.bad))}</span>` : `<span class="savest">✓ 已接上 DeepSeek（Key 尾号 ${esc(KEY.tail)}，型号 ${esc(KEY.model)}）</span>`}<button class="link" id="bKeyOpen">换 Key</button><button class="link" id="bNet">检查网络</button><button class="link" id="bSelfTest2">联网自检</button></div>${SELFTEST ? `<div id="selfBox2">${SELFTEST}</div>` : ''}` : ''}
+    ${KEY.has && !KEY_OPEN ? `<div class="row" style="margin-top:0">${KEY.bad ? `<span class="err" style="margin:0">✗ Key 尾号 ${esc(KEY.tail)} 试连没通：${esc(plainWhy(KEY.bad))}</span>` : `<span class="savest">✓ 已接上 DeepSeek（Key 尾号 ${esc(KEY.tail)}，型号 ${esc(KEY.model)}）</span>`}${open ? '' : '<button class="link" id="bKeyOpen">换 Key</button><button class="link" id="bNet">检查网络</button><button class="link" id="bSelfTest2">联网自检</button>'}</div>${SELFTEST && !open ? `<div id="selfBox2">${SELFTEST}</div>` : ''}` : ''}
     ${open ? `<div class="howto" style="grid-template-columns:1fr"><div>
       <b>${KEY.has ? '换一个 Key' : '第一次玩：先粘贴 DeepSeek 的 Key'}</b>
-      <div class="row" style="flex-wrap:wrap"><input id="kIn" type="password" autocomplete="off" placeholder="sk-……" style="flex:2 1 14em;min-width:0"><input id="kModel" placeholder="型号，留空用 deepseek-v4-pro" style="flex:1 1 12em;min-width:0"><button class="main" id="bKeySave">保存</button></div>
+      <div class="row" style="flex-wrap:wrap"><input id="kIn" type="password" autocomplete="off" placeholder="sk-……" style="flex:2 1 14em;min-width:0"><input id="kModel" placeholder="型号，留空用 deepseek-v4-pro" style="flex:1 1 12em;min-width:0"><button class="main" id="bKeySave" ${KEYSAVING ? 'disabled' : ''}>${KEYSAVING === 'ds' ? '保存中，正在试连（最多半分钟）…' : '保存'}</button></div>
       <div class="muted" style="margin-top:6px">没有 Key？去 platform.deepseek.com 注册，在「API keys」里生成一个，充几块钱就能玩很久。</div>
       <div class="row"><button id="bNet">检查网络</button><button id="bSelfTest2">联网自检（真实试一遍）</button>${KEY.has && !KEY.bad ? '<button class="link" id="bKeyClose">不换了</button>' : ''}</div>${SELFTEST ? `<div id="selfBox2">${SELFTEST}</div>` : ''}
     </div></div>` : ''}
     <div class="howto" style="grid-template-columns:1fr;margin-top:8px"><div>
-      <b>联网查资料（每回合自动）</b> ${KEY.bocha ? (KEY.bochaTestOk ? '<span class="savest">✓ 已接上博查搜索</span>' : '<span class="muted">博查 Key 已存，上次试搜没通（可能是网络抖了一下），照样每回合在用；一直查不到就重新填 Key</span>') + ' <button class="link" id="bNoBocha">不用博查，改回维基</button>' : KEY.bochaSaved ? '<span class="muted">博查 Key 存着但试搜没通，现在照旧用维基百科；重新填一个 Key 再保存试试</span>' : '<span class="muted">现在用维基百科（免费）；再填博查 Key，中文资料多得多</span>'}
-      <div class="row"><input id="bIn" type="password" autocomplete="off" placeholder="博查 API Key（open.bochaai.com 申请，按次计费、很便宜）" class="grow"><button id="bBochaSave">保存</button></div>
+      <b>联网查资料（每回合自动：先查维基百科，查不到再用博查）</b> ${KEY.bocha ? (KEY.bochaTestOk ? `<span class="savest">✓ 已接上博查（Key 尾号 ${esc(KEY.bochaTail)}）</span>` : `<span class="muted">博查 Key（尾号 ${esc(KEY.bochaTail)}）已存，每回合都在用；上次试搜没通，可能是网络抖了一下，一直查不到就重新填</span>`) + ' <button class="link" id="bNoBocha">不用博查</button>' : KEY.bochaOff && KEY.bochaSaved ? '<span class="muted">你关掉了博查，现在只用维基百科</span> <button class="link" id="bBochaOn">重新用博查</button>' : '<span class="muted">现在只用维基百科（免费）；再填博查 Key，中文资料多得多</span>'}
+      <div class="row"><input id="bIn" type="password" autocomplete="off" placeholder="${KEY.bochaSaved ? '换一个博查 Key' : '博查 API Key（open.bochaai.com 申请，按次计费、很便宜）'}" class="grow"><button id="bBochaSave" ${KEYSAVING ? 'disabled' : ''}>${KEYSAVING === 'bc' ? '保存中，正在试搜…' : '保存'}</button></div>
     </div></div>
     ${KEYMSG ? `<div class="${/✓/.test(KEYMSG) ? 'banner' : 'err'}">${esc(KEYMSG)}</div>` : ''}`;
 }
-async function refreshKey() { try { const q = await api('/api/quick-status'); if (q.lookup) LOOKST = q.lookup; KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '', search: q.search || '', bocha: !!q.hasBocha, bochaSaved: !!q.bochaSaved, bochaTestOk: q.bochaTestOk !== false, bad: q.hasKey && q.lastTest && q.lastTest.ok === false && /401|402|403|Key 不对|余额|没有权限|Unauthorized|Authentication/i.test(q.lastTest.why || '') ? q.lastTest.why : '' }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
+async function refreshKey() { try { const q = await api('/api/quick-status'); if (q.lookup) LOOKST = q.lookup; KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '', search: q.search || '', bocha: !!q.hasBocha, bochaSaved: !!q.bochaSaved, bochaTestOk: q.bochaTestOk !== false, bochaOff: !!q.bochaOff, bochaTail: q.bochaTail || '', bad: q.hasKey && q.lastTest && q.lastTest.ok === false && /401|402|403|Key 不对|余额|没有权限|Unauthorized|Authentication/i.test(q.lastTest.why || '') ? q.lastTest.why : '' }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
 async function renderStart() {
   $('#app').innerHTML = `<section class="start">
     <div class="hero"><h1>你想当谁？</h1>
@@ -3530,7 +3542,7 @@ function pane(tab) {
     <div class="h"><span class="seal">枝</span>分支存档</div>
     <p class="muted" style="font-size:13px">把这一局此刻的样子另存一份，再走另一条路；原来那份不动，首页「接着玩」里两份都在。</p>
     <div class="row"><button id="bBranch" ${BUSY ? 'disabled' : ''}>另存为分支，接着玩分支</button><span class="muted" id="branchMsg"></span></div>
-    ${MODE === 'local' ? `<p class="muted" style="font-size:13px">剧情用你自己的 DeepSeek Key（尾号 ${esc(KEY.tail)}）来写。换 Key：先点「回到正文 ✕」（手机上），再点右上「换一局」回到首页，在「DeepSeek Key」里点「换 Key」。</p>` : `
+    ${MODE === 'local' ? keyBox() : `
     <label class="muted" for="sTier" style="display:block;margin-top:10px">用哪档 AI</label>
     <select id="sTier">${[['default', '标准（快一些）'], ['complex', '最强（更细更准，但更慢、更费额度）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.tier === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <p class="muted" style="font-size:13px">剧情用你自己的 Claude 账号来写，会占用你的 Claude 使用额度。存档存在你的账号里，只有你看得到。</p>`}`;
@@ -3595,6 +3607,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
       const vs = fake ? { ...fake, research: arr(pre.research), almanac: arr(pre.almanac) } : { ...(pre || {}), research: arr(pre && pre.research), almanac: arr(pre && pre.almanac), clock: { y: oy ?? 0, m: 6, d: 1, yearLabel: '' }, place: { full: '', polity: '' }, protagonist: { name: '', role: sentence }, chat: [], world: {}, figOver: {}, turn: 0, noTime: oy == null, yearOnly: oy != null };
       // 核实、情理审读、立账册一起做（网页版依次做）；有大毛病的，两边的意见合在一起把开场重写一次（只一次），账册照新稿重立
       const critP = SETTINGS.critic !== false ? storyCritic({ ...vs, protagonist: { name: r ? r.name : '', gender: r ? r.gender : '', age: r ? r.age : null, role: r ? r.role : sentence } }, sentence + (custom ? '\n' + custom : ''), draft.text).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
+      critP.catch(() => { /* 停下了：下面 await 时再处理 */ });
       if (MODE !== 'local') await critP;
       const vr = await verifyText(vs, sentence + (custom ? '\n' + custom : '') + (sb ? '\n' + sb : ''), draft.text);
       const probs = (await critP).concat(arr(vr.major).map(x => `${x.problem}${x.fix ? '——应当：' + x.fix : ''}`));
@@ -3783,7 +3796,7 @@ async function send(said, span, note, resume) {
       PHASE = 'verify'; render();
       if (par && !st.talk) startLedger();
       const critic = () => !st.talk && SETTINGS.critic !== false ? storyCritic(S, said, st.text).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
-      const critP = par ? critic() : null;
+      const critP = par ? critic() : null; if (critP) critP.catch(() => { /* 停下了：下面 await 时再处理 */ });
       const vr = await verifyText(S, said, st.text);
       const crit = critP ? await critP : await critic();
       const probs = st.talk ? [] : preFaults.concat(crit, arr(vr.major).map(x => `${x.problem}${x.fix ? '——应当：' + x.fix : ''}`));
@@ -3916,6 +3929,8 @@ document.addEventListener('input', keepCustom); document.addEventListener('chang
 document.addEventListener('toggle', e => { if (e.target && e.target.id === 'dCustom') CUSTOM_OPEN = e.target.open; }, true);
 document.addEventListener('keydown', e => {
   if (e.target.id === 'said' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#bSend').click(); }
+  if ((e.target.id === 'kIn' || e.target.id === 'kModel') && e.key === 'Enter') { e.preventDefault(); const b = $('#bKeySave'); if (b) b.click(); }
+  if (e.target.id === 'bIn' && e.key === 'Enter') { e.preventDefault(); const b = $('#bBochaSave'); if (b) b.click(); }
   if (e.target.id === 'regenNote' && e.key === 'Enter') { e.preventDefault(); const b = $('#bRegenGo'); if (b) b.click(); }
   if (e.key === 'Escape' && typeof SIDE_FOLD !== 'undefined' && !SIDE_FOLD && matchMedia('(max-width: 960px)').matches) { SIDE_FOLD = true; render(); }
 });
@@ -3927,17 +3942,19 @@ document.addEventListener('click', async e => {
   if (t.id === 'bKeyOpen') { KEY_OPEN = true; render(); return; }
   if (t.id === 'bKeyClose') { KEY_OPEN = false; KEYMSG = ''; render(); return; }
   if (t.id === 'bKeySave') {
-    const k = $('#kIn').value.trim(), m = $('#kModel').value.trim();
-    if (!k && !(m && KEY.has)) { $('#kIn').focus(); return; }
-    t.disabled = true; t.textContent = '保存中…'; KEYMSG = '';
+    if (KEYSAVING) return;
+    const k = cleanKey($('#kIn').value), m = String($('#kModel').value || '').trim().toLowerCase();
+    if (!k && !(m && KEY.has)) { KEYMSG = '先把 DeepSeek 的 Key 粘贴进左边的框里'; render(); const el = $('#kIn'); if (el) el.focus(); return; }
+    if (k && !/^[\x21-\x7e]{8,}$/.test(k)) { KEYMSG = '这串不像 DeepSeek 的 Key（应是 sk- 开头的一串英文数字），请到 platform.deepseek.com 的「API keys」里重新复制'; render(); return; }
+    KEYSAVING = 'ds'; KEYMSG = ''; render();
     try {
       const r = await api('/api/quick-key', { apiKey: k || undefined, model: m || undefined });
       await refreshKey();
       if (!r.ok) KEYMSG = '没保存上：' + (r.why || '未知原因');
-      else if (r.test && r.test.ok) { KEYMSG = `✓ 已保存，试连成功（${r.test.model || ''}）`; KEY_OPEN = false; }
-      else { const w = plainWhy(r.test && r.test.why); KEYMSG = '已保存，但试连没通：' + w + (/Key|余额|权限/.test(w) ? '。请核对 Key 后重新粘贴。' : '。点「检查网络」看看卡在哪。'); }
+      else if (r.test && r.test.ok) { KEYMSG = `✓ 已保存，试连成功（${r.test.model || ''}）`; KEY_OPEN = false; const el = $('#kIn'); if (el) el.value = ''; }
+      else { const w = plainWhy(r.test && r.test.why); KEYMSG = '已保存，但试连没通：' + w + (/Key|余额|权限/.test(w) ? '。请核对 Key 后重新粘贴。' : '。Key 已经存下了，网络好了就能用；点「检查网络」看看卡在哪。'); const el = $('#kIn'); if (el) el.value = ''; }
     } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
-    render(); return;
+    KEYSAVING = ''; render(); return;
   }
   if (t.id === 'bWBocha') {
     const k = String(($('#wBocha') || {}).value || '').replace(/\s+/g, ''); const m = $('#wBochaMsg'); if (!k) return;
@@ -3954,17 +3971,19 @@ document.addEventListener('click', async e => {
     catch (e) { UPDINFO = { why: e.message || String(e) }; }
     render(); return;
   }
-  if (t.id === 'bNoBocha') { try { await api('/api/quick-key', { noBocha: true }); await refreshKey(); KEYMSG = '✓ 已改回维基百科搜索'; } catch (e) { KEYMSG = e.message; } render(); return; }
+  if (t.id === 'bNoBocha' || t.id === 'bBochaOn') { if (KEYSAVING) return; try { const r = await api('/api/quick-key', t.id === 'bNoBocha' ? { noBocha: true } : { bochaOn: true }); await refreshKey(); KEYMSG = !r.ok ? '没改成：' + (r.why || '') : t.id === 'bNoBocha' ? '✓ 已关掉博查，只用维基百科' : '✓ 又用上博查了'; } catch (e) { KEYMSG = '游戏服务没有回应：' + (e.message || e); } render(); return; }
   if (t.id === 'bBochaSave') {
-    const k = $('#bIn').value.trim(); if (!k) { $('#bIn').focus(); return; }
-    t.disabled = true; t.textContent = '保存中…'; KEYMSG = '';
+    if (KEYSAVING) return;
+    const k = cleanKey($('#bIn').value); if (!k) { KEYMSG = '先把博查的 Key 粘贴进框里'; render(); const el = $('#bIn'); if (el) el.focus(); return; }
+    KEYSAVING = 'bc'; KEYMSG = ''; render();
     try {
       const r = await api('/api/quick-key', { bochaKey: k });
       await refreshKey();
       if (r.bocha && r.bocha.ok) { SEARCH_OFF = ''; SEARCH_DOWN = 0; }
-      KEYMSG = r.bocha && r.bocha.ok ? `✓ 博查已保存，试搜成功（${r.bocha.count} 条）` : '博查试搜没通：' + plainWhy((r.bocha && r.bocha.why) || r.why || '');
-    } catch (e) { KEYMSG = '没保存上：' + (e.message || e); }
-    render(); return;
+      KEYMSG = !r.ok ? '没保存上：' + (r.why || '') : r.bocha && r.bocha.ok ? `✓ 博查已保存，试搜成功（${r.bocha.count} 条）` : '博查 Key 已存下，但试搜没通：' + plainWhy((r.bocha && r.bocha.why) || '');
+      if (r.ok) { const el = $('#bIn'); if (el) el.value = ''; }
+    } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
+    KEYSAVING = ''; render(); return;
   }
   if (t.id === 'bNet') {
     if (NETCHECKING) return; NETCHECKING = true;

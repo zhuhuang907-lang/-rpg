@@ -250,7 +250,7 @@ const PROVIDERS = {
       if (!cfg.apiKey) throw new Error('未配置博查 API Key');
       // 博查有两个域名：api.bocha.cn 是现在的，api.bochaai.com 是旧的；前一个连不上就换后一个（Key 不对不换）
       let json, status, lastErr;
-      for (const host of ['https://api.bocha.cn', 'https://api.bochaai.com']) {
+      for (const host of process.env.BOCHA_BASE ? [process.env.BOCHA_BASE] : ['https://api.bocha.cn', 'https://api.bochaai.com']) {   // BOCHA_BASE 只给测试用
         try {
           ({ json, status } = await http(host + '/v1/web-search', { method: 'POST', headers: { Authorization: `Bearer ${cfg.apiKey}` }, body: { query: q, count: Number(cfg.count) || 5, summary: true, freshness: 'noLimit' } }));
           lastErr = null; break;
