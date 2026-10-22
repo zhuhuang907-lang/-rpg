@@ -831,7 +831,7 @@ function storyRules() {
   return `你在和玩家一起写一个人在真实历史里的一生。玩家说主角做什么，你写那个年代的世界怎么回应：身边的人怎么说、怎么想、怎么做，事情怎么一步步起变化。你写世界和别人，不替主角想、不替主角说。
 
 十一条，按轻重排：
-1. 主角只做玩家说的：玩家写了的动作和话，照办、写透；玩家没写的话，一句不替主角说；没做的决定，一个不替主角做；主角心里怎么想、对谁什么态度，也不替他写。玩家说了要办什么事、没说怎么办，就写他着手去办，写到第一个要主角本人开口、拿主意、亲眼去看的地方就停。不追问。玩家一句话里有几个动作（喊一嗓子然后往南跑、带人去堵门），先写第一步和对方、旁人的真实反应；后面几步成不成，由第一步的结果和各人的利害决定——玩家说出来的结果（众人跟随、对方答应、事成了）不算数。
+1. 主角只做玩家说的：玩家写了的动作和话，照办、写透；玩家没写的话，一句不替主角说；没做的决定，一个不替主角做；主角心里怎么想、对谁什么态度，也不替他写。玩家说了要办什么事、没说怎么办，就照常理把它办下去，办到有了结果（成了、砸了、卡住了）再停，不要只写个开头就停；只有中途真要主角本人开口答话、拿一个玩家没交代的主意时才停。不追问。玩家一句话里有几件事（先去县衙递状子，再去茶肆打听，回家吩咐备车），照先后一件件都写出来，每件都有对方、旁人的真实反应和代价，不拖成好几回；哪一件中途出了岔子、结果改变了后面的事，就停在那里等玩家——玩家说出来的结果（众人跟随、对方答应、事成了）不算数，成不成由各人的利害决定。
 2. 对话和路途归玩家自己：主角和人说话，你只写对方的话、神色、动作，对方说完一段、轮到主角接话时就停——不替主角回答，不把一场谈话一口气写完。主角上路，写动身和头一段路上的所见，碰到值得停下的人、事、地方（关卡、渡口、驿站、同路人、岔路、路边的消息）就停，让玩家自己走下去；路上真的平淡无事，才一两句带到下一个落脚处。
 3. 只有平淡无事才跳日子：玩家说歇着、等着、过几天，或者这段日子里确实没有要紧的事，才往前跳到有事的时候；有人在说话、有事正在眼前、路上有可停之处，都不跳。
 4. 下面的人令行禁止，但不做主：主角明白吩咐下去的事，他们去办、回报结果，不请示、不问「要不要」「怎么办」，不推诿；只有真办不到的才写难处，一次说清。没吩咐的事不擅自替主角做主——动主角的钱、人、名声、跟谁结盟结仇，他们只把消息报上来，自己的小算盘可以打，但不替主角拍板。
@@ -973,7 +973,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022150548';
+const BUILD = '20261022161917';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -3080,13 +3080,13 @@ ${text}
   const probs = arr(r.problems).filter(x => x && x.why && !/可保留|可以保留|无妨|不必改|无伤大雅/.test(String(x.why) + String(x.fix || ''))).slice(0, 6).map(x => `第${x.item || '?'}条：${x.quote ? '「' + one(x.quote, 40) + '」' : ''}${one(x.why, 80)}${x.fix ? '——应当：' + one(x.fix, 80) : ''}`);
   const sc = Number(r.score);
   // 七分以上的稿子不为小毛病整段重写（重写一次要多等两三分钟）；分低、或有致命的（替主角做主、死人出场）才打回
-  return Number.isFinite(sc) && (sc >= 7 || sc >= 6 && probs.length <= 2) && !arr(r.problems).some(x => x && (+x.item === 1 || +x.item === 6)) ? [] : probs;
+  return Number.isFinite(sc) && sc >= 6 && !arr(r.problems).some(x => x && (+x.item === 1 || +x.item === 6)) ? [] : probs;
 }
 /* ========== DeepSeek 的老毛病，程序来查：AI 腔套话、答非所问、编造的年号与官员 ========== */
 /** AI 腔：大模型写小说最爱用、一看就假的套话 */
 const SLOP = /眼[中里底]闪过一[丝抹道]|闪过一丝|嘴角(微微)?(上扬|勾起|扬起|一勾|抽动|浮起)|勾起一抹|一抹(笑|苦笑|冷笑|弧度)|不禁|不由得|不由自主|深吸(了)?一口气|倒吸一口凉气|心中一[凛动震紧沉]|心头一[震紧沉凛]|暗[自暗]?(思忖|忖道|道：)|意味深长|若有所思|一字一[顿句]|目光如炬|掷地有声|空气(仿佛|似乎)?(凝固|凝滞)|时间(仿佛|似乎)?(静止|凝固)|仿佛|宛如|犹如|一股[^，。]{0,6}(涌上|涌起|袭来|油然而生)|命运的齿轮|历史的车轮|注定(是|要)?(不平凡|不寻常)|这一刻|(声音|语气)不大[，,]?却|透着一股|带着几分|似笑非笑|眸[中子光]|瞳孔(骤然)?(一缩|收缩|骤缩)|心[中里]五味杂陈|百感交集|久久不能平静|一切(才刚刚|都将)/g;
 /** 改稿之后还剩的几个最机械的虚词：直接删（「他不禁笑了」→「他笑了」），不动意思 */
-const deslop = t => String(t || '').replace(/不由自主地?|不由得|不禁/g, '').replace(/，\s*，/g, '，');
+const deslop = t => String(t || '').replace(/不由自主地?|不由得|不禁/g, '').replace(/，?(他|她|你)?的?(眼中|眼里|眼底)闪过一[丝抹道][^，。！？」]{0,8}(，|。)/g, '$3').replace(/，\s*，/g, '，').replace(/([。！？])[。，]+/g, '$1').replace(/^[，。]/gm, '');
 /** 戏外问答的客服腔：开头的「好的」「当然」「这是个好问题」，结尾的「希望对你有帮助」「如有需要」、总结套话，都剥掉 */
 const TALK_OPEN = /^\s*(好的|当然(可以|了)?|没问题|这是一个(很|非常)?好的问题|这个问题(问得)?很好|好问题|明白了?|了解)[！!，,。：:\s]*/;
 const cleanTalk = t => { let x = String(t || ''); for (let i = 0; i < 3 && TALK_OPEN.test(x); i++) x = x.replace(TALK_OPEN, ''); return deslop(x
@@ -3185,7 +3185,7 @@ function draftFaults(s, said, text, span) {
   for (const name of bannedTopics(s, said)) { const re = BORING.find(x => x[0] === name)[1]; if (countIn(text, re) >= 1) out.push(`又写了「${name}」这类题材：这一回不许写，换成别的事`); }
   // AI 腔：套话一多就打回（每千字超过两处，或一共四处以上）
   const sl = slopHits(text), sn = countIn(text, SLOP);
-  if (sn >= 4 || sn >= 2 && sn * 1000 / Math.max(1, String(text).length) > 2) out.push(`AI 腔套话太多（${sl.slice(0, 6).join('、')}，共 ${sn} 处）：一律删掉，换成具体的动作、话、物件；人的心思从他做了什么、说了什么里看出来`);
+  if (sn >= 6 || sn >= 3 && sn * 1000 / Math.max(1, String(text).length) > 4) out.push(`AI 腔套话太多（${sl.slice(0, 6).join('、')}，共 ${sn} 处）：一律删掉，换成具体的动作、话、物件；人的心思从他做了什么、说了什么里看出来`);
   if (!/^戏外/.test(String(said || '').trim()) && missedAction(s, said, text)) out.push(`没接住玩家这一步：玩家说「${one(said, 40)}」，正文几乎没写这件事——先写这一步怎么做、谁怎么回应`);
   const fe = futureEras(s, text); if (fe.length) out.push(`年号年份写错了（${fe.join('；')}）：照【时间】改，书中人不知道将来的年号`);
   const prevG = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk' && c.text);
@@ -3275,7 +3275,7 @@ function anachronisms(s, text) {
 }
 /** 铁律卡：每一回放在给写正文的那段话最前面，结尾再说一遍最要紧的三条（长规则在前面容易被忘） */
 const IRON_HEAD = `【这一回的铁律】
-1. 只写玩家这一步：主角的话只用玩家原话，不替他做决定、不快进；一句里几个动作，先写第一步和真实反应。
+1. 照玩家说的办：主角的话只用玩家原话，不替他做决定；一句里几件事照先后都写出来、各有真实反应，事情办到有了结果再停，不拖成好几回；中途出了岔子、或真要主角当场答话拿主意，才停下等玩家。
 2. 人名、官名、地名只用材料里有的；官职写清本官、差遣、上司同僚；虚构小人物有全名、不顶真人官位。
 3. 人照时代想事，不知后世；各有利害，会拖延、讨价、翻脸；每步有代价，会失败。
 4. 犯禁照律令由真衙门处置，不凭空调兵。
@@ -3532,7 +3532,15 @@ function nameFixes(s, text) {
 }
 /* ========== 审校：写好的正文先在内部核实（材料核对 → 拿不准的联网查 → 改正），只把核实过的版本给玩家看 ========== */
 let DRAFTN = 0, CUR_SAID = '';   // 写稿时只显示写了多少字，不显示没核实的文字
-const draftCb = t => { DRAFTN = String(t || '').length; const el = $('#draftN'); if (el) el.textContent = DRAFTN; else render(); };
+/** 边写边显示：写到哪儿给玩家看到哪儿（标明是初稿，核实、记账做完换成定稿），不用对着转圈干等 */
+let DRAFT_LIVE = '', DRAFT_T = 0;
+const draftCb = t => {
+  DRAFTN = String(t || '').length; DRAFT_LIVE = String(t || '');
+  const el = $('#draftN'); if (el) el.textContent = DRAFTN;
+  if (Date.now() - DRAFT_T < 350) return; DRAFT_T = Date.now();
+  const box = $('#draftLive'); if (box) box.innerHTML = paras(DRAFT_LIVE); else render();
+};
+const draftHtml = () => `<div class="muted" style="font-size:12px;margin-top:8px">${PHASE === 'draft' || PHASE === 'rewrite' ? (PHASE === 'rewrite' ? '照核对出的问题改稿中，' : '') + '初稿，写完还要对照史料核实、记账；定稿会替换这一段' : '初稿写好了，正在对照史料核实、通读、记账；定稿会替换这一段'}</div><div class="text" id="draftLive" style="opacity:.78">${paras(DRAFT_LIVE)}</div>`;
 function verifyMaterials(s, said, text) {
   const up = unknownPlaces(s, text);
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-6).map(x => ({ ...x, text: cut(x.text, x.wiki ? 500 : 280) }));   // 写正文只要这一回新查到的要点，别把整页资料塞进去
@@ -4145,8 +4153,8 @@ async function renderStart() {
       <div class="examples">${EXAMPLES.map(x => `<button class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
       ${customForm()}
     </div>
-    ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'search' ? '第 1 步，共 3 步：先联网把这个年代查一遍（人物、官制、物价、风俗、大事）' : PHASE === 'draft' ? '第 2 步，共 3 步：正在写开场，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '第 3 步，共 3 步：开场写好了，正在对照史料再过一遍、立账册' : PHASE === 'ledger' ? '第 3 步，共 3 步：快好了，正在立账册' : PHASE === 'estate' ? '第 3 步，共 3 步：照这个年代、这个身份查清家底（田产、房屋、进项、开销）' : '正在把你落到历史里、写开场'}……已 <span id="secs">0</span> 秒（一般一到三分钟）<button class="link" id="bStop">停下</button></div>
-      ${STREAM && PHASE === 'ledger' ? `<div class="msg gm"><div class="text">${paras(STREAM)}</div></div>` : feedHtml()}` : ''}
+    ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'search' ? '第 1 步，共 3 步：先联网把这个年代查一遍（人物、官制、物价、风俗、大事）' : PHASE === 'draft' ? '第 2 步，共 3 步：正在写开场，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '第 3 步，共 3 步：开场写好了，正在对照史料再过一遍、立账册' : PHASE === 'ledger' ? '第 3 步，共 3 步：快好了，正在立账册' : PHASE === 'estate' ? '第 3 步，共 3 步：照这个年代、这个身份查清家底（田产、房屋、进项、开销）' : '正在把你落到历史里、写开场'}……已 <span id="secs">${BUSY && THINK_T0 ? Math.round((Date.now() - THINK_T0) / 1000) : 0}</span> 秒（一般一到三分钟）<button class="link" id="bStop">停下</button></div>
+      ${STREAM && PHASE === 'ledger' ? `<div class="msg gm"><div class="text">${paras(STREAM)}</div></div>` : DRAFT_LIVE && /draft|rewrite|verify|critic/.test(PHASE) ? `<div class="msg gm">${draftHtml()}</div>` : feedHtml()}` : ''}
     ${ERRMSG ? `<div class="${/^网络或模型抖了一下/.test(ERRMSG) ? 'banner' : 'err'}">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''}</div>` : ''}
     ${MODE === 'local' ? keyBox() : ''}
     <div class="h"><span class="seal">档</span>接着玩<span class="note">${MODE === 'local' ? '存在游戏文件夹里，本浏览器也留一份' : '存在你的 claude.ai 账号里，本浏览器也留一份'}</span></div>
@@ -4258,7 +4266,7 @@ function renderGame() {
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? (MODE === 'local' && SETTINGS.deep !== false && !DRAFTN ? '先构思这一回：谁在场、各自要什么、天下大事怎么砸进来（深度思考，要一两分钟）' : '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字') : PHASE === 'verify' ? '写好了，正在对照史料核实、通读、记账' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'rewrite' ? '正在写，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'dossier' ? '正在给这一回牵涉的真人立档：生卒、此刻的官职、在哪、在做什么、见不见得到' : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '正在想这一步会怎样' : PHASE === 'hsync' ? '正在按月联网查此刻前后几个月的真实史事（博查 / 维基年份条目），只收资料里写明的' : PHASE === 'critic' ? '写好了初稿，正在通读一遍，看情理通不通' : PHASE === 'resolve' ? '先把你的设定落到真实历史里：定下年月日、地点、政权、身份，对不上史实的地方按史实调' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : feedHtml()}</div>` : '';
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? (MODE === 'local' && SETTINGS.deep !== false && !DRAFTN ? '先构思这一回：谁在场、各自要什么、天下大事怎么砸进来（深度思考，要一两分钟）' : '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字') : PHASE === 'verify' ? '写好了，正在对照史料核实、通读、记账' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'rewrite' ? '正在写，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'dossier' ? '正在给这一回牵涉的真人立档：生卒、此刻的官职、在哪、在做什么、见不见得到' : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '正在想这一步会怎样' : PHASE === 'hsync' ? '正在按月联网查此刻前后几个月的真实史事（博查 / 维基年份条目），只收资料里写明的' : PHASE === 'critic' ? '写好了初稿，正在通读一遍，看情理通不通' : PHASE === 'resolve' ? '先把你的设定落到真实历史里：定下年月日、地点、政权、身份，对不上史实的地方按史实调' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">${BUSY && THINK_T0 ? Math.round((Date.now() - THINK_T0) / 1000) : 0}</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE === 'ledger' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : DRAFT_LIVE && /draft|rewrite|verify|critic/.test(PHASE) ? draftHtml() : feedHtml()}</div>` : '';
   const ae = document.activeElement, saidEl = $('#said');
   const edKeep = EDITING && $('#editText') ? $('#editText').innerHTML : null, rgKeep = $('#regenBox') ? $('#regenBox').innerHTML : '', rnKeep = $('#regenNote') ? $('#regenNote').value : null;
   const keep = { said: saidEl ? saidEl.value : '', span: $('#span') ? $('#span').value : 'auto', focus: ae && ae.id === 'said', a: saidEl ? saidEl.selectionStart : 0, b: saidEl ? saidEl.selectionEnd : 0, scroll: window.scrollY };
@@ -4477,7 +4485,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
   custom = String(custom || '').trim(); OPEN_RANGE = (spec && spec.range) || null; if (!havePre) S0ARC = '';
   sentence = String(sentence || '').trim(); if (BUSY) return;
   if (!sentence) { ERRMSG = '先写一句：哪个年代、什么地方、什么人（例如：乾隆年间扬州的盐商）'; render(); return; }
-  ERRMSG = ''; STREAM = ''; PHASE = ''; if (!have) FEED = [];
+  ERRMSG = ''; STREAM = ''; PHASE = ''; DRAFT_LIVE = ''; if (!have) FEED = [];
   CTL = new AbortController(); TURN = CTL;
   setBusy(true);
   let st = have || null, looked = null, pre = havePre || null, ledP = null;
@@ -4593,7 +4601,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (!st) LAST_ACTION = () => startGame(sentence, null, pre, custom, spec);
     else if (!LAST_ACTION) LAST_ACTION = () => startGame(sentence, st, pre, custom, spec);
   }
-  finally { STREAM = ''; PHASE = ''; TURN = null; setBusy(false); }
+  finally { STREAM = ''; PHASE = ''; DRAFT_LIVE = ''; TURN = null; setBusy(false); }
   if (S && VIEW === 'game') { const s0 = S; runBg(() => afterTurn(s0, null, null)); }
 }
 /* ========== 后台：每回合写完之后的整理（不挡玩家） ========== */
@@ -4639,7 +4647,7 @@ async function send(said, span, note, resume) {
     if (STOP_PENDING) { STOP_PENDING = false; PENDING_SAID = ''; if (resume && resume.orig) S = resume.orig; render(); const el = $('#said'); if (el) el.value = String(said || ''); return; }
     if (!S) return;
   }
-  ERRMSG = ''; STREAM = ''; PHASE = ''; PENDING_SAID = String(said || '').trim(); CUR_SAID = String(said || ''); FEED = [];
+  ERRMSG = ''; STREAM = ''; PHASE = ''; DRAFT_LIVE = ''; PENDING_SAID = String(said || '').trim(); CUR_SAID = String(said || ''); FEED = [];
   const orig = resume && resume.orig;
   LAST_ACTION = () => { if (orig) S = restorePrev(orig); send(said, span, note, resume && (resume.story || orig) ? { story: resume.story, orig, ruling: resume.ruling, fix: resume.fix } : undefined); };
   const before = clone(S); before.prev = null;
@@ -4800,7 +4808,7 @@ async function send(said, span, note, resume) {
     if (INST_CACHE && INST_CACHE.id === S.id && !S.inst) S.inst = INST_CACHE.inst;
     setTimeout(() => { if ($('#said') && !$('#said').value) $('#said').value = said || ''; }, 0);
   } finally {
-    STREAM = ''; PHASE = ''; PENDING_SAID = ''; TURN = null; setBusy(false);
+    STREAM = ''; PHASE = ''; DRAFT_LIVE = ''; PENDING_SAID = ''; TURN = null; setBusy(false);
     const all = document.querySelectorAll('.chat .msg'); const last = all[all.length - 1]; if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   if (AUTO_RETRY) {
