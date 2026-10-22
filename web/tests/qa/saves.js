@@ -18,7 +18,7 @@ const { chromium } = require('playwright');
   await home();
   await p.click(`[data-askdel="${b2}"]`); await p.waitForTimeout(150);
   await p.evaluate(() => render()); await p.waitForTimeout(150);   // 后台做完一步会重画页面：「确定删掉？」不能跟着消失
-  const d = await p.$(`[data-del="${b2}"]`); if (!d) bad('点「删除」后的「确定删掉？」被重画冲掉了'); else { await d.click(); await p.waitForTimeout(800); }
+  const dl = p.locator(`[data-del="${b2}"]`); if (!(await dl.count())) bad('点「删除」后的「确定删掉？」被重画冲掉了'); else { await dl.first().click(); await p.waitForTimeout(800); }
   const ids2 = await p.$$eval('[data-load]', xs => xs.map(x => x.dataset.load));
   if (ids2.includes(b2)) bad('删掉的存档还在列表里'); if (!ids2.includes(a)) bad('没删的那份不见了');
   await p.reload(); await p.waitForTimeout(1500); await p.click('#bHome').catch(() => {}); await p.waitForTimeout(800);
@@ -26,7 +26,7 @@ const { chromium } = require('playwright');
   // 游戏里直接切换：设置里有存档列表
   await p.click(`[data-load="${a}"]`).catch(() => {}); await p.waitForTimeout(500); const c = await (async () => { await home(); return open('崇祯元年的崇祯皇帝'); })();
   await p.click('[data-tab="set"]').catch(() => {}); await p.waitForTimeout(400);
-  const sw = await p.$(`.side [data-load="${a}"]`); if (!sw) bad('游戏里「设置」没有切换存档'); else { await sw.click(); await p.waitForTimeout(600); if (await p.evaluate(() => S.id) !== a) bad('游戏里切换存档没切过去'); }
+  const swl = p.locator(`.side [data-load="${a}"]`); try { await swl.first().waitFor({ timeout: 8000 }); } catch (_) { /* 下面报 */ } if (!(await swl.count())) bad('游戏里「设置」没有切换存档'); else { await swl.first().click(); await p.waitForTimeout(600); if (await p.evaluate(() => S.id) !== a) bad('游戏里切换存档没切过去'); }
   console.log('ERRS', JSON.stringify(errs));
   await b.close(); process.exit(errs.length ? 1 : 0);
 })();

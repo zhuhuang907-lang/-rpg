@@ -11,7 +11,7 @@ const TURNS = Number(process.argv[2] || 60);
   const errText = () => p.evaluate(() => [...document.querySelectorAll('.err')].map(e => e.innerText).join(' | '));
   // 开局（失败就点再试）
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart');
-  for (let k = 0; k < 6 && !(await p.$('#said')); k++) { await idle(); const e = await errText(); if (e) { uiErrs.push('open: ' + e); const r = await p.$('#bRetry'); if (r) await r.click(); } }
+  for (let k = 0; k < 6 && !(await p.$('#said')); k++) { await idle(); const e = await errText(); if (e) { uiErrs.push('open: ' + e); await p.click('#bRetry', { timeout: 2000 }).catch(() => {}); } }
   if (!(await p.$('#said'))) { console.log('OPENING FAILED', uiErrs); await b.close(); return; }
   const inputs = ['去仪征看看盐栈', '找程立德问亏空的事', '戏外：一引盐赚多少？', '', '给运司书吏送二百两', '置办二十亩田', '带承裕去拜会卢见曾', '戏外：去苏州要几天？', '开个会商量明年的生意', '在家歇着'];
   const spans = ['auto', 'auto', 'auto', 'xun', 'month', 'season', 'year'];
@@ -29,7 +29,7 @@ const TURNS = Number(process.argv[2] || 60);
       }
       const r = Math.random();
       if (r < 0.06) { await p.waitForTimeout(400 + Math.random() * 1500); await p.reload(); await p.waitForTimeout(1500); }
-      else if (r < 0.10) { await p.waitForTimeout(300); const s = await p.$('#bStop'); if (s) await s.click(); }
+      else if (r < 0.10) { await p.waitForTimeout(300); await p.click('#bStop', { timeout: 2000 }).catch(() => {}); }
       if (!(await idle())) { stuck.push(`turn ${i}: stuck >90s: ` + (await p.evaluate(() => (document.querySelector('.thinking') || {}).innerText || '')).slice(0, 80)); await p.reload(); await p.waitForTimeout(1500); await idle(); }
       const e = await errText(); if (e) uiErrs.push(`turn ${i}: ${e.slice(0, 160)}`);
       await p.click(`[data-tab="${tabs[Math.floor(Math.random() * tabs.length)]}"]`).catch(() => {});
