@@ -35,7 +35,8 @@ arcs_js = json.dumps(arcs, ensure_ascii=False, separators=(',', ':')).replace('<
 geo_p = here / 'geo.json'
 geo_js = geo_p.read_text(encoding='utf8').replace('</', '<\\/') if geo_p.exists() else '{"rows":[],"types":[],"pn":[]}'
 import hashlib, re, datetime
-src_all = (here / 'game.src.html').read_text(encoding='utf8') + hist_js + inst_js + arcs_js + geo_js + vocab
+face_js = (here / 'face.js').read_text(encoding='utf8') if (here / 'face.js').exists() else ''
+src_all = (here / 'game.src.html').read_text(encoding='utf8') + face_js + hist_js + inst_js + arcs_js + geo_js + vocab
 digest = hashlib.sha1(src_all.encode('utf8')).hexdigest()[:12]
 api = int(re.search(r'const API_VER = (\d+)', (here.parent / 'rpg-kernel/server.js').read_text(encoding='utf8')).group(1))
 vfile = here.parent / 'rpg-kernel/public/version.json'
@@ -43,7 +44,7 @@ try: old = json.load(open(vfile, encoding='utf8'))
 except Exception: old = {}
 build = old.get('build') if old.get('hash') == digest else datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')
 vfile.write_text(json.dumps({'build': build, 'hash': digest, 'api': api}), encoding='utf8')
-body = (here / 'game.src.html').read_text(encoding='utf8').replace('__BUILD__', build).replace('__CAL__', compact).replace('__HIST__', hist_js).replace('__VOCAB__', vocab.replace('</', '<\\/')).replace('__INSTLIB__', inst_js).replace('__ARCS__', arcs_js).replace('__GEO__', geo_js)
+body = (here / 'game.src.html').read_text(encoding='utf8').replace('__BUILD__', build).replace('__CAL__', compact).replace('__HIST__', hist_js).replace('__VOCAB__', vocab.replace('</', '<\\/')).replace('__INSTLIB__', inst_js).replace('__ARCS__', arcs_js).replace('__GEO__', geo_js).replace('/*__FACE__*/', face_js)
 (here / 'index.html').write_text(body, encoding='utf8')
 # 桌面版由本机服务直接发出，需要自己的文档外壳
 page = ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'

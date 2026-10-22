@@ -202,6 +202,22 @@ textarea{resize:vertical}
   .msg.me{max-width:92%}
   .h .note{flex-basis:100%;margin-left:33px}
 }
+/* 捏脸 */
+.facebox{display:flex;gap:12px;align-items:flex-start}
+.facebox canvas{width:96px;height:114px;border-radius:8px;border:1px solid var(--rule);background:#f2ece1;flex:none}
+.pc canvas.mini{width:46px;height:55px;border-radius:6px;border:1px solid var(--rule);float:right;margin:0 0 4px 8px;background:#f2ece1}
+#faceModal{position:fixed;inset:0;z-index:90;background:rgba(45,38,30,.42);display:flex;align-items:center;justify-content:center;padding:14px}
+#faceModal[hidden]{display:none}
+#faceModal .fm{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;max-width:860px;width:100%;max-height:92vh;overflow:auto;padding:14px;display:flex;gap:16px;flex-wrap:wrap}
+#faceModal .fm canvas{width:min(280px,100%);height:auto;aspect-ratio:480/680;border-radius:8px;border:1px solid var(--rule);background:#f2ece1}
+#faceModal .fp{flex:1;min-width:260px}
+#faceModal .ftabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+#faceModal .ftabs button{padding:4px 11px;border-radius:16px}
+#faceModal .ftabs button.on{background:var(--qing);color:#fff;border-color:var(--qing)}
+#faceModal .frow{display:grid;grid-template-columns:52px 1fr 34px;gap:8px;align-items:center;margin-bottom:8px;font-size:13px}
+#faceModal .frow input[type=range]{width:100%}
+#faceModal .fbtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#faceModal .ftr{font-size:12px;color:var(--mute);margin-top:8px}
 </style>
 
 <div class="wrap">
@@ -222,6 +238,7 @@ textarea{resize:vertical}
 <script type="application/json" id="arcs">__ARCS__</script>
 <script type="application/json" id="geo">__GEO__</script>
 <script>
+/*__FACE__*/
 'use strict';
 /* ========== 小工具 ========== */
 const $ = s => document.querySelector(s);
@@ -2040,6 +2057,7 @@ function blocks(s, forStory) {
   L.push(`【此刻】${timeText(c)}，${season(c.m)}。主角现居：${s.place.full}（${s.place.polity || ''}）。`);
   const st = Object.entries(s.status || {}).map(([k, v]) => `${k}：${v}`).join('；');
   L.push(`【主角】${p.name}，${p.gender || ''}，${p.age != null ? p.age + '岁' : '年岁不详'}，${p.role}${p.nativePlace ? '，' + p.nativePlace + '人' : ''}${p.real ? '，史载真人' : '，虚构人物'}。${st ? '名位功名等：' + st + '。' : ''}`);
+  if (s.face && typeof FACE !== 'undefined') { const ft = faceText(s.face); if (ft) L.push('【主角的相貌（玩家捏的；写到主角的样子照这个，不另编）】' + ft); }
   const hh = arr(s.household);
   const fb = familyBlock(s), pb = policiesBlock(s); if (fb) L.push(fb); if (pb) L.push(pb.trim());
   if (s.jail) L.push(`【主角在押】在${s.jail.where}，罪名：${s.jail.charge || '未定'}，自${s.jail.since}；场面在监里：能见的只有狱卒、牢头、同监的人、来探监的人，能做的只有托人、打点、写状子、熬；正文写出获释的经过（审结开释、保释、赎罪、大赦、越狱）以前，主角出不了监`);
@@ -3433,6 +3451,61 @@ let S = null, VIEW = 'start', TAB = 'board', STREAM = '', THINK_T0 = 0, ERRMSG =
 function setBusy(on) { BUSY = on; if (on) THINK_T0 = Date.now(); render(); if (on) setTimeout(() => { const el = document.querySelector('.thinking'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); }
 setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = Math.round((Date.now() - THINK_T0) / 1000); } }, 1000);
 
+/* ========== 画像：主角的脸存在存档里（可捏）；身边的人按名字和身份生成一张固定的脸 ========== */
+const faceGender = g => /女/.test(String(g || '')) ? 'female' : 'male';
+const npcFemale = (k, v) => /女|妇|妻|妾|娘|姑|婆|嫂|姐|妹|婢|丫|氏|夫人|太太|奶奶|小姐|姨/.test(String((v && (v.gender || '')) + ' ' + ((v && v.role) || '') + ' ' + k)) && !/男/.test(String(v && v.gender || ''));
+function paintFaces() {
+  if (!S || typeof FACE === 'undefined') return;
+  if (!S.face) S.face = FACE.make(faceGender(S.protagonist.gender), S.id || S.protagonist.name, { role: S.protagonist.role, year: S.clock && S.clock.y, age: S.protagonist.age });
+  document.querySelectorAll('canvas[data-face="me"]').forEach(c => FACE.paint(c, S.face));
+  document.querySelectorAll('canvas[data-face-npc]').forEach(c => {
+    const k = c.dataset.faceNpc, v = (S.people || {})[k] || arr(S.household).find(m => m.name === k) || {};
+    S.npcFaces = S.npcFaces || {};
+    if (!S.npcFaces[k]) S.npcFaces[k] = FACE.make(npcFemale(k, v) ? 'female' : 'male', (S.id || '') + k, { role: v.role || v.relation, year: S.clock && S.clock.y, age: v.age });
+    FACE.paint(c, S.npcFaces[k]);
+  });
+}
+/** 相貌写进给 AI 的材料：正文写到主角的样子时照这张脸 */
+function faceText(f) {
+  if (!f) return '';
+  const st = FACE.norm(f), male = st.gender === 'male', w = st.faceW > 62 ? '脸盘宽' : st.faceW < 38 ? '脸瘦窄' : '脸型匀停', jaw = st.jawW > 62 ? '下颌方阔' : st.chinSharp > 65 ? '下巴尖' : '';
+  return [w, jaw, st.browStyle, st.eyeStyle, male && st.beard !== '无' ? st.beard : '', st.bodyW > 64 ? '身量魁梧' : st.bodyW < 36 ? '身量单薄' : '', !male && st.hairStyle ? '梳' + st.hairStyle : '', st.outfit ? '常穿' + st.outfit : '', st.headwear && st.headwear !== '无' ? (male ? '戴' : '簪') + st.headwear : ''].filter(Boolean).join('，');
+}
+/** 捏脸面板：放在页面外层，不随正文重画；改一下画一下 */
+let FACE_ED = null;
+function openFaceEditor() {
+  if (!S) return;
+  const g = faceGender(S.protagonist.gender);
+  FACE_ED = { st: Object.assign({}, FACE.norm(S.face || FACE.make(g, S.id, {})), { gender: g }), tab: 0 };
+  let box = document.getElementById('faceModal');
+  if (!box) { box = document.createElement('div'); box.id = 'faceModal'; document.body.appendChild(box); }
+  box.hidden = false;
+  box.innerHTML = `<div class="fm"><div><canvas id="fmCv" width="480" height="680"></canvas><div class="ftr" id="fmTr"></div></div><div class="fp"><div class="h" style="margin-top:0"><span class="seal">面</span>捏脸<span class="note">「宋韵 · 捏面」；改好点「用这张脸」，正文写到你的样子会照着写</span></div><div class="ftabs" id="fmTabs"></div><div id="fmPane"></div><div class="fbtns"><button id="fmRand">随机</button><button id="fmReset">复位</button><button id="fmSave">存图</button><button class="main" id="fmOk">用这张脸</button><button class="link" id="fmCancel">不改了</button></div></div></div>`;
+  const draw = () => { FACE.paint(document.getElementById('fmCv'), FACE_ED.st, { full: true }); const tr = FACE.calcTraits(FACE_ED.st), so = Object.entries(tr).sort((a, b) => b[1] - a[1]); document.getElementById('fmTr').textContent = '气韵：' + so.map(([k, v]) => k + ' ' + v).join('　'); };
+  const groups = () => FACE.groupsFor(FACE_ED.st.gender);
+  const pane = () => {
+    const gr = groups()[FACE_ED.tab] || groups()[0];
+    document.getElementById('fmTabs').innerHTML = groups().map((x, i) => `<button data-fmtab="${i}" class="${i === FACE_ED.tab ? 'on' : ''}">${esc(x.name)}</button>`).join('');
+    document.getElementById('fmPane').innerHTML = gr.items.map(it => {
+      const v = FACE_ED.st[it.k];
+      if (it.t === 'r') return `<div class="frow"><label>${esc(it.l)}</label><input type="range" min="0" max="100" value="${v}" data-fmk="${it.k}"><span>${v}</span></div>`;
+      if (it.t === 's') { const o = FACE.resolveOpts(it, FACE_ED.st.gender); return `<div class="frow"><label>${esc(it.l)}</label><select data-fmk="${it.k}">${o.map(x => `<option ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select><span></span></div>`; }
+      if (it.t === 'c') return `<div class="frow"><label>${esc(it.l)}</label><input type="color" value="${esc(v)}" data-fmk="${it.k}"><span></span></div>`;
+      return `<div class="frow"><label>${esc(it.l)}</label><input type="checkbox" ${v ? 'checked' : ''} data-fmk="${it.k}" style="width:auto"><span></span></div>`;
+    }).join('');
+  };
+  box.oninput = box.onchange = e => { const el = e.target, k = el.dataset && el.dataset.fmk; if (!k) return; FACE_ED.st[k] = el.type === 'range' ? +el.value : el.type === 'checkbox' ? (el.checked ? 1 : 0) : el.value; if (el.type === 'range' && el.nextElementSibling) el.nextElementSibling.textContent = el.value; draw(); };
+  box.onclick = e => {
+    const b = e.target.closest('button'); if (!b) { if (e.target === box) { box.hidden = true; FACE_ED = null; } return; }
+    if (b.dataset.fmtab != null) { FACE_ED.tab = +b.dataset.fmtab; pane(); return; }
+    if (b.id === 'fmRand') { FACE_ED.st = FACE.make(FACE_ED.st.gender, null, { role: S.protagonist.role, year: S.clock.y, age: S.protagonist.age }); pane(); draw(); }
+    if (b.id === 'fmReset') { FACE_ED.st = FACE.norm({ gender: FACE_ED.st.gender }); pane(); draw(); }
+    if (b.id === 'fmSave') { const a = document.createElement('a'); a.download = (S.protagonist.name || '画像') + '.png'; a.href = FACE.toPNG(FACE_ED.st); a.click(); }
+    if (b.id === 'fmOk') { S.face = FACE_ED.st; box.hidden = true; FACE_ED = null; store.save(S).catch(() => {}); render(); }
+    if (b.id === 'fmCancel') { box.hidden = true; FACE_ED = null; }
+  };
+  pane(); draw();
+}
 function render() {
   // 页面重画时，玩家正在填的字（Key、型号、要做的事……）和光标不丢
   const keep = {}, ae = document.activeElement, foc = ae && ae.id && /^(INPUT|TEXTAREA)$/.test(ae.tagName) ? ae.id : '';
@@ -3441,6 +3514,7 @@ function render() {
   // 页面和右边册子正看到哪儿：重画后回到原处，不跳（后台每做完一步都会重画）
   const sv = { view: VIEW, tab: typeof TAB !== 'undefined' ? TAB : '', y: window.scrollY, side: (document.querySelector('.side') || {}).scrollTop || 0, pane: (document.querySelector('.side .pane') || {}).scrollTop || 0 };
   const r = renderNow();
+  try { paintFaces(); } catch (_) { /* 画像画不出来不影响玩 */ }
   if (sv.view === VIEW) {
     if (Math.abs(window.scrollY - sv.y) > 2) window.scrollTo(0, sv.y);
     if (sv.tab === (typeof TAB !== 'undefined' ? TAB : '')) { const sd = document.querySelector('.side'); if (sd && sv.side) sd.scrollTop = sv.side; const pn = document.querySelector('.side .pane'); if (pn && sv.pane) pn.scrollTop = sv.pane; }
@@ -3689,7 +3763,7 @@ function pane(tab) {
     const gl = arr(s.goals).length ? `<div class="h"><span class="seal">志</span>目标<span class="note">每回会随处境更新；不是任务，可以不理</span></div><div class="list">${s.goals.map(g => `<div><span class="when">${esc(g.term)}</span>${esc(g.text)}${g.why ? `<div class="muted" style="font-size:12px">${esc(g.why)}</div>` : ''}</div>`).join('')}</div>` : '';
     const jailH = s.jail ? `<div class="err" style="margin:6px 0"><b>在押</b>：${esc(s.jail.where)}，罪名 ${esc(s.jail.charge || '未定')}，自${esc(s.jail.since)}${N0(s.jail.cost) ? `；每月打点饭食约 ${esc(fmtN(N0(s.jail.cost), (s.money || {}).unit || '两'))}` : ''}</div>` : '';
     const caseH = arr(s.cases).length ? `<div class="h"><span class="seal">案</span>牵涉的案子</div><div class="list">${s.cases.map(c => `<div><span class="badge ${/结案/.test(c.stage) ? 'b-done' : /悬/.test(c.stage) ? 'b-bad' : 'b-doing'}">${esc(c.stage || '？')}</span> <b>${esc(c.name)}</b>（${esc(c.kind || '')}，你是${esc(c.role || '？')}）${c.facts ? `<div class="muted">已知：${esc(c.facts)}</div>` : ''}${c.suspects ? `<div class="muted">疑点：${esc(c.suspects)}</div>` : ''}${c.deadline ? `<div class="muted">限期：${esc(c.deadline)}</div>` : ''}</div>`).join('')}</div>` : '';
-    return `${jailH}${gl}${caseH}<div class="who"><div class="n">${esc(p.name)}</div><div class="r">${esc(p.role)}${p.age != null ? ' · ' + p.age + '岁' : ''}</div><div class="w">${esc(timeText(s.clock))}　${esc(s.place.full)}</div></div>
+    return `${jailH}${gl}${caseH}<div class="facebox"><canvas data-face="me" width="192" height="228" title="点「捏脸」可以细调"></canvas><div class="who"><div class="n">${esc(p.name)}</div><div class="r">${esc(p.role)}${p.age != null ? ' · ' + p.age + '岁' : ''}</div><div class="w">${esc(timeText(s.clock))}　${esc(s.place.full)}</div><div class="row" style="margin-top:6px"><button class="link" id="bFaceEdit">捏脸</button><button class="link" id="bFaceRand">换一张脸</button></div></div></div>
       ${ms.length ? `<div class="tiles">${ms.map(([k, v]) => `<div class="tile" title="${esc(v.why)}"><div class="k">${esc(k)}</div><div class="v">${esc(v.value)}${arrow(v.delta)}</div>${v.delta && v.why ? `<div class="why">${esc(v.why)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted">开场后出现。</div>'}
       ${gs.length ? `<div class="h"><span class="seal">众</span>各方对你</div>${gs.map(([k, v]) => `<div class="grp" title="${esc(v.why)}"><span class="gk">${esc(k)}</span><span class="bar"><i style="width:${Math.max(3, v.value)}%" class="${v.value < 25 ? 'bad' : v.value < 40 ? 'warn' : v.value >= 60 ? 'good' : ''}"></i></span><span class="gw">${W(v.value)}${v.delta > 0 ? '<span class="up">▲</span>' : v.delta < 0 ? '<span class="down">▼</span>' : ''}</span></div>`).join('')}` : ''}
       <div class="h"><span class="seal">近</span>近来</div>
@@ -3703,7 +3777,7 @@ function pane(tab) {
     const famTbl = HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b></td><td>${m.age != null ? esc(m.age) + '岁' : ''}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(m.note || '')}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '';
     return famTbl + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
       ${fam.map(m => `<div class="pc"><div class="pn"><b>${esc(m.name)}</b><span class="att">${esc(m.relation)}</span></div><div class="pr">${m.age != null ? m.age + '岁' : ''}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
-      ${P.map(([k, v]) => `<div class="pc"><div class="pn"><b>${esc(k)}</b>${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
+      ${P.map(([k, v]) => `<div class="pc"><canvas class="mini" data-face-npc="${esc(k)}" width="92" height="110"></canvas><div class="pn"><b>${esc(k)}</b>${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
         <div class="pr">${esc(v.role)}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''}</div>
         ${N0(v.favor) != null ? `<div class="grp"><span class="gk">好感 ${esc(v.favor)}</span><span class="bar"><i style="width:${Math.max(3, (Number(v.favor) + 100) / 2)}%" class="${v.favor < -30 ? 'bad' : v.favor < 0 ? 'warn' : v.favor >= 40 ? 'good' : ''}"></i></span>${v.favorDelta ? `<span class="${v.favorDelta > 0 ? 'up' : 'down'}">${v.favorDelta > 0 ? '▲' : '▼'}${Math.abs(v.favorDelta)}</span>` : ''}</div>` : ''}
         ${v.personality || v.ability ? `<div class="pl"><span>为人</span>${esc(v.personality || '')}${v.ability ? `<span class="abil">本事${esc(v.ability)}</span>` : ''}</div>` : ''}
@@ -3946,6 +4020,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (cc.cAge && !(rr && rr.real)) d.setup.age = +cc.cAge;
     if (num(d.setup.gregorianYear) == null) d.setup.gregorianYear = sentenceYear(String(d.setup.yearLabel || '')) ?? sentenceYear(sentence, OPEN_RANGE) ?? d.setup.gregorianYear;
     const s = newSave(d.setup);
+    s.face = FACE.make(faceGender(s.protagonist.gender), s.id, { role: s.protagonist.role, year: s.clock.y, age: s.protagonist.age });   // 开局按身份、年代随机一张脸，可在「局面」里捏
     if (pre && pre.fake && pre.fake.nameMap) s.nameMap = { ...pre.fake.nameMap };
     if (d.world) s.world = { overview: cut(d.world.overview, 600), events: arr(d.world.events).filter(x => x && x.text).map(x => ({ y: num(x.y) ?? s.clock.y, m: num(x.m) || 0, text: one(x.text, 100) })).slice(-40), upcoming: [] };
     d.worldUpcoming = arr(d.worldUpcoming).concat(arr(d.world && d.world.upcoming));
@@ -4243,6 +4318,8 @@ document.addEventListener('click', async e => {
   const ds = t.dataset;
   if (ds.ex) { $('#qText').value = ds.ex; QTEXT = ds.ex; return; }
   if (t.id === 'bStop') { if (BGWAIT) STOP_PENDING = true; TURN && TURN.abort(); CTL && CTL.abort(); return; }
+  if (t.id === 'bFaceEdit') { openFaceEditor(); return; }
+  if (t.id === 'bFaceRand') { if (S) { S.face = FACE.make(faceGender(S.protagonist.gender), null, { role: S.protagonist.role, year: S.clock.y, age: S.protagonist.age }); store.save(S).catch(() => {}); render(); } return; }
   if (t.id === 'bKeyOpen') { KEY_OPEN = true; render(); return; }
   if (t.id === 'bKeyClose') { KEY_OPEN = false; KEYMSG = ''; render(); return; }
   if (t.id === 'bKeySave') {
