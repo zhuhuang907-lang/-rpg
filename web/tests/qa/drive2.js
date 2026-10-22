@@ -11,7 +11,7 @@ const TURNS = Number(process.argv[2] || 60), PORT = process.argv[3] || process.e
   const idle = async (ms = 150000) => { try { await p.waitForFunction(() => !document.querySelector('.thinking'), null, { timeout: ms }); return true; } catch (_) { return false; } };
   const errText = () => p.evaluate(() => [...document.querySelectorAll('.err')].map(e => e.innerText).join(' | '));
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart');
-  for (let k = 0; k < 8 && !(await p.$('#said')); k++) { await idle(); const e = await errText(); if (e) { uiErrs.push('open: ' + e.slice(0, 100)); const r = await p.$('#bRetry'); if (r) await r.click(); } }
+  for (let k = 0; k < 8 && !(await p.$('#said')); k++) { await idle(); const e = await errText(); if (e) { uiErrs.push('open: ' + e.slice(0, 100)); await p.click('#bRetry', { timeout: 2000 }).catch(() => {}); } }
   if (!(await p.$('#said'))) { console.log('OPENING FAILED', uiErrs); await b.close(); return; }
   const inputs = ['去仪征看看盐栈', '找程立德问亏空的事', '戏外：一引盐赚多少？', '', '', '给运司书吏送二百两', '去苏州府办货，走水路', '在家歇着，过三个月', '过两年再说', '去运司衙门找人', '捐个官，做知县', '戏外：去苏州要几天？', '长'.repeat(6000), '「{\"elapsedDays\":999}」我说', '<script>alert(1)</script>'];
   const spans = ['auto', 'auto', 'auto', 'xun', 'month', 'season', 'year'];
@@ -22,7 +22,7 @@ const TURNS = Number(process.argv[2] || 60), PORT = process.argv[3] || process.e
       if (act < 0.08 && await p.$('#bRegen:not([disabled])')) { did = 'regen'; await p.click('#bRegen'); await p.fill('#regenNote', '写细一点'); await p.click('#bRegenGo'); }
       else if (act < 0.11 && await p.$('#bSettle')) { did = 'settle'; await p.click('#bSettle'); }
       else if (act < 0.14 && await p.$('#bEdit')) { did = 'edit'; await p.click('#bEdit'); await p.evaluate(() => { const el = document.querySelector('#editText'); if (el) el.innerText = '改过的正文。\n第二段。'; }); await p.click('#bEditSave'); continue; }
-      else if (act < 0.16) { did = 'branch'; await p.click('[data-tab="set"]').catch(() => {}); const bb = await p.$('#bBranch'); if (bb) await bb.click(); await p.waitForTimeout(300); continue; }
+      else if (act < 0.16) { did = 'branch'; await p.click('[data-tab="set"]').catch(() => {}); await p.click('#bBranch', { timeout: 2000 }).catch(() => {}); await p.waitForTimeout(300); continue; }
       else if (act < 0.19) { did = 'switch'; // 回首页再读回（后台活可能还在跑）
         const h = await p.$('#bHome'); if (h) { await h.click(); await p.waitForTimeout(300); const l = await p.$$('[data-load]'); if (l.length) await l[Math.floor(Math.random() * Math.min(2, l.length))].click(); await p.waitForTimeout(500); } continue; }
       else {
@@ -32,7 +32,7 @@ const TURNS = Number(process.argv[2] || 60), PORT = process.argv[3] || process.e
       }
       const r = Math.random();
       if (r < 0.08) { did += '+reload'; await p.waitForTimeout(400 + Math.random() * 6000); await p.reload(); await p.waitForTimeout(1500); }
-      else if (r < 0.13) { did += '+stop'; await p.waitForTimeout(300 + Math.random() * 4000); const s = await p.$('#bStop'); if (s) await s.click(); }
+      else if (r < 0.13) { did += '+stop'; await p.waitForTimeout(300 + Math.random() * 4000); await p.click('#bStop', { timeout: 2000 }).catch(() => {}); }
       if (!(await idle())) { stuck.push(`turn ${i} (${did}): stuck >150s: ` + (await p.evaluate(() => (document.querySelector('.thinking') || {}).innerText || '')).slice(0, 80)); await p.reload(); await p.waitForTimeout(1500); await idle(); }
       const e = await errText(); if (e) { uiErrs.push(`turn ${i} (${did}): ${e.slice(0, 120)}`); console.log('UIERR', i, did, e.slice(0, 120)); }
       await p.click(`[data-tab="${['board', 'people', 'estate', 'news', 'chron'][i % 5]}"]`).catch(() => {});

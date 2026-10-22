@@ -52,7 +52,7 @@ const { chromium } = require('playwright');
   // 建议、找他：点了写进输入框，不自动发出去
   await p.click('[data-tab="board"]').catch(() => {}); await p.waitForTimeout(200);
   const chip = await p.$('[data-write]');
-  if (chip) { const turn0 = await p.evaluate(() => S.turn); await p.fill('#said', ''); await chip.click(); await p.waitForTimeout(200); if (!(await p.inputValue('#said'))) bad('点建议没写进输入框'); if ((await p.evaluate(() => S.turn)) !== turn0 || await p.evaluate(() => BUSY)) bad('点建议直接替玩家发出去了'); }
+  if (chip) { const turn0 = await p.evaluate(() => S.turn); await p.fill('#said', ''); await p.locator('[data-write]').first().click(); await p.waitForTimeout(200); if (!(await p.inputValue('#said'))) bad('点建议没写进输入框'); if ((await p.evaluate(() => S.turn)) !== turn0 || await p.evaluate(() => BUSY)) bad('点建议直接替玩家发出去了'); }
   console.log('ERRS', JSON.stringify(errs));
   await b.close(); process.exit(errs.length ? 1 : 0);
 })();
