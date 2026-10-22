@@ -1039,7 +1039,8 @@ ${realmBlock(s) ? realmBlock(s) + '\n' : ''}【身边的人（各有盘算）】
 ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下去还没办完的】' + s.orders.filter(o => /在办|待办|推迟/.test(o.status)).slice(-6).map(o => `${o.who}：${o.what}`).join('；') + '\n' : ''}${arr(s.gmNotes).length ? '【幕后真相（玩家不知道）】' + s.gmNotes.slice(-8).map(n => cut(n.text, 60)).join('；') + '\n' : ''}${arr(s.summaries).length ? '【最近几回】' + s.summaries.slice(-4).map(x => cut(x.text, 80)).join(' / ') + '\n' : ''}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '无'}
 ${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
-${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}【玩家这回说】${said}
+${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}${modulesBlock(said)}
+【玩家这回说】${said}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
 再为这一回写一份场景简报（brief），给写正文的人当材料——要具体、确凿、有那个年代的味道：这件事牵涉的衙门与办事程序（谁有权、走什么文书（用本朝本代的文书名目））、此时此地相关职位上是谁（写全名，照【本地官员名册】与材料）、当时人的说法与称谓、相关各方（人群、行当、衙役、士绅、商人）的利害与惯常做法、可写进场面的器物与细节；拿不准的标「推」，不编造。
 【制度框架】只是框架，可能有错：这一回要用到的衙门、职衔、文书、程序、称谓，凡框架里没有、或你拿不准的，也列进 search 去查。
@@ -1110,8 +1111,8 @@ function openingQueries(sentence) {
   if (!era) { const m = sentence.match(/(秦|西汉|东汉|汉|三国|曹魏|蜀汉|孙吴|西晋|东晋|晋|南北朝|北魏|隋|唐|五代|北宋|南宋|宋|辽|金|元|明|清)/); era = m ? m[1] + '代' : ''; }
   const core = sentence.replace(/^(我想当|当|做)/, '');
   const q = [core, `${core} 历史 生活`];
-  if (era) q.push(`${era} 社会生活 衣食住行`, `${era} 物价 米价 工钱`, `${era} 官制 地方官`, `${era} 大事 年表`, `${era} 风俗 节令`);
-  return q.slice(0, 8);
+  if (era) q.push(`${era} 社会生活 衣食住行`, `${era} 物价 米价 工钱`, `${era} 官制 地方官 品阶`, `${era} 大事 年表`, `${era} 风俗 节令`, `${era} 军制 兵种 军饷`, `${era} 币制 货币 赋税`, `${era} 礼俗 称谓 馈赠`);
+  return q.slice(0, 10);
 }
 async function digestResearch(s) {
   const R = arr(s.research);
@@ -2425,6 +2426,8 @@ function draftFaults(s, said, text, span) {
   if (own > Math.max(gave ? 1 : 0, Math.ceil(gave / 2))) out.push(`替主角说了玩家没说的话（${own} 处主角台词）：主角只说玩家给的话；对方说完、轮到主角开口就停，不替主角回答`);
   // 玩家说「带大家走」「号召众人」，正文就让一大群人跟上：玩家宣布的结果被当真了
   if (/带(着)?(大家|众人|人|他们)|号召|振臂|让(大家|众人).{0,4}(跟|走)|煽动/.test(said || '') && /(几|数|三四|上|成|近)(十|百|千)(个)?人.{0,8}(跟着|跟上|随着|随你|涌|响应)|一呼百应|应者云集|纷纷跟/.test(text)) out.push('玩家说要带动众人，正文就让一大群人跟上了：先写第一步和各人的真实反应——多数人有顾虑不会跟，跟不跟由他们的利害决定');
+  const ana = anachronisms(s, text);
+  if (ana.length) out.push(`时代错位：${ana.join('、')}——换成本朝的说法`);
   const vague = countIn(text, /加官一等|迁(一|两|二|三)官|升了(一|两)级|官升一级|加官进爵|赏了个官/g);
   if (vague) out.push(`官职写得含糊（「加官一等」「迁两官」这类 ${vague} 处）：写清本官（品级）、差遣、上司`);
   // 玩家没说要过日子，正文却「数日后」「转眼」地往前跳
@@ -2455,6 +2458,39 @@ function spanBlock(s, span, said) {
   if (A) { const st = arr(A.a.stages).filter(x => ymA(x.to) >= now && ymA(x.from) <= now + mo); if (st.length > 1) L.push(`主线「${A.a.title}」这段日子里走过的阶段：${st.map(x => x.name).join(' → ')}`); }
   return L.length ? `【这段日子（约${mo >= 12 ? Math.round(mo / 12) + '年' : mo + '个月'}）里照史料会发生的事（按先后、照真实日子写进去，主角的日子和身份随之变化；年纪、家人、仕途、产业都跟着时间走）】\n${L.join('\n')}` : '';
 }
+
+/* ========== 推演模块：每回带「通用推演」；按玩家这一步要做的事，再挑最多两张专门卡（战争、经济、官场、人情）。只管怎么推演，事实照材料 ========== */
+const MOD_CARDS = {
+  通用: `【通用推演（只在心里做，不写进正文）】
+一、每个有戏份的人先定四件事：最想得到什么（权位、钱粮、保命、体面、复仇、家族前程）；最怕失去什么、谁能让他失去；他知道什么、不知道什么（只知道地位、距离、渠道让他知道的，消息会迟、会走样）；什么情况下会拖延、讨价还价、临阵变卦、出卖主角。
+二、人照自己的利益算账，不为了剧情配合主角；主角的命令当回合落地，不满放到以后的行动里，不当场连环劝谏。
+三、主角每一步都有后果，分三层：当场看得见的反应；几天几月后才兑现的代价；别人私下的盘算、记恨、联手（先不让主角知道，以后要兑现）。
+四、世界照自己的节奏走：别的势力、粮价、军情、朝议、季节都在变，每回至少推进一件有依据的外部变化，但不替主角行动。`,
+  战争: `【战争】按粮、饷、人心、地形、情报、指挥链六条线推演，不是数字比大小：粮草先于战斗（来源、运路、日耗、民夫、天气）；欠饷克扣赏赐不均会引出逃亡、哗变、抢掠，写到具体的人和事；不同来源的兵（正规军、地方兵、乡兵、民夫、亲兵）战力忠诚待遇不同，听谁的要写清；命令层层转达会走样，文武、监军、主将之间互相掣肘，战前分歧、战后推责；探报迟到、夸大、互相矛盾；战果分开写伤亡、士气、粮草、俘获、地盘、朝中评价；战后写伤兵、抚恤、冒功、虚报首级；平民的征夫征粮、抢掠、逃难、疫病和谁从中得利同步写；只推进玩家这一步的战术结果，不替他定战略、不跳到战役结束。`,
+  经济: `【经济】按谁出钱、谁受益、谁被盘剥、钱粮怎么运、中间谁抽成推演，写具体的账，不写空泛的「财政紧张」：每笔开支有来源，谁批、谁经手、谁克扣、谁垫付；沿途每道关节都有损耗和索取，到手的少于账面；围城、战乱、灾荒、加派会推高物价，商人囤积，官府平价，黑市冒出来，主角的大笔买粮征粮发饷赈济要动本地行情；钱、银、纸币、实物的换算照本朝本地，不混用别朝说法；权贵豪强免税、隐田、放贷、囤粮、控运，会拖延、转嫁、反咬；平民的账最紧，一次加派就能逼人逃亡；主角的收入合他的身份和渠道；没依据的数目不写，用相对说法（够一营人吃几天、比去年贵一倍）。`,
+  官场: `【官场】按制度、人事、考核、监督、潜规则五层推演：官职写全（本官或品级、差遣实职、衙门、上司同僚真名），各朝含义不同不混用；人事靠渠道（科举、同年同乡、座师门生、荐举、荫补、姻亲），没有渠道就靠才干机遇、投靠或交换；任免升迁有程序和时日，赏赐合品级，不因主角想要就立刻升；言官御史弹劾、政敌收集把柄、同僚互相检举，越权贪墨结党擅杀都留下记录和对头；衙门互相推诿争权，文书能拖，吏员能卡，成败常在一个胥吏、门房、幕友；官员都有自己的账（俸禄、家用、孝敬上司、分给下属，哪些是默许的惯例、哪些一抓就成罪名）；官场话不直说，「容再议」「从长计议」都有潜台词，用措辞和停顿写出来。`,
+  人情: `【人情世故】按关系、面子、欠与还、规矩推演：先定关系（亲族、姻亲、同乡、同年、师生、上下级、同僚、恩主、旧识、交易），它决定称呼、座次、说话、能求什么；称谓、行礼、谦辞照本朝本身份，不用现代口吻和别朝礼俗；人情有账，谁帮过谁、谁欠谁、谁拒绝过谁，小恩换小事，大事要大价码，欠下的日后会被要回；当面驳面子的代价常比不给钱更大，对方留面子的推托、拖延、转手要写出来；送什么、送多少、何时、托谁送合身份场合，名目照本朝（清代才有冰敬炭敬，明代是书帕，别朝不套）；陌生人求见要有人引荐，引荐人也计较回报；底层有自己的人情网（里正、保甲、牙人、行头、衙役、书吏、门房、宗族）和规矩收费；流言会变形，告发、联保、连坐牵连邻里保人；人说话有分寸，各有腔调。`,
+};
+const MOD_RE = {
+  战争: /打|攻|守城|出兵|进兵|行军|迎敌|伏击|募兵|招兵|练兵|劫粮|兵马|军队|交战|突袭|围城|驻防|调兵|将士|军饷|起兵|作战/,
+  官场: /求见|拜见|谒见|请托|任命|弹劾|上书|上疏|奏|衙门|官府|知县|知府|升官|调任|荐|结党|考课|考成|京察|赴任|到任|上司|堂官|幕僚|递状|告状|打官司/,
+  经济: /买|卖|粮|钱|银|饷|赈|征收|税|价|货|商|借贷|放贷|典当|盘下|开铺|铺子|生意|田产|置地|收租/,
+  人情: /宴|请客|送礼|馈|拜访|结交|探口风|攀|认亲|说媒|提亲|婚|祭|拜寿|贺|吊唁|托人|引荐|同乡|同年|座师/,
+};
+/** 这一回该带哪几张卡：通用一定带；专门卡按玩家这一步挑，最多两张（要打仗的战争卡排第一） */
+function pickModules(said, ruling) {
+  const t = String(said || ''), got = [];
+  if ((ruling && ruling.battle) || MOD_RE.战争.test(t)) got.push('战争');
+  for (const k of ['官场', '经济', '人情']) if (got.length < 2 && MOD_RE[k].test(t)) got.push(k);
+  return got;
+}
+const modulesBlock = (said, ruling) => [MOD_CARDS.通用, ...pickModules(said, ruling).map(k => MOD_CARDS[k])].join('\n');
+/** 时代错位：后世才有的名目、作物、官名写进了早先的年代 */
+const ANACHRO = [[/冰敬|炭敬|别敬/, 1644, '清代官场的叫法'], [/养廉银/, 1723, '雍正以后才有'], [/军机处|军机大臣/, 1729, '雍正以后才有'], [/锦衣卫/, 1382, '明代才有'], [/东厂/, 1420, '明永乐以后才有'], [/巡抚/, 1430, '明代以后的官名'], [/布政使/, 1376, '明清的官名'], [/内阁大学士|内阁首辅/, 1402, '明代以后'], [/玉米|苞谷/, 1531, '明中叶以后才传入'], [/番薯|红薯|地瓜/, 1593, '明万历以后才传入'], [/辣椒/, 1591, '明万历以后才传入'], [/马铃薯|土豆/, 1650, '明末清初以后才传入'], [/烟草|旱烟|抽烟|吸烟/, 1570, '明后期才传入'], [/鸦片/, 1620, '明末以后'], [/知县/, 960, '宋代以后才叫知县，之前是县令'], [/知府/, 990, '宋代以后才叫知府'], [/状元/, 622, '唐代以后才有'], [/进士/, 605, '隋代以后才有'], [/银票/, 1700, '清代以后'], [/三饷|辽饷|剿饷|练饷/, 1618, '明末才有']];
+function anachronisms(s, text) {
+  const y = s && s.clock ? s.clock.y : null; if (y == null) return [];
+  return ANACHRO.filter(([re, from]) => y < from && re.test(text)).map(([re, from, why]) => (String(text).match(re) || [''])[0] + '（' + why + '）');
+}
 /** 铁律卡：每一回放在给写正文的那段话最前面，结尾再说一遍最要紧的三条（长规则在前面容易被忘） */
 const IRON_HEAD = `【这一回的铁律】
 1. 只写玩家这一步：主角的话只用玩家原话，不替他做决定、不快进；一句里几个动作，先写第一步和真实反应。
@@ -2481,7 +2517,7 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const sb2 = spanBlock(s, span, said);
   const dir = directorBlock(s, said) + (sb2 ? sb2 + '\n' : '') + (s.mainNow && s.mainNow.upcoming && s.mainNow.days > 3 && !SPANS[span] && /歇着|歇几天|歇一阵|等着|等等看|观望|过几天|过些日子|闲着|没什么事|养病|守孝|读书度日/.test(said) ? `【这一回的时间】玩家要歇着、等着：把日子往前推，写这几天到几十天里主线的前兆一件件来，推到离那件大事更近的时候（它约${s.mainNow.days}天后到来，可以直接写到它前一两天或当天）。\n` : '');
   const bb = ruling && ruling.battleResult ? battleBlock(ruling.battleResult) : '';
-  return pushUser(turns, IRON_HEAD + what + modernNote(said) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ruling ? '\n' + rulingText(ruling) : '') + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + '\n\n照规则写正文。');
+  return pushUser(turns, IRON_HEAD + what + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ruling ? '\n' + rulingText(ruling) : '') + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + '\n\n照规则写正文。');
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
 function ledgerInput(s, said, story, hidden, span, ruling) {
@@ -3715,6 +3751,7 @@ async function send(said, span, note, resume) {
       }
       // 程序查一遍（一再请示、又写回禁写的题材），再过一遍情理审读（十条）；不够格的打回去重写一次
       let faults = st.talk ? [] : draftFaults(S, said, st.text, span);
+      if (!st.talk && ruling && ruling.battleResult && !/伤|死|阵亡|折了/.test(st.text)) faults.push(`这一仗写成了只有胜负：照【这一仗的结果】写出伤亡（我方约 ${ruling.battleResult.deadUs}、敌方约 ${ruling.battleResult.deadThem}）、士气、粮草和战后的事`);
       if (faults.length) noteErr('审稿退回', faults.map(f => f.slice(0, 40)).join(' / '), { said: cut(said, 60) });   // 记下来，问题报告里能看到常犯哪几条
       if (!st.talk && SETTINGS.critic !== false) { PHASE = 'critic'; render(); try { faults = faults.concat(await storyCritic(S, said, st.text)); } catch (e) { if (e && e.code === 'cancelled') throw e; } PHASE = 'draft'; }
       if (faults.length) {
