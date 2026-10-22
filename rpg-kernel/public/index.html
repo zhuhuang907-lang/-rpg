@@ -815,7 +815,8 @@ const season = m => '春春春夏夏夏秋秋秋冬冬冬'[(m - 1) % 12] || '';
 
 /* ========== 规则 ========== */
 let SETTINGS = { len: 'normal', tier: 'default', check: true };
-const FORCE_SETTINGS = x => Object.assign(x, { check: true, showWork: false, ruling: true, hsync: true });
+// 影响剧情真不真、主线在不在的环节一律开着：旧版本存下的「关」也不再生效（玩家能调的只剩篇幅和网页版的 AI 档位）
+const FORCE_SETTINGS = x => Object.assign(x, { check: true, showWork: false, ruling: true, hsync: true, critic: true, world: true, search: true, deep: true });
 try { Object.assign(SETTINGS, JSON.parse(lsGet('hrpg:settings') || '{}')); } catch (_) { /* 默认 */ }
 FORCE_SETTINGS(SETTINGS);   // 核实永远开着、幕后永远不给玩家看
 const LEN = { short: '四五百字', normal: '八百到一千五百字', long: '一千五百到两千字' };
@@ -920,7 +921,7 @@ function ledgerRules() {
 7. places：正文里头一次出现的地方（当时名称、今地、隶属、在主角现居地的方位里程与行程）。
 8. 主角统带、管着的兵（哪怕只是一都一队、是朝廷的兵）也记进 forces，leader 写主角，status 写「统带」；人数照本朝编制和前文，不凭空写整数。powers / territory / forces：只给这一回变了的那几条（程序按势力名、地名、军名合并，没提到的照旧；丢了的地盘写 "lost":true，打散了的兵马、灭亡的势力写 "gone":true；打过仗的兵马 troops 写剩下的人数，新占的地盘整条给出）。realm：主角是君主、诸侯、割据一方的人才给，只给变了的项（国库、太仓存粮、总兵额、岁入、岁出写数字；军粮与国库的日常消耗程序会照日子结算，你只记一次性的进出，如赏赐、征发、缴获、赈济）（地盘按县、州府一处一条写当时的名称，兵马的驻地写到县城或关隘）（兵额、存粮石数、户口、民心 0–100、月赋都写数字）。succession：只在主角死去时填。career / careerEvents：主角的官职、品级、差遣、称号、职权、上司属下、考课、可能的下一步有变化时给出；任免升降考课等记 careerEvents。statusChanges：功名、爵位、健康、名望等的变化。
 9. gmNotes：正文后【幕后】里写的真相，以及你看出的伏笔（玩家看不到）；gmNotesDone：已经浮出或了结的（开头几个字）。
-10. hints：四五条，玩家接下来可以做的事，一句一条（不要查账、盘账、催粮、派夫这类琐事），方向要拉开：一条顺着眼下的事，一条反着来或换个办法，一条完全另起炉灶的大胆路子（离开此地、改行、投奔某人、冒险一搏、做件出格的事），一条戏外可以问的问题。
+10. hints：三四条，主角此刻、此地、凭他已经知道的事能做的下一步，一句一条（不要查账、盘账、催粮、派夫这类琐事）：一条顺着眼下的事，一条反着来或换个办法，一条戏外可以问的问题。不许用主角还不知道的消息和后来的史事，不许跳过时日（「过几个月再……」），不替他定主意，只是一个可选的动作。
 11. canon：本回合新确立、以后必须一直成立的事实（身份名分、婚姻亲属、产权契约、承诺约定、结下的恩怨、谁知道了什么秘密、主角立下的规矩），一句一条，没有就 []；canonDone：已经不再成立的（开头几个字）。
 12. lookups：下一回合写之前值得联网查证的，三条以内，写成搜索词：玩家接下来多半要碰到的真人此时的官职去向、正在发生或将要传来的事的时间与经过、主角要去的地方此时的隶属与名称、本行的制度门道与物价、本地此时的官与士绅，写成「人名 年号某年 地名」「朝代 地名 衙门或行当」这样的词；没有就 []。
 13. localFigures：从【联网查到的资料】里认出的、此时在主角所在地方或与主角处境相关的真实人物（本地的官、士绅、名士、商人、僧道等），资料里确有其人才记，写明此时的身份与出处；没有就 []。
@@ -973,7 +974,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022205107';
+const BUILD = '20261022223112';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -1350,6 +1351,7 @@ function problemReport() {
 
 /* ========== 官制：玩家给框架，AI 按本局年代核对改正，游戏照改正后的来 ========== */
 const KB_KEY = 'hrpg:kb';
+lsSet(KB_KEY, null);   // 旧版「资料库」存下的字：页面上早已看不到、改不了，不再塞进写剧情的材料
 let INSTING = false, INSTMSG = '', INST_CACHE = null;
 function instText(s, max) {
   const I = s.inst; if (!I) return '';
@@ -1381,7 +1383,7 @@ async function buildInst(s) {
   if (INSTING || !s) return;
   INSTING = true; INSTMSG = ''; render();
   try {
-    const { text } = await callClaude(instInput(s, lsGet(KB_KEY) || ''), null, { maxTokens: 7000, detached: true });
+    const { text } = await callClaude(instInput(s, ''), null, { maxTokens: 7000, detached: true });
     const d = parseJSON(text);
     if (!d || !Array.isArray(d.ladder)) throw { code: 'bad_json' };
     const o = v => one(v, 80);
@@ -1390,7 +1392,7 @@ async function buildInst(s) {
       ladder: d.ladder.filter(g => g && g.tier).slice(0, 10).map(g => ({ tier: one(g.tier, 20), posts: arr(g.posts).filter(x => x && x.name).slice(0, 14).map(x => ({ name: one(x.name, 20), rank: one(x.rank, 16), duty: one(x.duty, 50), sure: x.sure !== false })) })),
       paths: arr(d.paths).map(o).filter(Boolean).slice(0, 10),
       fixes: arr(d.fixes).filter(x => x && (x.yours || x.right)).slice(0, 30).map(x => ({ yours: o(x.yours), right: o(x.right), why: o(x.why) })),
-      unsure: arr(d.unsure).map(o).filter(Boolean).slice(0, 10), kb: !!lsGet(KB_KEY) };
+      unsure: arr(d.unsure).map(o).filter(Boolean).slice(0, 10), kb: false };
     INSTMSG = '✓ 整理好了' + (tgt.inst.fixes.length ? `，改正了框架里 ${tgt.inst.fixes.length} 处` : '');
     INST_CACHE = { id: tgt.id, inst: tgt.inst };
     if (!BUSY) { try { await store.save(tgt); } catch (_) { /* 下回合一起存 */ } }
@@ -1596,7 +1598,7 @@ function rulingInput(s, said) {
 ${realmBlock(s) ? realmBlock(s) + '\n' : ''}【身边的人（各有盘算）】${P.map(([k, v]) => `${k}（${v.role || ''}，好感${v.favor ?? '?'}${v.personality ? '，' + v.personality : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + cut(v.goal, 30) : ''}${v.plan ? '；打算：' + cut(v.plan, 30) : ''}）`).join('；') || '无'}
 ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下去还没办完的】' + s.orders.filter(o => /在办|待办|推迟/.test(o.status)).slice(-6).map(o => `${o.who}：${o.what}`).join('；') + '\n' : ''}${arr(s.gmNotes).length ? '【幕后真相（玩家不知道）】' + s.gmNotes.slice(-8).map(n => cut(n.text, 60)).join('；') + '\n' : ''}${arr(s.summaries).length ? '【最近几回】' + s.summaries.slice(-4).map(x => cut(x.text, 80)).join(' / ') + '\n' : ''}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '无'}
-${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
+${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
 ${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}${modulesBlock(said)}
 【玩家这回说】${said}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
@@ -2622,6 +2624,7 @@ function blocks(s, forStory) {
   const hb = histBlock(s); if (hb) L.push(hb);
   const ab = almanacBlock(s); if (ab) L.push(forStory ? cut(ab, 700) : ab);
   const rb = researchBlock(s, '', forStory); if (rb) L.push(rb);
+  if (s.custom) L.push('【玩家开局时亲手定的设定（一直作数：家世、性格、本事、处境、欠债和约定以此为底；年龄、官职、住处随剧情变的，以现在的账为准）】\n' + s.custom);
   if (arr(s.canon).length) L.push('【定本（本局已经确立、以后一直成立的事；不得前后矛盾）】\n' + s.canon.map(c => `· ${c.text}`).join('\n'));
   if (arr(s.chapters).length) L.push('【前几章（较早的经过）】\n' + s.chapters.map(c => `${c.from}至${c.to}：${c.text}`).join('\n'));
   // 写正文时：有内置史料就不再重复列已经发生的事；将要发生只列近几件
@@ -4450,16 +4453,11 @@ function pane(tab) {
   }
   return `<div class="h" style="margin-top:6px"><span class="seal">设</span>设置</div>
     <label class="muted" for="sLen">戏里每回正文多长</label>
-    <select id="sLen">${[['short', '短（五六百字）'], ['normal', '标准（九百到一千五百字）'], ['long', '长（一千五百到两千五百字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    <select id="sLen">${[['short', '短（四五百字）'], ['normal', '标准（八百到一千五百字）'], ['long', '长（一千五百到两千字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     
-    <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sWorld" style="width:auto" ${SETTINGS.world !== false ? 'checked' : ''}>天下大势自动推演（每过半年、或你做了波及天下的事时，多一次调用，推演史书的走向和你造成的变化）</label>
-    ${MODE === 'local' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sDeep" style="width:auto" ${SETTINGS.deep !== false ? 'checked' : ''}>写正文前先深度构思（DeepSeek 思考模式；每回多等一两分钟，写得好得多）</label>` : ''}
-    ${MODE === 'local' || MODE === 'claude' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sSearch" style="width:auto" ${SETTINGS.search !== false ? 'checked' : ''}>每回合自动联网查资料（搜这一回涉及的真人、事件、年份；用${MODE === 'claude' ? '维基百科（网页版在浏览器里直接查）' : KEY.bocha ? '博查 + 维基百科' : '维基百科；在下面填博查 Key 资料更多'}）</label>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}` : ''}
+    <p class="muted" style="font-size:13px;margin-top:10px">每回合都会：${MODE === 'local' || MODE === 'claude' ? `联网查这一回涉及的真人、事件、年份（${MODE === 'claude' ? (BOCHA_KEY ? '博查 + 维基百科' : '维基百科') : KEY.bocha ? '博查 + 维基百科' : '维基百科；填博查 Key 资料更多'}）；` : ''}${MODE === 'local' ? '写正文前先深度构思；' : ''}推演天下大势、照史书往下走；写完核实史实、记账。这些关掉剧情就会失真，所以不能关。</p>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">联网查资料眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}
     
     
-    ${MODE === 'local' ? `<div class="h"><span class="seal">检</span>联网自检</div>
-    <p class="muted" style="font-size:13px">用真实的请求把写剧情（DeepSeek）、搜索、维基百科读条目、历史地名库各试一遍，看你这台电脑上哪个通、拿到了什么。</p>
-    <div class="row"><button id="bSelfTest">开始自检</button><span class="muted" id="selfMsg"></span></div><div id="selfBox">${SELFTEST}</div>` : ''}
     ${MODE === 'claude' ? `<div class="h"><span class="seal">查</span>博查搜索</div>
     <p class="muted" style="font-size:13px">${BOCHA_KEY ? '✓ 已填博查 Key（尾号 ' + esc(BOCHA_KEY.slice(-4)) + '），每回合先用博查查，查不到的再查维基。' : '现在只用维基百科。填上博查 Key（open.bochaai.com 申请），每回合就先用博查查政局、官职、人物、地理，中文资料多得多。'}Key 只存在这个浏览器里。</p>
     <div class="row"><input id="wBocha" type="password" autocomplete="off" placeholder="博查 API Key" class="grow" style="min-width:0"><button id="bWBocha">保存并试搜</button>${BOCHA_KEY ? '<button class="link" id="bWBochaOff">不用博查</button>' : ''}<span class="muted" id="wBochaMsg" style="font-size:12px"></span></div>` : ''}
@@ -4566,13 +4564,19 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (!d || !d.setup) d = parseJSON((await callClaude(openingLedgerInput(sentence, st.text, st.hidden, custom, pre && pre.setting && pre.fake ? settingBlock(pre.setting, pre.fake) : ''), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' })).text);
     if (!d || !d.setup) throw { code: 'bad_json' };
     const rr = pre && pre.setting, cc = (spec && spec.c) || {};
-    if (rr) Object.assign(d.setup, { gregorianYear: rr.y, month: rr.m, day: rr.d, polity: rr.polity || d.setup.polity, place: rr.place || d.setup.place, name: rr.name || d.setup.name, gender: rr.gender, age: rr.age ?? d.setup.age, real: rr.real || d.setup.real, yearLabel: rr.yearLabel || d.setup.yearLabel });
+    if (rr) Object.assign(d.setup, { gregorianYear: rr.y, month: rr.m, day: rr.d, polity: rr.polity || d.setup.polity, place: rr.place || d.setup.place, name: rr.name || d.setup.name, gender: rr.gender || d.setup.gender, age: rr.age ?? d.setup.age, real: rr.real || d.setup.real, yearLabel: rr.yearLabel || d.setup.yearLabel });
     // 玩家亲手填的性别、姓名、年龄一定照办（真人的年龄按史实，已在定设定时算好）
     if (cc.cGender) d.setup.gender = cc.cGender;
     if (cc.cName) d.setup.name = cc.cName;
     if (cc.cAge && !(rr && rr.real)) d.setup.age = +cc.cAge;
+    // 年份、政权、地点、身份也照玩家填的：查资料得来的设定只补玩家没填的
+    { const cy = cc.cYear ? sentenceYear(cc.cYear) : null; if (cy != null && num(d.setup.gregorianYear) !== cy) d.setup.gregorianYear = cy; if (cy != null && !/^前?\d+年?$/.test(cc.cYear)) d.setup.yearLabel = cc.cYear; }
+    if (cc.cPolity && !String(d.setup.polity || '').includes(cc.cPolity)) d.setup.polity = cc.cPolity;
+    if (cc.cPlace && !String(d.setup.place || '').includes(cc.cPlace)) d.setup.place = cc.cPlace;
+    if (cc.cRole && !String(d.setup.role || '').includes(cc.cRole)) d.setup.role = cc.cRole;
     if (num(d.setup.gregorianYear) == null) d.setup.gregorianYear = sentenceYear(String(d.setup.yearLabel || '')) ?? sentenceYear(sentence, OPEN_RANGE) ?? d.setup.gregorianYear;
     const s = newSave(d.setup);
+    if (custom) s.custom = cut(custom, 1500);   // 玩家亲手定的设定存进这一局，以后每回都交给推演和写正文的，不只开场用一次
     s.face = FACE.make(faceGender(s.protagonist.gender), s.id, { role: s.protagonist.role, year: s.clock.y, age: s.protagonist.age });   // 开局按身份、年代随机一张脸，可在「局面」里捏
     if (pre && pre.fake && pre.fake.nameMap) s.nameMap = { ...pre.fake.nameMap };
     if (d.world) s.world = { overview: cut(d.world.overview, 600), events: arr(d.world.events).filter(x => x && x.text).map(x => ({ y: num(x.y) ?? s.clock.y, m: num(x.m) || 0, text: one(x.text, 100) })).slice(-40), upcoming: [] };
@@ -4990,31 +4994,17 @@ document.addEventListener('click', async e => {
     S = restorePrev(orig);
     send(said, span, note, { orig, ruling: lastGm && lastGm.extra && lastGm.extra.ruling, fix: true }); return;
   }
-  if (t.id === 'bInst') {
-    if (BG) return;
-    const kb = ($('#kbText').value || '').trim();
-    lsSet(KB_KEY, kb ? cut(kb, 60000) : null);
-    buildInst(S); return;
-  }
   if (t.id === 'bSettle') { settleLast(); return; }
-  if (t.id === 'bTick') {
-    if (BUSY || BG || !S) return;
-    TICKMSG = ''; ERRMSG = ''; PHASE = 'world'; CTL = new AbortController(); TURN = CTL; setBusy(true);
-    try { const r = await worldTick(S); TICKMSG = `✓ 推演好了${r.changes.length ? '，有 ' + r.changes.length + ' 处走向变了' : '，大势照史书走'}`; await store.save(S); }
-    catch (e) { if (!(e && e.code === 'cancelled')) TICKMSG = '没推演成：' + errText(e); }
-    finally { PHASE = ''; TURN = null; setBusy(false); }
-    return;
-  }
-  if (t.id === 'bSelfTest' || t.id === 'bSelfTest2') {
+  if (t.id === 'bSelfTest2') {
     if (SELFTESTING) return;   // 正在自检：再点也不重复跑
-    SELFTESTING = true;
-    const box = t.id === 'bSelfTest' ? $('#selfBox') : $('#selfBox2'); t.disabled = true; t.textContent = '自检中（半分钟内）…';
+    SELFTESTING = true; t.disabled = true; t.textContent = '自检中（半分钟内）…';
     try {
       const r = await api('/api/selftest');
-      SELFTEST = `<div class="list">${arr(r.results).map(x => `<div><b style="color:var(--${x.ok ? 'good' : 'zhu'})">${x.ok ? '✓' : '✗'} ${esc(x.name)}</b> <span class="muted">${esc(x.detail)}（${x.ms} 毫秒）</span></div>`).join('')}</div>`; box.innerHTML = SELFTEST;
+      SELFTEST = `<div class="list">${arr(r.results).map(x => `<div><b style="color:var(--${x.ok ? 'good' : 'zhu'})">${x.ok ? '✓' : '✗'} ${esc(x.name)}</b> <span class="muted">${esc(x.detail)}（${x.ms} 毫秒）</span></div>`).join('')}</div>`;
       if (arr(r.results).some(x => /搜索|维基/.test(x.name) && x.ok)) { SEARCH_OFF = ''; SEARCH_DOWN = 0; }
-    } catch (e) { box.textContent = '游戏服务没有回应：' + (e.message || e); }
-    SELFTESTING = false; t.disabled = false; t.textContent = '再自检一次'; return;
+    } catch (e) { SELFTEST = `<div class="err">游戏服务没有回应：${esc(e.message || e)}</div>`; }
+    finally { SELFTESTING = false; }
+    render(); return;   // 结果框第一次还不在页面上：重画一遍让它出来，不再往不存在的框里写字卡死
   }
   if (t.id === 'bBranch') {
     if (BUSY || !S) return;
@@ -5030,9 +5020,6 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'sLen') { SETTINGS.len = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
-  if (e.target.id === 'sDeep') { SETTINGS.deep = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
-  if (e.target.id === 'sSearch') { SEARCH_OFF = ''; SEARCH_DOWN = 0; SETTINGS.search = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
-  if (e.target.id === 'sWorld') { SETTINGS.world = e.target.checked; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
   if (e.target.id === 'sTier') { SETTINGS.tier = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
 });
 
