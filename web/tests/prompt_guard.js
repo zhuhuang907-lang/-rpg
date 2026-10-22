@@ -31,6 +31,8 @@ const checks = [
   ['战斗由程序结算、正文照结果写', /function resolveBattle/.test(src) && /battleBlock\(ruling\.battleResult\)/.test(src) && /applyBattle\(S, ruling\.battleResult\)/.test(src)],
   ['身份切换照账册自动判断', /autoIdentity\(s, extra\)/.test(src)],
   ['军阀领主也立国势账', /领主\|诸侯/.test(src)],
+  ['推演模块：通用卡每回带，专门卡按这一步挑', /modulesBlock\(said, ruling\)/.test(src) && /\$\{modulesBlock\(said\)\}/.test(src) && /战争: `/.test(src) && /人情: `/.test(src)],
+  ['时代错位嗅探', /anachronisms\(s, text\)/.test(src)],
   ['先维基后博查、矛盾信博查', /维基与博查说法矛盾时以博查为准/.test(src)],
   ['存档不存地理、上一版最后才丢', /const saveJSON = /.test(src) && /> 240000 && s\.prev\) s\.prev = null/.test(src)],
 ];
