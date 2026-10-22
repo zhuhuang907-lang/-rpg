@@ -427,7 +427,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022055928';
+const BUILD = '20261022061056';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -1510,7 +1510,13 @@ async function ensureGeo(s, names) {
 }
 /** 地图：县城、州府治所、你在哪、你的地盘与去过的地方 */
 function geoMap(s) {
-  const g = s.geo; if (!g || g.units.length < 3) return '';
+  const g0 = s.geo; if (!g0 || g0.units.length < 3) return '';
+  // 只画离你最近的六十来处（县级地图，不是全国图），你的地盘、去过的地方另外都画上
+  const mine0 = new Set(arr(s.territory).map(t => String(t.place || '').replace(/[县縣州府郡城]$/, ''))), been0 = new Set(Object.keys(s.places || {}).map(k => k.replace(/[县縣州府郡城]$/, '')));
+  const stem0 = u => u.name.replace(/[县縣州府郡]$/, '');
+  const near = g0.units.slice().sort((a, b) => hav(g0.here, a) - hav(g0.here, b)), keep = new Set(near.slice(0, 60));
+  for (const u of g0.units) if ((mine0.has(stem0(u)) || been0.has(stem0(u))) && hav(g0.here, u) < 1500) keep.add(u);
+  const g = { ...g0, units: g0.units.filter(u => keep.has(u)) };
   const xs = g.units.map(u => u.lon), ys = g.units.map(u => u.lat);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   const W = 340, H = Math.max(200, Math.min(420, W * (y1 - y0) / Math.max(0.01, (x1 - x0) * Math.cos((y0 + y1) / 2 * Math.PI / 180))));
@@ -1535,7 +1541,7 @@ function geoMap(s) {
       boxes.push(box); labels.push(`<text x="${(G.x + dx).toFixed(1)}" y="${(G.y + dy).toFixed(1)}" font-size="${fs}" fill="${G.me ? 'var(--zhu)' : 'var(--ink)'}">${esc(G.text)}</text>`); break;
     }
   }
-  return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px" role="img" aria-label="县级地图">${dots}${labels.join('')}</svg><div class="muted" style="font-size:12px">红点你在这里；黑点州府治所；灰点县城；绿点你的地盘。据 CHGIS 历史地名库（${g.y}年前后），共 ${g.units.length} 处。</div>`;
+  return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px" role="img" aria-label="县级地图">${dots}${labels.join('')}</svg><div class="muted" style="font-size:12px">红点你在这里；黑点州府治所；灰点县城；绿点你的地盘。据 CHGIS 历史地名库（${g.y}年前后）；画了离你最近的 ${g.units.length} 处（库里此地周边共 ${g0.units.length} 处）。把鼠标停在点上看名字、方向和里程。</div>`;
 }
 
 
@@ -3131,8 +3137,11 @@ function applyReply(s, d, said) {
         if (!g || !g.text) continue;
         const term = T.find(t => String(g.term || '').includes(t)) || '眼下', st = /达成|做成|完成/.test(g.status || '') ? '达成' : /落空|失败|放弃/.test(g.status || '') ? '落空' : /新/.test(g.status || '') ? '新' : '在做';
         const x = { term, text: one(g.text, 60), why: one(g.why, 80), status: st, since: s.turn };
+        // 已经做成或落空过的目标，模型又照抄回来：不再算一次，也不再挂回去
+        if (arr(s.goalsClosed).some(t => t === x.text || simText(t, x.text) > 0.75)) continue;
         if (st === '达成') done.push(x); else if (st === '落空') lost.push(x); else { const old = arr(s.goals).find(o => o.term === term && o.text === x.text); if (old) x.since = old.since; else fresh.push(x); now.push(x); }
       }
+      s.goalsClosed = arr(s.goalsClosed).concat(done.concat(lost).map(x => x.text)).slice(-40);
       for (const x of done) s.chronicle.push({ turn: s.turn, when, who: s.protagonist.name, what: '做成了：' + x.text });
       for (const x of lost) s.chronicle.push({ turn: s.turn, when, who: s.protagonist.name, what: '没能做成：' + x.text });
       if (now.length || done.length || lost.length) s.goals = T.map(t => now.find(x => x.term === t) || arr(s.goals).find(x => x.term === t && !done.concat(lost).some(y => y.term === t))).filter(Boolean);
@@ -3167,7 +3176,8 @@ function applyReply(s, d, said) {
     });
     // 作为：做过的事留下的痕迹与可能的后续
     for (const t of arr(d.deedsDone)) { const pf = String(t || '').trim().slice(0, 6); if (pf.length < 2) continue; const x = s.deeds.find(e => !e.done && String(e.what).startsWith(pf)); if (x) x.done = turn; }
-    for (const x of arr(d.deeds).slice(0, 4)) if (x && x.what) s.deeds.push({ turn, when, what: one(x.what, 80), effect: one(x.effect, 80), later: one(x.later, 80) });
+    // 同一件事换个说法又记一遍（还没了结的作为里已经有了）：不重复记
+    for (const x of arr(d.deeds).slice(0, 4)) if (x && x.what && !s.deeds.some(o => !o.done && simText(o.what, x.what) > 0.7)) s.deeds.push({ turn, when, what: one(x.what, 80), effect: one(x.effect, 80), later: one(x.later, 80) });
     s.deeds = s.deeds.slice(-80);
     // 仕途：官职、品级、称号、职权；履历
     for (const x of arr(d.careerEvents).slice(0, 4)) if (x && x.what) {
@@ -3385,7 +3395,7 @@ async function renderStart() {
     <div class="howto">
       <div><b>戏里</b>直接写你做什么、说什么、吩咐谁：去收租、开个铺子、跟某人谈、打这一仗。</div>
       <div><b>戏外</b>随时问：这时候谁当政？苏州到扬州几天？米价多少？我这样做划算吗？问话不花游戏时间。</div>
-      <div><b>册子</b>旁边（手机上是顶上那一排）的「人物」「家业」「仕途」「史线」「地理」是这一局的册子：身边每个人的盘算、家当、官职、天下大势、县级地图都在里面。</div>
+      <div><b>册子</b>旁边（手机上是顶上那一排）的「人物」「家业」「势力」「仕途」「见闻」「史线」「地理」「年谱」是这一局的册子：身边每个人的盘算、家当、兵马地盘、官职、传来的消息与在任官员、天下大势、县级地图、你一生的作为都在里面。</div>
       <div><b>官制与仕途</b>「仕途」里可以把你自己的官制框架粘贴进去，游戏按这一局的年代整理后照着走。</div>
       <div><b>联网查资料</b>每一回写之前都会联网查这一回牵涉的人、地方、制度；等的时候能看到翻到了哪些资料，写完挂在这一回下面「参阅资料」里。</div>
     </div>
@@ -3407,7 +3417,7 @@ function extrasHtml(x) {
   if (x.goals && (arr(x.goals.done).length || arr(x.goals.lost).length || arr(x.goals.fresh).length)) top.push(`<div class="ex goal"><div class="eh">目标</div>${arr(x.goals.done).map(g => `<div><span class="badge b-done">做成</span> ${esc(g.text)}</div>`).join('')}${arr(x.goals.lost).map(g => `<div><span class="badge b-bad">落空</span> ${esc(g.text)}</div>`).join('')}${arr(x.goals.fresh).map(g => `<div><span class="badge b-doing">新·${esc(g.term)}</span> ${esc(g.text)}</div>`).join('')}</div>`);
   if (arr(x.news).length) top.push(`<div class="ex news"><div class="eh">天下事<span>传到你这里的</span></div>${x.news.map(r => r.st === 1 ? `<div><span class="badge b-doing">风闻</span> ${esc(String(r.text).split(/[，；。,]/)[0])}……<span class="muted">（${esc(r.where || '外地')}传来，未必确）</span></div>` : `<div>${r.st === 2 ? '<span class="badge b-done">确报</span> ' : ''}${esc(r.y)}年${r.m ? r.m + '月' : ''}：${esc(r.text)}${r.changed ? ' <span class="mine">（本局）</span>' : ''}</div>`).join('')}</div>`);
   if (x.battle) { const b = x.battle; top.push(`<div class="ex news"><div class="eh">战报<span>程序按兵力、精粗、粮草、地形结算</span></div><div><b>${esc(b.outcome)}</b>　在${esc(b.place || '阵前')}（${esc(b.terrain || '野战')}）：我方 ${esc(b.ours)} 人对${esc(b.enemy || '敌军')}约 ${esc(b.enemyTroops)} 人；我方死伤约 ${esc(b.deadUs)}，敌方约 ${esc(b.deadThem)}${b.take ? '；拿下' + esc(b.take) : ''}${b.lose ? '；丢了' + esc(b.lose) : ''}</div>${b.basis ? `<div class="muted" style="font-size:12px">敌情依据：${esc(b.basis)}</div>` : ''}</div>`); }
-  if (arr(x.army).length) top.push(`<div class="ex news"><div class="eh">兵马与地盘<span>这一回的增减，细账在「天下」册子里</span></div><div>${x.army.map(esc).join('；')}</div></div>`);
+  if (arr(x.army).length) top.push(`<div class="ex news"><div class="eh">兵马与地盘<span>这一回的增减，细账在「势力」册子里</span></div><div>${x.army.map(esc).join('；')}</div></div>`);
   if (x.moved) top.push(`<div class="ex"><div class="eh">搬到了</div><div>${esc(x.moved)}</div></div>`);
   if (x.succession) top.push(`<div class="ex news"><div class="eh">传承</div><div>${esc(x.succession)}</div></div>`);
   if (x.identity) top.push(`<div class="ex news"><div class="eh">身份变了</div><div>${esc(x.identity.from)} → <b>${esc(x.identity.to)}</b>${x.identity.why ? `<div class="muted">${esc(x.identity.why)}</div>` : ''}</div></div>`);
@@ -3478,7 +3488,7 @@ function renderGame() {
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? (MODE === 'local' && SETTINGS.deep !== false && !DRAFTN ? '先构思这一回：谁在场、各自要什么、天下大事怎么砸进来（深度思考，要一两分钟）' : '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字') : PHASE === 'verify' ? '快写好了' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'rewrite' ? '正在写，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'dossier' ? '正在给这一回牵涉的真人立档：生卒、此刻的官职、在哪、在做什么、见不见得到' : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '正在想这一步会怎样' : PHASE === 'hsync' ? '正在按月联网查此刻前后几个月的真实史事（博查 / 维基年份条目），只收资料里写明的' : PHASE === 'critic' ? '写好了初稿，正在通读一遍，看情理通不通' : PHASE === 'resolve' ? '先把你的设定落到真实历史里：定下年月日、地点、政权、身份，对不上史实的地方按史实调' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : feedHtml()}</div>` : '';
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? (MODE === 'local' && SETTINGS.deep !== false && !DRAFTN ? '先构思这一回：谁在场、各自要什么、天下大事怎么砸进来（深度思考，要一两分钟）' : '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字') : PHASE === 'verify' ? '写好了，正在对照史料核实、通读、记账' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'rewrite' ? '正在写，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'dossier' ? '正在给这一回牵涉的真人立档：生卒、此刻的官职、在哪、在做什么、见不见得到' : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '正在想这一步会怎样' : PHASE === 'hsync' ? '正在按月联网查此刻前后几个月的真实史事（博查 / 维基年份条目），只收资料里写明的' : PHASE === 'critic' ? '写好了初稿，正在通读一遍，看情理通不通' : PHASE === 'resolve' ? '先把你的设定落到真实历史里：定下年月日、地点、政权、身份，对不上史实的地方按史实调' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">0</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE !== 'draft' && PHASE !== 'verify' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : feedHtml()}</div>` : '';
   const ae = document.activeElement, saidEl = $('#said');
   const edKeep = EDITING && $('#editText') ? $('#editText').innerHTML : null, rgKeep = $('#regenBox') ? $('#regenBox').innerHTML : '', rnKeep = $('#regenNote') ? $('#regenNote').value : null;
   const keep = { said: saidEl ? saidEl.value : '', span: $('#span') ? $('#span').value : 'auto', focus: ae && ae.id === 'said', a: saidEl ? saidEl.selectionStart : 0, b: saidEl ? saidEl.selectionEnd : 0, scroll: window.scrollY };
@@ -3568,8 +3578,8 @@ function pane(tab) {
   if (tab === 'power') {
     const tbl = (rows, cols, keys) => `<div class="tblwrap"><table class="tbl"><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>${rows.map(r => `<tr>${keys.map((k, i) => `<td>${i === 0 ? '<b>' : ''}${esc(r[k] || '')}${i === 0 ? '</b>' : ''}</td>`).join('')}</tr>`).join('')}</table></div>`;
     const sumN = (xs, k) => xs.reduce((a, x) => a + (N0(x[k]) || 0), 0), R0 = s.realm, TR = arr(s.territory), FC = arr(s.forces);
-    return `${R0 || TR.length || FC.length ? `<div class="h" style="margin-top:6px"><span class="seal">国</span>你的国势<span class="note">程序照日子结算粮饷与岁入岁出</span></div><dl class="kv">${R0 ? `<dt>国库</dt><dd>${esc(R0.treasury ?? '？')}</dd><dt>太仓存粮</dt><dd>${esc(R0.granary ?? '？')} 石</dd><dt>总兵额</dt><dd>${esc(R0.army ?? '？')}</dd><dt>岁入／岁出</dt><dd>${esc(R0.revenue ?? '？')}／${esc(R0.outlay ?? '？')}</dd>` : ''}${TR.length ? `<dt>地盘</dt><dd>${TR.length} 处，户口约 ${sumN(TR, 'pop')}，守军 ${sumN(TR, 'troops')}</dd>` : ''}${FC.length ? `<dt>兵马</dt><dd>${FC.length} 支，合计 ${sumN(FC, 'troops')} 人</dd>` : ''}</dl>` : ''}<div class="h" style="margin-top:6px"><span class="seal">雄</span>天下各方<span class="note">各方会照自己的利害行动</span></div>
-      ${arr(s.powers).length ? tbl(s.powers, ['势力', '首领', '据地', '兵力', '对你', '近况'], ['name', 'leader', 'seat', 'troops', 'stance', 'note']) : '<div class="muted">下一回合给出此时天下的主要势力。</div>'}
+    return `${R0 || TR.length || FC.length ? `<div class="h" style="margin-top:6px"><span class="seal">国</span>${R0 || isRuler(s) ? '你的国势' : '你手里的兵马与地盘'}<span class="note">程序照日子结算粮饷${R0 ? '与岁入岁出' : ''}</span></div><dl class="kv">${R0 ? `<dt>国库</dt><dd>${esc(R0.treasury ?? '？')}</dd><dt>太仓存粮</dt><dd>${esc(R0.granary ?? '？')} 石</dd><dt>总兵额</dt><dd>${esc(R0.army ?? '？')}</dd><dt>岁入／岁出</dt><dd>${esc(R0.revenue ?? '？')}／${esc(R0.outlay ?? '？')}</dd>` : ''}${TR.length ? `<dt>地盘</dt><dd>${TR.length} 处，户口约 ${sumN(TR, 'pop')}，守军 ${sumN(TR, 'troops')}</dd>` : ''}${FC.length ? `<dt>兵马</dt><dd>${FC.length} 支，合计 ${sumN(FC, 'troops')} 人</dd>` : ''}</dl>` : ''}<div class="h" style="margin-top:6px"><span class="seal">雄</span>天下各方<span class="note">各方会照自己的利害行动</span></div>
+      ${arr(s.powers).length ? tbl(s.powers, ['势力', '首领', '据地', '兵力', '对你', '近况'], ['name', 'leader', 'seat', 'troops', 'stance', 'note']) : '<div class="muted">还没整理出来：记账和推演天下时会补上此时的主要势力。</div>'}
       ${arr(s.factions).length ? `<div class="h"><span class="seal">党</span>派系与利益集团<span class="note">天下推演时更新</span></div>${tbl(s.factions, ['派系', '头面人物', '成员', '诉求', '对你', '实力'], ['name', 'leader', 'members', 'aims', 'stance', 'strength'])}` : ''}
       <div class="h"><span class="seal">土</span>你的地盘</div>
       ${arr(s.territory).length ? tbl(s.territory.map(x => ({ ...x, pop: fmtN(N0(x.pop)), troops: fmtN(N0(x.troops)), grain: N0(x.grain) != null ? fmtN(N0(x.grain), '石') : (x.grain || ''), tax: N0(x.tax) != null ? fmtN(N0(x.tax), (s.money || {}).unit) : '' })), ['地方', '户口', '守军', '民心', '存粮', '月赋', '治理'], ['place', 'pop', 'troops', 'loyalty', 'grain', 'tax', 'ruler']) : '<div class="muted">还没有地盘。</div>'}
@@ -3659,7 +3669,7 @@ function pane(tab) {
     
     <label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sWorld" style="width:auto" ${SETTINGS.world !== false ? 'checked' : ''}>天下大势自动推演（每过半年、或你做了波及天下的事时，多一次调用，推演史书的走向和你造成的变化）</label>
     ${MODE === 'local' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sDeep" style="width:auto" ${SETTINGS.deep !== false ? 'checked' : ''}>写正文前先深度构思（DeepSeek 思考模式；每回多等一两分钟，写得好得多）</label>` : ''}
-    ${MODE === 'local' || MODE === 'claude' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sSearch" style="width:auto" ${SETTINGS.search !== false ? 'checked' : ''}>每回合自动联网查资料（搜这一回涉及的真人、事件、年份；用${MODE === 'claude' ? '维基百科（网页版在浏览器里直接查）' : KEY.bocha ? '博查 + 维基百科' : '维基百科；在首页填博查 Key 资料更多'}）</label>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}` : ''}
+    ${MODE === 'local' || MODE === 'claude' ? `<label class="muted" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="sSearch" style="width:auto" ${SETTINGS.search !== false ? 'checked' : ''}>每回合自动联网查资料（搜这一回涉及的真人、事件、年份；用${MODE === 'claude' ? '维基百科（网页版在浏览器里直接查）' : KEY.bocha ? '博查 + 维基百科' : '维基百科；在下面填博查 Key 资料更多'}）</label>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}` : ''}
     
     
     ${MODE === 'local' ? `<div class="h"><span class="seal">检</span>联网自检</div>
@@ -3787,6 +3797,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     }
     const fx = applyFixes(st.text, d.fixes);
     if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
+    d.goals = arr(d.goals).filter(g => g && /长远/.test(g.term || ''));   // 开局只给长远的；眼下、今年等玩家自己走出方向
     Object.assign(d, { reply: deslop(fx.text), mode: 'play', elapsedDays: 0, ledger: [] });
     applyReply(s, d, '');
     if (fx.done.length) { const g = s.chat[s.chat.length - 1]; g.audit = fx.done; }
