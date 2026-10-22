@@ -45,6 +45,7 @@ start ai.js && {
   run "刑案监狱、生意、江湖：告状立案、开铺月结、入帮、收押打点、获释" 900 node crime.js
   run "捏脸：开局画像、捏脸面板、换脸、身边人小像、相貌进材料" 600 node face.js
   run "存档：两局并存、读回、删除（确认不被重画冲掉）、刷新不复活、游戏里切换" 900 node saves.js
+  run "边写边显示：写稿核对时看得到初稿、不露幕后、写完换定稿" 900 node livedraft.js
   run "改错不卡：一键反馈、说写错了、改这段文字、重写这一条，改完接着玩" 900 node fixflow.js
   [ -z "${QUICK:-}" ] && run "自定开局" 600 node custom.js
   [ -z "${QUICK:-}" ] && run "网页版模式" 600 node claudemode.js

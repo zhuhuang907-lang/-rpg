@@ -10,7 +10,7 @@ const checks = [
   ['整回示范两段', /整回的样子（两段示范/.test(rules) && /青苗/.test(rules) && /通州/.test(rules)],
   ['分段规则', /人物说话另起一段/.test(rules)],
   ['不替主角说话、对话路途归玩家', /主角只做玩家说的/.test(rules) && /对话和路途归玩家自己/.test(rules)],
-  ['一句多动作先写第一步', /先写第一步/.test(rules)],
+  ['一句几件事照先后写完、办到有结果再停（不拖）', /照先后一件件都写出来/.test(rules) && /办到有了结果/.test(rules)],
   ['官职写清本官差遣上司', /本官/.test(rules) && /差遣/.test(rules)],
   ['铁律卡在请求最前、结尾重述', /IRON_HEAD \+ what/.test(src) && /IRON_TAIL \+ '\\n\\n照规则写正文/.test(src)],
   ['写正文开深度思考（桌面版）', /kind === '写戏'\) extra = \{ \.\.\.extra, thinking: true \}/.test(src)],
