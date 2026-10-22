@@ -973,7 +973,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022135209';
+const BUILD = '20261022135612';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -3839,7 +3839,7 @@ function applyReply(s, d, said) {
     // 政令：落到主角身上的新法、加派、禁令，按名目合并；废止的去掉
     for (const x of arr(d.policies).slice(0, 6)) { if (!x || !x.name) continue; const k = one(x.name, 20), o = arr(s.policies).find(p => p.name === k); if (x.gone === true) { s.policies = arr(s.policies).filter(p => p.name !== k); continue; } const v = { name: k, since: one(x.since || (o && o.since) || timeText(s.clock), 20), what: one(x.what || (o && o.what), 80), onYou: one(x.onYou || (o && o.onYou), 80), perMonth: N0(x.perMonth) ?? (o && o.perMonth) ?? 0 }; s.policies = arr(s.policies).filter(p => p.name !== k).concat([v]).slice(-12); }
     // 案子、生意、江湖与行会：按名字合并，gone 的去掉；收押与获释
-    const mergeBy = (list, rows2, keys, n) => { let L2 = arr(list); for (const x of arr(rows2).slice(0, 8)) { if (!x || !x.name || /^(案名|字号或生意名|字号|生意名)$|帮会、镖局|会馆、教门名/.test(String(x.name))) continue;   // 账房照抄了格式里的占位字，不算 const k = one(x.name, 20); if (x.gone === true) { L2 = L2.filter(o => o.name !== k); continue; } const o = L2.find(z => z.name === k) || {}; const v = { name: k }; for (const f of keys) v[f] = typeof x[f] === 'number' ? x[f] : (one(x[f], 80) || o[f] || ''); L2 = L2.filter(z => z.name !== k).concat([v]); } return L2.slice(-n); };
+    const mergeBy = (list, rows2, keys, n) => { let L2 = arr(list); for (const x of arr(rows2).slice(0, 8)) { if (!x || !x.name || /^(案名|字号或生意名|字号|生意名)$|帮会、镖局|会馆、教门名/.test(String(x.name))) continue;   /* 账房照抄了格式里的占位字，不算 */ const k = one(x.name, 20); if (x.gone === true) { L2 = L2.filter(o => o.name !== k); continue; } const o = L2.find(z => z.name === k) || {}; const v = { name: k }; for (const f of keys) v[f] = typeof x[f] === 'number' ? x[f] : (one(x[f], 80) || o[f] || ''); L2 = L2.filter(z => z.name !== k).concat([v]); } return L2.slice(-n); };
     if (Array.isArray(d.cases) && d.cases.length) { const st0 = new Map(arr(s.cases).map(c => [c.name, c.stage])); s.cases = mergeBy(s.cases, d.cases, ['kind', 'role', 'stage', 'facts', 'suspects', 'next', 'deadline'], 12); const mv2 = s.cases.filter(c => st0.get(c.name) !== c.stage).map(c => `${c.name}：${c.stage}`); if (mv2.length) extra.cases = mv2; }
     if (Array.isArray(d.business) && d.business.length) { const old2 = new Map(arr(s.business).map(z => [z.name, z])); s.business = mergeBy(s.business, d.business, ['kind', 'stock', 'credit', 'partners', 'note'], 10); for (const z of s.business) { const o2 = old2.get(z.name) || {}; const x = arr(d.business).find(y => y && one(y.name, 20) === z.name) || {}; for (const f of ['capital', 'revenue', 'cost']) z[f] = N0(x[f]) ?? N0(o2[f]) ?? 0; } }
     if (Array.isArray(d.circles) && d.circles.length) s.circles = mergeBy(s.circles, d.circles, ['kind', 'leader', 'stance', 'tie'], 12);
