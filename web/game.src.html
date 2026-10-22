@@ -488,7 +488,7 @@ window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r &
 async function exportReport() {
   let diag = null; if (MODE === 'local') { try { diag = await api('/api/diag'); } catch (e) { diag = { error: String(e.message || e) }; } }
   const s = S, pend = (() => { try { return JSON.parse(lsGet('hrpg:pending') || 'null'); } catch (_) { return null; } })();
-  const rep = { made: new Date().toISOString(), build: BUILD, mode: MODE, ua: navigator.userAgent, screen: innerWidth + 'x' + innerHeight, settings: SETTINGS, key: { has: KEY.has, model: KEY.model, search: KEY.search, bocha: KEY.bocha, bad: KEY.bad ? plainWhy(KEY.bad) : '' }, errors: JSON.parse(lsGet(ERRLOG_KEY) || '[]'), diag, pending: pend ? { ...pend, story: pend.story ? '(有草稿)' : undefined } : null, errmsg: ERRMSG,
+  const rep = { made: new Date().toISOString(), build: BUILD, mode: MODE, ua: navigator.userAgent, screen: innerWidth + 'x' + innerHeight, settings: SETTINGS, key: { has: KEY.has, model: KEY.model, search: KEY.search, bocha: KEY.bocha, bad: KEY.bad ? plainWhy(KEY.bad) : '' }, errors: JSON.parse(lsGet(ERRLOG_KEY) || '[]'), diag, pending: pend ? { ...pend, story: pend.story ? '(有草稿)' : undefined } : null, errmsg: ERRMSG, summary: (() => { try { return problemReport().replace(/sk-[A-Za-z0-9]{6,}/g, 'sk-***').split('\n'); } catch (e) { return ['（摘要没生成：' + (e.message || e) + '）']; } })(),   // 页面脚本出错、最近几次 AI 原样输出：查问题最要紧的这些以前没导出来
     game: s ? { title: s.title, turn: s.turn, clock: s.clock, place: s.place && s.place.full, protagonist: s.protagonist && { name: s.protagonist.name, role: s.protagonist.role, age: s.protagonist.age }, chatLen: arr(s.chat).length, lastChat: arr(s.chat).slice(-6).map(c => ({ role: c.role, kind: c.kind, turn: c.turn, text: cut(c.text, 400), unsettled: !!c.unsettled, extraKeys: c.extra ? Object.keys(c.extra) : [] })), sizeKB: Math.round(JSON.stringify(s).length / 1024) } : null };
   const blob = new Blob([JSON.stringify(rep, null, 2)], { type: 'application/json' }), fname = `问题报告-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
   if (MODE === 'claude') {   // 网页版：页面不能直接下载，交给 claude.ai 弹确认框保存
@@ -732,11 +732,6 @@ function repairJSON(t) {
   }
   if (lastCut < 0) return null;
   try { return JSON.parse(t.slice(0, lastCut).replace(/,\s*$/, '') + '}'); } catch (_) { return null; }
-}
-/** 实在读不出 JSON，但正文已经写出来了：先把正文留下，账这回不记 */
-function salvage(text) {
-  const r = partial(text);
-  return r && r.length >= 40 ? { reply: r, mode: 'play', elapsedDays: 0, _salvaged: true } : null;
 }
 /** 流式时先把 reply 读出来显示 */
 function partial(text) {
@@ -1059,7 +1054,6 @@ function mentionedFigures(s, text) {
 }
 
 /* ========== 行动裁定：先把玩家这一步拆开、按身份权限钱粮人手与制度裁定，正文照裁定写 ========== */
-const isTalkish = said => /^(戏外|问|请问)|[？?]\s*$/.test(String(said || '').trim());
 const needRuling = said => { const x = String(said || '').trim(); return x.length >= 2; };
 function rulingInput(s, said) {
   const p = s.protagonist, c = s.career || {}, mo = s.money || {}, u = mo.unit || '两';
