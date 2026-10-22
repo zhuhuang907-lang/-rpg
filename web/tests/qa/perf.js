@@ -15,7 +15,7 @@ const TURNS = Number(process.argv[2] || 4);
   for (let i = 0; i < TURNS; i++) {
     await p.waitForTimeout(Number(process.env.READ || 0));   // 玩家读这一回的工夫
     const bg0 = await p.evaluate(() => BG_STEP || '');
-    t = Date.now(); await p.fill('#said', ins[i % ins.length]); await p.click('#bSend');
+    t = Date.now(); await p.fill('#said', ins[i % ins.length]); if (process.env.SPANS) await p.selectOption('#span', ['auto', 'xun', 'month', 'season', 'year'][i % 5]).catch(() => {}); await p.click('#bSend');
     const phases = []; let last = '';
     const poll = setInterval(async () => { try { const ph = await p.evaluate(() => (BGWAIT ? 'bgwait:' + BG_STEP : PHASE) || ''); if (ph !== last) { phases.push(((Date.now() - t) / 1000).toFixed(1) + ':' + ph); last = ph; } } catch (_) {} }, 250);
     await p.waitForTimeout(800); await idle(); clearInterval(poll);
