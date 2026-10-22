@@ -973,7 +973,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022144828';
+const BUILD = '20261022150548';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -1070,7 +1070,9 @@ const store = {
         for (const d of q.docs) if (d.exists) add({ id: d.id, ...d.data() });
       } catch (_) { /* 读不到账号里的就只列本机的 */ }
     }
-    return [...m.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    // 删过的不再列出来（账号那边一时没删成也不会冒回来）
+    const gone = new Set(JSON.parse(lsGet('hrpg:deleted') || '[]'));
+    return [...m.values()].filter(x => !gone.has(x.id)).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   },
   async load(id) {
     let local = null, remote = null;
@@ -1108,11 +1110,14 @@ const store = {
     return remote || local;
   },
   async del(id) {
-    if (MODE === 'local') { try { await api('/api/wdel', { id }); } catch (_) { /* 无 */ } }
-    else if (DB && UID) { try { await DB.collection('data/users/' + UID).doc(id).delete(); } catch (_) { /* 无 */ } }
+    let why = '';
+    if (MODE === 'local') { try { const r = await api('/api/wdel', { id }); if (r && r.ok === false) why = r.why || '游戏服务没删成'; } catch (e) { why = '游戏服务没有回应'; } }
+    else if (DB && UID) { try { await DB.collection('data/users/' + UID).doc(id).delete(); } catch (e) { why = (e && (e.message || e.code)) || '账号里没删成'; } }
+    try { const g = JSON.parse(lsGet('hrpg:deleted') || '[]'); if (!g.includes(id)) g.push(id); lsSet('hrpg:deleted', JSON.stringify(g.slice(-200))); } catch (_) { /* 记不下就算了 */ }
     lsSet('hrpg:save:' + id, null);
     lsSet(LOCAL_INDEX, JSON.stringify(readIdx().filter(x => x.id !== id)));
     if ((lsGet('hrpg:last') || '').startsWith(id)) lsSet('hrpg:last', null);
+    return why;
   },
 };
 /** 一个存档最多 256KB：早先的对话只留摘要（年谱、史线、地理、家业照旧全留），撤销用的上一版只留最近几句 */
@@ -4045,6 +4050,7 @@ function render() {
   const sv = { view: VIEW, tab: typeof TAB !== 'undefined' ? TAB : '', y: window.scrollY, side: (document.querySelector('.side') || {}).scrollTop || 0, pane: (document.querySelector('.side .pane') || {}).scrollTop || 0 };
   const r = renderNow();
   try { paintFaces(); } catch (_) { /* 画像画不出来不影响玩 */ }
+  if (VIEW === 'game' && document.getElementById('saves2')) fillSaves('#saves2');
   if (sv.view === VIEW) {
     if (Math.abs(window.scrollY - sv.y) > 2) window.scrollTo(0, sv.y);
     if (sv.tab === (typeof TAB !== 'undefined' ? TAB : '')) { const sd = document.querySelector('.side'); if (sd && sv.side) sd.scrollTop = sv.side; const pn = document.querySelector('.side .pane'); if (pn && sv.pane) pn.scrollTop = sv.pane; }
@@ -4154,11 +4160,19 @@ async function renderStart() {
       <div><b>联网查资料</b>每一回写之前都会联网查这一回牵涉的人、地方、制度；等的时候能看到翻到了哪些资料，写完挂在这一回下面「参阅资料」里。</div>
     </div>
   </section>`;
-  const list = await store.list();
-  const box = $('#saves'); if (!box) return;
-  box.innerHTML = list.length ? list.map(x => `<div class="save"><div class="t"><b>${esc(x.title)}</b><span>${esc(x.sub || '')}${x.updatedAt ? ' · 上次玩：' + esc(new Date(x.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })) : ''}</span></div>
-      <button class="main" data-load="${esc(x.id)}">继续</button><span class="confirm" id="del-${esc(x.id)}"><button data-askdel="${esc(x.id)}">删除</button></span></div>`).join('')
-    : '<div class="muted">还没有存档。在上面写一句话开一局。</div>';
+  fillSaves('#saves');
+}
+/** 存档列表（首页和游戏里「设置」共用）：「确定删掉？」记在 DEL_ASK 里，页面重画（后台每做完一步都会重画）也不会被冲掉 */
+let DEL_ASK = '', SAVES_CACHE = null, SAVES_AT = 0;
+async function fillSaves(sel) {
+  const paint = list => { const box = $(sel); if (!box) return; box.innerHTML = list.length ? list.map(x => `<div class="save"><div class="t"><b>${esc(x.title)}</b>${S && S.id === x.id && VIEW === 'game' ? ' <span class="badge b-doing">正在玩</span>' : ''}<span>${esc(x.sub || '')}${x.updatedAt ? ' · 上次玩：' + esc(new Date(x.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })) : ''}</span></div>
+      ${S && S.id === x.id && VIEW === 'game' ? '' : `<button class="main" data-load="${esc(x.id)}">${VIEW === 'game' ? '切换到这一局' : '继续'}</button>`}<span class="confirm" id="del-${esc(x.id)}">${DEL_ASK === x.id ? `确定删掉？<button data-del="${esc(x.id)}">删掉</button><button data-nodel="1">不删</button>` : `<button data-askdel="${esc(x.id)}">删除</button>`}</span></div>`).join('')
+    : '<div class="muted">还没有存档。在上面写一句话开一局。</div>'; };
+  if (SAVES_CACHE) paint(SAVES_CACHE);   // 先用上次的列表画上，不闪
+  if (SAVES_CACHE && Date.now() - SAVES_AT < 5000) return;   // 五秒内画过就不再去读（写正文时页面重画得很勤）
+  SAVES_AT = Date.now();
+  try { SAVES_CACHE = await store.list(); } catch (_) { SAVES_CACHE = SAVES_CACHE || []; }
+  paint(SAVES_CACHE);
 }
 
 const arrow = d => (/↑|升|增|\+/.test(d || '') ? '<span class="up">▲</span>' : /↓|降|减|-/.test(d || '') ? '<span class="down">▼</span>' : '');
@@ -4448,6 +4462,7 @@ function pane(tab) {
     <div class="h"><span class="seal">枝</span>分支存档</div>
     <p class="muted" style="font-size:13px">把这一局此刻的样子另存一份，再走另一条路；原来那份不动，首页「接着玩」里两份都在。</p>
     <div class="row"><button id="bBranch" ${BUSY ? 'disabled' : ''}>另存为分支，接着玩分支</button><span class="muted" id="branchMsg"></span></div>
+    <div class="h"><span class="seal">档</span>全部存档<span class="note">切换到别的一局，或删掉不要的</span></div><div class="saves" id="saves2"><div class="muted">载入中…</div></div>
     ${MODE === 'local' ? keyBox() : `
     <label class="muted" for="sTier" style="display:block;margin-top:10px">用哪档 AI</label>
     <select id="sTier">${[['default', '标准（快一些）'], ['complex', '最强（更细更准，但更慢、更费额度）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.tier === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
@@ -4910,11 +4925,23 @@ document.addEventListener('click', async e => {
   if (t.dataset.goal != null) { const el = $('#said'); if (el) { el.value = (el.value ? el.value + '\n' : '') + '为了「' + t.dataset.goal + '」，'; el.focus(); } return; }
   if (t.id === 'bCustomClear') { CUSTOM = {}; lsSet('hrpg:custom', null); render(); return; }
   if (t.id === 'bCloseSide') { SIDE_FOLD = true; render(); return; }
-  if (t.id === 'bHome') { if (BUSY) return; VIEW = 'start'; S = null; ERRMSG = ''; SAVED = ''; render(); return; }
-  if (ds.load) { if (BUSY) return; const s = await store.load(ds.load); if (!s) { ERRMSG = '这个存档读不出来了。'; render(); return; } S = s; VIEW = 'game'; ERRMSG = ''; EDITING = false; SAVED = ''; lsSet('hrpg:last', s.id); render(); return; }
-  if (ds.askdel) { document.getElementById('del-' + ds.askdel).innerHTML = `确定删掉？<button data-del="${esc(ds.askdel)}">删掉</button><button data-nodel="1">不删</button>`; return; }
-  if (ds.nodel) { renderStart(); return; }
-  if (ds.del) { await store.del(ds.del); renderStart(); return; }
+  if (t.id === 'bHome') { if (BUSY) return; if (BG) BG_STOP = true; VIEW = 'start'; S = null; ERRMSG = ''; SAVED = ''; DEL_ASK = ''; SAVES_AT = 0; render(); return; }
+  if (ds.load) {
+    if (BUSY) { ERRMSG = '这一回还在写，写完或点「停下」后再切换存档。'; render(); return; }
+    if (BG) BG_STOP = true;   // 上一局的后台活停下，不再往那一局里写
+    const s = await store.load(ds.load); if (!s) { ERRMSG = '这个存档读不出来了。'; render(); return; }
+    S = s; VIEW = 'game'; TAB = 'board'; ERRMSG = ''; EDITING = false; SAVED = ''; DEL_ASK = ''; lsSet('hrpg:last', s.id); render(); window.scrollTo(0, document.body.scrollHeight); return;
+  }
+  if (ds.askdel) { DEL_ASK = ds.askdel; render(); return; }
+  if (ds.nodel) { DEL_ASK = ''; render(); return; }
+  if (ds.del) {
+    const id = ds.del; DEL_ASK = '';
+    if (S && S.id === id) { if (BUSY) return; S = null; VIEW = 'start'; }   // 删的是正在玩的这一局：先回首页
+    if (BG) BG_STOP = true;
+    const why = await store.del(id); SAVES_CACHE = arr(SAVES_CACHE).filter(x => x.id !== id); SAVES_AT = 0;
+    if (why) ERRMSG = `这一局在本机删掉了，${MODE === 'local' ? '游戏存档文件夹' : '账号'}里那份没删成（${why}）；它不会再出现在列表里。`;
+    render(); return;
+  }
   if (ds.tab) { SIDE_FOLD = TAB === ds.tab ? !SIDE_FOLD : false; TAB = ds.tab; render(); return; }
   if ((ds.write || ds.goal) && !SIDE_FOLD && matchMedia('(max-width: 960px)').matches) { SIDE_FOLD = true; render(); }
   if (ds.fb && FEEDBACK[ds.fb] && S && S.prev && !BUSY) {
