@@ -47,6 +47,7 @@ start ai.js && {
   run "存档：两局并存、读回、删除（确认不被重画冲掉）、刷新不复活、游戏里切换" 900 node saves.js
   run "边写边显示：写稿核对时看得到初稿、不露幕后、写完换定稿" 900 node livedraft.js
   run "改错不卡：一键反馈、说写错了、改这段文字、重写这一条，改完接着玩" 900 node fixflow.js
+  run "开关与按钮：旧版的「关」不生效、篇幅记住、自检网络报告更新分支换 Key 都有结果、侧栏无怪字、建议只写进输入框" 600 node controls.js
   [ -z "${QUICK:-}" ] && run "自定开局" 600 node custom.js
   [ -z "${QUICK:-}" ] && run "网页版模式" 600 node claudemode.js
   [ -z "${QUICK:-}" ] && run "连玩几十回合" 1500 node drive.js

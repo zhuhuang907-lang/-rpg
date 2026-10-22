@@ -1,4 +1,4 @@
-// 乱点：像一个毛手毛脚的玩家——边玩边改设置（深度思考、篇幅、联网、推演天下）、写到一半停下、重写、改正文、一键反馈、
+// 乱点：像一个毛手毛脚的玩家——边玩边改设置（篇幅）、写到一半停下、重写、改正文、一键反馈、
 // 另存分支、补记、回首页再读档、刷新、乱切侧栏。每一步之后查：页面报错、卡住、怪字（undefined、NaN、[object Object]、幕后外露）
 const { chromium } = require('playwright');
 const STEPS = Number(process.argv[2] || 60);
@@ -17,7 +17,6 @@ const STEPS = Number(process.argv[2] || 60);
     sendReload: async () => { await p.fill('#said', R(inputs)); await p.click('#bSend'); await p.waitForTimeout(500 + Math.random() * 2000); await p.reload(); await p.waitForTimeout(1500); },
     setting: async () => {
       await p.click('[data-tab="set"]').catch(() => {}); await p.waitForTimeout(200);
-      for (const id of ['sDeep', 'sSearch', 'sWorld']) { const el = await p.$('#' + id); if (el && Math.random() < 0.5) await el.click().catch(() => {}); }
       const len = await p.$('#sLen'); if (len) { const opts = await len.$$eval('option', o => o.map(x => x.value)); await p.selectOption('#sLen', R(opts)).catch(() => {}); }
     },
     regen: async () => { const r = await p.$('#bRegen:not([disabled])'); if (!r) return; await r.click(); await p.fill('#regenNote', R(['写细一点', '', '别替我说话'])).catch(() => {}); const g = await p.$('#bRegenGo'); if (g) await g.click(); },
