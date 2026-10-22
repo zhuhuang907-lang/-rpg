@@ -8,7 +8,7 @@ const PORT = process.env.GAME_PORT || 8793;
   const errs = [], dead = [], weird = []; let CUR = 'open'; let reqs = 0; let dls = 0;
   p.on('pageerror', e => errs.push(CUR + ' → ' + String(e.message).slice(0, 160))); p.on('dialog', d => d.dismiss()); p.on('request', () => reqs++); p.on('download', () => dls++);
   const idle = async (ms = 300000) => { try { await p.waitForFunction(() => !BUSY && !document.querySelector('.thinking') && !KEYSAVING, null, { timeout: ms, polling: 200 }); return true; } catch (_) { return false; } };
-  const snap = () => p.evaluate(() => { let ls = ''; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); ls += k + '=' + (localStorage.getItem(k) || '').length + ';'; } } catch (_) { } const sel = window.getSelection ? String(window.getSelection()) : ''; return (document.body.innerHTML.length) + '|' + document.body.innerText + '|' + ls + '|' + (document.activeElement && (document.activeElement.id || document.activeElement.tagName)) + '|' + (document.activeElement && document.activeElement.value || '') + '|' + JSON.stringify(typeof S !== 'undefined' && S ? [S.id, S.turn, S.chat && S.chat.length] : null) + '|' + VIEW + '|' + sel + '|' + scrollY; });
+  const snap = () => p.evaluate(() => { let ls = ''; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); ls += k + '=' + (localStorage.getItem(k) || '').length + ';'; } } catch (_) { } const sel = window.getSelection ? String(window.getSelection()) : ''; const vals = [...document.querySelectorAll('input, select, textarea')].map(x => x.id + ':' + (x.type === 'checkbox' ? x.checked : x.value)).join(','); return vals + '|' + (document.body.innerHTML.length) + '|' + document.body.innerText + '|' + ls + '|' + (document.activeElement && (document.activeElement.id || document.activeElement.tagName)) + '|' + (document.activeElement && document.activeElement.value || '') + '|' + JSON.stringify(typeof S !== 'undefined' && S ? [S.id, S.turn, S.chat && S.chat.length] : null) + '|' + VIEW + '|' + sel + '|' + scrollY; });
   const back = async () => { if (await p.evaluate(() => VIEW !== 'game' || !S)) { const l = await p.$('[data-load]'); if (l) { await l.click(); await p.waitForTimeout(800); } } };
   // 选得出、此刻看得见、没禁用的可点物；用一条能再找到它的选择器标记
   const targets = () => p.evaluate(() => {
@@ -36,7 +36,7 @@ const PORT = process.env.GAME_PORT || 8793;
         const el = await p.$(t.q); if (!el || !(await el.isVisible().catch(() => false))) continue;
         const before = await snap(); const r0 = reqs, d0 = dls;
         try {
-          if (t.tag === 'SELECT') { const opts = await el.$$eval('option', o => o.map(x => x.value)); await el.selectOption(opts[opts.length - 1]); }
+          if (t.tag === 'SELECT') { const opts = await el.$$eval('option', o => o.map(x => x.value)); const cur = await el.inputValue(); await el.selectOption(opts.find(v => v !== cur) || cur); }
           else await el.click({ timeout: 3000 });
         } catch (e) { if (!/detached|not attached|intercept|outside of the viewport|Timeout/i.test(e.message)) weird.push(CUR + '：点不了 ' + e.message.slice(0, 80)); continue; }
         await p.waitForTimeout(400); if (!(await idle(120000))) weird.push(CUR + '：点完卡住两分钟');
