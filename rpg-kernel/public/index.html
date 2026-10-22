@@ -427,7 +427,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022061056';
+const BUILD = '20261022061317';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -3094,7 +3094,11 @@ function applyReply(s, d, said) {
     }
     s.world.events = s.world.events.slice(-120);
     const beforeYM = { y: s.clock.y, m: s.clock.m, leap: !!s.clock.leap };
-    const days = Math.max(0, Math.min(Math.max(400, Math.round(spanMonths(d.span, said) * 30.5)), 1900, Math.round(Number(d.elapsedDays) || 0)));   // 玩家说过两年、过五年：照他说的推，最多五年多
+    // 玩家没说要过日子、正文里也没写时间过去：账房报的天数再多也只推一天（一场谈话、一件事）；写了「次日」「数日后」的最多一个半月；写到几个月、几年的照写的
+    const said2 = String(said || ''), rep2 = String(d.reply || ''), asked = SPANS[d.span] || spanMonths(d.span, said2) || /过|等|歇|熬|守|赶路|上路|动身|出发|启程|前往|回乡/.test(said2);
+    const tw = /(数|几|两|三|四|五|六|七|八|九|十|半|一)(日|天|旬|月|个月|年|载)|次日|翌日|第二天|隔日|转眼|一晃|月余|旬日|半月|入夜|天明|次晨/;
+    const capDays = asked ? 1900 : !tw.test(rep2) ? 1 : /(数|几|两|三|四|五|六|七|八|九|十|半)(个)?(月|年|载)|月余|一晃|转眼/.test(rep2) ? 400 : 45;
+    const days = Math.max(0, Math.min(capDays, Math.max(400, Math.round(spanMonths(d.span, said) * 30.5)), 1900, Math.round(Number(d.elapsedDays) || 0)));   // 玩家说过两年、过五年：照他说的推，最多五年多
     if (days) {
       const nd = CAL.addDays(s.clock, days), years = Math.max(0, nd.y - s.clock.y);
       Object.assign(s.clock, nd);
@@ -3250,7 +3254,7 @@ function autoIdentity(s, extra) {
   else if (s.idm === 'warlord' && s.hadLand && !land && troops < 200) { to = office ? 'official' : 'commoner'; why = '地盘丢光、兵马散尽'; }
   else if (s.idm === 'official' && /^(罢|革|致仕|去职|解职)/.test(office)) { to = 'commoner'; why = '已不在官位'; }
   if (!to || !IDM[to]) return;
-  const from = p.role, label = { emperor: office || '皇帝', warlord: `据${arr(s.territory).slice(0, 2).map(x => x.place).join('、')}、拥兵 ${troops} 的一方之主`, official: office + (c.rank ? '（' + c.rank + '）' : ''), noble: p.role, commoner: p.role }[to];
+  const from = p.role, label = { emperor: office || '皇帝', warlord: `据${arr(s.territory).slice(0, 2).map(x => x.place).join('、')}、拥兵 ${troops} 的一方之主`, official: office + (c.rank ? '（' + c.rank + '）' : ''), noble: p.role, commoner: s.idm === 'warlord' ? `失了地盘的${one(String(from || '').replace(/^据[^的]*的/, ''), 12) || '旧日一方之主'}` : /^(罢|革|致仕|去职|解职)/.test(office) ? `${office.slice(0, 2)}在家的${one(String(from || '').replace(/（[^）]*）/g, ''), 14)}` : p.role }[to];   // 丢了官、丢了地盘：身份写成现在的样子，不挂着旧头衔
   s.idm = to; if (label && label !== from) { p.role = one(label, 40); s.title = `${p.name} · ${one(p.role, 14)}`; }
   s.careerLog = arr(s.careerLog).concat([{ turn: s.turn, when: timeText(s.clock), what: `身份照账册改为「${one(p.role, 20)}」：${why}` }]);
   s.inst = null; s.arcId = null; s.estateDue = true;

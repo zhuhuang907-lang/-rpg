@@ -20,7 +20,7 @@ const CASES = require('./rules_cases.json');
     if (c.check === 'doubts') { Object.assign(s, JSON.parse(JSON.stringify(c.state))); const d = dataDoubts(s); return { id: c.id, ok: c.want.every(k => d.some(x => x.includes(k))) && (c.want.length || d.length === 0), detail: d }; }
     if (c.check === 'battle') { s.forces = JSON.parse(JSON.stringify(c.forces)); s.turn = 3; const before = N0(s.forces[0].troops); const r = resolveBattle(s, c.battle); let ok = !!r && r.outcome.includes(c.want); if (ok && c.apply) { applyBattle(s, r); ok = N0(s.forces[0].troops) === before - r.deadUs && (!r.take || arr(s.territory).some(x => x.place === r.take)) && arr(s.battles).length === 1; } return { id: c.id, ok, detail: r }; }
     if (c.check === 'modules') { const got = pickModules(c.said, null); return { id: c.id, ok: JSON.stringify(got) === JSON.stringify(c.want), detail: got }; }
-    if (c.check === 'identity') { const ex = {}; autoIdentity(s, ex); return { id: c.id, ok: s.idm === c.want, detail: { idm: s.idm, ex } }; }
+    if (c.check === 'identity') { const ex = {}; autoIdentity(s, ex); return { id: c.id, ok: s.idm === c.want && (!c.roleHas || s.protagonist.role.includes(c.roleHas)), detail: { idm: s.idm, role: s.protagonist.role, ex } }; }
     if (c.check === 'cur') { const cs = curStatus(s, { presentNpcs: c.npcs }); return { id: c.id, ok: c.must.every(m => JSON.stringify(cs).includes(m)), detail: cs }; }
     return { id: c.id, ok: false, detail: '未知检查' };
   }), CASES);
