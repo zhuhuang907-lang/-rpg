@@ -974,7 +974,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261022223537';
+const BUILD = '20261022224500';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -4604,10 +4604,10 @@ async function startGame(sentence, have, havePre, custom, spec) {
 }
 /* ========== 后台：每回合写完之后的整理（不挡玩家） ========== */
 let BG = null, BGMSG = '', BGWAIT = false, STOP_PENDING = false;
-let BG_STOP = false, BG_STEP = '';
+let BG_STOP = false, BG_STEP = '', BG_TAIL = null, BG_FOR = null;
 let BG_GEN = 0;
 function runBg(fn) {
-  BG_STOP = false;
+  BG_STOP = false; BG_FOR = S;
   const gen = ++BG_GEN;
   const me = (async () => { await null; try { await fn(gen); } catch (_) { /* 后台出错下回再做 */ } finally { if (BG === me) { BG = null; BGMSG = ''; BG_STEP = ''; } render(); } })();
   BG = me;
@@ -4640,7 +4640,7 @@ async function send(said, span, note, resume) {
     // 最多等三秒：后台没做完的那一步自己在后头做完（结果照样记上），没开始的留到下一回；玩家不用干等
     const t0 = Date.now();
     while (BG && Date.now() - t0 < 3000) await new Promise(r => setTimeout(r, 200));
-    if (BG) BG_STOP = true;
+    if (BG) { BG_STOP = true; if (BG_FOR === S) BG_TAIL = BG; }   // 还在做的那一步放它做完，但记账之前要等它收尾，免得两边同时改存档、后写的冲掉先写的
     BUSY = false; BGWAIT = false;
     if (STOP_PENDING) { STOP_PENDING = false; PENDING_SAID = ''; if (resume && resume.orig) S = resume.orig; render(); const el = $('#said'); if (el) el.value = String(said || ''); return; }
     if (!S) return;
@@ -4750,6 +4750,7 @@ async function send(said, span, note, resume) {
     PHASE = 'verify'; render();
     if (st.talk) {
       lsSet('hrpg:pending', null);
+      if (BG_TAIL) { const t = BG_TAIL; BG_TAIL = null; await within(t, 90000); }
       applyReply(S, { reply: cleanTalk(st.text), mode: 'talk' }, said); PENDING_SAID = ''; S.mainNow = null;
       if (FEED.length) { const g1 = S.chat[S.chat.length - 1]; g1.extra = Object.assign(g1.extra || {}, { refs: FEED.slice(-16).map(f => ({ t: f.t, site: f.site, u: f.u })) }); }
       if (arr(st.audit).length) { const g0 = S.chat[S.chat.length - 1]; g0.audit = st.audit; }
@@ -4757,6 +4758,7 @@ async function send(said, span, note, resume) {
       if (!ledgerP || st.rewrote) startLedger();
       STREAM = st.text; PHASE = 'ledger'; render();
       let d = await ledgerP;
+      if (BG_TAIL) { const t = BG_TAIL; BG_TAIL = null; PHASE = 'ledger'; await within(t, 90000); }   // 上一回后台没收尾的那一步（立家底、推演天下……）先落定，再记这一回的账
       // 账是照初稿记的：核实时改掉的字，账里也照改（人名、官名、地名不能一处对一处错）
       if (d && arr(st.audit).length) d = auditSweep(d, st.audit);
       if (arr(st.audit).length) for (const k of ['people', 'canon', 'gmNotes', 'estate', 'chronicle', 'summaries', 'orders', 'deeds', 'goals', 'places']) if (S[k]) S[k] = auditSweep(S[k], st.audit);
