@@ -16,6 +16,9 @@ function story(talk) {
   return t + '\n【幕后】周四其实收了江家二十两银子。';
 }
 function ledger(p) {
+  if (/【玩家这回说】[^\n]*纳/.test(p)) return JSON.stringify({ elapsedDays: 3, ledger: [{ item: '纳妾聘礼', amount: -200 }], household: [{ change: '纳妾', relation: '妾', name: '柳氏', age: 19 }], estate: { income: [{ item: '典铺利钱', amount: 150 }] }, turnSummary: '纳妾' });
+  if (/【玩家这回说】[^\n]*有喜/.test(p)) return JSON.stringify({ elapsedDays: 1, household: [{ change: '有孕', relation: '妾', name: '柳氏' }], policies: [{ name: '盐引加课', since: '乾隆二十二年', what: '每引加银三钱', onYou: '三千引每年多出九百两', perMonth: -75 }], turnSummary: '有喜' });
+  if (/【玩家这回说】[^\n]*过日子/.test(p)) return JSON.stringify({ elapsedDays: 95, turnSummary: '过日子' });
   if (/【玩家这回说】[^\n]*募/.test(p)) return JSON.stringify({ elapsedDays: 10, ledger: [{ item: '募勇安家银', amount: -600 }], forces: [{ name: '乡勇', leader: '汪景和', troops: 400, grain: 2000, quality: '新', at: '江都县', status: '统带' }], prices: [{ item: '米', price: 900, per: '石' }], turnSummary: '募勇' });
 
   const TCH = p.includes('【玩家这回说】') ? { touches: [{ event: '乾隆帝第二次南巡', lever: '盐商报效', how: '联络总商拒绝报效', weight: '重' }] } : {};
