@@ -33,7 +33,7 @@ run() {   # $1 = 名字，$2 = 超时秒，$3... = 命令；输出里必须没�
   echo "$out" | grep -qE 'ERRS \[\]|PAGE ERRORS 0|ESTATE OK|不合格 0' || bad "$name：没看到通过的标志"
   echo "$out" | grep -qE 'ERRS \[[^]]|PAGE ERRORS [1-9]|UI ERRORS [1-9]|STUCK \[[^]]|LEAKS [1-9]|INVARIANTS [1-9]|ESTATE FAIL' && bad "$name：有报错"
 }
-say "构建"; (cd "$ROOT" && python3 web/build.py) | tail -1 || bad "构建失败"
+say "构建"; (cd "$ROOT" && python3 web/build.py 2>&1) | tail -3; [ ${PIPESTATUS[0]} -eq 0 ] || { bad "构建失败（页面脚本有语法错误）"; echo "有不合格项，不许发布"; exit 1; }
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
 KEYVAL= start ai.js && run "填 Key：粘贴、保存、换 Key、型号、博查、开关、输入不丢" 300 node keyflow.js
