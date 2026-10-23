@@ -47,15 +47,19 @@ vfile.write_text(json.dumps({'build': build, 'hash': digest, 'api': api}), encod
 body = (here / 'game.src.html').read_text(encoding='utf8').replace('__BUILD__', build).replace('__CAL__', compact).replace('__HIST__', hist_js).replace('__VOCAB__', vocab.replace('</', '<\\/')).replace('__INSTLIB__', inst_js).replace('__ARCS__', arcs_js).replace('__GEO__', geo_js).replace('/*__FACE__*/', face_js)
 (here / 'index.html').write_text(body, encoding='utf8')
 # 桌面版由本机服务直接发出，需要自己的文档外壳
-page = ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+page = ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="renderer" content="webkit"><meta name="force-rendering" content="webkit">'
         '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + body + '</body></html>')
 (here.parent / 'rpg-kernel/public/index.html').write_text(page, encoding='utf8')
 print('ok', len(body), 'history eras:', len(hist), 'inst:', len(inst), 'arcs:', len(arcs))
 # 构建完先查页面脚本的语法：有错就让构建失败（一个字写错整页打不开，不能等到测试才发现）
 import tempfile, sys
-_i = body.find('<script>'); _j = body.find('</script>', _i)
-with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf8') as _f: _f.write(body[_i + 8:_j]); _tmp = _f.name
-_r = subprocess.run(['node', '--check', _tmp], capture_output=True, text=True, encoding='utf8')
-pathlib.Path(_tmp).unlink(missing_ok=True)
-if _r.returncode != 0:
-    print('页面脚本有语法错误：\n' + (_r.stderr or '')[:800]); sys.exit(1)
+_k = 0
+while True:   # 每一段 <script> 都查（最前面那段老浏览器提示也算）
+    _i = body.find('<script>', _k)
+    if _i < 0: break
+    _j = body.find('</script>', _i); _k = _j
+    with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf8') as _f: _f.write(body[_i + 8:_j]); _tmp = _f.name
+    _r = subprocess.run(['node', '--check', _tmp], capture_output=True, text=True, encoding='utf8')
+    pathlib.Path(_tmp).unlink(missing_ok=True)
+    if _r.returncode != 0:
+        print('页面脚本有语法错误：\n' + (_r.stderr or '')[:800]); sys.exit(1)
