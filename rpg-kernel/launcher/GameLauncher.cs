@@ -143,9 +143,29 @@ static class GameLauncher
         OpenBrowser();
     }
 
+    // 默认浏览器是 360、QQ、搜狗、2345、猎豹、UC 或老 IE 时，常用兼容（IE）内核或老内核打开本机网址，页面会坏：有 Edge / Chrome 就用它们
+    static string DefaultBrowserProgId()
+    {
+        try { using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice")) return (k == null ? "" : (k.GetValue("ProgId") as string) ?? ""); }
+        catch { return ""; }
+    }
+    static string ModernBrowser()
+    {
+        string pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return new[] {
+            Path.Combine(pf86, @"Microsoft\Edge\Application\msedge.exe"), Path.Combine(pf, @"Microsoft\Edge\Application\msedge.exe"),
+            Path.Combine(pf, @"Google\Chrome\Application\chrome.exe"), Path.Combine(pf86, @"Google\Chrome\Application\chrome.exe"), Path.Combine(local, @"Google\Chrome\Application\chrome.exe"),
+        }.FirstOrDefault(File.Exists);
+    }
     static void OpenBrowser()
     {
-        try { Process.Start(new ProcessStartInfo(Url) { UseShellExecute = true }); Log("已用默认浏览器打开"); }
+        string prog = DefaultBrowserProgId();
+        if (System.Text.RegularExpressions.Regex.IsMatch(prog, "360|QQBrowser|Sogou|SE[0-9]?HTML|2345|Liebao|UCBrowser|IE\\.HTTP|Maxthon", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+        {
+            string mb = ModernBrowser();
+            if (mb != null) { try { Process.Start(mb, Url); Log("默认浏览器是 " + prog + "，改用 " + mb + " 打开"); return; } catch (Exception ex) { Log("改用 Edge/Chrome 失败：" + ex.Message); } }
+        }
+        try { Process.Start(new ProcessStartInfo(Url) { UseShellExecute = true }); Log("已用默认浏览器打开（" + prog + "）"); }
         catch (Exception ex)
         {
             Log("默认浏览器打开失败：" + ex.Message);
