@@ -60,6 +60,9 @@ const checks = [
   ['不回回拿钱账债做文章', /不回回拿钱粮账目、欠款做文章/.test(rules) && /\['欠债讨债'/.test(src) && /不要为了有戏编欠债/.test(src) && /不安排人来讨债催账/.test(src)],
   ['影响剧情的开关一律开着', /critic: true, world: true, search: true, deep: true/.test(src) && !/id="sWorld"|id="sDeep"|id="sSearch"/.test(src)],
   ['玩家定的设定每回都带', /s\.custom = cut\(custom/.test(src) && /玩家开局时亲手定的设定/.test(src)],
+  ['人物有来有去：远处的人不硬凑出场、联络照身份、断了的线就断了', /故人重逢只能是偶然/.test(rules) && /联络照身份来/.test(rules) && /断了的线就断了/.test(rules) && /很多日子里本来就无事发生/.test(rules)],
+  ['写正文只拿眼前的人，远处的只给名字', /function splitPeople/.test(src) && /P = forStory \? NEAR/.test(src) && /farLine\(FAR\)/.test(src)],
+  ['天下推演不凑人数、意外默认空着', !/三到六人/.test(src) && /多数回合空着/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
