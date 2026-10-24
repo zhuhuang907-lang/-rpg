@@ -16,6 +16,9 @@ function story(talk) {
   return t + '\n【幕后】周四其实收了江家二十两银子。';
 }
 function ledger(p) {
+  if (/【玩家这回说】[^\n]*坐船去苏州/.test(p)) return JSON.stringify({ elapsedDays: 3, nowAt: '苏州府吴县', turnSummary: '到苏州办货', presentNpcs: [{ name: '沈牙人', role: '牙行' }] });
+  if (/【玩家这回说】[^\n]*回扬州家里/.test(p)) return JSON.stringify({ elapsedDays: 3, nowAt: '扬州府江都县', turnSummary: '回家' });
+  if (/【玩家这回说】[^\n]*去京师/.test(p)) return JSON.stringify({ elapsedDays: 30, nowAt: '京师', turnSummary: '进京' });
   if (/【玩家这回说】[^\n]*告状/.test(p)) return JSON.stringify({ elapsedDays: 1, cases: [{ name: '周四盗盐案', kind: '盗案', role: '苦主', stage: '报案', facts: '瓜洲卸盐二百引', suspects: '江家管事', next: '县里派捕快拘周四', deadline: '十日' }], turnSummary: '告状' });
   if (/【玩家这回说】[^\n]*开铺/.test(p)) return JSON.stringify({ elapsedDays: 2, ledger: [{ item: '盘铺面', amount: -800 }], business: [{ name: '汪记盐栈', kind: '铺面', capital: 800, stock: '盐三百引', credit: '赊给镇江客商一百两', revenue: 400, cost: 150, partners: '掌柜程立德' }], turnSummary: '开铺' });
   if (/【玩家这回说】[^\n]*入漕帮/.test(p)) return JSON.stringify({ elapsedDays: 1, circles: [{ name: '扬州漕帮', kind: '帮会', leader: '翁老大', stance: '观望', tie: '递了门槛' }], turnSummary: '入帮' });
@@ -81,6 +84,7 @@ function answer(p, last, json) {
   if (p.includes('定出此时此地各衙门在任的人')) { fs.writeFileSync('off_prompt.txt', p); return JSON.stringify({ officials: [{ post: '两淮盐运使', place: '扬州府', name: '卢见曾', since: '1753.5', until: '1762.3', src: '史料' }, { post: '扬州知府', place: '扬州府', name: '高恒', since: '1756.2', until: '1757.11', src: '推断', basis: 'OFFMARK 1756年到任，1757年冬调任' }, { post: '江都知县', place: '江都县', name: '某某', src: '拟' }, { post: '甘泉知县', place: '江都县', name: '沈廷芳', since: '1757.1', src: '拟' }] }); }
   if (p.includes('精通历代职官制度')) return JSON.stringify({ era: '清', summary: '省府县', ladder: [{ tier: '地方', posts: [{ name: '知县', rank: '正七品', duty: '一县' }] }], paths: [], fixes: [], unsure: [] });
   if (p.includes('要把它写成一部书')) { fs.appendFileSync('book.log', (p.includes('浅近文言') ? 'hist' : 'novel') + '\n'); return (p.includes('浅近文言') ? '卷一　乾隆二十二年' : '第一回　钞关前问引价　运司里说盐法') + '\n' + '汪景和至钞关问引价，书吏言今岁引价腾贵。'.repeat(20); }
+  if (p.includes('你是历史地理检索员')) { fs.appendFileSync('geoalias.log', 'x\n'); return JSON.stringify(/「京师」/.test(p) ? { county: '大兴县', pref: '顺天府', modern: '北京' } : { county: '', pref: '' }); }
   if (p.includes('核实几位官员')) { fs.appendFileSync('tenure.log', 'x\n'); return JSON.stringify({ people: [] }); }
   if (p.includes('只管查资料')) { fs.appendFileSync('dsq.log', 'x\n'); const qs = [...p.matchAll(/^\d+\. (.+)$/gm)].map(m => m[1]); return JSON.stringify({ results: qs.map(q => ({ q, items: [{ title: q.split(' ')[0], snippet: q + '：据通行史书所载的一条事实', src: '通行史书' }] })) }); }
   if (p.includes('整理出确实写在资料里')) return JSON.stringify({ almanac: [{ cat: '物价', text: '米价一石一两六钱', src: '志' }] });

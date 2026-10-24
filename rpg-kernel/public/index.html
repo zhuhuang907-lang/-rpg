@@ -930,7 +930,7 @@ function ledgerRules() {
   return `你是这局历史模拟游戏的账房兼史官。主持人刚写好这一回的正文（下面给出）。你的事：照正文把账册更新，再把正文的史实核一遍。只记正文里发生了的事和照理必然发生的事（过了月份的收支、按史书此时发生的天下大事、行情随季节的涨落），不要改剧情、不要添正文没有的情节。
 
 记账规则：
-1. elapsedDays：这一回正文里过了多少天（一场谈话 0–1 天；按正文说的时间算）。yearLabel：过完后的年号纪年。主角搬到别处常住才填 moveTo（新地方的全称）；搬到了另一个政权的地界（投奔、逃亡、出使后留下）再填 moveToPolity（那个政权的名字，如「金」「北魏」）。
+1. elapsedDays：这一回正文里过了多少天（一场谈话 0–1 天；按正文说的时间算）。yearLabel：过完后的年号纪年。nowAt：这一回结束时主角人在哪里（当时的县、州府或京城的名称；出门办事、赶路、出差、被押走都照实写此刻所在，回到家就写现居地）。主角搬到别处常住才填 moveTo（新地方的全称）；搬到了另一个政权的地界（投奔、逃亡、出使后留下）再填 moveToPolity（那个政权的名字，如「金」「北魏」）。
 2. 一切量化，数字用阿拉伯数字。钱一律折成【家业账】的本位单位。现钱由程序结算——你不报现钱，只把本回合正文里每一笔钱的进出（买卖、工钱、赋税摊派、送礼打点、借贷、赏赐、被偷被抢、事业投入与收获……）在 ledger 里一笔一笔报，收入为正、支出为负，与正文的数对得上；正文没写数但确实花了钱的，按【本地行情】估一个合理的数。每月固定的进出写在 estate 的 income / expense（每月多少），程序过月自动结，不要再在 ledger 里重复报月收支。若【家业账】写着现钱尚未定数，用 setCash 给出现钱多少。
 3. 产业（田地、铺面、宅子、作坊、船、牲口、存货、借出的钱）有数量与估值；在做的事业有状态、进度、下一步。estate 里只给变了的那几项（按名目合并：新的、改的照给；卖掉、停了的写 "gone":true，进项开销停了的数额写 0），没提到的照旧。本地行情随季节、年景、战事变化时在 prices 里给出（米、麦、布、盐、肉、田价、房价、雇工日钱、银钱比价等）。
 4. identity：主角的身份这一回变了才给（考中功名、授官、升到另一层、罢官、致仕、从军、退伍、改行经商、出家还俗、落草、受招安、称王称帝、出嫁成了主母……），role 写新身份，identityModule 照新身份选，meters 给新身份要紧的五六项数值初值（旧身份的数值不再用）；没变就不给。
@@ -955,7 +955,7 @@ function ledgerRules() {
 史实核查（fixes）：逐句核对正文，只找确凿的硬伤——本朝本年不该有的官名、衙门、地名或隶属，违背【制度框架】的职衔、文书、程序、称谓；此时已死或尚未出生、不在此地、不任此职的真实人物；年号、干支、节令错误；本朝还没有的器物、作物、制度；离谱的物价或钱粮单位；现代词语。不改文风、不改虚构人物、不改情节，拿不准的不算。每处给出原文里错的那几个字（原样摘出，十二字以内，必须能在正文里找到）和改成什么。
 
 只输出一个 JSON 对象，不加代码块、不加说明。没有变化的项给 [] 或省略：
-{"elapsedDays":0,"yearLabel":"","moveTo":"","moveToPolity":"","setCash":null,
+{"elapsedDays":0,"yearLabel":"","nowAt":"","moveTo":"","moveToPolity":"","setCash":null,
 "ledger":[{"item":"这一笔是什么","amount":0,"note":""}],
 "estate":{"assets":[{"name":"","qty":"","value":0,"note":"","gone":false}],"income":[{"item":"","amount":0}],"expense":[{"item":"","amount":0}],"projects":[{"name":"","status":"筹划/在做/停了/成了/败了","progress":"进度与下一步","note":""}]},
 "prices":[{"item":"米","price":0,"per":"石"}],
@@ -996,7 +996,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261024203002';
+const BUILD = '20261024203722';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -1177,7 +1177,7 @@ const store = {
     const s = local && remote ? ((local.updatedAt || 0) > (remote.updatedAt || 0) ? local : remote) : (remote || local);
     if (!s) return null;
     const m = migrate(s);
-    try { if (m && m.place && m.clock && (!m.geo || m.geo.place !== m.place.full) && geoData().length) buildGeoLocal(m); } catch (_) { /* 地理重建不了就等后台 */ }   // 存档里不存地理，读档时当场用内置地名库重建
+    try { if (m && m.place && m.clock && (!m.geo || m.geo.place !== geoCenter(m)) && geoData().length) buildGeoLocal(m); } catch (_) { /* 地理重建不了就等后台 */ }   // 存档里不存地理，读档时当场用内置地名库重建
     return m;
   },
   async save(s) {
@@ -2274,9 +2274,9 @@ function placeNames(full) {
   return [...new Set(pairs.reverse().flat().filter(x => x && x.length >= 2))];
 }
 /** 用内置地名库按坐标就近建：主角周围四百里上下、当年（或相差六十年内）存在的州府县；属哪个州府照当年的上级，对不上的取最近的治所 */
-function buildGeoLocal(s) {
+function buildGeoLocal(s, alias) {
   const y = s.clock.y, G = geoData();
-  const h0 = placeXY(s, s.place.full, y); if (!h0) return null;
+  const h0 = placeXY(s, alias || geoCenter(s), y) || (s.geoAlias && s.geoAlias[geoCenter(s)] ? placeXY(s, s.geoAlias[geoCenter(s)], y) : null); if (!h0) return null;
   const best = new Map();
   for (const u of G) {
     if (Math.abs(u.lat - h0.lat) > 4 || Math.abs(u.lon - h0.lon) > 5 || !(isCounty(u) || isPref(u))) continue;
@@ -2290,19 +2290,32 @@ function buildGeoLocal(s) {
   const parentOf = u => { if (pn.has(u.parent)) return u.parent; let b = null, bd = 1e9; for (const p of prefs) { const d = hav(u, p); if (d < bd) { bd = d; b = p; } } return b && bd < 120 ? b.name : u.parent; };
   const list = all.map(u => ({ id: u.id, name: u.name, type: u.type, lat: u.lat, lon: u.lon, parent: isCounty(u) ? parentOf(u) : u.parent })).sort((a, b) => hav(h0, a) - hav(h0, b)).slice(0, 500);
   const here = list.find(u => u.name === h0.name) || { ...h0, parent: isCounty(h0) ? parentOf(h0) : h0.parent };
-  s.geo = { y, place: s.place.full, here: { name: here.name, lat: +here.lat, lon: +here.lon, parent: here.parent }, units: list, built: Date.now(), src: 'local' };
+  s.geo = { y, place: geoCenter(s), here: { name: here.name, lat: +here.lat, lon: +here.lon, parent: here.parent }, units: list, built: Date.now(), src: 'local' };
   return s.geo;
+}
+/** 地名库里对不上的地名（俗称、雅称、别朝旧名、「京师」「江南」这类）：照这个年代查出它当时是哪个县、哪个州府，再到地名库里找 */
+async function geoAlias(s, name) {
+  s.geoAlias = s.geoAlias || {};
+  if (s.geoAlias[name]) return s.geoAlias[name];
+  let text = '';
+  try { text = (await callClaude(`你是历史地理检索员。「${name}」在${timeText(s.clock)}（${s.clock.y}年，${s.place.polity || ''}）指的是哪一个县（或州府、京城）？照这个年代的行政区划写当时的正式名称，不写今名、不写别的朝代的名称；拿不准就给空。只输出一个 JSON 对象：{"county":"当时的县名","pref":"当时所属的州府","modern":"今地（参考）"}`, null, { maxTokens: 300, temperature: 0.1, kind: '检索', detached: true, thinking: false })).text; } catch (e) { if (e && e.code === 'cancelled') throw e; return ''; }
+  const d = parseJSON(text) || {};
+  const a = one(d.county, 12) || one(d.pref, 12);
+  if (a) s.geoAlias[name] = a;
+  return a;
 }
 async function buildGeo(s, extraNames) {
   if (geoData().length) { const g = buildGeoLocal(s); if (g) return g; }
+  // 地名库里没对上：先照这个年代查出它当时的县名再找
+  { const a = await geoAlias(s, geoCenter(s)).catch(() => ''); if (a && geoData().length) { const g = buildGeoLocal(s, a); if (g) return g; } }
   const y = s.clock.y, units = new Map();
   const add = u => { if (geoValid(u, y) && !units.has(u.id)) units.set(u.id, { id: u.id, name: u.name, type: u.type, parent: u.parent, lat: +u.lat, lon: +u.lon }); };
   // 1. 找主角所在
   let here = null;
-  for (const n of placeNames(s.place.full)) {
+  for (const n of placeNames((s.geoAlias && s.geoAlias[geoCenter(s)]) || geoCenter(s))) {
     const rs = arr(await tgaz({ n, yr: y })).filter(u => geoValid(u, y));
     if (rs.length) {
-      const full = String(s.place.full || ''), stemOf = x => String(x || '').replace(/[县縣州府郡军道路]+$/, '');
+      const full = String(geoCenter(s) || ''), stemOf = x => String(x || '').replace(/[县縣州府郡军道路]+$/, '');
       const fit = rs.filter(u => u.parent && full.includes(stemOf(u.parent)));
       here = (fit.length ? fit : rs).find(isCounty) || (fit.length ? fit : rs)[0];
       add(here); break;
@@ -2326,10 +2339,14 @@ async function buildGeo(s, extraNames) {
     if (rs.length) add(rs.sort((a, b) => hav(here, a) - hav(here, b))[0]);
   }
   const list = [...units.values()];
-  s.geo = { y, place: s.place.full, here: { name: here.name, lat: +here.lat, lon: +here.lon, parent: here.parent }, units: list.slice(0, 500), built: Date.now() };
+  s.geo = { y, place: geoCenter(s), here: { name: here.name, lat: +here.lat, lon: +here.lon, parent: here.parent }, units: list.slice(0, 500), built: Date.now() };
   return s.geo;
 }
-const needGeo = s => canGeo() && s && (!s.geo || s.geo.place !== s.place.full || Math.abs(s.clock.y - s.geo.y) >= 15) && !(s.geoFail != null && s.turn - s.geoFail < 5);
+/** 地图的中心：主角此刻人在哪（出门在外就是那里），不然是现居地 */
+let GEO_P = null;   // 地理页上正在换地图
+const geoCenter = s => (s && s.at) || (s && s.place && s.place.full) || '';
+// 换了地方、过了十五年（不同年代州县设置、地名不一样）就重画；上次没查到的同一个地方隔几回再试，换了地方马上试
+const needGeo = s => canGeo() && s && (!s.geo || s.geo.place !== geoCenter(s) || Math.abs(s.clock.y - s.geo.y) >= 15) && !(s.geoFail != null && s.turn - s.geoFail < 5 && s.geoFailAt === geoCenter(s));
 /** 从 A 到 B 沿途的县城：离直线不远、按先后排 */
 function corridor(g, a, b) {
   const D = hav(a, b);
@@ -2340,7 +2357,7 @@ function corridor(g, a, b) {
 }
 function geoBlock(s, said) {
   LI_KM = liKmFor(s.clock ? s.clock.y : 1600);
-  const g = s.geo; if (!g || !g.units.length || g.place !== s.place.full) return '';
+  const g = s.geo; if (!g || !g.units.length || g.place !== geoCenter(s)) return '';
   const here = g.here, L = [];
   const fmt = u => `${u.name}（${dirOf(here, u)}约${liOf(hav(here, u))}里${u.parent && isCounty(u) ? '，属' + u.parent : ''}）`;   // 州府的上级在库里常挂着别朝的名字，不写
   const sameP = g.units.filter(u => isCounty(u) && u.parent === here.parent && u.name !== here.name);
@@ -2359,7 +2376,7 @@ function geoBlock(s, said) {
 async function ensureGeo(s, names) {
   if (!needGeo(s)) return null;
   const own = !BUSY; if (own) { PHASE = 'geo'; render(); }   // 在后台跑、玩家这一回已经开写时，不去动这一回的进度提示
-  try { const g = await buildGeo(s, names); if (!g) s.geoFail = s.turn; return g; } catch (e) { if (e && e.code === 'cancelled') throw e; s.geoFail = s.turn; return null; } finally { if (own && PHASE === 'geo') PHASE = ''; }
+  try { const g = await buildGeo(s, names); if (!g) { s.geoFail = s.turn; s.geoFailAt = geoCenter(s); } return g; } catch (e) { if (e && e.code === 'cancelled') throw e; s.geoFail = s.turn; s.geoFailAt = geoCenter(s); return null; } finally { if (own && PHASE === 'geo') PHASE = ''; }
 }
 /** 地图：县城、州府治所、你在哪、你的地盘与去过的地方 */
 function geoMap(s) {
@@ -2369,7 +2386,9 @@ function geoMap(s) {
   const stem0 = u => u.name.replace(/[县縣州府郡]$/, '');
   const near = g0.units.slice().sort((a, b) => hav(g0.here, a) - hav(g0.here, b)), keep = new Set(near.slice(0, 60));
   for (const u of g0.units) if ((mine0.has(stem0(u)) || been0.has(stem0(u))) && hav(g0.here, u) < 1500) keep.add(u);
-  const g = { ...g0, units: g0.units.filter(u => keep.has(u)) };
+  // 出门在外：家也画进来（远到八百公里以外的就不画，图会太大）
+  const hu = s.at ? placeXY(s, s.place.full, s.clock.y) : null, homeIn = hu && hav(g0.here, hu) < 800;
+  const g = { ...g0, units: g0.units.filter(u => keep.has(u)).concat(homeIn && !g0.units.some(u => keep.has(u) && u.name === hu.name) ? [{ ...hu, lat: +hu.lat, lon: +hu.lon }] : []) };
   const xs = g.units.map(u => u.lon), ys = g.units.map(u => u.lat);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   const W = 340, H = Math.max(200, Math.min(420, W * (y1 - y0) / Math.max(0.01, (x1 - x0) * Math.cos((y0 + y1) / 2 * Math.PI / 180))));
@@ -2394,7 +2413,9 @@ function geoMap(s) {
       boxes.push(box); labels.push(`<text x="${(G.x + dx).toFixed(1)}" y="${(G.y + dy).toFixed(1)}" font-size="${fs}" fill="${G.me ? 'var(--zhu)' : 'var(--ink)'}">${esc(G.text)}</text>`); break;
     }
   }
-  return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px" role="img" aria-label="县级地图">${dots}${labels.join('')}</svg><div class="muted" style="font-size:12px">红点你在这里；黑点州府治所；灰点县城；绿点你的地盘。据 CHGIS 历史地名库（${g.y}年前后）；画了离你最近的 ${g.units.length} 处（库里此地周边共 ${g0.units.length} 处）。把鼠标停在点上看名字、方向和里程。</div>`;
+  // 出门在外：家也画上（在这张图的范围里才画）
+  const home = homeIn && hu.lon >= x0 && hu.lon <= x1 && hu.lat >= y0 && hu.lat <= y1 ? `<rect x="${(px(hu) - 4).toFixed(1)}" y="${(py(hu) - 4).toFixed(1)}" width="8" height="8" fill="none" stroke="var(--zhu)" stroke-width="1.5"><title>家：${esc(s.place.full)}</title></rect>` : '';
+  return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" style="width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px" role="img" aria-label="县级地图">${dots}${home}${labels.join('')}</svg><div class="muted" style="font-size:12px">红点你在这里；黑点州府治所；灰点县城；绿点你的地盘。据 CHGIS 历史地名库（${g.y}年前后）；画了离你最近的 ${g.units.length} 处（库里此地周边共 ${g0.units.length} 处）。把鼠标停在点上看名字、方向和里程。</div>`;
 }
 
 
@@ -2931,7 +2952,7 @@ function blocks(s, forStory) {
   const p = s.protagonist, c = s.clock, L = [], id = IDM[s.idm] || IDM.commoner;
   L.push(`【此刻】${timeText(c)}，${season(c.m)}。主角现居：${s.place.full}（${s.place.polity || ''}）。`);
   const st = Object.entries(s.status || {}).map(([k, v]) => `${k}：${v}`).join('；');
-  L.push(`【主角】${p.name}，${p.gender || ''}，${p.age != null ? p.age + '岁' : '年岁不详'}，${p.role}${p.nativePlace ? '，' + p.nativePlace + '人' : ''}${p.real ? '，史载真人' : '，虚构人物'}。${st ? '名位功名等：' + st + '。' : ''}`);
+  L.push(`【主角】${p.name}，${p.gender || ''}，${p.age != null ? p.age + '岁' : '年岁不详'}，${p.role}${p.nativePlace ? '，' + p.nativePlace + '人' : ''}${p.real ? '，史载真人' : '，虚构人物'}。${st ? '名位功名等：' + st + '。' : ''}${s.at ? `【主角此刻人在${s.at}（出门在外；家在${s.place.full}）——场面在这里，身边是这里的人；家里的事只能靠书信、来人知道】` : ''}`);
   if (s.face && typeof FACE !== 'undefined') { const ft = faceText(s.face); if (ft) L.push('【主角的相貌（玩家捏的；写到主角的样子照这个，不另编）】' + ft); }
   const hh = arr(s.household);
   const fb = familyBlock(s), pb = policiesBlock(s); if (fb) L.push(fb); if (pb) L.push(pb.trim());
@@ -3356,7 +3377,7 @@ function placeXY(s, name, y) {
   for (const k of keys) { const u = geoFind(k, y, keys); if (u) return u; }
   return null;
 }
-const hereXY = s => s.geo && s.geo.here && s.geo.place === s.place.full ? s.geo.here : placeXY(s, s.place.full, s.clock.y);
+const hereXY = s => s.geo && s.geo.here && s.geo.place === geoCenter(s) ? s.geo.here : placeXY(s, geoCenter(s), s.clock.y);
 function newsTimes(s, e, here) {
   const a = placeXY(s, e.where || '', e.y);
   const big = e.scope === '天下' || /政局|战事|叛乱/.test(e.tag || '') || !e.where;
@@ -4300,6 +4321,10 @@ function applyReply(s, d, said) {
     const moveOk = /去|往|赴|到|迁|搬|投奔|回|上京|进京|启程|动身|出发|赶往|逃|走一趟|上路|离开|出城|回乡|赶考|赴任|应募|从军|随军|跟着/.test(String(said || '')) || /押解|发配|充军|流放|被掳|掳走|被抓|拿去|押往|押送|征发|签发|调往|改任|移镇|贬|谪/.test(String(d.reply || ''));
     if (d.moveTo && !moveOk) { noteErr('账房擅自给主角搬了家，没认', one(d.moveTo, 30)); d.moveTo = ''; d.moveToPolity = ''; }
     if (d.moveTo) { s.place.full = one(d.moveTo, 30); extra.moved = s.place.full; }
+    // 主角此刻人在哪（出门在外也算）：地图跟着人走；回到家就清掉
+    { const at = one(d.nowAt, 30).replace(/[（(].*$/, ''); const st = x => geoStem(String(x || '').replace(/^.*?([^省道路]{2,4}(府|州|郡|县))/, '$1'));
+      if (d.moveTo || !at || String(s.place.full).includes(at) || st(at) === st(s.place.full)) { if (s.at) extra.backHome = true; s.at = ''; }
+      else if (at !== s.at) { s.at = at; extra.nowAt = at; } }
     if (d.moveToPolity && one(d.moveToPolity, 12) !== s.place.polity) { s.place.polity = one(d.moveToPolity, 12); extra.moved = (extra.moved || s.place.full) + `（${s.place.polity}）`; }
     const st = d.settlement && typeof d.settlement === 'object' ? d.settlement : {};
     Object.assign(extra, {
@@ -4395,7 +4420,7 @@ function curStatus(s, d) {
   const near = arr(d && d.presentNpcs).filter(n => n && one(n.name, 12)).slice(0, 4).map(n => one(n.name, 12) + (one(n.role, 10) ? '（' + one(n.role, 10) + '）' : ''));
   const opp = Object.entries(s.people || {}).filter(([k, v]) => v && (Number(v.favor) <= -30 || /敌|恨|仇|疑|防|忌/.test(v.attitude || ''))).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 3).map(([k, v]) => k + (v.role ? '（' + one(v.role, 10) + '）' : ''));
   const goal = (arr(s.goals).find(g => g.term === '眼下') || {}).text || '';
-  const place = String(s.place && (s.place.short || s.place.full) || '').replace(/^(.{0,6}?(省|道|路|直隶|布政使司))/, '');
+  const place = String(s.at || (s.place && (s.place.short || s.place.full)) || '').replace(/^(.{0,6}?(省|道|路|直隶|布政使司))/, '');
   return { head: `${timeText(s.clock)}·${one(place, 16)}·${one(p.name, 12)}${num(p.age) != null ? num(p.age) + '岁' : ''}`, role: one([p.role, c.office].filter(Boolean).join('，'), 40), near, opp, goal: one(goal, 50) };
 }
 const curHtml = c => c ? `<div class="curst">【当前情况】${esc(c.head.split('·')[0])}；${esc(c.head.split('·').slice(2).join(''))}，${esc(c.role)}${c.near.length ? `；身边：${esc(c.near.join('、'))}` : ''}${c.opp.length ? `；对头：${esc(c.opp.join('、'))}` : ''}${c.goal ? `；眼下要办：${esc(c.goal)}` : ''}</div>` : '';
@@ -4928,9 +4953,11 @@ function pane(tab) {
   if (tab === 'geo') {
     const pl = Object.entries(s.places);
     return `<div class="h" style="margin-top:6px"><span class="seal">地</span>地理册<span class="note">当时地名、今地、隶属、离你多远</span></div>
-      ${s.geo ? `<div class="h"><span class="seal">图</span>县级地图<span class="note">${esc(s.geo.here.name)} 一带</span></div>${geoMap(s)}` : canGeo() ? '<div class="muted" style="font-size:12px">县级地图会在下一回合从历史地名库查出来。</div>' : ''}
+      ${(() => { const c = geoCenter(s), stale = s.geo && s.geo.place !== c;
+        if ((stale || !s.geo) && canGeo() && !BUSY && !GEO_P) { GEO_P = ensureGeo(s, s.gazetteer && s.gazetteer.counties).catch(() => null).finally(() => { GEO_P = null; if (TAB === 'geo') render(); }); }
+        return stale ? `<div class="muted" style="font-size:12px">你到了${esc(c)}，正照${esc(s.clock.y)}年的州县换这一带的地图……</div>` : s.geo ? `<div class="h"><span class="seal">图</span>县级地图<span class="note">${esc(s.geo.here.name)} 一带 · ${esc(s.geo.y)}年的州县（不同年代州县设置、地名不同，换了年代会重画）</span></div>${geoMap(s)}` : canGeo() ? '<div class="muted" style="font-size:12px">县级地图正从历史地名库查……</div>' : ''; })()}
       ${s.gazetteer ? `<div class="h"><span class="seal">志</span>本地志<span class="note">${esc(s.gazetteer.place)} · ${esc(s.gazetteer.y)}年前后</span></div><dl class="kv">${[['衙署', s.gazetteer.admin], ['官员', officialsHere(s).length ? officialsHere(s).map(o => o.post + ' ' + o.name).join('；') : arr(s.gazetteer.officials).map(o => o.post + (o.name ? ' ' + o.name : '') + '').join('；')], ['经济', s.gazetteer.economy], ['士绅', s.gazetteer.families], ['地方', s.gazetteer.places], ['风俗', s.gazetteer.customs], ['时事', s.gazetteer.current]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
-      <div class="row" style="margin-top:0"><span class="muted">你现在在：<b style="color:var(--ink)">${esc(s.place.full)}</b></span></div>
+      <div class="row" style="margin-top:0"><span class="muted">你现在在：<b style="color:var(--ink)">${esc(geoCenter(s))}</b>${s.at ? `（出门在外；家在${esc(s.place.full)}${(() => { const a = hereXY(s), b = placeXY(s, s.place.full, s.clock.y); return a && b ? '，离家约' + liOf(hav(a, b)) + '里' : ''; })()}）` : ''}</span></div>
       ${pl.length ? `<div class="tblwrap"><table class="tbl"><tr><th>地名</th><th>今地</th><th>隶属</th><th>离你</th></tr>${pl.map(([k, v]) => `<tr><td><b>${esc(k)}</b>${v.note ? `<div class="muted">${esc(v.note)}</div>` : ''}</td><td>${esc(v.now)}</td><td>${esc(v.belong)}</td><td>${esc(v.from)}</td></tr>`).join('')}</table></div>` : '<div class="muted">开场后出现；正文里提到新地方会自动记进来。</div>'}
       <div id="copyMsg" class="muted"></div>`;
   }
