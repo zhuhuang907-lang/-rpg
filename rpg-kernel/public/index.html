@@ -987,7 +987,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261023070602';
+const BUILD = '20261024101342';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
@@ -1038,6 +1038,74 @@ async function exportReport() {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
 }
 const plainWhy = w => String(w || '').split(' :: ')[0].trim();   // 服务端报错里「::」后面是原始返回，玩家不用看
+/* 浏览器直连 DeepSeek：本机游戏程序被防火墙、杀毒软件或代理拦着连不上时，浏览器能上网就由浏览器直接连（DeepSeek 允许本机页面跨域调用）。
+   保存 Key 时、玩到一半连不上时自动切过来，玩家不用管。Key 只存在这台电脑的浏览器里 */
+let DS_DIRECT = lsGet('hrpg:dsdirect') === '1';
+const DS_HINT = { 401: 'DeepSeek 说 Key 不对或已失效：请到 platform.deepseek.com 的「API keys」重新复制一个', 402: 'DeepSeek 账户余额不足：请到 platform.deepseek.com 充值（新账户没有赠送额度）', 403: 'DeepSeek 拒绝了这个 Key（没有权限或被封）', 429: 'DeepSeek 说请求太频繁或额度用完了，稍等再试', 500: 'DeepSeek 服务出错，稍后再试', 502: 'DeepSeek 服务暂时不可用，稍后再试', 503: 'DeepSeek 服务繁忙，稍后再试' };
+async function dsKey() {
+  let k = lsGet('hrpg:dskey') || '';
+  if (!k && MODE === 'local') { try { const r = await api('/api/dskey', {}); if (r.ok && r.key) { k = r.key; lsSet('hrpg:dskey', k); } } catch (_) { /* 服务也不在 */ } }
+  return k;
+}
+async function directSample(input, opts = {}) {
+  const key = await dsKey(); if (!key) throw { code: 'local', message: '还没填 DeepSeek Key：请在首页粘贴 Key 点保存' };
+  const messages = [...(opts.system ? [{ role: 'system', content: opts.system }] : []), ...(Array.isArray(input) ? input : [{ role: 'user', content: String(input) }])];
+  const base = /^deepseek-(chat|reasoner)$/.test(KEY.model || '') || !KEY.model ? 'deepseek-v4-pro' : KEY.model;
+  let model = opts.fast ? 'deepseek-v4-flash' : base, json = opts.json !== false, sendThink = true;
+  const thinking = !!opts.thinking; let budget = opts.maxTokens || 8000; if (thinking) budget = Math.min(16000, Math.max(budget * 2, 4000));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const body = { model, messages, max_tokens: budget, stream: true };
+    if (sendThink) body.thinking = { type: thinking ? 'enabled' : 'disabled' };
+    if (json) body.response_format = { type: 'json_object' };
+    if (!thinking) body.temperature = opts.temperature ?? 0.9;
+    const ac = new AbortController(), onAbort = () => ac.abort();
+    if (opts.signal) { if (opts.signal.aborted) throw { code: 'cancelled' }; opts.signal.addEventListener('abort', onAbort, { once: true }); }
+    try {
+      let res;
+      try { res = await fetch('https://api.deepseek.com/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key }, body: JSON.stringify(body), signal: ac.signal }); }
+      catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; throw { code: 'local', net: true, message: '这台电脑连不上 DeepSeek（游戏程序和浏览器都试过了）：请先确认浏览器能打开 platform.deepseek.com；开着加速器、代理的，换个节点或关掉再试' }; }
+      if (!res.ok) {
+        const raw = await res.text().catch(() => '');
+        if (json && res.status === 400 && /response_format|json/i.test(raw)) { json = false; continue; }
+        if (sendThink && res.status === 400 && /thinking|unrecognized|unknown|extra/i.test(raw)) { sendThink = false; continue; }
+        if (model !== base && /model/i.test(raw)) { model = base; continue; }   // 快型号没有：换回原型号
+        if (res.status === 400 && /model/i.test(raw) && model !== 'deepseek-v4-pro') { model = 'deepseek-v4-pro'; continue; }
+        throw { code: 'local', message: (DS_HINT[res.status] || 'DeepSeek 返回出错') + `（HTTP ${res.status}）` };
+      }
+      const rd = res.body.getReader(), dec = new TextDecoder(); let buf = '', content = '', finish = null;
+      for (;;) {
+        let r; try { r = await rd.read(); } catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; throw { code: 'local', net: true, message: '和 DeepSeek 的连接中途断了，请再试一次' }; }
+        if (r.done) break;
+        buf += dec.decode(r.value, { stream: true }); let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+          if (!line.startsWith('data:')) continue; const d = line.slice(5).trim(); if (d === '[DONE]') continue;
+          let j; try { j = JSON.parse(d); } catch (_) { continue; }
+          const ch = j.choices && j.choices[0]; if (!ch) continue;
+          if (ch.delta && ch.delta.content) { content += ch.delta.content; opts.onText && opts.onText({ text: content, delta: ch.delta.content }); }
+          if (ch.finish_reason) finish = ch.finish_reason;
+        }
+      }
+      if (!content.trim() && budget < 16000) { budget = Math.min(16000, Math.max(budget * 2, 4000)); continue; }   // 额度全被思考吃掉：放大再来
+      if (!content.trim()) throw { code: 'local', message: 'DeepSeek 没给出正文，请再试一次' };
+      return { text: content, truncated: finish === 'length' };
+    } finally { if (opts.signal) opts.signal.removeEventListener('abort', onAbort); }
+  }
+  throw { code: 'local', message: 'DeepSeek 连续几次没给出正文，请再试一次' };
+}
+/** 游戏程序那条路的错是不是「连不上」（不是 Key、余额这类 DeepSeek 自己的回话） */
+const netFail = m => /连不上|连接超时|连接被|中途断开|找不到服务器|没有联网权限|证书|代理|fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|一直没写完|九十秒没有动静|TimeoutError|aborted/i.test(String(m || '')) && !/HTTP (40[0-3]|429)|Key 不对|余额/.test(String(m || ''));
+/** 桌面版写剧情：先走游戏程序；它连不上 DeepSeek 而浏览器连得上，就自动改由浏览器直连，以后都这样 */
+async function deskSample(input, opts = {}) {
+  if (DS_DIRECT && !opts.resumeJob) return directSample(input, opts);
+  try { return await localSample(input, opts); }
+  catch (e) {
+    if (!e || e.code === 'cancelled' || !netFail(e.message)) throw e;
+    const r = await directSample(input, opts);   // 浏览器也连不上就照实报
+    DS_DIRECT = true; lsSet('hrpg:dsdirect', '1'); noteErr('改由浏览器直连 DeepSeek', String(e.message || ''));
+    return r;
+  }
+}
 /** 桌面版：把对话交给本机的游戏服务，由它带着 DeepSeek Key 去问，边写边取回 */
 function localSample(input, opts = {}) {
   return new Promise(async (resolve, reject) => {
@@ -2942,6 +3010,20 @@ function grainRange(y, unit) {
   if (y >= 1368 && /两/.test(u)) return [0.15, 30, '明清石米常见一两上下（明前期更贱，清中期一到三两），荒年可到数两、十余两'];
   return null;
 }
+/** 平常年景一石米大约值多少（本局的钱的单位）：拿来量别的数离不离谱。拿不准的年代、单位给 null，不乱判 */
+function grainNormal(y, unit) {
+  const u = String(unit || '');
+  if (y >= -206 && y < 220 && /钱|文/.test(u)) return 100;
+  if (y >= 618 && y < 756 && /文|钱/.test(u)) return 200;
+  if (y >= 756 && y < 960 && /文|钱/.test(u)) return 800;
+  if (y >= 960 && y < 1127) return /贯|缗/.test(u) ? 0.7 : /文|钱/.test(u) ? 700 : null;
+  if (y >= 1127 && y < 1279) return /贯|缗/.test(u) ? 2 : /文|钱/.test(u) ? 2000 : null;
+  if (y >= 1368 && y < 1644) return /两/.test(u) ? 0.7 : /文|钱/.test(u) ? 600 : null;
+  if (y >= 1644 && y < 1912) return /两/.test(u) ? 1.6 : /文|钱/.test(u) ? 1800 : null;
+  return null;
+}
+/* 常见东西的价钱合米几石（平常年景，宽一些：低于下限的三分之一、高于上限三倍才算离谱） */
+const GOODS = [[/布|绢|绸|缎/, /匹/, 0.15, 3], [/猪肉|羊肉|肉/, /斤/, 0.004, 0.08], [/盐/, /斤/, 0.002, 0.08], [/酒/, /斤|升|壶/, 0.002, 0.1], [/茶/, /斤/, 0.01, 2], [/马/, /匹/, 5, 150], [/牛/, /头/, 3, 60], [/柴/, /担/, 0.01, 0.3], [/鸡/, /只/, 0.01, 0.3]];
 /** 账上的数有没有离谱的：米价、县户口、兵额与编制、国库与岁入；离谱的记下，下一回交账房照史料改 */
 function dataDoubts(s) {
   const out = [], y = s.clock.y, u = (s.money || {}).unit;
@@ -2953,10 +3035,28 @@ function dataDoubts(s) {
     if (v < gr[0] / 3 || v > gr[1]) out.push(`物价「${x.item}」写成每石约 ${Math.round(v)}${u}，不合${gr[2]}`);
   }
   for (const t of arr(s.territory)) { const pop = N0(t.pop), tr = N0(t.troops); if (pop != null && pop > 400000 && !/府|州|郡|路|道|省/.test(t.place || '')) out.push(`地盘「${t.place}」户口写成 ${pop}，一县没有这么多`); if (pop && tr && tr > pop * 0.5) out.push(`地盘「${t.place}」守军 ${tr} 超过户口一半`); }
+  // 拿米价量家底、进项、田价和日常物价
+  const gp = (() => { for (const x of arr(s.prices)) { if (!/米/.test(x.item || '')) continue; let v = N0(x.price); if (v == null) continue; const per = String(x.per || ''); if (/斗/.test(per)) v *= 10; else if (/升/.test(per)) v *= 100; else if (!/石/.test(per)) continue; if (!gr || (v >= gr[0] / 3 && v <= gr[1])) return v; } return null; })() || grainNormal(y, u);
+  if (gp) {
+    const shi = v => v / gp, fmt = v => (v >= 100 ? Math.round(v) : Math.round(v * 10) / 10) + ' 石米';
+    const commoner = (s.idm || 'commoner') === 'commoner', cash = N0((s.money || {}).cash);
+    if (commoner && cash != null && shi(cash) > 300) out.push(`现钱 ${cash}${u} 合${fmt(shi(cash))}，一个平头百姓没有这么多现钱（富户的家底多在田宅货物上）`);
+    const e = s.estate || {}, inc = arr(e.income).reduce((a, x) => a + (N0(x.amount) || 0), 0), exp = arr(e.expense).reduce((a, x) => a + (N0(x.amount) || 0), 0);
+    if (commoner && shi(inc) > 40) out.push(`每月进项 ${inc}${u} 合${fmt(shi(inc))}，一个平民一月挣不到这些（佣工一月不过一二石米上下）`);
+    if (commoner && inc && exp && shi(exp) > shi(inc) * 5 && shi(exp) > 5) out.push(`每月开销 ${exp}${u} 是进项的五倍以上，这样的人家撑不过几个月`);
+    for (const a of arr(e.assets)) {
+      const mu = N0(String(a.qty || '').match(/([\d.]+)\s*亩/)?.[1]), val = N0(a.value);
+      if (/田|地/.test(a.name || '') && mu && val) { const per = shi(val / mu); if (per < 0.1 || per > 60) out.push(`「${a.name}」${mu}亩估值 ${val}${u}，合每亩${fmt(per)}，不合这个年代的田价（常见每亩合米一到二三十石）`); }
+    }
+    for (const x of arr(s.prices)) {
+      const g = GOODS.find(([re, per]) => re.test(x.item || '') && per.test(x.per || '')); const v = N0(x.price); if (!g || v == null) continue;
+      const r = shi(v); if (r < g[2] / 3 || r > g[3] * 3) out.push(`物价「${x.item}」每${x.per} ${v}${u}，合${fmt(r)}，跟这里的米价比不合常理`);
+    }
+  }
   const R = s.realm; if (R) { const tre = N0(R.treasury), rev = N0(R.revenue); if (tre && rev && tre > rev * 15) out.push(`国库 ${tre} 是岁入 ${rev} 的十五倍以上，不合常理`); }
   const isR = typeof isRuler === 'function' && isRuler(s), troops = arr(s.forces).reduce((a, f) => a + (N0(f.troops) || 0), 0);
   if (!isR && !arr(s.territory).length && troops > 20000) out.push(`主角不是一方之主，名下兵马却有 ${troops} 人`);
-  return out.slice(0, 6);
+  return out.slice(0, 8);
 }
 const unitsBlock = s => `【本朝军制编制（兵马数目照此，不凭空写整数）】${unitsText(s.clock.y)}`;
 
@@ -4927,8 +5027,14 @@ document.addEventListener('click', async e => {
     try {
       const r = await api('/api/quick-key', { apiKey: k || undefined, model: m || undefined });
       await refreshKey();
+      if (k) lsSet('hrpg:dskey', k);
+      // 游戏程序连不上 DeepSeek（防火墙、杀毒软件、代理拦着）：马上改由浏览器直接试连，通了就以后都这样走
+      if (r.ok && r.test && !r.test.ok && netFail(r.test.why)) {
+        try { await directSample('只回复两个字：正常', { maxTokens: 20, json: false, temperature: 0 }); DS_DIRECT = true; lsSet('hrpg:dsdirect', '1'); r.test = { ok: true, model: KEY.model, direct: true }; }
+        catch (e2) { r.test.why = (e2 && e2.message) || r.test.why; }
+      } else if (r.ok && r.test && r.test.ok) { DS_DIRECT = false; lsSet('hrpg:dsdirect', null); }
       if (!r.ok) KEYMSG = '没保存上：' + (r.why || '未知原因');
-      else if (r.test && r.test.ok) { KEYMSG = `✓ 已保存，试连成功（${r.test.model || ''}）`; KEY_OPEN = false; const el = $('#kIn'); if (el) el.value = ''; }
+      else if (r.test && r.test.ok) { KEYMSG = r.test.direct ? '✓ 已保存，已接上 DeepSeek，可以开始玩了（这台电脑的游戏程序被防火墙或杀毒软件拦着，已自动改由浏览器直接连，不用管它）' : `✓ 已保存，试连成功（${r.test.model || ''}）`; KEY_OPEN = false; const el = $('#kIn'); if (el) el.value = ''; }
       else { const w = plainWhy(r.test && r.test.why); KEYMSG = '已保存，但试连没通：' + w + (/Key|余额|权限/.test(w) ? '。请核对 Key 后重新粘贴。' : '。Key 已经存下了，网络好了就能用；点「检查网络」看看卡在哪。'); const el = $('#kIn'); if (el) el.value = ''; }
     } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
     KEYSAVING = ''; render(); return;
@@ -5072,7 +5178,7 @@ render();
     SAMPLE = sm; DB = db;
     try { UID = user ? await user.id() : null; } catch (_) { UID = null; }
   } else if (location.protocol.startsWith('http')) {
-    try { const h = await api('/api/health'); if (h && h.ok) { MODE = 'local'; SAMPLE = localSample; watchUpdate(); await refreshKey(); try { const r = await api('/api/hpacks'); RUNHIST = arr(r.packs).filter(p => p && Array.isArray(p.range) && Array.isArray(p.events)); } catch (_) { RUNHIST = []; } } } catch (_) { MODE = 'none'; }
+    try { const h = await api('/api/health'); if (h && h.ok) { MODE = 'local'; SAMPLE = deskSample; watchUpdate(); await refreshKey(); try { const r = await api('/api/hpacks'); RUNHIST = arr(r.packs).filter(p => p && Array.isArray(p.range) && Array.isArray(p.events)); } catch (_) { RUNHIST = []; } } } catch (_) { MODE = 'none'; }
   }
   READY = true;
   const last = lsGet('hrpg:last');
