@@ -1,6 +1,6 @@
 // 网页版（没有本机游戏程序，浏览器直接连 DeepSeek）：
 // 在线打开和把网页存到电脑上双击打开（file://）两种；没 Key 开始不了；坏 Key 说清是 Key 不对；好 Key 说已接上；
-// 开局、接着玩一回、刷新后还在。DeepSeek、维基、博查由检测转到本机的假服务
+// 开局、接着玩一回、刷新后还在；账号模式关着时不要求登录。DeepSeek、维基、博查由检测转到本机的假服务
 const { chromium } = require('playwright');
 const path = require('path');
 const MOCK = 'http://127.0.0.1:' + (process.env.MOCK_PORT || 3793);
@@ -25,10 +25,8 @@ const PAGE = process.env.WEB_URL || 'http://127.0.0.1:' + (process.env.WEB_PORT 
     await ctx.route(/fonts\.(googleapis|gstatic)\.com|cbdb\.fas\.harvard\.edu|tgaz|maps\.cga/, r => r.abort());
     const idle = async (ms = 300000) => { try { await p.waitForFunction(() => !BUSY && !document.querySelector('.thinking') && !KEYSAVING, null, { timeout: ms, polling: 200 }); return true; } catch (_) { return false; } };
     await p.goto(url); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(2500);
-    // 网页版先登录：注册一个账号
-    if (!(await p.$('#aName'))) bad('网页版没有先让登录');
-    else { await p.fill('#aName', '测试同学'); await p.fill('#aPw', '1234'); await p.click('#bRegister'); await p.waitForTimeout(2500); }
-    if (!(await p.evaluate(() => WHO === '测试同学'))) bad('注册后没登录上');
+    // 账号模式关着：不要求登录，直接能填 Key
+    if (await p.$('#aName')) bad('账号模式关着却还要求登录');
     if ((await p.evaluate(() => MODE)) !== 'web') { bad('没进网页版：' + await p.evaluate(() => MODE)); await ctx.close(); continue; }
     if (!(await p.$('#kIn'))) bad('看不到填 DeepSeek Key 的框');
     if (!(await p.$eval('#bStart', x => x.disabled))) bad('没 Key 时「开始」不该能点');
