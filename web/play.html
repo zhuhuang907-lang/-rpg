@@ -995,7 +995,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261024190152';
+const BUILD = '20261024190607';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -1214,6 +1214,140 @@ const store = {
     return why;
   },
 };
+/* ========== 档案馆：玩过的每一回（玩家说的、正文全文、这回的摘要、出场的人和地方）另存一份，不受存档大小限制。
+   桌面版存在游戏文件夹（data/archives），网页版存在浏览器的 IndexedDB。写每一回之前，按这回牵涉的人名地名从档案里翻出相关的旧事交给推演和写正文；
+   玩到五百回以上也记得；打完可以照档案编史书、写小说 ========== */
+const ARC = (() => {
+  let mem = { sid: '', recs: [], loading: null };
+  const ns = sid => (WHO ? WHO + ':' : '') + sid;
+  let dbP = null;
+  const db = () => dbP || (dbP = new Promise((res, rej) => { try { const r = indexedDB.open('hrpg-arc', 1); r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains('rec')) { const st = d.createObjectStore('rec', { keyPath: 'k' }); st.createIndex('sid', 'sid'); } }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }));
+  const idbAll = async sid => { const d = await db(); return new Promise((res, rej) => { const q = d.transaction('rec').objectStore('rec').index('sid').getAll(ns(sid)); q.onsuccess = () => res(arr(q.result).map(x => x.rec)); q.onerror = () => rej(q.error); }); };
+  const idbPut = async (sid, rec) => { const d = await db(); return new Promise((res, rej) => { const t = d.transaction('rec', 'readwrite'); t.objectStore('rec').put({ k: ns(sid) + '|' + rec.kind + '|' + rec.turn, sid: ns(sid), rec }); t.oncomplete = () => res(true); t.onerror = () => rej(t.error); }); };
+  const idbDel = async sid => { const d = await db(); const all = await new Promise(res => { const q = d.transaction('rec').objectStore('rec').index('sid').getAllKeys(ns(sid)); q.onsuccess = () => res(arr(q.result)); q.onerror = () => res([]); }); await new Promise(res => { const t = d.transaction('rec', 'readwrite'); for (const k of all) t.objectStore('rec').delete(k); t.oncomplete = res; t.onerror = res; }); };
+  // 同一回重写过的，以最后一次为准
+  const tidy = recs => { const m = new Map(); for (const r of arr(recs)) if (r && r.turn != null) m.set((r.kind || 'turn') + '|' + r.turn, r); return [...m.values()].filter(r => !r.gone).sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'turn' ? -1 : 1) || a.turn - b.turn); };
+  async function readAll(sid) {
+    try { if (MODE === 'local') { const r = await api('/api/arc-get', { id: sid }); return tidy(r && r.recs); } return tidy(await idbAll(sid)); } catch (_) { return []; }
+  }
+  /** 读进这一局的档案；旧存档没有档案的，用存档里还留着的摘要、正文补上 */
+  function load(s) {
+    if (!s || !s.id) return Promise.resolve([]);
+    if (mem.sid === s.id) return mem.loading || Promise.resolve(mem.recs);
+    mem = { sid: s.id, recs: [], loading: null };
+    const me = mem;
+    me.loading = readAll(s.id).then(recs => {
+      const have = new Set(recs.filter(r => r.kind === 'turn').map(r => r.turn));
+      const add = [];
+      for (const x of arr(s.summaries)) if (x && x.turn && !have.has(x.turn)) { have.add(x.turn); add.push({ kind: 'turn', turn: x.turn, when: x.when || '', sum: x.text || '', text: (arr(s.chat).find(c => c.role === 'gm' && c.turn === x.turn && c.text) || {}).text || '', said: (arr(s.chat).find(c => c.role === 'me' && c.turn === x.turn) || {}).text || '' }); }
+      for (const c of arr(s.chapters)) if (c && c.text) add.push({ kind: 'chapter', turn: add.length + recs.length, when: `${c.from}至${c.to}`, sum: c.text });
+      for (const r of add) put(s.id, r);
+      me.recs = tidy(recs.concat(add)); me.loading = null; return me.recs;
+    });
+    return me.loading;
+  }
+  function put(sid, rec) {
+    if (MODE === 'local') return api('/api/arc-add', { id: sid, rec }).catch(() => idbPut(sid, rec).catch(() => {}));
+    return idbPut(sid, rec).catch(() => {});
+  }
+  /** 记下这一回 */
+  function add(s, rec) {
+    if (!s || !s.id) return;
+    const r = { kind: 'turn', ...rec };
+    if (mem.sid === s.id) mem.recs = tidy(mem.recs.concat([r]));
+    put(s.id, r);
+  }
+  /** 按这回牵涉的人名、地名、事由，从档案里翻出相关的旧事（最近几回不算，那几回已经在前情里） */
+  function recall(s, text, n) {
+    if (!s || mem.sid !== s.id || !mem.recs.length) return [];
+    const recent = (s.turn || 0) - 6, t = String(text || '');
+    const names = new Set();
+    for (const k of Object.keys(s.people || {})) if (k.length >= 2 && t.includes(k)) names.add(k);
+    for (const m of arr(s.household)) if (m && m.name && m.name.length >= 2 && t.includes(m.name)) names.add(m.name);
+    for (const k of Object.keys(s.places || {})) if (k.length >= 2 && t.includes(k)) names.add(k);
+    for (const w of t.match(/[一-龥]{2,4}/g) || []) if (w.length >= 3 && names.size < 12) names.add(w);
+    const keys = [...names].filter(k => !/^(这一回|主角|玩家|什么|怎么|一下|自己|我们|他们|你们)$/.test(k));
+    if (!keys.length) return [];
+    const sc = mem.recs.filter(r => r.kind === 'turn' && r.turn < recent).map(r => { const hay = (r.sum || '') + ' ' + (r.said || '') + ' ' + arr(r.people).join(' ') + ' ' + (r.text || ''); let v = 0; for (const k of keys) if (hay.includes(k)) v += Object.prototype.hasOwnProperty.call(s.people || {}, k) ? 3 : 1; return { r, v, hay }; }).filter(x => x.v >= 2);
+    return sc.sort((a, b) => b.v - a.v || b.r.turn - a.r.turn).slice(0, n || 5).sort((a, b) => a.r.turn - b.r.turn).map(({ r, hay }) => {
+      const k = keys.find(k0 => String(r.text || '').includes(k0)); const i = k ? String(r.text).indexOf(k) : -1;
+      return { turn: r.turn, when: r.when, sum: r.sum, bit: i >= 0 ? String(r.text).slice(Math.max(0, i - 50), i + 90).replace(/\s+/g, ' ') : '' };
+    });
+  }
+  return { load, add, recall, all: () => mem.recs, loaded: s => !!s && mem.sid === s.id && !mem.loading, count: s => (s && mem.sid === s.id ? mem.recs.filter(r => r.kind === 'turn').length : 0),
+    copy: async (from, to) => { try { if (MODE === 'local') await api('/api/arc-copy', { from, to }); else for (const r of await idbAll(from)) await idbPut(to, r); } catch (_) { /* 复制不了就算了 */ } },
+    del: async sid => { try { if (MODE === 'local') await api('/api/arc-del', { id: sid }); else await idbDel(sid); } catch (_) { /* 删不了就算了 */ } if (mem.sid === sid) mem = { sid: '', recs: [], loading: null }; },
+    putBookCh: (s, kind, i, ch) => { const r = { kind: 'book-' + kind, turn: i, ...ch }; if (mem.sid === s.id) mem.recs = tidy(mem.recs.concat([r])); return put(s.id, r); },
+    clearBook: (s, kind) => { const gone = mem.recs.filter(r => r.kind === 'book-' + kind); mem.recs = mem.recs.filter(r => r.kind !== 'book-' + kind); for (const r of gone) put(s.id, { kind: r.kind, turn: r.turn, title: '', text: '', gone: true }); } };
+})();
+/* ========== 编史书、写小说：照档案馆里的每一回，分卷分章写出来，可停可续，写完下载 ========== */
+const BOOK_KINDS = { hist: '史书', novel: '小说' };
+let BOOK = null;   // 正在写的：{ kind, done, total, why }
+const BOOK_PER = 15;   // 一章照十五回写
+async function saveBlob(blob, fname) {
+  if (MODE === 'claude') {
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (!dl) throw new Error('这里不能下载文件');
+    try { await dl.save({ filename: fname, data: blob }); } catch (e) { if (e && e.code === 'declined') return; throw new Error((e && e.message) || '没存上'); }
+    return;
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+const bookChs = (s, kind) => ARC.all().filter(r => r.kind === 'book-' + kind).sort((a, b) => a.turn - b.turn);
+function bookPrompt(s, kind, recs, i, total, prev) {
+  const p = s.protagonist;
+  const mat = recs.map(r => `第${r.turn}回（${r.when || ''}${r.place ? '，' + r.place : ''}）\n玩家：${r.said || '（照常过日子）'}\n经过：${cut(r.text || r.sum || '', 1400)}`).join('\n\n');
+  const head = `下面是一局历史模拟游戏的档案：主角${p.name}（${p.gender || ''}，${p.role}）在真实历史里的一生，第 ${recs[0].turn} 到第 ${recs[recs.length - 1].turn} 回。要把它写成一部书的第 ${i + 1} 章（全书约 ${total} 章）。`;
+  const rule = kind === 'hist'
+    ? `体例：仿《资治通鉴》《史记》的笔法，用浅近文言写编年纪事，以年月系事，记主角与身边人的言行、仕宦、家事、所历的天下大事，必要处可加「论曰」一两句。只写档案里有的事，不添、不改，人名、地名、年月、官职、数目照档案；档案里的对话可以化成「谓某某曰」。开头一行写本章标题（如「卷三　乾隆二十三年至二十四年」），下面接正文，一千五百到三千字。`
+    : `体例：章回体长篇历史小说，白话，开头一行写本回回目（对仗的两句，如「第三回　钞关前汪景和问引价　运司里高二爷说盐法」），下面接正文，三千到五千字。照档案里事情的经过写，人物、先后、结局一概不改；可以补写场面、神色、对话的细节，但不添档案没有的大事、人物和结局。主角的言行只用档案里玩家写的那些。`;
+  return `${head}\n${rule}\n${prev ? '【上一章的末尾（接着写，不重复）】' + cut(prev, 500) + '\n' : ''}\n【档案】\n${cut(mat, 16000)}\n\n只输出本章：第一行标题，下面正文。不加别的说明。`;
+}
+async function writeBook(kind) {
+  if (!S || BOOK) return;
+  await ARC.load(S);
+  const recs = ARC.all().filter(r => r.kind === 'turn' && (r.text || r.sum)).sort((a, b) => a.turn - b.turn);
+  if (!recs.length) { ERRMSG = '档案馆里还没有记下的回合'; render(); return; }
+  const total = Math.ceil(recs.length / BOOK_PER), sid = S.id;
+  const have = bookChs(S, kind);
+  BOOK = { kind, done: have.length, total, why: '' }; render();
+  try {
+    for (let i = have.length; i < total; i++) {
+      if (!BOOK || BOOK.stop || !S || S.id !== sid) break;
+      const part = recs.slice(i * BOOK_PER, (i + 1) * BOOK_PER), prev = (bookChs(S, kind).slice(-1)[0] || {}).text || '';
+      const { text } = await callClaude(bookPrompt(S, kind, part, i, total, prev), null, { json: false, temperature: 0.6, maxTokens: 7000, kind: '编书', detached: true });
+      const t = String(text || '').replace(/^```[a-z]*\n?|```$/g, '').trim();
+      if (t.length < 200) throw { code: 'empty_completion', message: '这一章没写出来' };
+      const [title, ...body] = t.split('\n');
+      ARC.putBookCh(S, kind, i + 1, { title: one(title.replace(/^#+\s*/, ''), 60), text: body.join('\n').trim(), from: part[0].turn, to: part[part.length - 1].turn });
+      if (BOOK) BOOK.done = i + 1; render();
+    }
+  } catch (e) { if (BOOK) BOOK.why = (e && e.message) || '没写成，再点一次接着写'; }
+  const why = BOOK && BOOK.why; BOOK = null; if (why) ERRMSG = `${BOOK_KINDS[kind]}写到一半停了：${why}（已写的留着，再点一次从停下的那章接着写）`; render();
+}
+async function downloadBook(kind) {
+  const chs = bookChs(S, kind); if (!chs.length) return;
+  const p = S.protagonist, name = `${p.name}${kind === 'hist' ? '传' : '演义'}`;
+  const txt = `${name}\n\n` + chs.map(c => `${c.title}\n\n${c.text}`).join('\n\n\n') + `\n\n（据本局档案第 ${chs[0].from} 至 ${chs[chs.length - 1].to} 回编成）\n`;
+  await saveBlob(new Blob([txt], { type: 'text/plain;charset=utf-8' }), name + '.txt');
+}
+function arcPane(s) {
+  if (!ARC.loaded(s)) { ARC.load(s).then(() => { if (TAB === 'arc') render(); }); return '<div class="muted">档案馆正在打开……</div>'; }
+  const recs = ARC.all().filter(r => r.kind === 'turn').sort((a, b) => b.turn - a.turn);
+  const bk = k => { const n = bookChs(s, k).length, tot = Math.ceil(recs.length / BOOK_PER); return `<div class="row" style="margin:4px 0"><button data-book="${k}" ${BOOK || !recs.length || BUSY ? 'disabled' : ''}>${n ? (n >= tot ? '重写' : '接着写') : '写成'}${BOOK_KINDS[k]}</button>${n ? `<button class="link" data-bookdl="${k}">下载${BOOK_KINDS[k]}（已写 ${n}/${tot} 章）</button><button class="link" data-bookclear="${k}">清掉重来</button>` : ''}</div>`; };
+  return `<div class="h" style="margin-top:6px"><span class="seal">档</span>档案馆<span class="note">玩过的每一回都记在这里（正文全文、你说的话、出场的人），不受存档大小限制；写每一回前从这里翻出相关的旧事接上</span></div>
+    <div class="muted">已记 ${recs.length} 回${MODE === 'local' ? '（存在游戏文件夹 data/archives）' : '（存在这个浏览器里，清浏览器数据会丢）'}</div>
+    <div class="h"><span class="seal">书</span>编书<span class="note">照档案一章十五回写成史书（文言编年）或小说（章回体），可停可续，写完下载</span></div>
+    ${bk('hist')}${bk('novel')}
+    ${BOOK ? `<div class="row"><span class="muted">正在写${BOOK_KINDS[BOOK.kind]}：第 ${BOOK.done + 1}/${BOOK.total} 章……</span><button class="link" id="bBookStop">停</button></div>` : ''}
+    <div class="h"><span class="seal">录</span>每一回</div>
+    <div class="list">${recs.slice(0, 120).map(r => `<details><summary><span class="when">第${r.turn}回 ${esc(r.when || '')}</span>${esc(one(r.sum || '', 60))}</summary>${r.said ? `<div class="muted">你说：${esc(r.said)}</div>` : ''}<div style="white-space:pre-wrap">${esc(r.text || '')}</div></details>`).join('') || '<div class="muted">还没有</div>'}${recs.length > 120 ? `<div class="muted">更早的 ${recs.length - 120} 回也记着，编书时都会用上</div>` : ''}</div>`;
+}
+/** 给推演、写正文的：档案里翻出的相关旧事 */
+function archiveBlock(s, text) {
+  const L = ARC.recall(s, text, 5);
+  return L.length ? '【档案馆里与这一回相关的旧事（主角和这些人、这些地方从前的来往；照此接上，不要和它矛盾，也不要当没发生过）】\n' + L.map(x => `· 第${x.turn}回（${x.when || ''}）：${x.sum || ''}${x.bit ? '……' + x.bit + '……' : ''}`).join('\n') : '';
+}
 /** 一个存档最多 256KB：早先的对话只留摘要（年谱、史线、地理、家业照旧全留），撤销用的上一版只留最近几句 */
 /** 存档时不存县级地理：它是用内置地名库现算的，读档后一瞬间就能重建；存进去只会把存档撑大，挤掉「重写」要用的上一版 */
 const GEO_OUT = (k, v) => k === 'geo' && v && v.src === 'local' ? undefined : v;
@@ -1714,7 +1848,7 @@ function rulingInput(s, said) {
 ${realmBlock(s) ? realmBlock(s) + '\n' : ''}${arr(s.battles).length ? '【最近打过的仗（照此往下推：败了的兵要收拢、补员，胜了的要守住、要赏）】' + s.battles.slice(-3).map(b => `${b.when}在${b.place}对${b.enemy || '敌'}：${b.outcome || ''}，我死伤${b.deadUs ?? '？'}、敌死伤${b.deadThem ?? '？'}`).join('；') + '\n' : ''}【身边的人（各有盘算）】${P.map(([k, v]) => `${k}（${v.role || ''}，好感${v.favor ?? '?'}${v.personality ? '，' + v.personality : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + cut(v.goal, 30) : ''}${v.plan ? '；打算：' + cut(v.plan, 30) : ''}）`).join('；') || '无'}${farLine(FAR) ? '\n' + farLine(FAR) : ''}
 ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下去还没办完的】' + s.orders.filter(o => /在办|待办|推迟/.test(o.status)).slice(-6).map(o => `${o.who}：${o.what}`).join('；') + '\n' : ''}${arr(s.gmNotes).length ? '【幕后真相（玩家不知道）】' + s.gmNotes.slice(-8).map(n => cut(n.text, 60)).join('；') + '\n' : ''}${arr(s.summaries).length ? '【最近几回】' + s.summaries.slice(-4).map(x => cut(x.text, 80)).join(' / ') + '\n' : ''}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '无'}
-${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
+${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
 ${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}${modulesBlock(said)}
 【玩家这回说】${said}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
@@ -3542,10 +3676,11 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const sc = ruling && ruling.scene;
   const scene = sc ? `\n【人物底（出场的人各自的心思、不在场的人做了什么；参考着写，人物照各自的盘算说话做事）】${sc.type ? '\n场面：' + sc.type : ''}${sc.where ? '\n场合：' + sc.where : ''}${sc.cast.length ? '\n出场：' + sc.cast.map(x => `${x.name}（${x.want}${x.risk ? '；怕：' + x.risk : ''}${x.flip ? '；会翻脸的时候：' + x.flip : ''}）`).join('；') : ''}${sc.offstage ? '\n不在场的人：' + sc.offstage : ''}${sc.surprise ? '\n要发作的意外（照来由写，别写成天降）：' + sc.surprise : ''}${sc.beats.length ? '\n' + sc.beats.map((b, i) => `${i + 1}. ${b}`).join('\n') : ''}${sc.end ? '\n停在：' + sc.end : ''}` : '';
   const dos = dossierBlock(s, said + ' ' + (sc ? sc.cast.map(x => x.name).join(' ') : '') + ' ' + arr(ruling && ruling.realPeople).join(' '));
+  const ab = archiveBlock(s, said + ' ' + (sc ? sc.cast.map(x => x.name).join(' ') + ' ' + (sc.where || '') : ''));
   const sb2 = spanBlock(s, span, said);
   const dir = directorBlock(s, said) + (sb2 ? sb2 + '\n' : '') + (s.mainNow && s.mainNow.upcoming && s.mainNow.days > 3 && !SPANS[span] && /歇着|歇几天|歇一阵|等着|等等看|观望|过几天|过些日子|闲着|没什么事|养病|守孝|读书度日/.test(said) ? `【这一回的时间】玩家要歇着、等着：把日子往前推，写这几天到几十天里主线的前兆一件件来，推到离那件大事更近的时候（它约${s.mainNow.days}天后到来，可以直接写到它前一两天或当天）。\n` : '');
   const bb = ruling && ruling.battleResult ? battleBlock(ruling.battleResult) : '';
-  return pushUser(turns, IRON_HEAD + what + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ruling ? '\n' + rulingText(ruling) : '') + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + '\n\n照规则写正文。');
+  return pushUser(turns, IRON_HEAD + what + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + '\n\n照规则写正文。');
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
 function ledgerInput(s, said, story, hidden, span, ruling) {
@@ -4180,6 +4315,7 @@ function applyReply(s, d, said) {
       s.career = null; s.goals = []; s.inst = null; s.arcId = null; s.arcGoal = '';
     }
     s.summaries.push({ turn, when, text: one(d.turnSummary || d.reply, 140) });
+    ARC.add(s, { turn, when, place: s.place.full, said: cut(said, 600), text: String(d.reply || ''), sum: one(d.turnSummary || d.reply, 200), people: arr(d.presentNpcs).map(x => x && one(x.name, 10)).filter(Boolean).slice(0, 12) });   // 档案馆：这一回全文另存
     s.summaries = s.summaries.slice(-200);
   }
   if (d.career && typeof d.career === 'object' && !Array.isArray(d.career)) {
@@ -4633,7 +4769,7 @@ function renderGame() {
       </div>
     </div>
     <aside class="side ${SIDE_FOLD ? 'fold' : ''}">
-      <div class="tabs">${[['board', '局面'], ['people', '人物'], ['estate', '家业'], ['power', '势力'], ['career', '仕途'], ['news', '见闻'], ['world', '史线'], ['geo', '地理'], ['chron', '年谱'], ['set', '设置']].map(([k, n]) => `<button data-tab="${k}" class="${TAB === k && (!SIDE_FOLD || !matchMedia('(max-width: 960px)').matches) ? 'on' : ''}">${n}</button>`).join('')}<button class="closeSide" id="bCloseSide">回到正文 ✕</button></div>
+      <div class="tabs">${[['board', '局面'], ['people', '人物'], ['estate', '家业'], ['power', '势力'], ['career', '仕途'], ['news', '见闻'], ['world', '史线'], ['geo', '地理'], ['chron', '年谱'], ['arc', '档案馆'], ['set', '设置']].map(([k, n]) => `<button data-tab="${k}" class="${TAB === k && (!SIDE_FOLD || !matchMedia('(max-width: 960px)').matches) ? 'on' : ''}">${n}</button>`).join('')}<button class="closeSide" id="bCloseSide">回到正文 ✕</button></div>
       <div class="pane">${pane(TAB)}</div>
     </aside>
   </div>`;
@@ -4781,6 +4917,7 @@ function pane(tab) {
       ${pl.length ? `<div class="tblwrap"><table class="tbl"><tr><th>地名</th><th>今地</th><th>隶属</th><th>离你</th></tr>${pl.map(([k, v]) => `<tr><td><b>${esc(k)}</b>${v.note ? `<div class="muted">${esc(v.note)}</div>` : ''}</td><td>${esc(v.now)}</td><td>${esc(v.belong)}</td><td>${esc(v.from)}</td></tr>`).join('')}</table></div>` : '<div class="muted">开场后出现；正文里提到新地方会自动记进来。</div>'}
       <div id="copyMsg" class="muted"></div>`;
   }
+  if (tab === 'arc') return arcPane(s);
   if (tab === 'chron') {
     const p = s.protagonist;
     const kv = [['姓名', p.name], ['性别', p.gender], ['年岁', p.age != null ? p.age + ' 岁' : '不详'], ['身份', p.role], ['籍贯', p.nativePlace], ['出身', p.real ? '史载真人' : '虚构人物']].concat(Object.entries(s.status)).filter(([, v]) => v);
@@ -5006,7 +5143,8 @@ async function send(said, span, note, resume) {
   let st = resume && resume.story ? resume.story : null, looked = null, ruling = (resume && resume.ruling) || null, postTurn = null, preFaults = [];
   try {
     // 写之前：AI 先看玩家这一步，裁定能不能办、决定要查什么；同时把本地、天下的消息搜一轮；再搜 AI 点名要查的
-    if (!st) { syncArc(S); newsArrive(S); S.mainNow = mainlineBeat(S); }   // 这一回的历史主线（重试、续写也照算）
+    if (!st) { syncArc(S); newsArrive(S); S.mainNow = mainlineBeat(S); }
+    try { await within(ARC.load(S), 8000); } catch (e) { if (e && e.code === 'cancelled') throw e; }   // 档案馆读进来，好翻旧事   // 这一回的历史主线（重试、续写也照算）
     if (!st && !(resume && (resume.job || resume.ruling))) {
       const wantPlan = needRuling(said) && (SETTINGS.ruling !== false || canSearch());
       PHASE = canSearch() ? 'search' : 'ruling'; render();
@@ -5217,6 +5355,13 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && typeof SIDE_FOLD !== 'undefined' && !SIDE_FOLD && matchMedia('(max-width: 960px)').matches) { SIDE_FOLD = true; render(); }
 });
 document.addEventListener('click', async e => {
+  { const b = e.target.closest && e.target.closest('[data-book],[data-bookdl],[data-bookclear],#bBookStop');
+    if (b) {
+      if (b.id === 'bBookStop') { if (BOOK) BOOK.stop = true; return; }
+      if (b.dataset.book) { const k = b.dataset.book; if (bookChs(S, k).length >= Math.ceil(ARC.count(S) / BOOK_PER)) ARC.clearBook(S, k); writeBook(k); return; }
+      if (b.dataset.bookdl) { try { await downloadBook(b.dataset.bookdl); } catch (er) { ERRMSG = '没下载成：' + er.message; render(); } return; }
+      if (b.dataset.bookclear) { ARC.clearBook(S, b.dataset.bookclear); render(); return; }
+    } }
   const t = e.target.closest('button'); if (!t) return;
   const ds = t.dataset;
   if (ds.ex) { $('#qText').value = ds.ex; QTEXT = ds.ex; return; }
@@ -5317,7 +5462,7 @@ document.addEventListener('click', async e => {
     const id = ds.del; DEL_ASK = '';
     if (S && S.id === id) { if (BUSY) return; S = null; VIEW = 'start'; }   // 删的是正在玩的这一局：先回首页
     if (BG) BG_STOP = true;
-    const why = await store.del(id); SAVES_CACHE = arr(SAVES_CACHE).filter(x => x.id !== id); SAVES_AT = 0;
+    const why = await store.del(id); ARC.del(id); SAVES_CACHE = arr(SAVES_CACHE).filter(x => x.id !== id); SAVES_AT = 0;
     if (why) ERRMSG = `这一局在本机删掉了，${MODE === 'local' ? '游戏存档文件夹' : '账号'}里那份没删成（${why}）；它不会再出现在列表里。`;
     render(); return;
   }
@@ -5380,7 +5525,7 @@ document.addEventListener('click', async e => {
       await store.save(S);
       const b = clone(S); b.id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       b.title = `${one(S.title, 20)}（分支·第${S.turn}回合）`; b.branchOf = S.id; b.createdAt = Date.now(); if (b.prev) { b.prev.id = b.id; b.prev.title = b.title; b.prev.branchOf = S.id; }
-      await store.save(b); S = b; lsSet('hrpg:last', b.id);
+      await store.save(b); await ARC.copy(S.id, b.id); S = b; lsSet('hrpg:last', b.id);
     } finally { setBusy(false); }
     const m = $('#branchMsg'); if (m) m.textContent = '✓ 已另存为分支，现在玩的是分支'; return;
   }
