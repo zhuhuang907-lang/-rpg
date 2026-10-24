@@ -70,6 +70,8 @@ const checks = [
   ['网页版：没有本机游戏程序时浏览器直接连 DeepSeek，只填 Key', /MODE = 'web'; SAMPLE = directSample/.test(src) && /function webKeyBox/.test(src) && /const DSM = /.test(src)],
   ['网页版账号：存档、Key 按账号分开，密码只存散列', /const LK = k => WHO/.test(src) && /function accountPanel/.test(src) && /PBKDF2/.test(src) && /localStorage\.setItem\(LK\('hrpg:save:'/.test(src)],
   ['不为凑主线改主角出身所在、不一定在历史焦点、账房擅自搬家不认', /绝不为了离某件大事近、凑上历史主线而改动他的籍贯/.test(src) && /主角不一定身在历史焦点/.test(rules) && /const moveOk = /.test(src) && !/这个身份最有戏/.test(src)],
+  ['有记载的人照蛛丝马迹：定设定列出记载与推断、交给写开场的，开局记账不改身份籍贯', /"traces"/.test(src) && /蛛丝马迹/.test(src) && /史料里关于他的记载/.test(src) && /role: rr\.role \|\| d\.setup\.role/.test(src) && /nativePlace: rr\.native/.test(src)],
+  ['身份变化要有正文为凭、推演凭空的意外不用', /账房擅自改了主角的身份/.test(src) && /推演凭空加的意外/.test(src) && /推演只回答玩家这一步会怎样/.test(src)],
   ['不攀附名人：规则写明、推演不请真人进场面、程序查熟人口吻', /7\. 不攀附/.test(rules) && /偏远地方的小人物不认识名人/.test(rules) && /function climbing/.test(src) && /远在别处、跟主角没有来往的名人不列/.test(src)],
   ['开局：玩家说的地方身份照办、真人所在要有史料依据否则回籍贯', /sentencePlace/.test(src) && /whereBasis/.test(src) && /主线\|大事\|焦点\|热闹\|方便\|靠近\|剧情\|有戏/.test(src)],
   ['余额不足不算 Key 坏、存好的 Key 不让重填', /hrpg:dspoor/.test(src) && /HTTP 40\[13\]/.test(src) && /Key 已存好/.test(src)],
