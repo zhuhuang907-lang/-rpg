@@ -8,6 +8,9 @@ const CASES = require('./rules_cases.json');
   const p = await b.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('file://' + path.resolve(__dirname, '..', 'index.html'));
+  // 页面脚本跑完、程序兜底的检查函数都在了再测（CI 上偶尔页面还没跑完就开测，报「draftFaults 未定义」）
+  try { await p.waitForFunction(() => typeof draftFaults === 'function', null, { timeout: 30000 }); }
+  catch (_) { console.log('页面脚本没跑起来：', JSON.stringify(errs)); await b.close(); process.exit(1); }
   const res = await p.evaluate(cases => cases.map(c => {
     const s = { protagonist: { name: '王二', age: 24, role: '流民' }, clock: { y: 1126, m: 1, d: 5, yearLabel: '靖康元年' }, place: { full: '开封府东水门外' }, people: {}, chat: [], goals: [], ...(c.state || {}) };
     let got;
