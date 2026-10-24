@@ -13,8 +13,9 @@ const MOCK = 'http://127.0.0.1:' + (process.env.MOCK_PORT || 3793);
     direct++;
     const r = route.request(); const u = MOCK + new URL(r.url()).pathname;
     if (r.method() === 'OPTIONS') return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'POST' } });
-    const resp = await route.fetch({ url: u });
-    await route.fulfill({ response: resp, headers: { ...resp.headers(), 'access-control-allow-origin': '*' } });
+    // 检测收尾关浏览器时还有转发到一半的请求：接住，不让它把整项检测弄成失败
+    try { const resp = await route.fetch({ url: u }); await route.fulfill({ response: resp, headers: { ...resp.headers(), 'access-control-allow-origin': '*' } }); }
+    catch (_) { await route.abort().catch(() => {}); }
   });
   const idle = async (ms = 300000) => { try { await p.waitForFunction(() => !BUSY && !document.querySelector('.thinking'), null, { timeout: ms, polling: 200 }); return true; } catch (_) { return false; } };
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
@@ -41,5 +42,6 @@ const MOCK = 'http://127.0.0.1:' + (process.env.MOCK_PORT || 3793);
   if (direct <= d0) bad('刷新后没有接着走浏览器直连');
   console.log('DIRECT CALLS', direct);
   console.log('ERRS', JSON.stringify(errs));
+  await ctx.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {});
   await b.close(); process.exit(errs.length ? 1 : 0);
 })();
