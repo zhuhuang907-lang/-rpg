@@ -24,8 +24,13 @@ const { chromium } = require('playwright');
   if (!/程立德/.test(rc) || !/档案馆里与这一回相关的旧事/.test(rc)) bad('档案馆没翻出相关旧事：' + rc.slice(0, 120));
   const vis = await p.evaluate(() => document.body.innerText);
   if (!/已记 \d+ 回/.test(vis)) bad('档案馆页没显示记了几回');
+  // 编书是可选的：没点就没有书、按钮收在折叠栏里
+  if ((await p.evaluate(() => bookChs(S, 'hist').length + bookChs(S, 'novel').length)) > 0) bad('没点编书却有书');
+  if (await p.locator('[data-book="hist"]').first().isVisible().catch(() => false)) bad('编书按钮没收进「可选」折叠栏');
+  await p.evaluate(() => document.querySelectorAll('.pane details.custom').forEach(d => { d.open = true; }));
   // 写成史书、小说，下载
   for (const k of ['hist', 'novel']) {
+    await p.evaluate(() => document.querySelectorAll('.pane details.custom').forEach(d => { d.open = true; }));
     await p.locator(`[data-book="${k}"]`).first().click().catch(e => bad('写书按钮点不了：' + e.message.slice(0, 60)));
     try { await p.waitForFunction(() => !BOOK, null, { timeout: 120000 }); } catch (_) { bad('写书卡住'); }
     await p.waitForTimeout(300);
@@ -36,6 +41,15 @@ const { chromium } = require('playwright');
   await p.reload(); await p.waitForTimeout(1500); await p.click('[data-tab="arc"]').catch(() => {}); await p.waitForTimeout(1500);
   if ((await p.evaluate(() => bookChs(S, 'hist').length)) < 1) bad('刷新后写好的史书没了');
   const leak = (await p.evaluate(() => document.body.innerText)).match(/undefined|NaN|\[object Object\]/g); if (leak) bad('档案馆页有怪字：' + [...new Set(leak)].join(','));
+  // 游戏里直接删这一局：顶上「删除这一局」→ 确认 → 回首页，它的档案馆一起删掉
+  await p.locator('#delThis [data-askdel]').first().click().catch(e => bad('游戏里没有「删除这一局」：' + e.message.slice(0, 60)));
+  await p.waitForTimeout(200); await p.evaluate(() => render()); await p.waitForTimeout(150);
+  await p.locator('#delThis [data-del]').first().click().catch(e => bad('「删除这一局」的确认点不了：' + e.message.slice(0, 60)));
+  await p.waitForTimeout(1500);
+  if (await p.evaluate(() => VIEW === 'game' && !!S)) bad('删了这一局还停在游戏里');
+  if ((await p.evaluate(async () => (await store.list()).length)) !== 0) bad('删了这一局，存档列表里还有');
+  const left = await p.evaluate(async id => (await api('/api/arc-get', { id })).recs.length, id);
+  if (left) bad('删了这一局，它的档案馆还在：' + left + ' 条');
   console.log('ARC', n, 'SRV', srv);
   console.log('ERRS', JSON.stringify(errs));
   await b.close(); process.exit(errs.length ? 1 : 0);
