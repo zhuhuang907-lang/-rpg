@@ -56,6 +56,10 @@ start ai.js && {
 DEADDS=9 start ai.js && {
   run "连不上 DeepSeek 时自动改由浏览器直连：存过 Key 的直接开局、重新粘贴 Key 试连都通、接着玩" 900 node dsdirect.js
 }
+start ai.js && {
+  WEB_PORT=$((GAME_PORT + 7)); (cd "$ROOT/web" && exec python3 -m http.server "$WEB_PORT" --bind 127.0.0.1 > "$WORK/web.out" 2>&1) & PIDS+=($!); sleep 1
+  run "网页版：在线打开、存到电脑上双击打开，只填 Key 就能玩（坏 Key 说清、开局、接着玩、刷新还在）" 900 env WEB_URL="http://127.0.0.1:$WEB_PORT/play.html" WEB_FILE="$ROOT/web/play.html" node webds.js
+}
 if [ -z "${QUICK:-}" ]; then
   start nasty.js && run "捣乱 AI：格式怪、字段类型错、慢、空" 1700 node drive2.js 40 "$GAME_PORT"
   start chaos.js && run "两成出错的 AI 连玩" 1500 node drive.js
