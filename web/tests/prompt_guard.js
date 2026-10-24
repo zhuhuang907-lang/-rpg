@@ -78,6 +78,7 @@ const checks = [
   ['游戏里一键删这一局（连同它的档案馆）、每局一个档案馆、编书可选', /id="delThis"/.test(src) && /删掉这一局（连同它的档案馆）/.test(src) && /编书（可选，不点就不写）/.test(src) && /这一局的档案馆/.test(src)],
   ['联网照常搜天下局势和这一步的事，每条带年号年份，搜回来的按年代筛（别的朝代、现代的、别年代名人的不要）', /function eraOk\(s, text\)/.test(src) && /eraOk\(s, `\$\{i\.title\} \$\{i\.snippet\}`\)/.test(src) && /eraOk\(s, x\.title/.test(src) && /朝政 局势/.test(src) && /每条搜索词都要带上本朝年号或公元年份/.test(src) && !/至少一半要搜/.test(src)],
   ['地图跟着人走：记下此刻人在哪、地图以此为中心、对不上的地名照年代查当时县名、家标在图上、换了年代重画', /const geoCenter = s =>/.test(src) && /nowAt：这一回结束时主角人在哪里/.test(src) && /async function geoAlias/.test(src) && /s\.geo\.place !== geoCenter\(s\)/.test(src) && /家：\$\{esc\(s\.place\.full\)\}/.test(src)],
+  ['不篡改玩家命令：照原样做、错了就有后果；推演不改写动作、不把「别的路子」交给写正文；审读核校不改主角照命令做的事；程序查主角临时改主意被劝住', /function bentOrder/.test(src) && /篡改了玩家的命令/.test(src) && /照原样——哪怕不合常理、犯忌、会吃大亏/.test(rules) && /推的是玩家原样这一步/.test(src) && !/'\\n别的路子：'/.test(src) && /主角照玩家命令做的事、说的话一个不改/.test(src)],
   ['账号模式先关着：不要求登录、以前的账号数据照旧能用', /const ACCOUNTS_ON = false/.test(src) && /ACCOUNTS_ON && !WHO && READY/.test(src)],
   ['身份变化要有正文为凭、推演凭空的意外不用', /账房擅自改了主角的身份/.test(src) && /推演凭空加的意外/.test(src) && /推演只回答玩家这一步会怎样/.test(src)],
   ['不攀附名人：规则写明、推演不请真人进场面、程序查熟人口吻', /7\. 不攀附/.test(rules) && /偏远地方的小人物不认识名人/.test(rules) && /function climbing/.test(src) && /远在别处、跟主角没有来往的名人不列/.test(src)],
