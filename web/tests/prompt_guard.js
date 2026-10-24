@@ -68,6 +68,7 @@ const checks = [
   ['游戏程序连不上 DeepSeek 时自动改由浏览器直连', /async function directSample/.test(src) && /SAMPLE = deskSample/.test(src) && /'POST \/api\/dskey'/.test(server) && /netFail\(r\.test\.why\)/.test(src)],
   ['拿米价量家底、进项、田价、日常物价', /function grainNormal/.test(src) && /const GOODS = /.test(src) && /一个平头百姓没有这么多现钱/.test(src)],
   ['网页版：没有本机游戏程序时浏览器直接连 DeepSeek，只填 Key', /MODE = 'web'; SAMPLE = directSample/.test(src) && /function webKeyBox/.test(src) && /const DSM = /.test(src)],
+  ['网页版账号：存档、Key 按账号分开，密码只存散列', /const LK = k => WHO/.test(src) && /function accountPanel/.test(src) && /PBKDF2/.test(src) && /localStorage\.setItem\(LK\('hrpg:save:'/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

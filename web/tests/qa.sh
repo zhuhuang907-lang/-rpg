@@ -59,6 +59,7 @@ DEADDS=9 start ai.js && {
 start ai.js && {
   WEB_PORT=$((GAME_PORT + 7)); (cd "$ROOT/web" && exec python3 -m http.server "$WEB_PORT" --bind 127.0.0.1 > "$WORK/web.out" 2>&1) & PIDS+=($!); sleep 1
   run "网页版：在线打开、存到电脑上双击打开，只填 Key 就能玩（坏 Key 说清、开局、接着玩、刷新还在）" 900 env WEB_URL="http://127.0.0.1:$WEB_PORT/play.html" WEB_FILE="$ROOT/web/play.html" node webds.js
+  run "网页版账号：名字加密码、不用邮箱手机；各账号的 Key 存档互不相通、密码不对进不去、同名不能再注册、第一个账号接手旧存档" 600 env WEB_URL="http://127.0.0.1:$WEB_PORT/play.html" node webacct.js
 }
 if [ -z "${QUICK:-}" ]; then
   start nasty.js && run "捣乱 AI：格式怪、字段类型错、慢、空" 1700 node drive2.js 40 "$GAME_PORT"
