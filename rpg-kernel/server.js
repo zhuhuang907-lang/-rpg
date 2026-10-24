@@ -591,6 +591,34 @@ const routes = {
     fs.writeFileSync(tmp, JSON.stringify(pk)); renameRetry(tmp, path.join(dir, pk.id + '.json'));
     return { ok: true };
   },
+  /* 档案馆：每局每回的全文另存一份（一回一行），不受存档大小限制；玩过的内容都记得，打完可以编史书、写小说 */
+  async 'POST /api/arc-add'(body) {
+    const b = body || {}, id = String(b.id || '');
+    if (!/^[a-z0-9]+$/i.test(id) || !b.rec || typeof b.rec !== 'object') return { ok: false, why: '格式不对' };
+    const dir = path.join(ROOT, 'data', 'archives'); fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, id + '.jsonl'), JSON.stringify(b.rec).replace(/\n/g, '\\n') + '\n');
+    return { ok: true };
+  },
+  async 'POST /api/arc-get'(body) {
+    const id = String((body || {}).id || '');
+    if (!/^[a-z0-9]+$/i.test(id)) return { ok: false, why: '没有这个档案' };
+    let raw = ''; try { raw = fs.readFileSync(path.join(ROOT, 'data', 'archives', id + '.jsonl'), 'utf8'); } catch (_) { return { ok: true, recs: [] }; }
+    const recs = []; for (const ln of raw.split('\n')) { if (!ln.trim()) continue; try { recs.push(JSON.parse(ln)); } catch (_) { /* 坏行跳过 */ } }
+    return { ok: true, recs };
+  },
+  async 'POST /api/arc-copy'(body) {
+    const a = String((body || {}).from || ''), c = String((body || {}).to || '');
+    if (!/^[a-z0-9]+$/i.test(a) || !/^[a-z0-9]+$/i.test(c)) return { ok: false, why: '格式不对' };
+    const dir = path.join(ROOT, 'data', 'archives');
+    try { fs.copyFileSync(path.join(dir, a + '.jsonl'), path.join(dir, c + '.jsonl')); } catch (_) { /* 原来就没有档案 */ }
+    return { ok: true };
+  },
+  async 'POST /api/arc-del'(body) {
+    const id = String((body || {}).id || '');
+    if (!/^[a-z0-9]+$/i.test(id)) return { ok: false, why: '格式不对' };
+    try { fs.unlinkSync(path.join(ROOT, 'data', 'archives', id + '.jsonl')); } catch (_) { /* 已经没了 */ }
+    return { ok: true };
+  },
   'GET /api/wsaves': async () => {
     const dir = path.join(ROOT, 'data', 'websaves');
     let files = []; try { files = fs.readdirSync(dir).filter(f => /^[a-z0-9]+\.json$/i.test(f)); } catch (_) { files = []; }
