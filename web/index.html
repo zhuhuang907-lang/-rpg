@@ -225,6 +225,7 @@ textarea{resize:vertical}
     <div class="brand">历史模拟<small>网页版</small></div>
     <div class="status" id="statusLine"></div>
     <div class="sp"></div>
+    <span class="confirm" id="delThis" hidden></span>
     <button id="bHome" hidden>换一局</button>
   </header>
   <div id="notice"></div>
@@ -995,7 +996,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261024190607';
+const BUILD = '20261024193235';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -1335,10 +1336,10 @@ function arcPane(s) {
   if (!ARC.loaded(s)) { ARC.load(s).then(() => { if (TAB === 'arc') render(); }); return '<div class="muted">档案馆正在打开……</div>'; }
   const recs = ARC.all().filter(r => r.kind === 'turn').sort((a, b) => b.turn - a.turn);
   const bk = k => { const n = bookChs(s, k).length, tot = Math.ceil(recs.length / BOOK_PER); return `<div class="row" style="margin:4px 0"><button data-book="${k}" ${BOOK || !recs.length || BUSY ? 'disabled' : ''}>${n ? (n >= tot ? '重写' : '接着写') : '写成'}${BOOK_KINDS[k]}</button>${n ? `<button class="link" data-bookdl="${k}">下载${BOOK_KINDS[k]}（已写 ${n}/${tot} 章）</button><button class="link" data-bookclear="${k}">清掉重来</button>` : ''}</div>`; };
-  return `<div class="h" style="margin-top:6px"><span class="seal">档</span>档案馆<span class="note">玩过的每一回都记在这里（正文全文、你说的话、出场的人），不受存档大小限制；写每一回前从这里翻出相关的旧事接上</span></div>
+  return `<div class="h" style="margin-top:6px"><span class="seal">档</span>这一局的档案馆<span class="note">每一局各有一个；这一局玩过的每一回都记在这里（正文全文、你说的话、出场的人），不受存档大小限制；写每一回前从这里翻出相关的旧事接上</span></div>
     <div class="muted">已记 ${recs.length} 回${MODE === 'local' ? '（存在游戏文件夹 data/archives）' : '（存在这个浏览器里，清浏览器数据会丢）'}</div>
-    <div class="h"><span class="seal">书</span>编书<span class="note">照档案一章十五回写成史书（文言编年）或小说（章回体），可停可续，写完下载</span></div>
-    ${bk('hist')}${bk('novel')}
+    <details class="custom" ${BOOK || bookChs(s, 'hist').length || bookChs(s, 'novel').length ? 'open' : ''}><summary>编书（可选，不点就不写）</summary><div class="muted" style="font-size:13px;margin:6px 0">想要的话，照这一局的档案一章十五回写成史书（浅近文言编年）或小说（章回体）；两样都可以不要，也可以只要一样。可停可续，写完下载。</div>
+    ${bk('hist')}${bk('novel')}</details>
     ${BOOK ? `<div class="row"><span class="muted">正在写${BOOK_KINDS[BOOK.kind]}：第 ${BOOK.done + 1}/${BOOK.total} 章……</span><button class="link" id="bBookStop">停</button></div>` : ''}
     <div class="h"><span class="seal">录</span>每一回</div>
     <div class="list">${recs.slice(0, 120).map(r => `<details><summary><span class="when">第${r.turn}回 ${esc(r.when || '')}</span>${esc(one(r.sum || '', 60))}</summary>${r.said ? `<div class="muted">你说：${esc(r.said)}</div>` : ''}<div style="white-space:pre-wrap">${esc(r.text || '')}</div></details>`).join('') || '<div class="muted">还没有</div>'}${recs.length > 120 ? `<div class="muted">更早的 ${recs.length - 120} 回也记着，编书时都会用上</div>` : ''}</div>`;
@@ -4483,6 +4484,7 @@ function render() {
 function renderNow() {
   if (S && S.clock) LI_KM = liKmFor(S.clock.y);
   $('#bHome').hidden = VIEW !== 'game';
+  { const dt = $('#delThis'); if (dt) { dt.hidden = VIEW !== 'game' || !S; if (!dt.hidden) dt.innerHTML = DEL_ASK === S.id ? `删掉这一局（连同它的档案馆）？<button data-del="${esc(S.id)}">删掉</button><button data-nodel="1">不删</button>` : `<button data-askdel="${esc(S.id)}" ${BUSY ? 'disabled' : ''}>删除这一局</button>`; } }
   const sm = $('.brand small'); if (sm) sm.textContent = (MODE === 'claude' ? 'claude.ai 网页版 · ' : MODE === 'web' ? '网页版 · ' + (WHO && ACCOUNTS_ON ? '账号 ' + WHO + ' · ' : '') : '') + (/^\d{8}/.test(BUILD) ? `版本 ${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : '');
   $('#statusLine').innerHTML = VIEW === 'game' && S ? `<b>${esc(S.protagonist.name)}</b> · ${esc(timeText(S.clock))} · ${esc(S.place.full)}${S.money && S.money.cash != null ? ' · 现钱 ' + esc(fmtN(S.money.cash, S.money.unit || '两')) : ''}${S.jail ? ` · <span style="color:var(--zhu)">在押：${esc(S.jail.where)}</span>` : ''}${SEARCH_OFF && MODE === 'local' && SETTINGS.search !== false ? ` · <span style="color:var(--zhu)" title="${esc(SEARCH_OFF)}">联网查资料暂时连不上（设置里点「联网自检」看原因）</span>` : ''}` : '';
   $('#notice').innerHTML = UPDMSG ? `<div class="banner">${esc(UPDMSG)}</div>` : !READY ? '' : MODE === 'none' ? (location.protocol === 'file:' ? '<div class="err"><b>这样打开用不了。</b>你双击的是游戏里的网页文件。请关掉它，双击桌面上的「历史模拟RPG」图标。</div>' : '<div class="err">游戏服务没有在运行：启动游戏的小窗口是不是被关掉了？重新双击桌面上的「历史模拟RPG」。</div>') : MODE === 'claude' && !SAMPLE ? '<div class="err"><b>这个页面没拿到调用 Claude 的权限，所以开始不了。</b>请点页面右上角的菜单，在「权限」里允许它使用 Claude，然后刷新；或者用桌面版（自己的 DeepSeek Key）。</div>' : '';
@@ -4655,7 +4657,7 @@ async function renderStart() {
 let DEL_ASK = '', SAVES_CACHE = null, SAVES_AT = 0;
 async function fillSaves(sel) {
   const paint = list => { const box = $(sel); if (!box) return; box.innerHTML = list.length ? list.map(x => `<div class="save"><div class="t"><b>${esc(x.title)}</b>${S && S.id === x.id && VIEW === 'game' ? ' <span class="badge b-doing">正在玩</span>' : ''}<span>${esc(x.sub || '')}${x.updatedAt ? ' · 上次玩：' + esc(new Date(x.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })) : ''}</span></div>
-      ${S && S.id === x.id && VIEW === 'game' ? '' : `<button class="main" data-load="${esc(x.id)}">${VIEW === 'game' ? '切换到这一局' : '继续'}</button>`}<span class="confirm" id="del-${esc(x.id)}">${DEL_ASK === x.id ? `确定删掉？<button data-del="${esc(x.id)}">删掉</button><button data-nodel="1">不删</button>` : `<button data-askdel="${esc(x.id)}">删除</button>`}</span></div>`).join('')
+      ${S && S.id === x.id && VIEW === 'game' ? '' : `<button class="main" data-load="${esc(x.id)}">${VIEW === 'game' ? '切换到这一局' : '继续'}</button>`}<span class="confirm" id="del-${esc(x.id)}">${DEL_ASK === x.id ? `确定删掉这一局（连同它的档案馆）？<button data-del="${esc(x.id)}">删掉</button><button data-nodel="1">不删</button>` : `<button data-askdel="${esc(x.id)}">删除</button>`}</span></div>`).join('') + '<div class="muted" style="font-size:12px">每一局有自己的档案馆；删掉一局，它的档案馆一起删掉，别的局不受影响。</div>'
     : '<div class="muted">还没有存档。在上面写一句话开一局。</div>'; };
   if (SAVES_CACHE) paint(SAVES_CACHE);   // 先用上次的列表画上，不闪
   if (SAVES_CACHE && Date.now() - SAVES_AT < 5000) return;   // 五秒内画过就不再去读（写正文时页面重画得很勤）
