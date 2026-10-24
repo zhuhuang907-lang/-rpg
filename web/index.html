@@ -987,8 +987,10 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261024102317';
+const BUILD = '20261024103417';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
+/** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
+const DSM = () => MODE === 'local' || MODE === 'web';
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
 async function watchUpdate() {
   for (let i = 0; i < 20; i++) {
@@ -1383,7 +1385,7 @@ function within(p, ms, dflt = null) {
   return Promise.race([p, cap]).finally(() => clearTimeout(t));
 }
 async function callClaude(input, onReply, extra, tier) {
-  if (MODE === 'local' && !KEY.has) throw { code: 'no_key', message: '还没填 DeepSeek 的 Key：在首页把 Key 粘贴进去点「保存」' };
+  if (DSM() && !KEY.has) throw { code: 'no_key', message: '还没填 DeepSeek 的 Key：在首页把 Key 粘贴进去点「保存」' };
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
   const det = extra && extra.detached;
   if (!det && TURN && TURN.signal.aborted) throw { code: 'cancelled' };
@@ -1399,16 +1401,16 @@ async function callClaude(input, onReply, extra, tier) {
   const kind = (extra && extra.kind) || (plain ? '写戏' : '记账');
   // 桌面版：深度思考给「推演这一步」（定事实、定谁在场、各自要什么），写正文不开——DeepSeek V4 思考模式下演角色，
   // 常常不照格式、以角色口吻想事情；事实已经在推演和名册里定好，写正文只管写，温度也收一点，少编
-  if (MODE === 'local' && SETTINGS.deep !== false && plain && kind === '写戏') extra = { ...extra, thinking: true };
-  if (MODE === 'local' && plain && extra && extra.temperature > 1.0) extra = { ...extra, temperature: 1.0 };
+  if (DSM() && SETTINGS.deep !== false && plain && kind === '写戏') extra = { ...extra, thinking: true };
+  if (DSM() && plain && extra && extra.temperature > 1.0) extra = { ...extra, temperature: 1.0 };
   try {
-    const r = await SAMPLE(input, { ...opts, ...(MODE === 'local' ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
+    const r = await SAMPLE(input, { ...opts, ...(DSM() ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
     logRaw(kind, r && r.text, r && r.truncated);
     return r;
   } catch (e) {
     logRaw(kind, (e && e.text) || '', false, (e && (e.code + ' ' + (e.message || ''))) || String(e));
     // 深度思考那一路出了岔子（太慢、思考吃光额度、服务端不认）：关掉思考再来一次，不让玩家看到报错
-    if (MODE === 'local' && extra && extra.thinking && !(e && (e.code === 'cancelled' || e.code === 'no_key')) && !(TURN && TURN.signal.aborted)) {
+    if (DSM() && extra && extra.thinking && !(e && (e.code === 'cancelled' || e.code === 'no_key')) && !(TURN && TURN.signal.aborted)) {
       CTL = new AbortController(); if (TURN) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); }
       const r2 = await SAMPLE(input, { ...opts, ...extra, thinking: false, signal: CTL.signal, onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
       logRaw(kind + '（关思考重试）', r2 && r2.text, r2 && r2.truncated);
@@ -1431,7 +1433,7 @@ window.addEventListener('unhandledrejection', e => { PAGE_ERRS.push('promise: ' 
 function problemReport() {
   const s = S, L = [];
   L.push(`【历史模拟RPG 问题报告】${new Date().toLocaleString()}`);
-  L.push(`运行方式：${MODE === 'local' ? '桌面版 DeepSeek（型号 ' + (KEY.model || '?') + '）' : MODE === 'claude' ? 'claude.ai 网页版' : MODE}；浏览器：${navigator.userAgent.slice(0, 120)}`);
+  L.push(`运行方式：${MODE === 'local' ? '桌面版 DeepSeek（型号 ' + (KEY.model || '?') + '）' + (DS_DIRECT ? '，浏览器直连' : '') : MODE === 'web' ? '网页版 DeepSeek（型号 ' + (KEY.model || '?') + '，浏览器直连）' : MODE === 'claude' ? 'claude.ai 网页版' : MODE}；浏览器：${navigator.userAgent.slice(0, 120)}`);
   if (s) {
     L.push(`存档：${s.title}；${timeText(s.clock)}；第 ${s.turn} 回合；存档大小 ${Math.round(bytes(JSON.stringify(s)) / 1024)}KB`);
     L.push(`现钱 ${s.money && s.money.cash}；人物 ${Object.keys(s.people || {}).length}；史线将来 ${arr(s.world && s.world.upcoming).length} 条；上次推演 ${s.world && s.world.tickAt ? s.world.tickAt.label : '无'}`);
@@ -1797,7 +1799,7 @@ function feedAdd(items) { for (const x of items) { if (!x || !x.t) continue; if 
 function feedHtml() { const L = FEED.slice(-7); return `<div id="feed" class="feed">${L.length ? '<div class="fh">这一回翻到的资料</div>' + L.map(f => `<div class="fi"><span class="fs">${esc(f.site || '资料')}</span>${esc(f.t)}</div>`).join('') : ''}</div>`; }
 let SEARCH_OFF_AT = 0;
 // 连不上就先歇五分钟，之后自己再试，不让一次断网关掉整局的查证
-const canSearch = () => { if (SEARCH_OFF && SEARCH_OFF_AT && Date.now() - SEARCH_OFF_AT > 5 * 60 * 1000) { SEARCH_OFF = ''; SEARCH_DOWN = 0; } return (MODE === 'local' || MODE === 'claude') && SETTINGS.search !== false && !SEARCH_OFF; };
+const canSearch = () => { if (SEARCH_OFF && SEARCH_OFF_AT && Date.now() - SEARCH_OFF_AT > 5 * 60 * 1000) { SEARCH_OFF = ''; SEARCH_DOWN = 0; } return (MODE === 'local' || MODE === 'claude' || MODE === 'web') && SETTINGS.search !== false && !SEARCH_OFF; };
 /** 像身在那个年代：每回换着方向搜一两样——本地的官、本地的事、天下的消息、本行的行情、同乡与在本地的真人、快要发生的事里的人 */
 function ambientQueries(s) {
   const yl = s.clock.yearLabel || (s.clock.y + '年'), dy = (s.place.polity || '') + (/[代朝]$/.test(s.place.polity || '') ? '' : '代');
@@ -4210,7 +4212,7 @@ function render() {
 function renderNow() {
   if (S && S.clock) LI_KM = liKmFor(S.clock.y);
   $('#bHome').hidden = VIEW !== 'game';
-  const sm = $('.brand small'); if (sm) sm.textContent = (MODE === 'claude' ? '网页版 · ' : '') + (/^\d{8}/.test(BUILD) ? `版本 ${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : '');
+  const sm = $('.brand small'); if (sm) sm.textContent = (MODE === 'claude' ? 'claude.ai 网页版 · ' : MODE === 'web' ? '网页版 · ' : '') + (/^\d{8}/.test(BUILD) ? `版本 ${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : '');
   $('#statusLine').innerHTML = VIEW === 'game' && S ? `<b>${esc(S.protagonist.name)}</b> · ${esc(timeText(S.clock))} · ${esc(S.place.full)}${S.money && S.money.cash != null ? ' · 现钱 ' + esc(fmtN(S.money.cash, S.money.unit || '两')) : ''}${S.jail ? ` · <span style="color:var(--zhu)">在押：${esc(S.jail.where)}</span>` : ''}${SEARCH_OFF && MODE === 'local' && SETTINGS.search !== false ? ` · <span style="color:var(--zhu)" title="${esc(SEARCH_OFF)}">联网查资料暂时连不上（设置里点「联网自检」看原因）</span>` : ''}` : '';
   $('#notice').innerHTML = UPDMSG ? `<div class="banner">${esc(UPDMSG)}</div>` : !READY ? '' : MODE === 'none' ? (location.protocol === 'file:' ? '<div class="err"><b>这样打开用不了。</b>你双击的是游戏里的网页文件。请关掉它，双击桌面上的「历史模拟RPG」图标。</div>' : '<div class="err">游戏服务没有在运行：启动游戏的小窗口是不是被关掉了？重新双击桌面上的「历史模拟RPG」。</div>') : MODE === 'claude' && !SAMPLE ? '<div class="err"><b>这个页面没拿到调用 Claude 的权限，所以开始不了。</b>请点页面右上角的菜单，在「权限」里允许它使用 Claude，然后刷新；或者用桌面版（自己的 DeepSeek Key）。</div>' : '';
   if (VIEW === 'start') return renderStart();
@@ -4237,7 +4239,7 @@ function customForm() {
       <label class="wide">姓名<input id="cName" value="${v('cName')}" placeholder="留空由 AI 起名；写真实人物的名字，就扮演此人（如：海瑞、李清照）"></label>
       <label class="wide">家世背景<textarea id="cFamily" rows="2" placeholder="如：父亲早亡，寡母带着弟妹，靠两亩薄田和母亲做针线过活；舅舅在县衙当书吏">${v('cFamily')}</textarea></label>
       <label class="wide">补充设定（性格、本事、处境、想做的事……）<textarea id="cMore" rows="2" placeholder="如：识字，会算账，脾气倔；想去府城考秀才，舅舅不赞成">${v('cMore')}</textarea></label>
-      <div class="wide row" style="margin-top:2px"><button class="main" id="bCustomStart" ${BUSY || !SAMPLE || (MODE === 'local' && !KEY.has) ? 'disabled' : ''}>按这些设定开局</button><button type="button" class="link" id="bCustomClear">清空</button></div>
+      <div class="wide row" style="margin-top:2px"><button class="main" id="bCustomStart" ${BUSY || !SAMPLE || (DSM() && !KEY.has) ? 'disabled' : ''}>按这些设定开局</button><button type="button" class="link" id="bCustomClear">清空</button></div>
     </form></details>`;
 }
 /** 设定表 → 一句话（查资料、认年份用）+ 完整设定（交给 AI 照办） */
@@ -4283,21 +4285,38 @@ function keyBox() {
     </div></div>
     ${KEYMSG ? `<div class="${/✓/.test(KEYMSG) ? 'banner' : 'err'}">${esc(KEYMSG)}</div>` : ''}`;
 }
+/** 网页版的 Key 区：只要 DeepSeek 的 Key（必填）和博查 Key（可选），都只存在这个浏览器里 */
+function webKeyRefresh() { const k = lsGet('hrpg:dskey') || ''; KEY = { has: !!k, tail: k.slice(-4), model: lsGet('hrpg:dsmodel') || 'deepseek-v4-pro', bocha: !!BOCHA_KEY, bad: k ? (lsGet('hrpg:dsbad') || '') : '' }; }
+function webKeyBox() {
+  const open = !KEY.has || KEY_OPEN || !!KEY.bad;
+  return `<div class="h"><span class="seal">钥</span>DeepSeek Key<span class="note">只存在这个浏览器里，浏览器直接连 DeepSeek，不经过任何别的地方；剧情用你自己的 DeepSeek 额度来写</span></div>
+    ${KEY.has && !KEY_OPEN ? `<div class="row" style="margin-top:0">${KEY.bad ? `<span class="err" style="margin:0">✗ Key 尾号 ${esc(KEY.tail)} 试连没通：${esc(KEY.bad)}</span>` : `<span class="savest">✓ 已接上 DeepSeek（Key 尾号 ${esc(KEY.tail)}，型号 ${esc(KEY.model)}）</span>`}${open ? '' : '<button class="link" id="bKeyOpen">换 Key</button>'}</div>` : ''}
+    ${open ? `<div class="howto" style="grid-template-columns:1fr"><div>
+      <b>${KEY.has ? '换一个 Key' : '第一次玩：粘贴 DeepSeek 的 Key，点保存就能开始'}</b>
+      <div class="row" style="flex-wrap:wrap"><input id="kIn" type="password" autocomplete="off" placeholder="sk-……" style="flex:2 1 14em;min-width:0"><input id="kModel" placeholder="型号，留空用 deepseek-v4-pro" style="flex:1 1 12em;min-width:0"><button class="main" id="bKeySave" ${KEYSAVING ? 'disabled' : ''}>${KEYSAVING === 'ds' ? '保存中，正在试连…' : '保存'}</button></div>
+      <div class="muted" style="margin-top:6px">没有 Key？去 platform.deepseek.com 注册，在「API keys」里生成一个；新账户要先充值（几块钱就能玩很久）。${KEY.has && !KEY.bad ? ' <button class="link" id="bKeyClose">不换了</button>' : ''}</div>
+    </div></div>` : ''}
+    <div class="howto" style="grid-template-columns:1fr;margin-top:8px"><div>
+      <b>联网查资料（每回合自动查维基百科；填了博查 Key 先查博查，中文资料多得多）</b> ${BOCHA_KEY ? `<span class="savest">✓ 已填博查 Key（尾号 ${esc(BOCHA_KEY.slice(-4))}）</span> <button class="link" id="bWBochaOff">不用博查</button>` : '<span class="muted">可选</span>'}
+      <div class="row"><input id="wBocha" type="password" autocomplete="off" placeholder="博查 API Key（open.bochaai.com 申请，可不填）" class="grow" style="min-width:0"><button id="bWBocha">保存并试搜</button><span class="muted" id="wBochaMsg" style="font-size:12px"></span></div>
+    </div></div>
+    ${KEYMSG ? `<div class="${/✓/.test(KEYMSG) ? 'banner' : 'err'}">${esc(KEYMSG)}</div>` : ''}`;
+}
 async function refreshKey() { try { const q = await api('/api/quick-status'); if (q.lookup) LOOKST = q.lookup; KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '', search: q.search || '', bocha: !!q.hasBocha, bochaSaved: !!q.bochaSaved, bochaTestOk: q.bochaTestOk !== false, bochaOff: !!q.bochaOff, bochaTail: q.bochaTail || '', bad: q.hasKey && q.lastTest && q.lastTest.ok === false && /401|402|403|Key 不对|余额|没有权限|Unauthorized|Authentication/i.test(q.lastTest.why || '') ? q.lastTest.why : '' }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
 async function renderStart() {
   $('#app').innerHTML = `<section class="start">
     <div class="hero"><h1>你想当谁？</h1>
       <p>一句话就行：哪个年代、什么地方、什么人。之后就像聊天一样往下玩：戏里你说做什么，世界照真实的样子回应；戏外你随时可以问历史、问地理、问局面、请它帮你分析。</p>
-      <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off" value="${esc(QTEXT)}"><button class="main" id="bStart" ${BUSY || !SAMPLE || (MODE === 'local' && !KEY.has) ? 'disabled' : ''}>开始</button></form>
-      ${MODE === 'local' && !KEY.has ? '<div class="err">先在下面「DeepSeek Key」里粘贴 Key，才能开始。<a href="#kIn" style="color:inherit">去填 ↓</a></div>' : ''}
+      <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off" value="${esc(QTEXT)}"><button class="main" id="bStart" ${BUSY || !SAMPLE || (DSM() && !KEY.has) ? 'disabled' : ''}>开始</button></form>
+      ${DSM() && !KEY.has ? '<div class="err">先在下面「DeepSeek Key」里粘贴 Key，才能开始。<a href="#kIn" style="color:inherit">去填 ↓</a></div>' : ''}
       <div class="examples">${EXAMPLES.map(x => `<button class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
       ${customForm()}
     </div>
     ${BUSY ? `<div class="banner thinking"><span class="dots"><i></i><i></i><i></i></span>${PHASE === 'search' ? '第 1 步，共 3 步：先联网把这个年代查一遍（人物、官制、物价、风俗、大事）' : PHASE === 'draft' ? '第 2 步，共 3 步：正在写开场，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'verify' ? '第 3 步，共 3 步：开场写好了，正在对照史料再过一遍、立账册' : PHASE === 'ledger' ? '第 3 步，共 3 步：快好了，正在立账册' : PHASE === 'estate' ? '第 3 步，共 3 步：照这个年代、这个身份查清家底（田产、房屋、进项、开销）' : '正在把你落到历史里、写开场'}……已 <span id="secs">${BUSY && THINK_T0 ? Math.round((Date.now() - THINK_T0) / 1000) : 0}</span> 秒（一般一到三分钟）<button class="link" id="bStop">停下</button></div>
       ${STREAM && PHASE === 'ledger' ? `<div class="msg gm"><div class="text">${paras(STREAM)}</div></div>` : DRAFT_LIVE && /draft|rewrite|verify|critic/.test(PHASE) ? `<div class="msg gm">${draftHtml()}</div>` : feedHtml()}` : ''}
     ${ERRMSG ? `<div class="${/^网络或模型抖了一下/.test(ERRMSG) ? 'banner' : 'err'}">${esc(ERRMSG)} ${LAST_ACTION ? '<button class="link" id="bRetry">再试一次</button>' : ''}</div>` : ''}
-    ${MODE === 'local' ? keyBox() : ''}
-    <div class="h"><span class="seal">档</span>接着玩<span class="note">${MODE === 'local' ? '存在游戏文件夹里，本浏览器也留一份' : '存在你的 claude.ai 账号里，本浏览器也留一份'}</span></div>
+    ${MODE === 'local' ? keyBox() : MODE === 'web' ? webKeyBox() : ''}
+    <div class="h"><span class="seal">档</span>接着玩<span class="note">${MODE === 'local' ? '存在游戏文件夹里，本浏览器也留一份' : MODE === 'web' ? '存在这个浏览器里（换浏览器、清浏览器数据会没有；同一个浏览器关了再开还在）' : '存在你的 claude.ai 账号里，本浏览器也留一份'}</span></div>
     <div class="saves" id="saves"><div class="muted">载入中…</div></div>
     <div class="h"><span class="seal">规</span>怎么玩</div>
     <div class="howto">
@@ -4546,7 +4565,7 @@ function pane(tab) {
       ${D.length ? `<div class="h"><span class="seal">档</span>真人档案<span class="note">这一局里牵涉到的真实人物；年纪由程序按生年算</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此刻</th><th>出处</th></tr>${D.map(([k, d]) => `<tr><td><b>${esc(k)}</b>${d.born || d.died ? `<div class="muted">${esc(d.born ?? '?')}—${esc(d.died ?? '?')}</div>` : ''}</td><td>${esc([d.state, d.born != null && s.clock ? (s.clock.y - d.born + 1) + '岁' : '', d.post, d.where ? '在' + d.where : ''].filter(Boolean).join('，'))}${d.doing ? `<div class="muted">${esc(d.doing)}</div>` : ''}${d.zi || d.origin ? `<div class="muted">${esc([d.zi && '字号：' + d.zi, d.origin && '出身：' + d.origin, d.native && '籍贯：' + d.native].filter(Boolean).join('；'))}</div>` : ''}${arr(d.career).length ? `<div class="muted" style="font-size:12px">历官：${esc(d.career.map(x => (x.y ? x.y + '年 ' : '') + x.post).join('；'))}</div>` : ''}${d.character || d.stance ? `<div class="muted" style="font-size:12px">${esc([d.character && '为人：' + d.character, d.stance && '立场：' + d.stance].filter(Boolean).join('；'))}</div>` : ''}${d.family ? `<div class="muted" style="font-size:12px">家眷：${esc(d.family)}</div>` : ''}</td><td class="muted">${esc(d.src || '')}${d.doubt ? '<div><span class="badge b-bad">资料里查不到，存疑</span></div>' : ''}${d.sources ? `<div style="font-size:12px">${esc(d.sources)}</div>` : ''}</td></tr>`).join('')}</table></div>` : ''}
       ${LC.length ? `<div class="h"><span class="seal">人</span>此时此地的真人<span class="note">从查证里认出来的，剧情里可能遇到</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此时身份</th><th>出处</th></tr>${LC.map(x => `<tr><td><b>${esc(x.name)}</b>${x.y ? `<div class="muted">${esc(x.y)}年前后</div>` : ''}</td><td>${esc(x.role)}</td><td class="muted">${esc(x.note)}</td></tr>`).join('')}</table></div>` : ''}
       ${arr(s.almanac).length ? `<div class="h"><span class="seal">志</span>年代志<span class="note">物价、风俗、制度这些查实了的</span></div>${ALM_CATS.map(c => { const xs = arr(s.almanac).filter(x => x.cat === c && x.grade !== 'C'); return xs.length ? `<div class="h" style="font-size:14px">${c}</div><div class="list">${xs.slice().reverse().map(x => `<div>${esc(x.text)}</div>`).join('')}</div>` : ''; }).join('')}` : ''}
-      <details class="book" style="margin-top:10px"><summary>联网查到的原始资料（${R.length} 条，${MODE === 'local' || MODE === 'claude' ? (SETTINGS.search === false ? '联网查资料已关' : '维基查不到的用博查补') : '联网查证只在桌面版里有'}）</summary>
+      <details class="book" style="margin-top:10px"><summary>联网查到的原始资料（${R.length} 条，${MODE !== 'none' ? (SETTINGS.search === false ? '联网查资料已关' : '维基查不到的用博查补') : '联网查证只在桌面版里有'}）</summary>
       <div class="list">${R.map(x => `<div><span class="when">第${x.turn}回合</span><span class="badge">${srcTag(x)}</span> <b>${esc(x.q)}</b><div class="muted">${esc(cut(x.text, x.wiki ? 400 : 300))}</div>${arr(x.links).length ? `<div style="font-size:12px">出处：${x.links.map(l => `<a href="${esc(l.u)}" target="_blank" rel="noopener" style="color:var(--qing)">${esc(l.t)}</a>`).join(' · ')}</div>` : ''}</div>`).join('') || '<div class="muted">还没有。</div>'}</div></details>`;
   }
   if (tab === 'world') {
@@ -4593,7 +4612,7 @@ function pane(tab) {
     <label class="muted" for="sLen">戏里每回正文多长</label>
     <select id="sLen">${[['short', '短（四五百字）'], ['normal', '标准（八百到一千五百字）'], ['long', '长（一千五百到两千字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     
-    <p class="muted" style="font-size:13px;margin-top:10px">每回合都会：${MODE === 'local' || MODE === 'claude' ? `联网查这一回涉及的真人、事件、年份（${MODE === 'claude' ? (BOCHA_KEY ? '博查 + 维基百科' : '维基百科') : KEY.bocha ? '博查 + 维基百科' : '维基百科；填博查 Key 资料更多'}）；` : ''}${MODE === 'local' ? '写正文前先深度构思；' : ''}推演天下大势、照史书往下走；写完核实史实、记账。这些关掉剧情就会失真，所以不能关。</p>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">联网查资料眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}
+    <p class="muted" style="font-size:13px;margin-top:10px">每回合都会：${MODE !== 'none' ? `联网查这一回涉及的真人、事件、年份（${MODE !== 'local' ? (BOCHA_KEY ? '博查 + 维基百科' : '维基百科') : KEY.bocha ? '博查 + 维基百科' : '维基百科；填博查 Key 资料更多'}）；` : ''}${DSM() ? '写正文前先深度构思；' : ''}推演天下大势、照史书往下走；写完核实史实、记账。这些关掉剧情就会失真，所以不能关。</p>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">联网查资料眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}
     
     
     ${MODE === 'claude' ? `<div class="h"><span class="seal">查</span>博查搜索</div>
@@ -4607,7 +4626,7 @@ function pane(tab) {
     <p class="muted" style="font-size:13px">把这一局此刻的样子另存一份，再走另一条路；原来那份不动，首页「接着玩」里两份都在。</p>
     <div class="row"><button id="bBranch" ${BUSY ? 'disabled' : ''}>另存为分支，接着玩分支</button><span class="muted" id="branchMsg"></span></div>
     <div class="h"><span class="seal">档</span>全部存档<span class="note">切换到别的一局，或删掉不要的</span></div><div class="saves" id="saves2"><div class="muted">载入中…</div></div>
-    ${MODE === 'local' ? keyBox() : `
+    ${MODE === 'local' ? keyBox() : MODE === 'web' ? webKeyBox() : `
     <label class="muted" for="sTier" style="display:block;margin-top:10px">用哪档 AI</label>
     <select id="sTier">${[['default', '标准（快一些）'], ['complex', '最强（更细更准，但更慢、更费额度）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.tier === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <p class="muted" style="font-size:13px">剧情用你自己的 Claude 账号来写，会占用你的 Claude 使用额度。存档存在你的账号里，只有你看得到。</p>`}`;
@@ -4654,7 +4673,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
       }
     }
     if (!st) {
-      const sys = MODE === 'local', r = pre && pre.setting, fake = pre && pre.fake;
+      const sys = DSM(), r = pre && pre.setting, fake = pre && pre.fake;
       const mat = r && fake ? [settingBlock(r, fake), heatBlock(fake), arcBlock(fake), histBlock(fake), dossierBlock(fake, [r.name, ...r.people].join(' ')), instPoints(fake, r.role, sentence, 2000)].filter(Boolean).join('\n\n') : '';
       const inp = () => openingStoryInput(sentence, sys, custom, mat) + (pre && arr(pre.almanac).length ? '\n\n' + almanacBlock(pre) : '') + (pre && arr(pre.research).length ? '\n\n' + researchBlock(pre) : '');
       DRAFTN = 0; PHASE = 'draft'; render();
@@ -4668,12 +4687,12 @@ async function startGame(sentence, have, havePre, custom, spec) {
       PHASE = 'verify'; render();
       const oy = r ? r.y : sentenceYear(sentence, OPEN_RANGE), sb = r && fake ? settingBlock(r, fake) : '';
       // 核实和立账册一起做：账册照初稿立，核实改掉的字再照改到账里
-      if (MODE === 'local') { ledP = callClaude(openingLedgerInput(sentence, draft.text, draft.hidden, custom, sb), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' }); ledP.catch(() => { /* 下面 await 时再处理 */ }); }
+      if (DSM()) { ledP = callClaude(openingLedgerInput(sentence, draft.text, draft.hidden, custom, sb), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' }); ledP.catch(() => { /* 下面 await 时再处理 */ }); }
       const vs = fake ? { ...fake, research: arr(pre.research), almanac: arr(pre.almanac) } : { ...(pre || {}), research: arr(pre && pre.research), almanac: arr(pre && pre.almanac), clock: { y: oy ?? 0, m: 6, d: 1, yearLabel: '' }, place: { full: '', polity: '' }, protagonist: { name: '', role: sentence }, chat: [], world: {}, figOver: {}, turn: 0, noTime: oy == null, yearOnly: oy != null };
       // 核实、情理审读、立账册一起做（网页版依次做）；有大毛病的，两边的意见合在一起把开场重写一次（只一次），账册照新稿重立
       const critP = SETTINGS.critic !== false ? storyCritic({ ...vs, protagonist: { name: r ? r.name : '', gender: r ? r.gender : '', age: r ? r.age : null, role: r ? r.role : sentence } }, sentence + (custom ? '\n' + custom : ''), draft.text).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
       critP.catch(() => { /* 停下了：下面 await 时再处理 */ });
-      if (MODE !== 'local') await critP;
+      if (!DSM()) await critP;
       const vr = await verifyText(vs, sentence + (custom ? '\n' + custom : '') + (sb ? '\n' + sb : ''), draft.text);
       const probs = (await critP).concat(arr(vr.major).map(x => `${x.problem}${x.fix ? '——应当：' + x.fix : ''}`));
       draft.text = vr.text; draft.audit = vr.audit;
@@ -4837,7 +4856,7 @@ async function send(said, span, note, resume) {
       PHASE = ''; render();
     }
     if (!st) {
-      const sys = MODE === 'local';
+      const sys = DSM();
       DRAFTN = 0; PHASE = 'draft'; render();
       // 改错、重写：推演和查过的材料照用，写稿不再深度思考（照问题改，快）
       const { text } = await callClaude(storyInput(S, said, span, note, sys, ruling), draftCb,
@@ -4866,7 +4885,7 @@ async function send(said, span, note, resume) {
     let ledgerP = null;
     const startLedger = () => { ledgerP = ledgerFor(st.text, st.hidden); ledgerP.catch(() => { /* 下面 await 时再处理 */ }); };
     if (!st.verified && !(resume && resume.story)) {
-      const sysR = MODE === 'local', par = MODE === 'local';
+      const sysR = DSM(), par = DSM();
       PHASE = 'verify'; render();
       if (par && !st.talk) startLedger();
       const critic = () => !st.talk && SETTINGS.critic !== false ? storyCritic(S, said, st.text).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
@@ -5025,6 +5044,18 @@ document.addEventListener('click', async e => {
     if (!k && !(m && KEY.has)) { KEYMSG = '先把 DeepSeek 的 Key 粘贴进左边的框里'; render(); const el = $('#kIn'); if (el) el.focus(); return; }
     if (k && !/^[\x21-\x7e]{8,}$/.test(k)) { KEYMSG = '这串不像 DeepSeek 的 Key（应是 sk- 开头的一串英文数字），请到 platform.deepseek.com 的「API keys」里重新复制'; render(); return; }
     KEYSAVING = 'ds'; KEYMSG = ''; render();
+    if (MODE === 'web') {   // 网页版：Key 存在这个浏览器里，浏览器直接试连
+      const old = [lsGet('hrpg:dskey'), lsGet('hrpg:dsmodel')];
+      if (k) lsSet('hrpg:dskey', k); if (m) lsSet('hrpg:dsmodel', m); webKeyRefresh();
+      try { await directSample('只回复两个字：正常', { maxTokens: 20, json: false, temperature: 0 }); lsSet('hrpg:dsbad', null); KEYMSG = '✓ 已保存，已接上 DeepSeek，可以开始玩了'; KEY_OPEN = false; const el = $('#kIn'); if (el) el.value = ''; }
+      catch (e) {
+        const w = (e && e.message) || String(e);
+        if (/HTTP 40[0-3]/.test(w) && /型号|model/i.test(w) && m) { lsSet('hrpg:dsmodel', old[1]); }
+        if (/HTTP 40[123]/.test(w)) lsSet('hrpg:dsbad', w); else lsSet('hrpg:dsbad', null);
+        KEYMSG = '已保存，但试连没通：' + w;
+      }
+      webKeyRefresh(); KEYSAVING = ''; render(); return;
+    }
     try {
       const r = await api('/api/quick-key', { apiKey: k || undefined, model: m || undefined });
       await refreshKey();
@@ -5178,8 +5209,10 @@ render();
     const [sm, db, user] = await Promise.all([c.use('sample'), c.use('db'), c.use('user')]);
     SAMPLE = sm; DB = db;
     try { UID = user ? await user.id() : null; } catch (_) { UID = null; }
-  } else if (location.protocol.startsWith('http')) {
-    try { const h = await api('/api/health'); if (h && h.ok) { MODE = 'local'; SAMPLE = deskSample; watchUpdate(); await refreshKey(); try { const r = await api('/api/hpacks'); RUNHIST = arr(r.packs).filter(p => p && Array.isArray(p.range) && Array.isArray(p.events)); } catch (_) { RUNHIST = []; } } } catch (_) { MODE = 'none'; }
+  } else {
+    try { if (!location.protocol.startsWith('http')) throw 0; const h = await api('/api/health'); if (h && h.ok) { MODE = 'local'; SAMPLE = deskSample; watchUpdate(); await refreshKey(); try { const r = await api('/api/hpacks'); RUNHIST = arr(r.packs).filter(p => p && Array.isArray(p.range) && Array.isArray(p.events)); } catch (_) { RUNHIST = []; } } } catch (_) { MODE = 'none'; }
+    // 没有本机游戏程序（在线打开、或把网页存到电脑上双击打开）：网页版，浏览器直接连 DeepSeek，只要填 Key
+    if (MODE !== 'local') { MODE = 'web'; SAMPLE = directSample; webKeyRefresh(); }
   }
   READY = true;
   const last = lsGet('hrpg:last');
