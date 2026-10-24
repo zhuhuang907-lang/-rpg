@@ -1701,15 +1701,22 @@ const OF_RANK = { 史料: 3, 推断: 2, 正文: 1, 拟: 1 };
 const ofYM = v => { const m = String(v == null ? '' : v).match(/(-?\d+)(?:[.\-年](\d+))?/); return m ? +m[1] * 12 + (m[2] ? +m[2] : 1) : null; };
 const ofHere = (s, o) => { const k = geoStem(o.place); return k.length >= 2 && String(s.place.full || '').includes(k); };
 // 离任不详的：照常例算任期（州县官多三年一任；史料确载的放宽到六年），过了就当任满，去定接任的人
-const ofEnd = o => { const b = ofYM(o.until); if (b != null) return b; const a = ofYM(o.since); return a == null ? null : a + (o.src === '史料' ? 72 : 36); };
-function ofNow(s, o) { const n = ymOf(s.clock), a = ofYM(o.since), b = ofEnd(o); return (a == null || a <= n) && (b == null || b >= n); }
+// 没查到离任、调走的记录：照常理他还在这个任上（史书多只记到任、不记离任），直到查到接任的人；最长算十二年
+const ofEnd = o => { const b = ofYM(o.until); if (b != null) return b; const a = ofYM(o.since); return a == null ? null : a + 144; };
+function ofNow(s, o) {
+  const n = ymOf(s.clock), a = ofYM(o.since), b = ofEnd(o);
+  if (!((a == null || a <= n) && (b == null || b >= n))) return false;
+  // 没写离任的：同一职位上已经有了后来到任的人，就算他卸任了
+  if (ofYM(o.until) == null && a != null && arr(s.offices).some(e => e !== o && e.post === o.post && geoStem(e.place) === geoStem(o.place) && ofYM(e.since) != null && ofYM(e.since) > a && ofYM(e.since) <= n)) return false;
+  return true;
+}
 /** 此地此刻在任的（照所在地方与它上一级的名字认） */
 function officialsHere(s) {
   return arr(s.offices).filter(o => o && o.name && ofHere(s, o) && ofNow(s, o));
 }
 function officialsBlock(s) {
   const L = officialsHere(s); if (!L.length) return '';
-  return `【本地官员名册（此刻在任；写到这些职位上的人一律用这些名字，不改名、不另起一个、不写「某」；名册里没有的职位：州府县长官和更高的官，正文只称官衔（如「县尊」「府台」「知州大人」），不编名字；小吏差役才照常理起一个合乎时代的全名）】\n` + L.map(o => `${o.post}（${o.place}）：${o.name}${o.rank ? '，本官' + o.rank : ''}${o.superior ? '，上司' + o.superior : ''}${o.since ? '，' + o.since + '到任' : ''}${o.until ? '，' + o.until + '离任' : ''}${o.src === '推断' ? '［据任期推断' + (o.basis ? '：' + o.basis : '') + '］' : o.src === '拟' ? '［史料无考，拟］' : ''}${o.note ? '；' + o.note : ''}`).join('\n');
+  return `【本地官员名册（此刻在任；写到这些职位上的人一律用这些名字，不改名、不另起一个、不写「某」；名册里没有的职位，照常理起一个合乎时代的全名）】\n` + L.map(o => `${o.post}（${o.place}）：${o.name}${o.rank ? '，本官' + o.rank : ''}${o.superior ? '，上司' + o.superior : ''}${o.since ? '，' + o.since + '到任' : ''}${o.until ? '，' + o.until + '离任' : ''}${o.src === '推断' ? '［据任期推断' + (o.basis ? '：' + o.basis : '') + '］' : o.src === '拟' ? '［史料无考，拟］' : ''}${o.note ? '；' + o.note : ''}`).join('\n');
 }
 /** 要不要（重）查：此地没有名册、名册里有人任期已满、或隔了一年没核过 */
 const officialsDue = s => s && s.clock && !(s.offFail != null && s.turn - s.offFail < 4) && (!officialsHere(s).length || s.offAt !== s.place.full + '|' + s.clock.y || arr(s.offices).some(o => ofHere(s, o) && ofEnd(o) != null && ofEnd(o) < ymOf(s.clock) && !s.offices.some(e => e !== o && e.post === o.post && geoStem(e.place) === geoStem(o.place) && ofNow(s, e))));   // 有人任满、还没定接任的
@@ -1748,8 +1755,8 @@ ${s.inst ? '【本朝官制】' + cut(s.inst.summary, 300) + '\n' : ''}${old.len
 要定的职位（照本朝本代真实的官名，八到十四个）：本州府的长官与主要佐贰、本县的长官与佐官、学官、管治安捕盗的（巡检、县尉、军巡之类）、守城门关津的、驻在此地或管着此地的武官、管着此地的上一级长官（监司、巡抚、观察使、节度使之类，照本朝）；在京城就加上京城的长官与禁军、城门、治安各衙门。每人写清本官（品级）、差遣和直属上司。
 按下面的次序定（不许写「某」「佚名」）：
 1. 资料或正史、方志确载此刻在任的——写他，src 写「史料」。
-2. 资料只有历任名单、到任离任年月的——自己推算此刻是谁：甲某年某月到任、乙某年某月接任，中间这段就是甲在任；某人二月到任、十一月调走，那么十月在任的就是他。src 写「推断」，basis 写清依据（谁哪年到任、谁哪年接任）。查到的名单有空档，就用最近的前任或后任合理推断。
-3. 真的查不到任何线索：州府县的长官、佐贰和更上一级的长官，这些位子上本有真人，不许拿编的名字顶——name 写「失考」，正文只称官衔；只有巡检、典史、驿丞、吏员、营里的低级武官这类史书多半不记名的小职，才照常理拟一个合乎身份的全名（官员守回避：多是外省人，不用本地望族的姓氏），src 写「拟」。
+2. 资料只有历任名单、到任离任年月的，或者只查到前些年在这个位子上的是谁——自己推算此刻是谁。查不到此刻的，就看之前能查到的是谁：他到任以后没有调走、离任、丁忧、死去的记录，或者他在这个任上记载的时间很长（久任本地），就推断他此刻仍在任；甲某年某月到任、乙某年某月接任，中间这段就是甲在任；某人二月到任、十一月调走，那么十月在任的就是他。src 写「推断」，basis 写清依据（谁哪年到任、谁哪年接任）。查到的名单有空档，就用最近的前任或后任合理推断。
+3. 前后都查不到任何一个在这个位子上的人，才照这个年代这个地方的常理拟一个合乎身份的全名（官员守回避：多是外省人，不用本地望族的姓氏；不与同时同地的真人重名），src 写「拟」。每个职位都给出一个人的全名，不许空着、不许写「某」「佚名」「不详」。
 前后不能矛盾：一个人同一时候只在一个地方任一个职；已死的人不能在任；任期起止要合本朝常例（州县官多三年一任）。since、until 写「年.月」（如 1629.2），不知道离任就空着。
 只输出一个 JSON 对象：{"officials":[{"post":"职位（差遣/实职）","rank":"本官或寄禄官与品级（照本朝，如「朝请郎（正七品）」「正七品」）","superior":"直属上司的职位与全名","place":"哪个府州县（写当时的名称）","name":"全名","since":"到任年.月","until":"离任年.月或空","src":"史料/推断/拟","basis":"推断的依据（史料、拟的可空）","note":"此人此时的作为或口碑一句（可空）"}]}`, null, { maxTokens: 2500, temperature: 0.2, kind: '任官' });
   const d = parseJSON(text); if (!d || !Array.isArray(d.officials)) throw { code: 'bad_json' };
@@ -3112,7 +3119,9 @@ async function cbdbPerson(name, y) {
     const text = `「${b.ChName || name}」${b.YearBirth && b.YearBirth !== '0' ? '生于' + b.YearBirth : ''}${b.YearDeath && b.YearDeath !== '0' ? '，卒于' + b.YearDeath : ''}${b.IndexAddr ? '，籍贯' + b.IndexAddr : ''}。任官（年份为大致）：${near.map(fmt).join('；') || '（此时前后无记载）'}${rest.length ? '。其他任官（年份不详或较远）：' + rest.map(fmt).join('；') : ''}`;
     // 程序推算此刻在任：某年任甲、下一任从某年起，此刻就在甲任上；只有起年的，按常例算三年一任
     const dated = posts.filter(x => x.f).sort((a2, b2) => a2.f - b2.f);
-    const nowP = dated.filter((x, i) => x.f <= y && y <= (x.l || (dated[i + 1] && dated[i + 1].f > x.f ? dated[i + 1].f - 1 : x.f + 3)));
+    // 只记了起年的：到下一任起年之前都算在这个任上；之后再没有任官记录的，照常理还在这个任上（到卒年，最长十二年）
+    const dY = +b.YearDeath || null;
+    const nowP = dated.filter((x, i) => x.f <= y && y <= (x.l || (dated[i + 1] && dated[i + 1].f > x.f ? dated[i + 1].f - 1 : Math.min(dY || 9999, x.f + 12))));
     return (CBDB_CACHE[name] = { name: b.ChName || name, born: +b.YearBirth || null, died: +b.YearDeath || null, native: b.IndexAddr || '', posts: dated.slice(0, 30), now: nowP.map(fmt).slice(0, 3), text: text + (nowP.length ? `\n程序照任官年份推算：${y}年他最可能在任 ${nowP.map(fmt).join('；')}` : '') });
   } catch (_) { return null; } finally { clearTimeout(t); }
 }

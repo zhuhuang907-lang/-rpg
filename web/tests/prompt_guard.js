@@ -72,7 +72,7 @@ const checks = [
   ['不为凑主线改主角出身所在、不一定在历史焦点、账房擅自搬家不认', /绝不为了离某件大事近、凑上历史主线而改动他的籍贯/.test(src) && /主角不一定身在历史焦点/.test(rules) && /const moveOk = /.test(src) && !/这个身份最有戏/.test(src)],
   ['有记载的人照蛛丝马迹：定设定列出记载与推断、交给写开场的，开局记账不改身份籍贯', /"traces"/.test(src) && /蛛丝马迹/.test(src) && /史料里关于他的记载/.test(src) && /role: rr\.role \|\| d\.setup\.role/.test(src) && /nativePlace: rr\.native/.test(src)],
   ['玩家能改历史：真人命运当场改、亲手拿掉关键条件直接到门槛、改过的照本局写、不加戏不抹后果', /realFates/.test(src) && /INF_STEP \* 2/.test(src) && /玩家能改变历史/.test(rules) && /这件大事已被主角的作为改了/.test(src) && /主角做过的事引起的后果不算加戏/.test(src) && /o\.fate && o\.deadY/.test(src)],
-  ['少编造：不逼 AI 凑数（人物、大事、外事、年代志、史料包）、查不到的主官不编名字、写正文温度压低、推演开深度思考并先想常理', !/十到十六|三到六条）：|五到十二条|三十到六十条|二十到四十人|每个职位都必须给出一个人的全名/.test(src) && /name 写「失考」/.test(src) && /STORY_T = 0\.[0-7]/.test(src) && /kind === '裁定'\)\) extra = \{ \.\.\.extra, thinking: true \}/.test(src) && /熟读那段历史的人看了觉得合情合理/.test(src)],
+  ['少编造：不逼 AI 凑数（人物、大事、外事、年代志、史料包）、官员照前任推断（没调走记录就仍在任）、虚构人物照常起名、写正文温度压低、推演开深度思考并先想常理', !/十到十六|三到六条）：|五到十二条|三十到六十条|二十到四十人/.test(src) && /之前能查到的是谁：他到任以后没有调走/.test(src) && /最长算十二年/.test(src) && /STORY_T = 0\.[0-7]/.test(src) && /kind === '裁定'\)\) extra = \{ \.\.\.extra, thinking: true \}/.test(src) && /熟读那段历史的人看了觉得合情合理/.test(src)],
   ['账号模式先关着：不要求登录、以前的账号数据照旧能用', /const ACCOUNTS_ON = false/.test(src) && /ACCOUNTS_ON && !WHO && READY/.test(src)],
   ['身份变化要有正文为凭、推演凭空的意外不用', /账房擅自改了主角的身份/.test(src) && /推演凭空加的意外/.test(src) && /推演只回答玩家这一步会怎样/.test(src)],
   ['不攀附名人：规则写明、推演不请真人进场面、程序查熟人口吻', /7\. 不攀附/.test(rules) && /偏远地方的小人物不认识名人/.test(rules) && /function climbing/.test(src) && /远在别处、跟主角没有来往的名人不列/.test(src)],
