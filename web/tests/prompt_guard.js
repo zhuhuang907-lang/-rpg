@@ -76,6 +76,7 @@ const checks = [
   ['没填博查时另起一路 DeepSeek 当检索员（不带剧情材料、不开思考），结果标明未经网页核对', /async function dsLookup/.test(src) && /你是一名史料检索员，只管查资料，不写故事/.test(src) && /DSM\(\) && !\(KEY && KEY\.bocha\)/.test(src) && /DeepSeek 检索，未经网页核对/.test(src)],
   ['档案馆：每回全文另存（桌面版文件、网页版 IndexedDB），翻出相关旧事交给推演和写正文；照档案编史书、写小说', /const ARC = \(\(\) =>/.test(src) && /ARC\.add\(s, \{ turn, when/.test(src) && /archiveBlock\(s, said\)/.test(src) && /const ab = archiveBlock/.test(src) && /async function writeBook/.test(src) && /\['arc', '档案馆'\]/.test(src) && /arc-add/.test(fs.readFileSync(require('path').join(__dirname, '..', '..', 'rpg-kernel', 'server.js'), 'utf8'))],
   ['游戏里一键删这一局（连同它的档案馆）、每局一个档案馆、编书可选', /id="delThis"/.test(src) && /删掉这一局（连同它的档案馆）/.test(src) && /编书（可选，不点就不写）/.test(src) && /这一局的档案馆/.test(src)],
+  ['联网只查玩家这一步用得着的：不轮换搜无关的天下形势律令财政、推演不凑数、维基不读年号条目', /function ambientQueries\(s, said\)/.test(src) && !/律令 刑法/.test(src) && !/至少一半要搜/.test(src) && /每条都要说得出是为这一步里的哪件事查的/.test(src) && /return q\.slice\(0, 5\)/.test(src)],
   ['账号模式先关着：不要求登录、以前的账号数据照旧能用', /const ACCOUNTS_ON = false/.test(src) && /ACCOUNTS_ON && !WHO && READY/.test(src)],
   ['身份变化要有正文为凭、推演凭空的意外不用', /账房擅自改了主角的身份/.test(src) && /推演凭空加的意外/.test(src) && /推演只回答玩家这一步会怎样/.test(src)],
   ['不攀附名人：规则写明、推演不请真人进场面、程序查熟人口吻', /7\. 不攀附/.test(rules) && /偏远地方的小人物不认识名人/.test(rules) && /function climbing/.test(src) && /远在别处、跟主角没有来往的名人不列/.test(src)],
