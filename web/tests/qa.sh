@@ -49,6 +49,7 @@ start ai.js && {
   run "改错不卡：一键反馈、说写错了、改这段文字、重写这一条，改完接着玩" 900 node fixflow.js
   run "开关与按钮：旧版的「关」不生效、篇幅记住、自检网络报告更新分支换 Key 都有结果、侧栏无怪字、建议只写进输入框" 600 node controls.js
   run "旧存档：缺新册子、旧写法的局读得进来、每页画得出、能接着玩、刷新还在" 600 node oldsave.js
+  run "人走到哪地图跟到哪：出门办事地图换成所在地、标出家和离家多远、对不上的地名照年代查出当时县名、回家换回、换了年代照当年州县重画" 600 node travel.js
   run "档案馆：每回全文另存进游戏文件夹、刷新还在、按人名翻出旧事、写成史书小说能下载、刷新后书还在" 600 node archive.js
   [ -z "${QUICK:-}" ] && run "自定开局" 600 node custom.js
   [ -z "${QUICK:-}" ] && run "网页版模式" 600 node claudemode.js
