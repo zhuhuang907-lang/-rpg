@@ -995,7 +995,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261024183109';
+const BUILD = '20261024190152';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -1944,12 +1944,39 @@ function onTopic(q, text) {
   if (!toks.length) return true;
   return t.includes(toks[0]) || toks.filter(x => t.includes(x)).length >= 2;
 }
+/** 没填博查 Key 时，另起一路 DeepSeek 当检索员（和写剧情的那一路分开：单独的请求、只有检索员的规矩、不带任何剧情材料、不开思考），
+ *  照它熟知的史书、方志、通行百科给出条目；明说拿不准的不给。结果标「DeepSeek 检索」，比博查和维基低一级 */
+const DSQ_CACHE = {};
+async function dsLookup(queries) {
+  const qs = [...new Set(arr(queries).map(q => String(q || '').trim()).filter(q => q.length >= 2 && !(q in DSQ_CACHE)))].slice(0, 6);
+  if (qs.length) {
+    try {
+      const { text } = await callClaude(`你是一名史料检索员，只管查资料，不写故事。下面是几条搜索词，请像搜索引擎那样，照你确知的正史、实录、方志、通行百科给出相关条目：每条一句到三句的事实（人名、官职、年份、地名、数目要准），写明出处（书名篇名或「通行史书」）。
+规矩：拿不准的不给，宁缺毋滥；小说、演义、影视、游戏里的不收；不推测、不编造；某条搜索词你确实不知道，就给空列表。
+搜索词：
+${qs.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+只输出一个 JSON 对象：{"results":[{"q":"原样的搜索词","items":[{"title":"条目名","snippet":"事实","src":"出处"}]}]}`, null, { maxTokens: 3000, temperature: 0.1, kind: '检索', detached: true, thinking: false });
+      const d = parseJSON(text);
+      for (const q of qs) DSQ_CACHE[q] = [];
+      for (const x of arr(d && d.results)) {
+        const q = qs.find(q0 => q0 === String(x && x.q || '').trim()) || qs[arr(d.results).indexOf(x)];
+        if (q) DSQ_CACHE[q] = arr(x.items).filter(i => i && i.snippet && !FICTION_RE.test(i.title || '')).slice(0, 3).map(i => ({ title: one(i.title, 30) || q, snippet: cut(i.snippet, 220) + (i.src ? `（${one(i.src, 30)}；DeepSeek 检索，未经网页核对）` : '（DeepSeek 检索，未经网页核对）'), url: '' }));
+      }
+    } catch (e) { if (e && e.code === 'cancelled') throw e; }
+  }
+  return arr(queries).map(q => ({ q, items: DSQ_CACHE[String(q || '').trim()] || [], provider: 'deepseek' }));
+}
 async function doLookups(s, queries, both) {
   if (!queries.length) return null;
   let r;
   const sig = (TURN && TURN.signal) || (CTL && CTL.signal);
   try { r = await Promise.race([MODE === 'local' ? api('/api/lookup', { queries, both: !!both }) : browserLookup(queries, both), new Promise((_, rej) => { if (sig) { if (sig.aborted) rej({ code: 'cancelled' }); sig.addEventListener('abort', () => rej({ code: 'cancelled' }), { once: true }); } })]); }
   catch (e) { if (e && e.code === 'cancelled') throw e; if (++SEARCH_DOWN >= 2) { SEARCH_OFF = '游戏服务没有回应'; SEARCH_OFF_AT = Date.now(); } return { err: '游戏服务没有回应' }; }
+  // 没填博查：维基没查到（或要卡准年份的）由 DeepSeek 检索员补上
+  if (DSM() && !(KEY && KEY.bocha) && r && Array.isArray(r.results)) {
+    const need = r.results.filter(x => both || !arr(x.items).length).map(x => x.q);
+    if (need.length) { const ds = await dsLookup(need); for (const y of ds) { const x = r.results.find(o => o.q === y.q); if (x && y.items.length) { x.items = arr(x.items).slice(0, 2).concat(y.items); x.provider = arr(x.items).length > y.items.length ? 'mixed' : 'deepseek'; x.error = ''; } } }
+  }
   const shown = [], errs = [];
   for (const x of arr(r.results)) {
     if (x.error && !arr(x.items).length) { errs.push(`${x.q}：${x.error}`); continue; }
@@ -2226,8 +2253,9 @@ const OF_RANK = { 史料: 3, 推断: 2, 正文: 1, 拟: 1 };
 const ofYM = v => { const m = String(v == null ? '' : v).match(/(-?\d+)(?:[.\-年](\d+))?/); return m ? +m[1] * 12 + (m[2] ? +m[2] : 1) : null; };
 const ofHere = (s, o) => { const k = geoStem(o.place); return k.length >= 2 && String(s.place.full || '').includes(k); };
 // 离任不详的：照常例算任期（州县官多三年一任；史料确载的放宽到六年），过了就当任满，去定接任的人
-// 没查到离任、调走的记录：照常理他还在这个任上（史书多只记到任、不记离任），直到查到接任的人；最长算十二年
-const ofEnd = o => { const b = ofYM(o.until); if (b != null) return b; const a = ofYM(o.since); return a == null ? null : a + 144; };
+// 没查到离任、调走的记录：照常理他还在这个任上（史书多只记到任、不记离任），不按年头换人；
+// 到他调走、有新官接任、致仕、病故为止——这些由 verifyTenures 去查（久任的人查他后来去了哪、有没有接任的、生卒年岁）
+const ofEnd = o => { const b = ofYM(o.until); if (b != null) return b; return null; };
 function ofNow(s, o) {
   const n = ymOf(s.clock), a = ofYM(o.since), b = ofEnd(o);
   if (!((a == null || a <= n) && (b == null || b >= n))) return false;
@@ -2266,7 +2294,40 @@ function mergeOffices(s, list, src0) {
 let OFF_P = null;
 /** 一次只查一份：后台趁空查着的时候，这一回直接等它，不另查一遍 */
 function ensureOfficials(s) { if (OFF_P) return OFF_P; OFF_P = ensureOfficials0(s).finally(() => { OFF_P = null; }); return OFF_P; }
+/** 久任的官：去查他后来有没有调走、升迁、丁忧、致仕、病故，这个位子有没有新官接任；查到了就记下离任，查不到就照旧在任。年老的照常理致仕或病故 */
+async function verifyTenures(s) {
+  const n = ymOf(s.clock), y = s.clock.y;
+  const due = officialsHere(s).filter(o => o.name && !o.until && o.src !== '拟' && ofYM(o.since) != null && n - ofYM(o.since) >= 30 && o.checkedY !== y).slice(0, 3);
+  if (!due.length) return 0;
+  let changed = 0;
+  const cb = await Promise.all(due.map(o => cbdbPerson(o.name, y).catch(() => null)));
+  const tmp = { research: [], wikiDone: [], turn: s.turn, clock: s.clock, place: s.place, title: s.title };
+  if (canSearch()) { try { await doLookups(tmp, due.flatMap(o => [`${o.name} ${o.post} 调任 升任 迁`, `${o.name} 卒 致仕 丁忧`, `${o.place} ${o.post} 继任 接任 ${String(o.since).slice(0, 4)}年后`]), true); } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+  const R = arr(tmp.research).filter(x => x.text);
+  let d = null;
+  try {
+    const { text } = await callClaude(`你是史料检索员，替一局历史模拟游戏核实几位官员此刻（${timeText(s.clock)}，${y}年${s.clock.m}月）是否还在原任上。判断只照下面的资料和确知的通行史实；资料里没有他调走、升迁、丁忧、致仕、去世的记录，也没有别人接任这个位子的记录，就判定他仍在任（史书多只记到任、不记离任，不要因为年头久就判他离任）。
+${due.map((o, i) => `${i + 1}. ${o.name}：${o.post}（${o.place}），${o.since}到任［${o.src}］${cb[i] ? '\n   CBDB：' + cut(cb[i].text, 500) : ''}`).join('\n')}
+${R.length ? '【联网查到的资料】\n' + R.map(x => `· 查「${x.q}」：${cut(x.text, 500)}`).join('\n') : '（没查到资料）'}
+只输出一个 JSON 对象：{"people":[{"name":"","still":true,"left":"离任年.月（仍在任就空）","why":"调任何职/升迁/丁忧/致仕/病故/某某接任（仍在任就空）","successor":"接任的人（不知道就空）","basis":"依据哪条资料"}]}`, null, { maxTokens: 1500, temperature: 0.1, kind: '核任期' });
+    d = parseJSON(text);
+  } catch (e) { if (e && e.code === 'cancelled') throw e; }
+  due.forEach((o, i) => {
+    o.checkedY = y;
+    const c = cb[i], r = arr(d && d.people).find(x => x && x.name === o.name);
+    // 程序先照 CBDB 定：卒年已过就到卒年；后来另有任官（起年在到任之后、此刻之前）就到那一年
+    const a = Math.floor(ofYM(o.since) / 12);
+    const later = c ? arr(c.posts).filter(x => x.f > a && x.f <= y && !(x.a && geoStem(x.a) && geoStem(o.place) && String(x.a).includes(geoStem(o.place)))) : [];
+    if (c && c.died && c.died <= y) { o.until = c.died + '.1'; o.basis = cut((o.basis ? o.basis + '；' : '') + `卒于${c.died}年（CBDB）`, 80); changed++; return; }
+    if (later.length) { o.until = later[0].f + '.1'; o.basis = cut((o.basis ? o.basis + '；' : '') + `${later[0].f}年改任${later[0].o}（CBDB）`, 80); changed++; return; }
+    if (r && r.still === false && ofYM(r.left) != null && ofYM(r.left) <= n) { o.until = one(r.left, 10); o.basis = cut((o.basis ? o.basis + '；' : '') + one(r.why, 30) + (r.basis ? '（' + one(r.basis, 30) + '）' : ''), 80); changed++; if (one(r.successor, 10).length >= 2) mergeOffices(s, [{ post: o.post, place: o.place, name: one(r.successor, 10), since: one(r.left, 10), src: '推断', basis: '接' + o.name + '的任' }], '推断'); return; }
+    // 年老：照那个年代的常例，七十致仕
+    if (c && c.born && y - c.born >= 70) { o.until = (c.born + 70) + '.1'; o.basis = cut((o.basis ? o.basis + '；' : '') + `生于${c.born}年，年已七十，照例致仕`, 80); changed++; }
+  });
+  return changed;
+}
 async function ensureOfficials0(s) {
+  try { await verifyTenures(s); } catch (e) { if (e && e.code === 'cancelled') throw e; }
   const pl = String(s.place.full || ''), y = s.clock.y, yl = s.clock.yearLabel || (y + '年'), pol = s.place.polity || '';
   const fu = (pl.match(/[^省道路\s]{2,4}(府|州|郡)/) || [''])[0], xian = (pl.match(/[^府州郡\s]{2,4}(县|縣)/) || [''])[0], top = fu || pl;
   const qs = [`${top} 历任 长官 ${pol}`, `${top} ${yl} 知府 刺史 太守 知州`, `${top}志 职官志 ${pol}`, `${xian || top} 历任 知县 县令 ${pol}`, `${xian || top} ${yl} 到任`, `${top} ${y}年 官员 到任 离任 调任`, `${top} ${pol} 驻军 将领 ${yl}`].filter(q => q.trim().length > 4);
