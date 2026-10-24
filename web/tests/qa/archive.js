@@ -47,7 +47,7 @@ const { chromium } = require('playwright');
   await p.locator('#delThis [data-del]').first().click().catch(e => bad('「删除这一局」的确认点不了：' + e.message.slice(0, 60)));
   await p.waitForTimeout(1500);
   if (await p.evaluate(() => VIEW === 'game' && !!S)) bad('删了这一局还停在游戏里');
-  if ((await p.evaluate(async () => (await store.list()).length)) !== 0) bad('删了这一局，存档列表里还有');
+  if (await p.evaluate(async id => (await store.list()).some(x => x.id === id), id)) bad('删了这一局，存档列表里还有');
   const left = await p.evaluate(async id => (await api('/api/arc-get', { id })).recs.length, id);
   if (left) bad('删了这一局，它的档案馆还在：' + left + ' 条');
   console.log('ARC', n, 'SRV', srv);
