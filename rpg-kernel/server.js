@@ -312,6 +312,12 @@ const routes = {
     }
     return out;
   },
+  /* 浏览器直连 DeepSeek 用：本机游戏程序（node.exe）被防火墙、杀毒软件、代理拦住时，页面改由浏览器自己连 DeepSeek，要用存着的 Key。
+     只答本机游戏页面（别的网站来的请求在入口就被拒了），POST + JSON 也挡住了跨站的简单请求 */
+  async 'POST /api/dskey'() {
+    const c = (await adapters.loadAdapterConfig()).configs?.deepseek || {};
+    return c.apiKey ? { ok: true, key: c.apiKey, model: c.model || 'deepseek-v4-pro' } : { ok: false, why: '还没存 Key' };
+  },
   /* 列出这个 Key 能用的模型型号（DeepSeek /models） */
   async 'POST /api/models'(body) {
     const b = body || {};

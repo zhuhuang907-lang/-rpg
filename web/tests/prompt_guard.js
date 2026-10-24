@@ -63,6 +63,8 @@ const checks = [
   ['人物有来有去：远处的人不硬凑出场、联络照身份、断了的线就断了', /故人重逢只能是偶然/.test(rules) && /联络照身份来/.test(rules) && /断了的线就断了/.test(rules) && /很多日子里本来就无事发生/.test(rules)],
   ['写正文只拿眼前的人，远处的只给名字', /function splitPeople/.test(src) && /P = forStory \? NEAR/.test(src) && /farLine\(FAR\)/.test(src)],
   ['天下推演不凑人数、意外默认空着', !/三到六人/.test(src) && /多数回合空着/.test(src)],
+  ['游戏程序连不上 DeepSeek 时自动改由浏览器直连', /async function directSample/.test(src) && /SAMPLE = deskSample/.test(src) && /'POST \/api\/dskey'/.test(server) && /netFail\(r\.test\.why\)/.test(src)],
+  ['拿米价量家底、进项、田价、日常物价', /function grainNormal/.test(src) && /const GOODS = /.test(src) && /一个平头百姓没有这么多现钱/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

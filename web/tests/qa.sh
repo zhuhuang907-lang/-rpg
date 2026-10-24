@@ -16,7 +16,7 @@ start() {   # $1 = 模拟 AI 的脚本名
   rm -rf "$WORK/rk" && mkdir -p "$WORK/rk" "$WORK/mock"
   tar --exclude=./data --exclude=./node_modules -C "$ROOT/rpg-kernel" -cf - . | tar -C "$WORK/rk" -xf -
   mkdir -p "$WORK/rk/data"
-  printf '{"selected":"deepseek","configs":{"deepseek":{"apiKey":"%s","model":"deepseek-v4-pro","baseUrl":"http://127.0.0.1:%s"}}}' "${KEYVAL-sk-test1234}" "$MOCK_PORT" > "$WORK/rk/data/adapter-config.json"
+  printf '{"selected":"deepseek","configs":{"deepseek":{"apiKey":"%s","model":"deepseek-v4-pro","baseUrl":"http://127.0.0.1:%s"}}}' "${KEYVAL-sk-test1234}" "${DEADDS:-$MOCK_PORT}" > "$WORK/rk/data/adapter-config.json"
   sed "s/MOCKPORT/$MOCK_PORT/g" "$QA/search.json" > "$WORK/rk/data/search.json"
   cp "$QA"/*.js "$WORK/mock/"
   (cd "$WORK/mock" && exec node "./$1" > "$WORK/mock.out" 2>&1) & PIDS+=($!)
@@ -52,6 +52,9 @@ start ai.js && {
   [ -z "${QUICK:-}" ] && run "自定开局" 600 node custom.js
   [ -z "${QUICK:-}" ] && run "网页版模式" 600 node claudemode.js
   [ -z "${QUICK:-}" ] && run "连玩几十回合" 1500 node drive.js
+}
+DEADDS=9 start ai.js && {
+  run "连不上 DeepSeek 时自动改由浏览器直连：存过 Key 的直接开局、重新粘贴 Key 试连都通、接着玩" 900 node dsdirect.js
 }
 if [ -z "${QUICK:-}" ]; then
   start nasty.js && run "捣乱 AI：格式怪、字段类型错、慢、空" 1700 node drive2.js 40 "$GAME_PORT"
