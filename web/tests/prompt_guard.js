@@ -24,7 +24,7 @@ const checks = [
   ['不给玩家看将来的史事', !/<span class="seal">后<\/span>将要发生/.test(src)],
   ['开局立家业（后台照开场立）', /s\.estateDue = true; s\.estateStory = /.test(src) && /buildEstate\(s0, s0\.estateStory/.test(src) && /const cashCap = /.test(src)],
   // 一回合别再一步接一步地干等：后台活最多等三秒；审读、核实、记账一起做；整段重写最多一次
-  ['回合不干等', /Date\.now\(\) - t0 < 3000/.test(src) && !/Date\.now\(\) - t0 < 20000/.test(src) && /const critP = par \? critic\(\) : null/.test(src) && /function within\(/.test(src) && !/verifyText\(S, said, st\.text, rewrite\)/.test(src)],
+  ['回合不干等：后台最多等不到一秒；程序挑出的毛病当场改稿、不等审读；审校审读走快型号', /Date\.now\(\) - t0 < 800/.test(src) && /let early = false/.test(src) && /\^\(检索\|核任期\|研读\|审校\|审读\)\$/.test(src) && !/Date\.now\(\) - t0 < 20000/.test(src) && /const critP = par \? critic\(\) : null/.test(src) && /function within\(/.test(src) && !/verifyText\(S, said, st\.text, rewrite\)/.test(src)],
   ['没有自家兵马也能打仗（随军、守城、统带朝廷的兵）', /ourTroops/.test(src) && /virtual: true/.test(src)],
   ['统带的兵也记进兵马账、编制照本朝', /主角统带、管着的兵/.test(src) && /function unitsText/.test(src) && /unitsBlock\(s\)/.test(src)],
   ['离谱的数标出来交账房改', /function dataDoubts/.test(src) && /账上这些数不合史实/.test(src)],
