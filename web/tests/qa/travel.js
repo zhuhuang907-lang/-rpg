@@ -16,6 +16,10 @@ const { chromium } = require('playwright');
   if (st1.at !== '苏州府吴县') bad('出门到了苏州，没记下人在哪：' + JSON.stringify(st1));
   if (!/扬州/.test(st1.home)) bad('只是出门办事，现居地却变了：' + st1.home);
   if (!/苏州|吴县/.test(st1.head)) bad('第一行的地点没跟着人走：' + st1.head);
+  // 界面跟着变：顶上状态栏写此刻所在、年岁、身份，这一回的变化摆在正文顶上
+  const ui = await p.evaluate(() => ({ st: document.querySelector('#statusLine').innerText, delta: [...document.querySelectorAll('.delta')].map(x => x.innerText).pop() || '' }));
+  if (!/在苏州府吴县（出门在外）/.test(ui.st) || !/\d+岁/.test(ui.st)) bad('顶上状态栏没跟着变：' + ui.st);
+  if (!/到了苏州府吴县/.test(ui.delta) || !/过了\d+天/.test(ui.delta)) bad('正文顶上没写这一回的变化（到了哪、过了几天）：' + ui.delta);
   await p.waitForFunction(() => S.geo && S.geo.place === '苏州府吴县', null, { timeout: 60000 }).catch(() => {});
   const g1 = await p.evaluate(() => S.geo && { here: S.geo.here.name, place: S.geo.place, y: S.geo.y });
   if (!g1 || g1.place !== '苏州府吴县' || g1.here === g0) bad('到了苏州，地图没换：' + JSON.stringify(g1) + ' 原来 ' + g0);
