@@ -445,32 +445,33 @@ const routes = {
     const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
     const GOOD = /baike\.baidu|wikipedia|baike\.sogou|ctext|guoxue|gushiwen|zhonghuadiancang|shidianguji|cnki|cass|historychina|zgdsw|dpm\.org|ndlib|chinaknowledge|douban\.com\/note|zhihu/;
     // 一整批最多等 25 秒：每条最多 12 秒，到点还没回的就算没搜到，不让玩家干等
-    const DEADLINE = Date.now() + 25000;
+    const DEADLINE = Date.now() + 16000;
     // 混合查：先查维基，维基查得到就用；查不到（或维基连不上）再查博查。维基连不上时五分钟内直接走博查
     const race = (p, ms) => Promise.race([p.catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: `超时（${Math.round(ms / 1000)} 秒没回）` }), ms))]);
     const once = async q => {
       const left = () => Math.max(1500, DEADLINE - Date.now());
-      // 第一层：维基百科，查不到再查维基文库（史书原文）；第二层：博查。both（查官员、真人这种要卡准年份的）两层都查，博查放前面
       const netDown = e => /超时|ENOTFOUND|ECONN|fetch failed|timeout|abort|socket|连不上/i.test(String(e || ''));
-      let w = { results: [] };
-      // 有博查就和维基同时查（不再等维基超时了才查博查）：两边都有的，维基在前、博查跟上，矛盾时写的人照博查
+      const tag = (xs, src) => (xs || []).map(x => ({ ...x, src }));
+      // 分工：大势、制度、史事（isW）维基为主、博查跟上；人物、当年当地博查为主，博查没搜到才问维基。两边同时开查，谁也不等谁
       const isW = WORLD.has(q);
-      const bP = isBocha && !isW ? race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(12000, left())) : null;
-      let b0 = null;
-      if (bP && !isW) { b0 = await bP; if ((b0.results || []).length) return { query: q, results: b0.results.map(x => ({ ...x, src: 'bocha' })), provider: 'bocha' }; }   // 人物、本地：博查查到了就不再问维基
-      if (Date.now() - WIKI_DOWN_AT > 300000) {
-        w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(6000, left()));
-        if (!(w.results || []).length && !netDown(w.error)) { const ws = await race(search.search(q, { provider: 'wikisource' }), Math.min(5000, left())); if ((ws.results || []).length) w = { ...ws, provider: 'wikisource' }; }
+      const bP = isBocha ? race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(10000, left())) : null;
+      const wP = (async () => {
+        if (Date.now() - WIKI_DOWN_AT <= 300000) return { results: [] };
+        let w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(6000, left()));
+        if (!(w.results || []).length && !netDown(w.error)) { const ws = await race(search.search(q, { provider: 'wikisource' }), Math.min(4000, left())); if ((ws.results || []).length) w = { ...ws, provider: 'wikisource' }; }
         if (netDown(w.error)) WIKI_DOWN_AT = Date.now();
+        return w;
+      })();
+      if (!isBocha) { const w = await wP; return { query: q, ...w, provider: w.provider || 'wikipedia' }; }
+      if (!isW) {
+        const b = await bP;
+        if ((b.results || []).length) return { query: q, results: tag(b.results.slice(0, 4), 'bocha'), provider: 'bocha' };
+        const w = await wP; return (w.results || []).length ? { query: q, ...w, results: tag(w.results, w.provider || 'wikipedia'), provider: w.provider || 'wikipedia' } : { query: q, ...b, provider: 'bocha' };
       }
-      const wOk = (w.results || []).length;
-      if (isBocha && isW && !(w.results || []).length) { const bw = await race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(12000, left())); if ((bw.results || []).length) return { query: q, results: bw.results.map(x => ({ ...x, src: 'bocha' })), provider: 'bocha' }; }   // 大势维基没搜到（国内多半连不上维基）：改问博查
-      if (!isBocha || isW || b0) return (w.results || []).length || !b0 ? { query: q, ...w, provider: w.provider || 'wikipedia' } : { query: q, ...b0, provider: 'bocha' };
-      const b = await bP;
-      // 两边都有：博查在前（两边说法矛盾时照博查），维基跟上；每条标明出处
-      const tag = (xs, src) => xs.map(x => ({ ...x, src }));
-      if (wOk && (b.results || []).length) return { query: q, results: [...tag(b.results.slice(0, 3), 'bocha'), ...tag(w.results.slice(0, 2), w.provider || 'wikipedia')], provider: 'mixed' };
-      return (b.results || []).length || !wOk ? { query: q, ...b, provider: 'bocha' } : { query: q, ...w, provider: w.provider || 'wikipedia' };
+      const [w, b] = await Promise.all([wP, bP]);
+      const wr = tag((w.results || []).slice(0, 3), w.provider || 'wikipedia'), br = tag((b.results || []).slice(0, 2), 'bocha');
+      if (wr.length || br.length) return { query: q, results: wr.concat(br), provider: wr.length && br.length ? 'mixed' : wr.length ? (w.provider || 'wikipedia') : 'bocha' };
+      return { query: q, results: [], error: w.error || b.error, provider: 'wikipedia' };
     };
     // 没搜到（不是出错）：把查询改短再搜，维基这类搜索框只认简单的词（「扬州府 乾隆二十二年 知府」→「扬州府 知府」→「扬州府」）
     const one = async q => {
