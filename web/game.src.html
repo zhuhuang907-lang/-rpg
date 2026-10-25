@@ -333,6 +333,7 @@ function storyRules() {
   return `你在和玩家一起写一个人在真实历史里的一生。玩家说主角做什么，你写那个年代的世界怎么回应：身边的人怎么说、怎么想、怎么做，事情怎么一步步起变化。你写世界和别人，不替主角想、不替主角说。
 
 头一条铁律：主角的身体、言语、心思和每一个决定，百分之百归玩家——你不调整、不修正、不替他改得更合理，也不替他补上玩家没写的。
+第二条铁律：不凭记忆写史实。真人的名字、官职、行事，官制品级、升迁，地名建置，年份日子，物价，大事经过——只用下面材料里给的（【联网查到的资料】、内置史料、【本地官员名册】、【本朝升迁之制】、本地志、地理册、真人档案）；材料里没有的，不写死具体的名字、数目、年份、经过，只写场面里看得见的样子，或者让书中人说不清、听来的。虚构的小人物照常起名。
 十一条，按轻重排：
 1. 主角只做玩家说的：玩家写了的动作和话，照办、写透，照原样——哪怕不合常理、犯忌、会吃大亏，也不改成更稳妥、更合理、更体面的做法，不让主角临时改主意、迟疑不做、被人劝住，不打折扣、不软化；主角说的话照玩家的意思说出（只把现代词换成那个年代的说法，不改意思）；做错了就让后果来：对方翻脸、被拿、赔钱、受伤、送命，照那个年代该怎样就怎样；玩家没写的话，一句不替主角说；没做的决定，一个不替主角做；主角心里怎么想、对谁什么态度，也不替他写。玩家说了要办什么事、没说怎么办，就照常理把它办下去，办到有了结果（成了、砸了、卡住了）再停，不要只写个开头就停；只有中途真要主角本人开口答话、拿一个玩家没交代的主意时才停。不追问。玩家一句话里有几件事（先去县衙递状子，再去茶肆打听，回家吩咐备车），照先后一件件都写出来，每件都有对方、旁人的真实反应和代价，不拖成好几回；哪一件中途出了岔子、结果改变了后面的事，就停在那里等玩家——玩家说出来的结果（众人跟随、对方答应、事成了）不算数，成不成由各人的利害决定。
 2. 对话和路途归玩家自己：主角和人说话，你只写对方的话、神色、动作，对方说完一段、轮到主角接话时就停——不替主角回答，不把一场谈话一口气写完。主角上路去哪里，就照路程日子一路写到那里（沿途几句见闻、过了几天），到了再写到地方的头一个场面；只有路上真出了要主角拿主意的事（关卡盘查、遇险、被拦、有人搭话求助）才停在那里——不在路上一站一站地拖。
@@ -1112,11 +1113,23 @@ ${cut(kb, 24000)}
 {"era":"适用的政权与年份","summary":"三到六句：本朝官制要点（中枢、地方层级、品阶与官职差遣的关系、选官途径）","local":"主角所在地从上到下的行政层级与各级主官，用本朝本代的层级与官名，如：京师—某道或某路（长官）—某州府（长官）—某县（长官）","ladder":[{"tier":"中枢 / 地方某级 / 武职 / 爵与勋 / 吏役乡役 等","posts":[{"name":"官名","rank":"品级","duty":"一句话职掌","sure":true}]}],"paths":["入仕与升迁的路子，一句一条，含大致年限与条件"],"fixes":[{"yours":"框架里的说法","right":"本局年代应当是","why":"一句话"}],"unsure":["拿不准、玩家可以自己再查的"]}
 ladder 分五到九档，每档列最要紧的三到十个官职。`;
 }
+/** 先查后写：给一个整理活先联网查一轮，返回查到的资料（不往这一局的资料栏里混） */
+async function searchFirst(s, qs) {
+  qs = [...new Set(arr(qs).map(q => String(q || '').replace(/\s+/g, ' ').trim()).filter(q => q.length >= 3))].slice(0, 8);
+  if (!qs.length || !canSearch()) return '';
+  const tmp = { ...s, research: [], searchedQ: [] };
+  try { await within(doLookups(tmp, qs, true), 30000); } catch (e) { if (e && e.code === 'cancelled') throw e; }
+  const R = arr(tmp.research).filter(x => x.text);
+  s.research = arr(s.research).filter(o => !R.some(x => x.q === o.q)).concat(R.map(x => ({ ...x, turn: s.turn }))).slice(-40);
+  return R.length ? '【联网查到的资料（以此为准；资料没有的不凭记忆补，写进 unsure）】\n' + R.map(x => `· 查「${x.q}」：${cut(x.text, 600)}`).join('\n') : '';
+}
 async function buildInst(s) {
   if (INSTING || !s) return;
   INSTING = true; INSTMSG = ''; render();
   try {
-    const { text } = await callClaude(instInput(s, ''), null, { maxTokens: 7000, detached: true });
+    const pol = s.place.polity || '', dy = pol + (/[代朝]$/.test(pol) ? '' : '代'), yl = s.clock.yearLabel || s.clock.y + '年';
+    const found = await searchFirst(s, [`${dy} 官制 中枢`, `${dy} 地方官制 府州县`, `${dy} 官员 品级`, `${dy} 选官 科举 铨选`, `${yl} ${pol} 官制`, `${String(s.place.full || '').replace(/(府|州|县).*$/, '$1')} ${dy} 衙门 建置`]);
+    const { text } = await callClaude(instInput(s, '') + (found ? '\n\n' + found : '\n\n（这次没查到网上资料：只写你确知的，拿不准的一律 sure:false）'), null, { maxTokens: 7000, detached: true });
     const d = parseJSON(text);
     if (!d || !Array.isArray(d.ladder)) throw { code: 'bad_json' };
     const o = v => one(v, 80);
@@ -1574,11 +1587,18 @@ function lookupQueries(s, said, extra) {
     const txt = String(said || '') + (arr(s.chat).slice(-1)[0] || {}).text;
     const seen = new Set();
     for (const h of HALL(s)) for (const f of arr(h.figures)) if (f.name.length >= 2 && !seen.has(f.name) && String(said || '').includes(f.name)) { seen.add(f.name); add(`${f.name} ${yl}`); }
-    if (!hasHist(s) && !arr(s.searchedYears).includes(s.clock.y)) add(`${yl} ${s.place.polity || ''} 大事`);   // 没有内置史料的年代，一年查一次大事
+    if (!hasHist(s) && !arr(s.searchedYears).includes(s.clock.y)) add(`${yl} ${s.place.polity || ''} 大事`);
+    // 每回合都查这一场里的人：玩家点到的、上一回在场的真人和官员（虚构的小人物不查），以及主角此刻的官职
+    const last = String((arr(s.chat).slice(-1)[0] || {}).text || '');
+    const offs = officialsHere(s).filter(o => String(said || '').includes(o.name) || last.includes(o.name) || String(said || '').includes(o.post));
+    for (const o of offs.slice(0, 2)) add(`${o.name} ${o.post} ${yl}`);
+    for (const n of Object.keys(s.dossiers || {})) { const pp = s.dossiers[n]; if (pp && pp.real !== false && n.length >= 2 && (String(said || '').includes(n) || last.includes(n)) && !seen.has(n)) { seen.add(n); add(`${n} ${yl}`); } }
+    const co = String((s.career || {}).office || '').replace(/[（(].*$/, '').slice(0, 10);
+    if (co && (s.turn || 0) % 3 === 0) add(`${s.place.polity || ''} ${co} 职掌 ${yl}`);   // 没有内置史料的年代，一年查一次大事
     if (!hasHist(s) && txt) { /* 没有内置史料的时期：账房列的查证词就是主要来源 */ }
   }
   if (s) for (const x of ambientQueries(s, said)) add(x);
-  return q.slice(0, 7);
+  return q.slice(0, 10);
 }
 /* 网页版没有游戏服务：在浏览器里直接查中文维基百科（开放跨域接口）；连不上就和桌面版一样自动歇一会儿 */
 const WIKI_API = 'https://zh.wikipedia.org/w/api.php';
@@ -2454,7 +2474,9 @@ function influenceBlock(s) {
     + L.map(o => `· ${o.text}：累计 ${o.score} 分${influencePending(s).includes(o) ? '（这回到了门槛，必须照此改写）' : ''}——` + o.log.map(x => `第${x.turn}回${x.how}（碰到：${x.lever}，${x.w}分）`).join('；')).join('\n');
 }
 async function worldTick(s) {
-  const { text } = await callClaude(worldInput(s), null, { maxTokens: 8000, temperature: 0.4, kind: '推演' });
+  const pol = s.place.polity || '', yl = s.clock.yearLabel || s.clock.y + '年', w0 = s.world || {};
+  const found = await searchFirst(s, [`${yl} ${pol} 大事`, `${s.clock.y}年 ${pol} 朝政`, `${s.clock.y + 1}年 ${pol} 大事`].concat(arr(w0.upcoming).filter(u => u.status === '照史').slice(0, 3).map(u => `${String(u.text).split(/[，,；。（(]/)[0].slice(0, 16)} ${u.y}年`)));
+  const { text } = await callClaude(worldInput(s) + (found ? '\n\n' + found + '\n（照史的大事以上面查到的资料为准：年份、人名、经过对不上的照资料改；查不到的不加新的照史大事）' : ''), null, { maxTokens: 8000, temperature: 0.4, kind: '推演' });
   const d = parseJSON(text);
   if (!d || !Array.isArray(d.upcoming)) throw { code: 'bad_json' };
   for (const o of influencePending(s)) o.applied = Math.floor(o.score / INF_STEP);   // 这一档的影响已经交给推演改写过了
@@ -4189,6 +4211,7 @@ function applyReply(s, d, said) {
     for (const [k, v] of Object.entries(s.people || {})) { const f0 = snap0.people[k], f1 = N0(v && v.favor); if (!(k in snap0.people)) dl.push(`新识${k}${v.role ? '（' + one(v.role, 8) + '）' : ''}`); else if (f0 != null && f1 != null && Math.abs(f1 - f0) >= 10) dl.push(`${k}${f1 > f0 ? '更亲近' : '更疏远'}（${f1 > f0 ? '+' : ''}${f1 - f0}）`); }
     for (const n of snap0.hh) if (arr(s.household).some(m => m.name === n && m.dead)) dl.push(`${n}故去`);
     extra.delta = dl.slice(0, 10); s.changed = [...ch];
+    { const R = arr(s.research).filter(x => x.turn === turn); extra.searched = R.length; }   // 这一回联网查到几条：每回合都查，界面上看得见
   }
   if (String(said || '').trim()) s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'me', text: String(said).trim(), turn: s.turn });
   s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'gm', kind: play ? 'play' : 'talk', text: String(d.reply || d.scene || '').trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null, cur: play ? curStatus(s, d) : null,
@@ -4582,7 +4605,7 @@ function renderGame() {
     return `<div class="msg gm ${c.kind === 'talk' ? 'talk' : ''}">
       <div class="lab">${c.kind === 'talk' ? '<span>戏外 · 不花时间</span>' : `<span>第 ${esc(c.turn)} 回合</span><span class="tag">${esc(c.when || '')}${c.extra && c.extra.days ? ` · 过了 ${c.extra.days} 天` : ''}</span>`}</div>
       ${c.extra && c.extra.intro ? introHtml(c.extra.intro) : ''}
-      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}${c.extra && arr(c.extra.delta).length ? `<div class="delta">这一回：${c.extra.delta.map(esc).join(' · ')}</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${paras(c.text)}</div>${curHtml(c.cur)}
+      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}${c.extra && (arr(c.extra.delta).length || c.extra.searched != null) ? `<div class="delta">这一回：${arr(c.extra.delta).map(esc).concat(c.extra.searched != null ? [c.extra.searched ? `联网查了 ${c.extra.searched} 条` : '这一回没查到资料（搜索没连上）'] : []).join(' · ')}</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${paras(c.text)}</div>${curHtml(c.cur)}
       ${c.kind !== 'talk' ? extrasHtml(c.extra && c.extra.salvaged && !(isLast && c.unsettled) ? { ...c.extra, salvagedBtn: false } : c.extra) : ''}
       ${isLast && !BUSY ? `<div class="msgacts">${EDITING ? '<button class="main" id="bEditSave">保存修改</button><button id="bEditCancel">取消</button>'
         : `<button id="bRegen" ${s.prev ? '' : 'disabled title="开场不能重写；想换开场，回首页重开一局"'}>重写这一条</button><button id="bEdit">改这段文字</button>`}</div>${!EDITING && s.prev && c.kind !== 'talk' ? `<div class="fbrow"><span class="muted">这一回有毛病，点一下就照这个重写：</span>${Object.keys(FEEDBACK).map(k => `<button class="chip" data-fb="${esc(k)}">${esc(k)}</button>`).join('')}</div>` : ''}<div id="regenBox"></div>
