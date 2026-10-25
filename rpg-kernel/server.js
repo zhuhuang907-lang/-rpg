@@ -436,6 +436,8 @@ const routes = {
      博查出错时给出明白的原因（Key 无效、余额不足、太频繁），状态记下来给页面显示 */
   async 'POST /api/lookup'(body) {
     const both = !!(body || {}).both;
+    // 分工：天下大势（朝政、战事、大事）归维基；人物、当年当地的光景归博查（博查没搜到再退回维基）
+    const WORLD = new Set((Array.isArray((body || {}).world) ? body.world : []).map(q => String(q || '').trim().slice(0, 60)));
     const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean).slice(0, 10);
     if (!qs.length) return { ok: true, results: [] };
     const cfg = await search.loadConfig();
@@ -452,14 +454,17 @@ const routes = {
       const netDown = e => /超时|ENOTFOUND|ECONN|fetch failed|timeout|abort|socket|连不上/i.test(String(e || ''));
       let w = { results: [] };
       // 有博查就和维基同时查（不再等维基超时了才查博查）：两边都有的，维基在前、博查跟上，矛盾时写的人照博查
-      const bP = isBocha ? race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(12000, left())) : null;
+      const isW = WORLD.has(q);
+      const bP = isBocha && !isW ? race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(12000, left())) : null;
+      let b0 = null;
+      if (bP && !isW) { b0 = await bP; if ((b0.results || []).length) return { query: q, results: b0.results.map(x => ({ ...x, src: 'bocha' })), provider: 'bocha' }; }   // 人物、本地：博查查到了就不再问维基
       if (Date.now() - WIKI_DOWN_AT > 300000) {
         w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(6000, left()));
         if (!(w.results || []).length && !netDown(w.error)) { const ws = await race(search.search(q, { provider: 'wikisource' }), Math.min(5000, left())); if ((ws.results || []).length) w = { ...ws, provider: 'wikisource' }; }
         if (netDown(w.error)) WIKI_DOWN_AT = Date.now();
       }
       const wOk = (w.results || []).length;
-      if (!isBocha) return { query: q, ...w, provider: w.provider || 'wikipedia' };
+      if (!isBocha || isW || b0) return (w.results || []).length || !b0 ? { query: q, ...w, provider: w.provider || 'wikipedia' } : { query: q, ...b0, provider: 'bocha' };
       const b = await bP;
       // 两边都有：博查在前（两边说法矛盾时照博查），维基跟上；每条标明出处
       const tag = (xs, src) => xs.map(x => ({ ...x, src }));

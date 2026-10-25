@@ -1001,7 +1001,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261025142821';
+const BUILD = '20261025143317';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -2017,6 +2017,16 @@ function ambientQueries(s, said) {
   for (let i = 0; i < world.length && out.length < 4; i++) { const q = String(world[(s.turn * 2 + i) % world.length]() || '').replace(/\s+/g, ' ').trim(); if (q.length >= 4 && !done.has(q) && !out.includes(q)) { out.push(q); if (out.filter(x => world.some(w => w() === x)).length >= 2) break; } }
   return out.map(q => q.replace(/\s+/g, ' ').trim()).filter(q => q.length >= 4 && !done.has(q));
 }
+/** 搜索分工：天下大势（朝政、战事、边防、财政、大事、天下形势）是「大势」，交给维基；人物、当年当地的光景（本地官员、物价、年景、行情、街巷）交给博查和 DeepSeek 推断 */
+const WORLD_Q = /朝政|局势|天下|形势|战事|边防|大事|财政|赋税|改元|即位|登基|变法|叛乱|起义|战争|兵变|政变|和议|大势/;
+function isWorldQ(s, q) {
+  q = String(q || '');
+  if (!WORLD_Q.test(q)) return false;
+  const place = s && s.place ? String(s.place.full || '').replace(/(府|州|县|郡|城|镇|乡|村).*$/, '$1') : '';
+  if (place && place.length >= 2 && q.includes(place)) return false;   // 带着本地地名的，算本地光景
+  for (const h of (s ? HALL(s) : [])) for (const f of arr(h.figures)) if (f.name && f.name.length >= 2 && q.includes(f.name)) return false;   // 带着人名的，算人物
+  return true;
+}
 function lookupQueries(s, said, extra) {
   const q = [], add = x => { x = String(x || '').trim(); if (x && x.length >= 2 && !q.includes(x)) q.push(x); };
   for (const x of arr(extra)) add(x);
@@ -2063,16 +2073,22 @@ async function wikisourceFetch(q) {
   try { const r = await fetch('https://zh.wikisource.org/w/api.php?' + new URLSearchParams({ action: 'query', list: 'search', srsearch: q, srlimit: '3', format: 'json', origin: '*' }), { signal: c.signal }); const j = await r.json(); return arr(j && j.query && j.query.search).map(x => ({ title: x.title, snippet: stripTags(x.snippet), url: 'https://zh.wikisource.org/wiki/' + encodeURIComponent(x.title) })); }
   catch (_) { return []; } finally { clearTimeout(t); }
 }
-async function browserLookup(queries, both) {
+async function browserLookup(queries, both, world) {
   // 混合查：先查维基百科，查不到查维基文库（史书原文），再查不到用博查（填了博查 Key 才有）；both：要卡准年份的（官员、真人）两层都查，博查在前
   // 博查和维基同时查（不再等维基没查到才问博查）
-  const bP = BOCHA_KEY ? Promise.all(queries.map(q => bochaFetch(q).then(items => ({ q, items }), e => ({ q, items: [], error: String(e && e.message || e) })))) : Promise.resolve([]);
-  const w = await browserLookupWiki(queries);
-  const res = arr(w.results).map(x => ({ ...x, provider: arr(x.items).length ? 'wikipedia' : '' }));
+  const W = new Set(arr(world)), L = queries.filter(q => !W.has(q));
+  // 分工：大势（W）只问维基；人物、本地（L）有博查先问博查，博查没搜到的再退回维基
+  const bP = BOCHA_KEY ? Promise.all(L.map(q => bochaFetch(q).then(items => ({ q, items }), e => ({ q, items: [], error: String(e && e.message || e) })))) : Promise.resolve([]);
+  let B0 = null;
+  if (BOCHA_KEY && L.length) B0 = await bP;
+  const bEmpty = q => !B0 || !arr((B0.find(x => x.q === q) || {}).items).length;
+  const wq = queries.filter(q => W.has(q) || bEmpty(q));
+  const w = await browserLookupWiki(wq);
+  const res = queries.map(q => { const x = arr(w.results).find(o => o.q === q); if (x) return { ...x, provider: arr(x.items).length ? 'wikipedia' : '' }; const b = B0 && B0.find(o => o.q === q); return { q, items: arr(b && b.items).slice(0, 4).map(i => ({ ...i, src: 'bocha' })), provider: 'bocha' }; });
   await Promise.all(res.filter(x => !arr(x.items).length && !x.error).slice(0, 5).map(async o => { const it = await wikisourceFetch(o.q); if (it.length) { o.items = it; o.provider = 'wikisource'; } }));
   if (BOCHA_KEY) {
-    const B = await bP;
-    for (const o of res) { const b = B.find(x => x.q === o.q); const bi = arr(b && b.items).slice(0, 3).map(x => ({ ...x, src: 'bocha' })); if (bi.length) { const had = arr(o.items).slice(0, 2).map(x => ({ ...x, src: x.src || o.provider || 'wikipedia' })); o.items = bi.concat(had); o.provider = had.length ? 'mixed' : 'bocha'; o.error = ''; } }
+    const B = B0 || [];
+    for (const o of res.filter(o => wq.includes(o.q) && !W.has(o.q))) { const b = B.find(x => x.q === o.q); const bi = arr(b && b.items).slice(0, 3).map(x => ({ ...x, src: 'bocha' })); if (bi.length) { const had = arr(o.items).slice(0, 2).map(x => ({ ...x, src: x.src || o.provider || 'wikipedia' })); o.items = bi.concat(had); o.provider = had.length ? 'mixed' : 'bocha'; o.error = ''; } }
   }
   const used = [...new Set(res.filter(x => arr(x.items).length).map(x => x.provider))];
   return { results: res, provider: used.length > 1 ? 'mixed' : used[0] || 'wikipedia' };
@@ -2126,8 +2142,8 @@ async function dsLookup(queries) {
 async function dsBatch(qs) {
   if (qs.length) {
     try {
-      const { text } = await callClaude(`你是一名史料检索员，只管查资料，不写故事。下面是几条搜索词，请像搜索引擎那样，照你确知的正史、实录、方志、通行百科给出相关条目：每条一句到三句的事实（人名、官职、年份、地名、数目要准），写明出处（书名篇名或「通行史书」）。
-规矩：拿不准的不给，宁缺毋滥；小说、演义、影视、游戏里的不收；不推测、不编造；某条搜索词你确实不知道，就给空列表。
+      const { text } = await callClaude(`你是一名史料检索员，只管查资料，不写故事。下面几条搜索词问的是人物和当年当地的情况，请照你确知的正史、实录、方志、通行百科给出相关条目：每条一句到三句（人名、官职、年份、地名、数目要准），写明出处（书名篇名或「通行史书」）。
+规矩：有记载的照记载；记载不够的（这人这年在哪、这地这年的官员、物价、年景、风俗），照确凿的史实合理推断——条目开头写「推断：」，并写明依据（比如「据其某年任某职、下一任某年到任」「据某府志同期米价」）；推断要站得住，不能凭空捏造人名、官职、事件；小说、演义、影视、游戏里的不收；某条你确实无从推断，就给空列表。
 搜索词：
 ${qs.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 只输出一个 JSON 对象：{"results":[{"q":"原样的搜索词","items":[{"title":"条目名","snippet":"事实","src":"出处"}]}]}`, null, { maxTokens: 3000, temperature: 0.1, kind: '检索', detached: true, thinking: false });
@@ -2135,7 +2151,7 @@ ${qs.map((q, i) => `${i + 1}. ${q}`).join('\n')}
       for (const q of qs) DSQ_CACHE[q] = [];
       for (const x of arr(d && d.results)) {
         const q = qs.find(q0 => q0 === String(x && x.q || '').trim()) || qs[arr(d.results).indexOf(x)];
-        if (q) DSQ_CACHE[q] = arr(x.items).filter(i => i && i.snippet && !FICTION_RE.test(i.title || '')).slice(0, 3).map(i => ({ title: one(i.title, 30) || q, snippet: cut(i.snippet, 220) + (i.src ? `（${one(i.src, 30)}；DeepSeek 检索，未经网页核对）` : '（DeepSeek 检索，未经网页核对）'), url: '', ds: true }));
+        if (q) DSQ_CACHE[q] = arr(x.items).filter(i => i && i.snippet && !FICTION_RE.test(i.title || '')).slice(0, 3).map(i => ({ title: one(i.title, 30) || q, snippet: cut(i.snippet, 220) + (i.src ? `（${one(i.src, 40)}；DeepSeek 检索${/^推断/.test(String(i.snippet)) ? '推断' : ''}，未经网页核对）` : '（DeepSeek 检索，未经网页核对）'), url: '', ds: true }));
       }
     } catch (e) { if (e && e.code === 'cancelled') throw e; }
   }
@@ -2145,9 +2161,11 @@ async function doLookups(s, queries, both) {
   let r;
   const sig = (TURN && TURN.signal) || (CTL && CTL.signal);
   // 三路一起查：博查、维基（游戏服务或浏览器里查）、DeepSeek 快型号检索员，同时开跑，谁也不等谁
-  const dsP = DSM() ? dsLookup(queries).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
+  // 分工：天下大势交给维基；人物、当年当地的情况交给博查和 DeepSeek（DeepSeek 照史实推断，写明依据）
+  const world = queries.filter(q => isWorldQ(s, q)), localQ = queries.filter(q => !world.includes(q));
+  const dsP = DSM() && localQ.length ? dsLookup(localQ).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
   dsP.catch(() => {});
-  try { r = await Promise.race([MODE === 'local' ? api('/api/lookup', { queries, both: !!both }) : browserLookup(queries, both), new Promise((_, rej) => { if (sig) { if (sig.aborted) rej({ code: 'cancelled' }); sig.addEventListener('abort', () => rej({ code: 'cancelled' }), { once: true }); } })]); }
+  try { r = await Promise.race([MODE === 'local' ? api('/api/lookup', { queries, both: !!both, world }) : browserLookup(queries, both, world), new Promise((_, rej) => { if (sig) { if (sig.aborted) rej({ code: 'cancelled' }); sig.addEventListener('abort', () => rej({ code: 'cancelled' }), { once: true }); } })]); }
   catch (e) { if (e && e.code === 'cancelled') throw e; if (++SEARCH_DOWN >= 2) { SEARCH_OFF = '游戏服务没有回应'; SEARCH_OFF_AT = Date.now(); } return { err: '游戏服务没有回应' }; }
   // DeepSeek 检索员的结果并进来：放在博查、维基后面（它没经网页核对），有博查时每条最多补两句，没博查时补三句
   if (r && Array.isArray(r.results)) {
@@ -3672,6 +3690,18 @@ function commandFaults(said, text) {
   }
   return '';
 }
+/** 名字：叙述里写「王某」「某官」这类占位、官职后面写的不是名册上的那个人，都打回 */
+function nameFaults(s, text) {
+  const nar = String(text || '').replace(/「[^」]*」|“[^”]*”/g, ''), out = [];   // 人物话里自称「某」「严某」是古人的说法，不算
+  const ph = nar.match(/[\u4e00-\u9fa5]某(?![某些种处事物日月年时个件位地甲乙丙丁])|某(?:人|官|公|君|大人|老爷|员外|掌柜|甲|乙)/g);
+  if (ph) out.push(`叙述里有占位的名字（${[...new Set(ph)].slice(0, 4).join('、')}）：每个人都要有真名——这个位子史书有人的照【本地官员名册】【真人档案】写，查不到的照名册上的推断写，小人物起一个合乎时代的全名`);
+  for (const o of officialsHere(s)) {
+    const post = String(o.post || '').replace(/[（(].*$/, ''); if (post.length < 2 || !o.name) continue;
+    const m = String(text || '').match(new RegExp(post + '([\u4e00-\u9fa5]{2,3})(?=[，。、；：！？」\s]|大人|老爷|道|说|笑|拍|坐|看|站|一|升|问|到|来|走|喝|命|叫|吩|亲|便|又|也|正|已|在|把|将|从|带|让|请|见|接|听|派|传|差)'));
+    if (m && !/^(大人|老爷|衙门|府衙|县衙|升堂|亲自|本人|自己|说道|一听|一拍|也是|已经|正在|当即)/.test(m[1]) && m[1][0] !== o.name[0]) out.push(`${post}是${o.name}（照【本地官员名册】），正文写成了${m[1]}`);
+  }
+  return out.slice(0, 4);
+}
 function quoteFaults(said, text) {
   const sd = String(said || ''), mine = [...sd.matchAll(/「([^」]{2,})」|“([^”]{2,})”|"([^"]{2,})"/g)].map(m => m[1] || m[2] || m[3]);
   if (!mine.length) { const m = sd.match(/(?:说|道|问|告诉他|对他说|跟他说|骂|喊)[：:，,]?\s*(.{4,})$/); if (m) mine.push(m[1]); }
@@ -3709,6 +3739,7 @@ function draftFaults(s, said, text, span) {
   const sl = slopHits(text), sn = countIn(text, SLOP);
   if (sn >= 6 || sn >= 3 && sn * 1000 / Math.max(1, String(text).length) > 4) out.push(`AI 腔套话太多（${sl.slice(0, 6).join('、')}，共 ${sn} 处）：一律删掉，换成具体的动作、话、物件；人的心思从他做了什么、说了什么里看出来`);
   { const cf = commandFaults(said, text); if (cf) out.push(`玩家吩咐的「${one(cf, 24)}」正文里没写：玩家一句话里的几件事，照先后一件件都写出来，每件都写清做了、对方怎么回应、结果如何`); }
+  { const nf = nameFaults(s, text); if (nf.length) out.push(`人名不对：${nf.join('；')}——不编人名、不写「某」：有记载的照记载，记载不够的照史实合理推断（名册里已推断好），小人物起合乎时代的全名`); }
   { const qf = quoteFaults(said, text); if (qf) out.push(`改了主角的原话：${qf}——主角只说玩家给的话，意思、口气一样，只把现代词换成当时的说法`); }
   { const gf = geoFaults(s, text); if (gf.length) out.push(`地理写错了：${gf.join('；')}——照【县级地理】的方位里程改`); }
   { const bo = bentOrder(said, text); if (bo) out.push(`篡改了玩家的命令：玩家说「${one(said, 40)}」，正文却写「${one(bo, 30)}」——主角照玩家说的原样去做，不让他临时改主意、迟疑、被人劝住、换个稳妥做法；做错了、犯了忌，就写它带来的后果`); }
@@ -4100,6 +4131,9 @@ function nameFixes(s, text) {
     if (!SURNAMES.includes(sur) || PREP.includes(sur)) continue;
     // 「严某」若前面是「某人姓严」之类的整词，仍然起名；同一个占位只起一次
     let nm = s.nameMap[sur + '某'];
+    // 前面带着官职的（「知府王某」「县尉李某」）：这个位子上有名册里的真人，就用他，不另编
+    const before = t.slice(Math.max(0, m.index - 8), m.index), OFF = /(知府|知县|县令|知州|巡抚|总督|刺史|太守|县尉|县丞|主簿|典史|同知|通判|推官|御史|学政|运使|盐政|运司|府尊|县尊|守备|千总|把总|参将|游击|总兵|巡检|驿丞|教谕|训导)$/.exec(before.replace(/[\s，、]/g, ''));
+    if (OFF) { const o = officialsHere(s).find(x => String(x.post).includes(OFF[1]) || OFF[1].includes(String(x.post).slice(-2))); if (o && o.name) { if (!out.some(x => x.wrong === whole)) out.push({ wrong: whole, right: o.name, why: '照名册' }); continue; } }
     if (!nm) {
       const female = m[2] === '氏' || /[娘妇女妻嫂姐妹婆]$/.test(t.slice(Math.max(0, m.index - 2), m.index));
       const pool = female ? GIVEN_F : GIVEN;
