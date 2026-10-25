@@ -461,7 +461,9 @@ const routes = {
       const wOk = (w.results || []).length;
       if (!isBocha) return { query: q, ...w, provider: w.provider || 'wikipedia' };
       const b = await bP;
-      if (wOk && (b.results || []).length) return { query: q, results: both ? [...b.results.slice(0, 3), ...w.results.slice(0, 2)] : [...w.results.slice(0, 2), ...b.results.slice(0, 3)], provider: 'mixed' };
+      // 两边都有：博查在前（两边说法矛盾时照博查），维基跟上；每条标明出处
+      const tag = (xs, src) => xs.map(x => ({ ...x, src }));
+      if (wOk && (b.results || []).length) return { query: q, results: [...tag(b.results.slice(0, 3), 'bocha'), ...tag(w.results.slice(0, 2), w.provider || 'wikipedia')], provider: 'mixed' };
       return (b.results || []).length || !wOk ? { query: q, ...b, provider: 'bocha' } : { query: q, ...w, provider: w.provider || 'wikipedia' };
     };
     // 没搜到（不是出错）：把查询改短再搜，维基这类搜索框只认简单的词（「扬州府 乾隆二十二年 知府」→「扬州府 知府」→「扬州府」）
