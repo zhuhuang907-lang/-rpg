@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
   const v0 = await p.evaluate(() => permLevel(S));
   if (v0 !== 'view') bad('盐商竟能改人事：' + v0);
   // 当成一方之主
-  await p.evaluate(async () => { S.idm = 'emperor'; S.protagonist.role = '皇帝'; S.dossiers = { ...(S.dossiers || {}), 年羹尧: { real: true, born: 1679, died: 1726 }, 刘统勋: { real: true, born: 1698, died: 1773 } }; await buildOrg(S); });
+  await p.evaluate(async () => { S.idm = 'emperor'; S.protagonist.role = '皇帝'; S.dossiers = { ...(S.dossiers || {}), 年羹尧: { real: true, born: 1679, died: 1726 }, 刘统勋: { real: true, born: 1698, died: 1773 }, 傅恒: { real: true, born: 1720, died: 1770 }, 来保: { real: true } }; while (ORGING) await new Promise(r => setTimeout(r, 200)); S.org = null; await buildOrg(S); });
   const o = await p.evaluate(() => ({ n: S.org && S.org.nodes.length, pols: arr(S.policies).length, pts: S.polPts, fake: S.org && S.org.nodes.some(n => n.posts.some(x => /某/.test(x.holder))) }));
   if (!o.n || o.pols < 2) bad('人事树、国策书没整理出来：' + JSON.stringify(o));
   if (o.fake) bad('人事树里填了「某」这种编的名字');
@@ -44,6 +44,9 @@ const { chromium } = require('playwright');
   if (!r.log) bad('人事与施政记录是空的');
   if (r.pend) bad('结过账的待办还挂着');
   if (!(r.pts > pts1 - 3)) bad('过了一个月国策点没涨：' + JSON.stringify(r) + ' 时间 ' + JSON.stringify(await p.evaluate(() => [S.clock, S.polYM])));
+  // 逐年核人事：查到调走、有接任真人的就换上，记进人事记录；名册里查定的真人换掉虚构的
+  const rf = await p.evaluate(async () => { S.org.checkedY = null; const n = await orgRefresh(S); const jj = S.org.nodes.find(x => x.id === 'A1').posts[0]; return { n, h: jj.holder, log: arr(S.org.log).some(x => /傅恒/.test(x.text) && /来保/.test(x.text)) }; });
+  if (rf.h !== '来保' || !rf.log) bad('逐年核人事没把调走的人换掉：' + JSON.stringify(rf));
   // 提前梳理：照资料定常见量级，账上离谱的物价临时拉回量级（标待核），人事树上的错当场改；朝局页看得到
   const fx = await p.evaluate(async () => { S.prices = [{ item: '米', price: 30, per: '石' }]; await buildFacts(S); return { p: S.prices[0], rank: S.org.nodes.find(n => n.id === 'A2').posts[0].rank, facts: S.factSheet && S.factSheet.facts.length, blk: factBlock(S).length, doubt: dataDoubts(S).some(x => /待核|临时改为/.test(x)) }; });
   if (!fx.facts) bad('提前梳理没做出来');
