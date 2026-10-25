@@ -16,23 +16,29 @@ const { chromium } = require('playwright');
   const o = await p.evaluate(() => ({ n: S.org && S.org.nodes.length, pols: arr(S.policies).length, pts: S.polPts, fake: S.org && S.org.nodes.some(n => n.posts.some(x => /某/.test(x.holder))) }));
   if (!o.n || o.pols < 2) bad('人事树、国策书没整理出来：' + JSON.stringify(o));
   if (o.fake) bad('人事树里填了「某」这种编的名字');
+  const deep = await p.evaluate(() => ({ max: Math.max(...S.org.nodes.map(n => n.depth || 0)), vac: S.org.nodes.filter(n => n.id !== 'root').some(n => n.posts.some(x => !x.holder)), fz: S.org.nodes.find(n => /保甲/.test(n.name)).posts[0], fs: fictionSet(S).size }));
+  if (deep.max < 4) bad('人事树没有一路通到基层：最深 ' + deep.max + ' 层');
+  if (deep.vac) bad('还有空着没起名的位子');
+  if (!(deep.fz.others && deep.fz.others.length >= 2)) bad('保正员额四十，只列了一个人');
+  if (!deep.fs) bad('虚构的官员没标虚拟');
   await p.click('[data-tab="court"]'); await p.waitForTimeout(500);
   const t0 = await p.evaluate(() => document.querySelector('.side, #side, body').innerText);
-  for (const w of ['政治', '经济', '民生', '军事', '人事树', '国策书', '户部', '尚书', '国策点']) if (!t0.includes(w)) bad('朝局页上没有：' + w);
+  for (const w of ['政治', '经济', '民生', '军事', '人事树', '国策书', '户部', '尚书', '国策点', '线路：', '江都县署', '保正', '虚拟', '扬州营']) if (!t0.includes(w)) bad('朝局页上没有：' + w);
   // 死人委任不了
-  await p.fill('[data-oin="n2_0"]', '年羹尧'); await p.click('[data-org="appoint"][data-n="n2"][data-p="0"]'); await p.waitForTimeout(300);
+  const unfold = () => p.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; }));
+  await unfold(); await p.fill('[data-oin="A2_0"]', '年羹尧'); await p.click('[data-org="appoint"][data-n="A2"][data-p="0"]'); await p.waitForTimeout(300);
   if (!/去世/.test(await p.evaluate(() => ORGMSG))) bad('委任已死的人没拦下');
   // 委任刘统勋为户部尚书：写进输入框，花一点国策点
-  await p.fill('[data-oin="n2_0"]', '刘统勋'); await p.click('[data-org="appoint"][data-n="n2"][data-p="0"]'); await p.waitForTimeout(300);
+  await unfold(); await p.fill('[data-oin="A2_0"]', '刘统勋'); await p.click('[data-org="appoint"][data-n="A2"][data-p="0"]'); await p.waitForTimeout(300);
   const said = await p.inputValue('#said'), pts1 = await p.evaluate(() => S.polPts);
   if (!/下令：任命刘统勋为户部尚书/.test(said)) bad('委任没写进下一步：' + said);
   if (pts1 !== o.pts - 1) bad(`国策点没扣：${o.pts} → ${pts1}`);
   // 颁行国策：有前置的先不能行
   await p.evaluate(() => { const q = S.policies.find(x => x.id === 'p2'); orgAct(S, 'policy', { pol: q }); });
   if (!/要先推行/.test(await p.evaluate(() => ORGMSG))) bad('有前置的国策没拦下');
-  await p.click('[data-org="policy"][data-pol="p1"]'); await p.waitForTimeout(300);
+  await unfold(); await p.click('[data-org="policy"][data-pol="p1"]'); await p.waitForTimeout(300);
   await p.click('#bSend'); if (!(await idle())) bad('下令那一回卡住');
-  const r = await p.evaluate(() => ({ h: S.org.nodes.find(n => n.id === 'n2').posts[0].holder, pol: S.policies.find(x => x.id === 'p1').state, log: arr(S.org.log).length, pend: arr(S.orgPending).length, pts: S.polPts }));
+  const r = await p.evaluate(() => ({ h: S.org.nodes.find(n => n.id === 'A2').posts[0].holder, pol: S.policies.find(x => x.id === 'p1').state, log: arr(S.org.log).length, pend: arr(S.orgPending).length, pts: S.polPts }));
   if (r.h !== '刘统勋') bad('记账回报到任了，人事树上没换人：' + JSON.stringify(r));
   if (r.pol !== '已行') bad('国策颁行了，国策书上没标已行：' + JSON.stringify(r));
   if (!r.log) bad('人事与施政记录是空的');
