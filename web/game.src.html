@@ -72,6 +72,8 @@ textarea{resize:vertical}
 .msg.gm.talk{background:var(--qing-soft);border-color:var(--rule);border-color:color-mix(in srgb,var(--qing) 30%,transparent)}
 .msg.me{align-self:flex-end;max-width:80%;background:var(--ink);color:var(--paper);border-radius:12px 12px 2px 12px;padding:9px 14px;white-space:pre-wrap}
 .headln{font-family:var(--f-read);font-size:14px;color:var(--ink);margin:2px 0 8px;font-weight:600}
+.delta{font-size:13px;color:var(--qing);background:var(--qing-soft);border-radius:6px;padding:3px 8px;margin:-4px 0 8px;display:inline-block}
+.status .chg{color:var(--qing);font-weight:600}
 .curst{font-size:13px;color:var(--mute);border-top:1px dashed var(--rule);margin-top:10px;padding-top:6px;line-height:1.6}
 .fbrow{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px;font-size:12px}.fbrow .chip{font-size:12px;padding:2px 8px}
 .msg .lab{font-size:12px;color:var(--qing);margin-bottom:4px;font-family:var(--f-read);display:flex;gap:8px;flex-wrap:wrap}
@@ -746,7 +748,14 @@ const ARC = (() => {
     for (const k of Object.keys(s.places || {})) if (k.length >= 2 && t.includes(k)) names.add(k);
     for (const w of t.match(/[一-龥]{2,4}/g) || []) if (w.length >= 3 && names.size < 12) names.add(w);
     const keys = [...names].filter(k => !/^(这一回|主角|玩家|什么|怎么|一下|自己|我们|他们|你们)$/.test(k));
-    if (!keys.length) return [];
+    // 没提到记得的人名地名：按这句话里的事由（两字词）翻，要对上三处以上才算
+    if (!keys.length) {
+      const STOPW = /^(我去|我要|我想|去找|然后|一下|看看|一起|这个|那个|他们|我们|自己|问问|一趟|再去|还是|就是|什么|怎么|今天|明天)$/;
+      const grams = [...new Set((t.replace(/[^\u4e00-\u9fa5]/g, ' ').match(/[\u4e00-\u9fa5]{2,}/g) || []).flatMap(w => { const g = []; for (let i = 0; i < w.length - 1; i++) g.push(w.slice(i, i + 2)); return g; }).filter(g => !STOPW.test(g) && !/^我|我$/.test(g)))].slice(0, 16);
+      if (grams.length < 2) return [];
+      return mem.recs.filter(r => r.kind === 'turn' && r.turn < recent).map(r => { const hay = (r.sum || '') + ' ' + (r.said || ''); return { r, v: grams.filter(g => hay.includes(g)).length }; }).filter(x => x.v >= 3)
+        .sort((a, b) => b.v - a.v || b.r.turn - a.r.turn).slice(0, n || 4).sort((a, b) => a.r.turn - b.r.turn).map(({ r }) => ({ turn: r.turn, when: r.when, sum: r.sum, bit: '' }));
+    }
     const sc = mem.recs.filter(r => r.kind === 'turn' && r.turn < recent).map(r => { const hay = (r.sum || '') + ' ' + (r.said || '') + ' ' + arr(r.people).join(' ') + ' ' + (r.text || ''); let v = 0; for (const k of keys) if (hay.includes(k)) v += Object.prototype.hasOwnProperty.call(s.people || {}, k) ? 3 : 1; return { r, v, hay }; }).filter(x => x.v >= 2);
     return sc.sort((a, b) => b.v - a.v || b.r.turn - a.r.turn).slice(0, n || 5).sort((a, b) => a.r.turn - b.r.turn).map(({ r, hay }) => {
       const k = keys.find(k0 => String(r.text || '').includes(k0)); const i = k ? String(r.text).indexOf(k) : -1;
@@ -2332,7 +2341,8 @@ const INF_STEP = 4;
 const influencePending = s => Object.values(s.influence || {}).filter(o => Math.floor(o.score / INF_STEP) > (o.applied || 0));
 /** 主角在这世上留下的痕迹：做过的要紧事、引起的连锁变化、对大事的影响、谁记着他——每回都给推演和写正文，别人照此反应 */
 function footprintBlock(s) {
-  const D = arr(s.deeds).slice(-10), RP = arr(s.world && s.world.ripples).slice(-6), INF = Object.values(s.influence || {}).filter(o => o && o.score >= 1).slice(-5), HC = arr(s.history).slice(-4);
+  // 没了结的作为不论多早都在（有后果还没来的），了结了的只留最近几件
+  const DA = arr(s.deeds), D = DA.filter(x => !x.done).slice(-25).concat(DA.filter(x => x.done).slice(-5)).sort((a, b) => (a.turn || 0) - (b.turn || 0)), RP = arr(s.world && s.world.ripples).slice(-8), INF = Object.values(s.influence || {}).filter(o => o && o.score >= 1).slice(-6), HC = arr(s.history).slice(-8);
   const who = Object.entries(s.people || {}).filter(([k, v]) => v && (Math.abs(Number(v.favor) || 0) >= 40 || v.knows)).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 6);
   if (!D.length && !RP.length && !INF.length && !HC.length && !who.length) return '';
   return '【主角在这世上留下的痕迹（这些事外面的人记得、在传、在照着应对；这一回出场的人对主角的态度、消息、处境，要跟这些对得上，不能当没发生过）】'
@@ -3114,6 +3124,20 @@ function travelSaid(s, said) {
   const names = arr(s.geo && s.geo.units).map(u => geoStem(u.name)).concat(Object.keys(s.places || {}).map(geoStem), ['京师', '京城', '京', '老家', '乡下']).filter(x => x && x.length >= 2);
   return m.some(x => names.some(n => x.includes(n)));
 }
+/** 玩家一句里吩咐了几件事：逐件核对正文里写了没有（漏了哪件就打回） */
+function commandFaults(said, text) {
+  const t0 = String(said || '').replace(/^戏外[：:]?/, '').replace(/[「“"][^」”"]*[」”"]/g, '');
+  if (/^戏外/.test(String(said || '').trim())) return '';
+  const parts = t0.split(/[，,。；;！!\n]|然后|接着|再去|之后|随后|并且|顺便|同时/).map(x => x.replace(/\s/g, '')).filter(x => x.length >= 4);
+  if (parts.length < 2) return '';
+  const STOP = /^(我去|我要|我想|去找|然后|一下|看看|一起|这个|那个|他们|我们|自己|问问|一趟|让他|叫他|告诉)$/;
+  for (const p of parts) {
+    const grams = []; for (let i = 0; i < p.length - 1; i++) { const g = p.slice(i, i + 2); if (/^[\u4e00-\u9fa5]{2}$/.test(g) && !STOP.test(g) && !/^我|我$/.test(g)) grams.push(g); }
+    if (grams.length < 2) continue;
+    if (!grams.some(g => String(text).includes(g))) return p;
+  }
+  return '';
+}
 function quoteFaults(said, text) {
   const sd = String(said || ''), mine = [...sd.matchAll(/「([^」]{2,})」|“([^”]{2,})”|"([^"]{2,})"/g)].map(m => m[1] || m[2] || m[3]);
   if (!mine.length) { const m = sd.match(/(?:说|道|问|告诉他|对他说|跟他说|骂|喊)[：:，,]?\s*(.{4,})$/); if (m) mine.push(m[1]); }
@@ -3141,7 +3165,8 @@ function draftFaults(s, said, text, span) {
   const vague = countIn(text, /加官一等|迁(一|两|二|三)官|升了(一|两)级|官升一级|加官进爵|赏了个官/g);
   if (vague) out.push(`官职写得含糊（「加官一等」「迁两官」这类 ${vague} 处）：写清本官（品级）、差遣、上司`);
   // 玩家没说要过日子，正文却「数日后」「转眼」地往前跳
-  const jumps = countIn(text, /(数|几|两|三|四|五|半|十|一|七|八)(日|天|月|旬|年|个月)(之)?后|转眼|一晃|光阴荏苒|时光飞逝|不知不觉过了|过了(数|几|两|三)(日|天|月)/g);
+  // 叙述里的时间跳跃才算；人说的「三日后听审」「限十日交齐」是约定的日子，不算（先去掉引号里的话，再看前头有没有说、约、限、等这类字）
+  const jumps = [...String(text || '').replace(/「[^」]*」|“[^”]*”/g, '').matchAll(/(数|几|两|三|四|五|半|十|一|七|八)(日|天|月|旬|年|个月)(之)?后|转眼|一晃|光阴荏苒|时光飞逝|不知不觉过了|过了(数|几|两|三)(日|天|月)/g)].filter(m => !/说|道|约|定|限|等|要|再|待|叫|让|请|嘱|令|命|期/.test(String(text).replace(/「[^」]*」|“[^”]*”/g, '').slice(Math.max(0, m.index - 6), m.index))).length;
   if (jumps && String(said || '').trim() && !SPANS[span] && !spanMonths(span, said) && !/天|日|月|年|旬|过|等|歇|后|久|赶路|上路|动身|出发|启程|回去|回乡|前往|进京|赶考|赴任/.test(said) && !travelSaid(s, said)) out.push(`玩家没说要过日子，正文却往前跳了（「数日后」「转眼」这类 ${jumps} 处）：时间只推进到玩家这一步做完`);
   const en = (String(text).match(/[A-Za-z]{4,}/g) || []).filter(w => !/^(DeepSeek)$/i.test(w));
   if (en.length >= 2) out.push(`正文里夹了英文（${en.slice(0, 3).join('、')}）：全程用中文`);
@@ -3149,6 +3174,7 @@ function draftFaults(s, said, text, span) {
   // AI 腔：套话一多就打回（每千字超过两处，或一共四处以上）
   const sl = slopHits(text), sn = countIn(text, SLOP);
   if (sn >= 6 || sn >= 3 && sn * 1000 / Math.max(1, String(text).length) > 4) out.push(`AI 腔套话太多（${sl.slice(0, 6).join('、')}，共 ${sn} 处）：一律删掉，换成具体的动作、话、物件；人的心思从他做了什么、说了什么里看出来`);
+  { const cf = commandFaults(said, text); if (cf) out.push(`玩家吩咐的「${one(cf, 24)}」正文里没写：玩家一句话里的几件事，照先后一件件都写出来，每件都写清做了、对方怎么回应、结果如何`); }
   { const qf = quoteFaults(said, text); if (qf) out.push(`改了主角的原话：${qf}——主角只说玩家给的话，意思、口气一样，只把现代词换成当时的说法`); }
   { const gf = geoFaults(s, text); if (gf.length) out.push(`地理写错了：${gf.join('；')}——照【县级地理】的方位里程改`); }
   { const bo = bentOrder(said, text); if (bo) out.push(`篡改了玩家的命令：玩家说「${one(said, 40)}」，正文却写「${one(bo, 30)}」——主角照玩家说的原样去做，不让他临时改主意、迟疑、被人劝住、换个稳妥做法；做错了、犯了忌，就写它带来的后果`); }
@@ -3692,6 +3718,8 @@ function applyReply(s, d, said) {
   for (const k of Object.keys(d)) if (Array.isArray(d[k])) d[k] = d[k].filter(x => x != null);
   if (d.estate && typeof d.estate === 'object') for (const k of Object.keys(d.estate)) if (Array.isArray(d.estate[k])) d.estate[k] = d.estate[k].filter(x => x != null);
   const play = d.mode !== 'talk';
+  // 这一回之前的样子：写完后和之后比，变了什么直接摆在界面上
+  const snap0 = { ym: ymOf(s.clock), d: s.clock.d, h: s.clock.h, at: geoCenter(s), home: s.place.full, age: num(s.protagonist.age), role: s.protagonist.role, office: (s.career || {}).office || '', cash: N0((s.money || {}).cash), people: Object.fromEntries(Object.entries(s.people || {}).map(([k, v]) => [k, N0(v && v.favor)])), hh: arr(s.household).filter(m => !m.dead).map(m => m.name) };
   const H = hasHist(s);
   if (H) { syncHist(s); d.worldUpcoming = []; d.worldEvents = arr(d.worldEvents).filter(x => x && x.changed); }
   const extra = {};
@@ -3949,7 +3977,7 @@ function applyReply(s, d, said) {
     for (const t of arr(d.deedsDone)) { const pf = String(t || '').trim().slice(0, 6); if (pf.length < 2) continue; const x = s.deeds.find(e => !e.done && String(e.what).startsWith(pf)); if (x) x.done = turn; }
     // 同一件事换个说法又记一遍（还没了结的作为里已经有了）：不重复记
     for (const x of arr(d.deeds).slice(0, 4)) if (x && x.what && !s.deeds.some(o => !o.done && simText(o.what, x.what) > 0.7)) s.deeds.push({ turn, when, what: one(x.what, 80), effect: one(x.effect, 80), later: one(x.later, 80) });
-    s.deeds = s.deeds.slice(-80);
+    s.deeds = s.deeds.filter(x => !x.done).slice(-150).concat(s.deeds.filter(x => x.done).slice(-50)).sort((a, b) => (a.turn || 0) - (b.turn || 0));   // 没了结的作为留得久（五百回也记得）
     // 仕途：官职、品级、称号、职权；履历
     for (const x of arr(d.careerEvents).slice(0, 4)) if (x && x.what) {
       s.careerLog.push({ turn, when, what: one(x.what, 80), office: one(x.office, 40) });
@@ -4009,6 +4037,22 @@ function applyReply(s, d, said) {
   if (play && !extra.identity) autoIdentity(s, extra);   // 账上已经是另一种人了，模型却没报身份变化：程序照账册改过来
   // 局面有没有往前走：钱粮名位变了、办成或砸了事、结了新的恩怨约定、打了仗、得失了兵马地盘、目标有了结果、换了身份或地方
   if (play && (arr(extra.acc).some(a => !/现钱|军粮|国库|存粮/.test(a.k)) || arr(d.ledger).some(l => l && Math.abs(Number(l.amount) || 0) > 0 && !/家用|日用|月例|开销|口粮|伙食|杂费/.test(l.item || '')) || arr(d.deeds).some(x => x && x.what) || arr(d.canon).some(Boolean) || extra.army || extra.battle || extra.identity || extra.moved || (extra.goals && (arr(extra.goals.done).length || arr(extra.goals.lost).length)) || arr(d.orders).some(o => o && /办妥|办砸|成|败/.test(o.status || '')))) s.lastMove = s.turn;
+  if (play) {
+    // 这一回的变化：时间、所在、年岁、身份官职、钱、人——在正文顶上和状态栏里直接看得到
+    const dl = [], ch = new Set();
+    const dDays = ymOf(s.clock) * 30 + (s.clock.d || 1) - (snap0.ym * 30 + (snap0.d || 1));
+    if (dDays > 0) { dl.push(dDays >= 60 ? `过了约${Math.round(dDays / 30)}个月` : `过了${dDays}天`); ch.add('time'); }
+    else if (s.clock.h != null && snap0.h != null && s.clock.h !== snap0.h) { dl.push(`到了${shichen(s.clock.h)}`); ch.add('time'); }
+    if (geoCenter(s) !== snap0.at) { dl.push(s.at ? `到了${s.at}` : `回到${s.place.full}`); ch.add('at'); }
+    if (s.place.full !== snap0.home) { dl.push(`安家在${s.place.full}`); ch.add('at'); }
+    if (num(s.protagonist.age) !== snap0.age && num(s.protagonist.age) != null) { dl.push(`${s.protagonist.age}岁了`); ch.add('age'); }
+    if (s.protagonist.role !== snap0.role) { dl.push(`身份：${one(s.protagonist.role, 20)}`); ch.add('role'); }
+    if (((s.career || {}).office || '') !== snap0.office && (s.career || {}).office) { dl.push(`官职：${one(s.career.office, 20)}`); ch.add('role'); }
+    const c1 = N0((s.money || {}).cash); if (c1 != null && snap0.cash != null && c1 !== snap0.cash) { dl.push(`现钱${c1 > snap0.cash ? '+' : ''}${fmtN(c1 - snap0.cash, s.money.unit || '两')}`); ch.add('cash'); }
+    for (const [k, v] of Object.entries(s.people || {})) { const f0 = snap0.people[k], f1 = N0(v && v.favor); if (!(k in snap0.people)) dl.push(`新识${k}${v.role ? '（' + one(v.role, 8) + '）' : ''}`); else if (f0 != null && f1 != null && Math.abs(f1 - f0) >= 10) dl.push(`${k}${f1 > f0 ? '更亲近' : '更疏远'}（${f1 > f0 ? '+' : ''}${f1 - f0}）`); }
+    for (const n of snap0.hh) if (arr(s.household).some(m => m.name === n && m.dead)) dl.push(`${n}故去`);
+    extra.delta = dl.slice(0, 10); s.changed = [...ch];
+  }
   if (String(said || '').trim()) s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'me', text: String(said).trim(), turn: s.turn });
   s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'gm', kind: play ? 'play' : 'talk', text: String(d.reply || d.scene || '').trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null, cur: play ? curStatus(s, d) : null,
     hints: arr(d.hints).map(h => one(h, 50)).filter(Boolean).slice(0, 5) });
@@ -4144,7 +4188,8 @@ function renderNow() {
   $('#bHome').hidden = VIEW !== 'game';
   { const dt = $('#delThis'); if (dt) { dt.hidden = VIEW !== 'game' || !S; if (!dt.hidden) dt.innerHTML = DEL_ASK === S.id ? `删掉这一局（连同它的档案馆）？<button data-del="${esc(S.id)}">删掉</button><button data-nodel="1">不删</button>` : `<button data-askdel="${esc(S.id)}" ${BUSY ? 'disabled' : ''}>删除这一局</button>`; } }
   const sm = $('.brand small'); if (sm) sm.textContent = (MODE === 'claude' ? 'claude.ai 网页版 · ' : MODE === 'web' ? '网页版 · ' + (WHO && ACCOUNTS_ON ? '账号 ' + WHO + ' · ' : '') : '') + (/^\d{8}/.test(BUILD) ? `版本 ${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : '');
-  $('#statusLine').innerHTML = VIEW === 'game' && S ? `<b>${esc(S.protagonist.name)}</b> · ${esc(timeText(S.clock))} · ${esc(S.place.full)}${S.money && S.money.cash != null ? ' · 现钱 ' + esc(fmtN(S.money.cash, S.money.unit || '两')) : ''}${S.jail ? ` · <span style="color:var(--zhu)">在押：${esc(S.jail.where)}</span>` : ''}${SEARCH_OFF && MODE === 'local' && SETTINGS.search !== false ? ` · <span style="color:var(--zhu)" title="${esc(SEARCH_OFF)}">联网查资料暂时连不上（设置里点「联网自检」看原因）</span>` : ''}` : '';
+  const CH = new Set(arr(S && S.changed)), hi = (k, t) => CH.has(k) ? `<span class="chg">${t}</span>` : t;
+  $('#statusLine').innerHTML = VIEW === 'game' && S ? `<b>${esc(S.protagonist.name)}</b>${S.protagonist.age != null ? ' ' + hi('age', esc(S.protagonist.age) + '岁') : ''} · ${hi('role', esc(one([(S.career || {}).office, S.protagonist.role].filter(Boolean).join('，'), 24)))} · ${hi('time', esc(timeText(S.clock)))} · ${hi('at', S.at ? '在' + esc(S.at) + '（出门在外）' : esc(S.place.full))}${S.money && S.money.cash != null ? ' · 现钱 ' + hi('cash', esc(fmtN(S.money.cash, S.money.unit || '两'))) : ''}${S.jail ? ` · <span style="color:var(--zhu)">在押：${esc(S.jail.where)}</span>` : ''}${SEARCH_OFF && MODE === 'local' && SETTINGS.search !== false ? ` · <span style="color:var(--zhu)" title="${esc(SEARCH_OFF)}">联网查资料暂时连不上（设置里点「联网自检」看原因）</span>` : ''}` : '';
   $('#notice').innerHTML = UPDMSG ? `<div class="banner">${esc(UPDMSG)}</div>` : !READY ? '' : MODE === 'none' ? (location.protocol === 'file:' ? '<div class="err"><b>这样打开用不了。</b>你双击的是游戏里的网页文件。请关掉它，双击桌面上的「历史模拟RPG」图标。</div>' : '<div class="err">游戏服务没有在运行：启动游戏的小窗口是不是被关掉了？重新双击桌面上的「历史模拟RPG」。</div>') : MODE === 'claude' && !SAMPLE ? '<div class="err"><b>这个页面没拿到调用 Claude 的权限，所以开始不了。</b>请点页面右上角的菜单，在「权限」里允许它使用 Claude，然后刷新；或者用桌面版（自己的 DeepSeek Key）。</div>' : '';
   if (MODE === 'web' && ACCOUNTS_ON && !WHO && READY) { VIEW = 'start'; $('#app').innerHTML = accountPanel(); return; }
   if (VIEW === 'start') return renderStart();
@@ -4400,7 +4445,7 @@ function renderGame() {
     return `<div class="msg gm ${c.kind === 'talk' ? 'talk' : ''}">
       <div class="lab">${c.kind === 'talk' ? '<span>戏外 · 不花时间</span>' : `<span>第 ${esc(c.turn)} 回合</span><span class="tag">${esc(c.when || '')}${c.extra && c.extra.days ? ` · 过了 ${c.extra.days} 天` : ''}</span>`}</div>
       ${c.extra && c.extra.intro ? introHtml(c.extra.intro) : ''}
-      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${paras(c.text)}</div>${curHtml(c.cur)}
+      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}${c.extra && arr(c.extra.delta).length ? `<div class="delta">这一回：${c.extra.delta.map(esc).join(' · ')}</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${paras(c.text)}</div>${curHtml(c.cur)}
       ${c.kind !== 'talk' ? extrasHtml(c.extra && c.extra.salvaged && !(isLast && c.unsettled) ? { ...c.extra, salvagedBtn: false } : c.extra) : ''}
       ${isLast && !BUSY ? `<div class="msgacts">${EDITING ? '<button class="main" id="bEditSave">保存修改</button><button id="bEditCancel">取消</button>'
         : `<button id="bRegen" ${s.prev ? '' : 'disabled title="开场不能重写；想换开场，回首页重开一局"'}>重写这一条</button><button id="bEdit">改这段文字</button>`}</div>${!EDITING && s.prev && c.kind !== 'talk' ? `<div class="fbrow"><span class="muted">这一回有毛病，点一下就照这个重写：</span>${Object.keys(FEEDBACK).map(k => `<button class="chip" data-fb="${esc(k)}">${esc(k)}</button>`).join('')}</div>` : ''}<div id="regenBox"></div>

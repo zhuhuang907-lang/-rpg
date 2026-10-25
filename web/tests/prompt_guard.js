@@ -81,6 +81,7 @@ const checks = [
   ['不篡改玩家命令：照原样做、错了就有后果；推演不改写动作、不把「别的路子」交给写正文；审读核校不改主角照命令做的事；程序查主角临时改主意被劝住', /function bentOrder/.test(src) && /篡改了玩家的命令/.test(src) && /照原样——哪怕不合常理、犯忌、会吃大亏/.test(rules) && /推的是玩家原样这一步/.test(src) && !/'\\n别的路子：'/.test(src) && /主角照玩家命令做的事、说的话一个不改/.test(src)],
   ['主角百分之百归玩家（规矩头一条、推演不写办不到）；地理：地理册隶属方位里程照地名库核、正文路程方向错了打回', /头一条铁律：主角的身体、言语、心思和每一个决定，百分之百归玩家/.test(rules) && /不写「办不到」、不改写成别的做法/.test(src) && /function geoFaults/.test(src) && /地理写错了/.test(src) && /P\.chk = s\.clock\.y/.test(src)],
   ['称呼地名照时代、时间照走（时辰、赶路算日子、身边人长岁数、任满提醒）、跟人走、没博查时 DeepSeek 查每一条、主角原话不改', /const ADDR = \[/.test(src) && /function placeEraFaults/.test(src) && /const SHICHEN/.test(src) && /elapsedHours/.test(src) && /extra\.travel = /.test(src) && /function timeBlock/.test(src) && /const here = String\(geoCenter\(s\)/.test(src) && /const need = r\.results\.map\(x => x\.q\)/.test(src) && /function quoteFaults/.test(src)],
+  ['界面跟着变（状态栏写时辰、此刻所在、年岁、身份官职，变了的标亮；每回正文顶上写这一回的变化）、没了结的作为一直记着、档案按事由也能翻、吩咐的几件事逐件核对', /extra\.delta = dl/.test(src) && /class="delta">这一回：/.test(src) && /hi\('at'/.test(src) && /DA\.filter\(x => !x\.done\)\.slice\(-25\)/.test(src) && /function commandFaults/.test(src)],
   ['账号模式先关着：不要求登录、以前的账号数据照旧能用', /const ACCOUNTS_ON = false/.test(src) && /ACCOUNTS_ON && !WHO && READY/.test(src)],
   ['身份变化要有正文为凭、推演凭空的意外不用', /账房擅自改了主角的身份/.test(src) && /推演凭空加的意外/.test(src) && /推演只回答玩家这一步会怎样/.test(src)],
   ['不攀附名人：规则写明、推演不请真人进场面、程序查熟人口吻', /7\. 不攀附/.test(rules) && /偏远地方的小人物不认识名人/.test(rules) && /function climbing/.test(src) && /远在别处、跟主角没有来往的名人不列/.test(src)],
