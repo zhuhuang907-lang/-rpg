@@ -1034,6 +1034,8 @@ async function callClaude(input, onReply, extra, tier) {
   // DeepSeek：深度思考给写正文，也给「推演玩家这一步」——别人怎么回应、要多久花多少、合不合常理和制度，全靠这一步想清楚；
   // 不想就容易出不合常理的结果。思考出岔子（太慢、服务端不认）下面会自动关掉思考重来
   if (DSM() && SETTINGS.deep !== false && (plain && kind === '写戏' || kind === '裁定')) extra = { ...extra, thinking: true };
+  // 提速不降质：不写正文、不定史实、不推演的杂活（检索员查资料、核任期、从资料里摘年代志、压缩前情）交给 DeepSeek 的快型号，写正文、推演、记账、审读照旧用原型号
+  if (DSM() && /^(检索|核任期|研读)$/.test(kind)) extra = { ...extra, fast: true, thinking: false };
   if (DSM() && plain && extra && extra.temperature > 1.0) extra = { ...extra, temperature: 1.0 };
   try {
     const r = await SAMPLE(input, { ...opts, ...(DSM() ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
