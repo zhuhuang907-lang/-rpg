@@ -1001,7 +1001,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261025150116';
+const BUILD = '20261025150850';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -1617,6 +1617,7 @@ function instText(s, max) {
 }
 function instBlocks(s, L, forStory) {
   if (s.inst) L.push('【本朝官制（已按本局年代核过，以此为准）】\n' + instText(s, forStory ? 900 : 2600));
+  { const pb = promoBlock(s); if (pb) L.push(pb); }
   const c = s.career;
   if (c && (c.office || c.post || arr(c.titles).length)) {
     L.push('【主角仕途（以此为准；有变化在 career 里给出）】' + [c.office && '本官：' + c.office, c.rank && '品级：' + c.rank, c.post && '差遣：' + c.post, arr(c.titles).length && '称号：' + c.titles.join('、'), c.duties && '执掌：' + c.duties, c.powers && '职权：' + c.powers, c.superior && '上司：' + c.superior, c.subordinates && '属下：' + c.subordinates, c.evaluation && '考课：' + c.evaluation, c.tenure && '任期：' + c.tenure, arr(c.nextSteps).length && '可能的下一步：' + c.nextSteps.map(x => `${x.to}（要${x.need || '？'}）`).join('；')].filter(Boolean).join('；')
@@ -1657,6 +1658,67 @@ async function buildInst(s) {
   finally { INSTING = false; render(); }
 }
 
+
+/* ========== 升迁之制：主角做官（或想做官）时，联网查本朝的铨选、考课、迁转，整理成这一官的「升迁之制」，推演、写正文、记账照它；升官时程序照它核 ========== */
+const CAREER_RE = /升|迁|擢|调任|改任|补授|署理|实授|候补|候选|铨|考满|考课|京察|大计|保举|荐举|捐纳|捐官|吏部|赴任|到任|任满|致仕|丁忧|起复|降|革职|罢官|贬|授官|做官|当官|求官|谋官|科举|中举|进士/;
+const promoKey = s => [s.place.polity || '', s.clock.y - s.clock.y % 10, (s.career || {}).office || s.protagonist.role || ''].join('|');
+const promoDue = (s, said) => s && s.clock && (!s.promo || s.promo.key !== promoKey(s)) && !(s.promoFail != null && s.turn - s.promoFail < 3) && (((s.career || {}).office) || CAREER_RE.test(String(said || '')) || /官|吏|知县|知府|县令|主簿|御史|翰林|进士|举人/.test(String(s.protagonist.role || '')));
+async function ensurePromo(s) {
+  const c = s.career || {}, yl = s.clock.yearLabel || s.clock.y + '年', pol = s.place.polity || '', dy = pol + (/[代朝]$/.test(pol) ? '' : '代');
+  const off = String(c.office || '').replace(/[（(].*$/, '').slice(0, 12) || String(s.protagonist.role || '').slice(0, 12);
+  const qs = [`${dy} 官员 升迁 制度`, `${dy} 铨选 考课 考满`, off ? `${dy} ${off} 品级 职掌` : '', off ? `${dy} ${off} 升迁 迁转` : '', `${yl} ${pol} 吏部 铨选`].filter(Boolean);
+  if (canSearch()) { try { await doLookups(s, qs, true); } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+  const R = arr(s.research).filter(x => qs.includes(x.q) && x.text);
+  const { text } = await callClaude(`你是精通历代职官、铨选制度的史家。下面是一局历史游戏：${timeText(s.clock)}，政权${pol}，主角${s.protagonist.name || ''}，身份${s.protagonist.role || ''}${c.office ? '，本官' + c.office + (c.rank ? '（' + c.rank + '）' : '') : ''}${c.sinceY ? '，' + c.sinceY + '年到任' : ''}。
+${s.inst ? '【本朝官制要览】' + cut(instText(s, 1200), 1200) + '\n' : ''}${R.length ? '【联网查到的资料】\n' + R.map(x => `· 查「${x.q}」：${cut(x.text, 700)}`).join('\n') : '（没查到网上资料，照你确知的正史、会典、职官志）'}
+请照这个政权此时真实的制度，整理主角这一路仕途的「升迁之制」：
+- 主角此刻这一官的品级、上司、考核办法（考满、考课、京察大计之类，叫什么、几年一次、谁来考）；
+- 正常往上走的下一步：通常迁到哪些官（品级）、凭什么（资历年限、考绩等第、出身、保举、捐纳、军功），谁来定（吏部铨选、皇帝特旨、督抚题补……），要等多久，任命走什么文书、多久赴任；
+- 不合制度的：出身不够做不了的官、越级的限度、回避（本籍、亲属）、丁忧守制、处分降革；
+- 没有官职的：照他的出身，入仕有哪些路子、各要什么。
+有资料写明的照资料；资料不够的照确凿史实推断，写明依据；拿不准的放进 unsure，不编造。
+只输出一个 JSON 对象：{"office":"此刻这一官","rank":"品级","superior":"上司","review":"考核办法与周期","tenure":"一任几年、俸满考满的规矩","next":[{"post":"下一步的官","rank":"品级","how":"凭什么、谁来定、要多久"}],"limits":["不合制度、做不到的，一句一条"],"appoint":"任命的手续、文书、赴任期限","entry":["没有官职时入仕的路子"],"unsure":[""],"basis":"依据（书名或资料）"}`, null, { maxTokens: 2500, temperature: 0.2, kind: '研读', detached: true });
+  const d = parseJSON(text); if (!d) { s.promoFail = s.turn; return null; }
+  const o = (v, n) => one(v, n || 80);
+  s.promo = { key: promoKey(s), turn: s.turn, y: s.clock.y, office: o(d.office, 30), rank: o(d.rank, 16), superior: o(d.superior, 30), review: o(d.review, 120), tenure: o(d.tenure, 100), appoint: o(d.appoint, 120), basis: o(d.basis, 80), searched: R.length,
+    next: arr(d.next).filter(x => x && x.post).slice(0, 6).map(x => ({ post: o(x.post, 20), rank: o(x.rank, 16), how: o(x.how, 100) })), limits: arr(d.limits).map(x => o(x, 80)).filter(Boolean).slice(0, 8), entry: arr(d.entry).map(x => o(x, 80)).filter(Boolean).slice(0, 6), unsure: arr(d.unsure).map(x => o(x, 60)).filter(Boolean).slice(0, 5) };
+  if (!c.rank && s.promo.rank && s.career) s.career.rank = s.promo.rank;
+  return s.promo;
+}
+function promoBlock(s) {
+  const P = s && s.promo; if (!P) return '';
+  return `【本朝升迁之制（${P.searched ? '联网查过' : '照史书'}；主角的升降调补一律照此，不合的写不成${P.basis ? '；依据：' + P.basis : ''}）】\n` + [P.office && `此刻：${P.office}${P.rank ? '（' + P.rank + '）' : ''}${P.superior ? '，上司' + P.superior : ''}`, P.review && '考核：' + P.review, P.tenure && '任期：' + P.tenure,
+    P.next.length && '正常的下一步：' + P.next.map(x => `${x.post}${x.rank ? '（' + x.rank + '）' : ''}${x.how ? '——' + x.how : ''}`).join('；'), P.appoint && '任命：' + P.appoint, P.limits.length && '做不到的：' + P.limits.join('；'), P.entry.length && '入仕的路子：' + P.entry.join('；'), P.unsure.length && '拿不准：' + P.unsure.join('；')].filter(Boolean).join('\n');
+}
+/** 品级换成数：正一品=1，从一品=1.5……从九品=9.5；认不出的给 null */
+const CNUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+function rankNum(r) { const m = String(r || '').match(/(正|从)?([一二三四五六七八九])品/); return m ? CNUM[m[2]] + (m[1] === '从' ? 0.5 : 0) : null; }
+const rankTxt = n => (n % 1 ? '从' : '正') + '零一二三四五六七八九'[Math.floor(n)] + '品';
+function postRank(s, post) {
+  post = String(post || ''); if (post.length < 2) return null;
+  for (const x of arr(s.promo && s.promo.next)) if (x.post && (post.includes(x.post) || x.post.includes(post))) { const r = rankNum(x.rank); if (r) return r; }
+  for (const g of arr(s.inst && s.inst.ladder)) for (const x of arr(g.posts)) if (x.name && x.name.length >= 2 && (post === x.name || post.endsWith(x.name))) { const r = rankNum(x.rank); if (r) return r; }
+  return null;
+}
+/** 正文里主角升官、补官：照升迁之制核——一下子越好几级（又没写特旨、军功）、刚到任就升、没有任命手续就上任，都打回 */
+function promoFaults(s, text) {
+  const t = String(text || ''), out = [], c = s.career || {}, me = String((s.protagonist || {}).name || '你');
+  const posts = new Set(); for (const g of arr(s.inst && s.inst.ladder)) for (const x of arr(g.posts)) if (x.name && x.name.length >= 2) posts.add(x.name);
+  for (const x of arr(s.promo && s.promo.next)) if (x.post && x.post.length >= 2) posts.add(x.post);
+  const cur = rankNum(c.rank) || postRank(s, c.office);
+  for (const sen of t.split(/[。！？\n]/)) {
+    if (!(sen.includes('你') || sen.includes(me))) continue;
+    const m = sen.match(/(擢|升任|升为|升了|升补|迁|调任|改任|补授|补了|署理|实授|除授|授为|授了|拜为|任命|简放|放了)[^，。；]{0,6}?([一-龥]{2,8})/); if (!m) continue;
+    const post = [...posts].find(p => m[2].includes(p) || sen.slice(sen.indexOf(m[1])).slice(0, 14).includes(p)); if (!post) continue;
+    if (c.office && String(c.office).includes(post)) continue;
+    const r1 = postRank(s, post), special = /特旨|特擢|破格|超擢|殊恩|军功|恩旨|特简|特授/.test(t);
+    if (cur && r1 && cur - r1 > 2 && !special) out.push(`由${c.office || '原职'}（${c.rank || rankTxt(cur)}）一下到${post}（${rankTxt(r1)}），越了${Math.round((cur - r1) * 2)}级——本朝没有特旨、军功不会这样越级`);
+    if (c.sinceY != null && s.clock && (s.clock.y * 12 + (s.clock.m || 1)) - (c.sinceY * 12 + (c.sinceM || 1)) < 10 && !special && !/保举|荐|题补|调补|奏调|丁忧|降|革/.test(t)) out.push(`${c.office}才到任不到一年就${m[1]}${post}——本朝${(s.promo && s.promo.tenure) || '任期'}未满，没有保举、题调不会这样快`);
+    if (!/吏部|部文|部咨|部札|告身|敕|诰|札付|委札|牌|上谕|圣旨|旨意|朝命|除书|文凭|凭照|印信|公文|行文|题本|奏准|批/.test(t)) out.push(`主角${m[1]}${post}却没交代任命的手续——${(s.promo && s.promo.appoint) || '照本朝制度写清由谁任命、凭什么文书'}`);
+    break;
+  }
+  return out;
+}
 /* ========== 内置史料：史事、君主年号、真人生卒官职由程序给出，AI 不凭记忆编 ========== */
 let HIST = [];
 try { HIST = JSON.parse(document.getElementById('hist').textContent || '[]'); } catch (_) { HIST = []; }
@@ -1868,7 +1930,7 @@ function rulingInput(s, said) {
 ${realmBlock(s) ? realmBlock(s) + '\n' : ''}${arr(s.battles).length ? '【最近打过的仗（照此往下推：败了的兵要收拢、补员，胜了的要守住、要赏）】' + s.battles.slice(-3).map(b => `${b.when}在${b.place}对${b.enemy || '敌'}：${b.outcome || ''}，我死伤${b.deadUs ?? '？'}、敌死伤${b.deadThem ?? '？'}`).join('；') + '\n' : ''}【身边的人（各有盘算）】${P.map(([k, v]) => `${k}（${v.role || ''}${v.age != null ? '，' + v.age + '岁' : ''}，好感${v.favor ?? '?'}${v.personality ? '，' + v.personality : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + cut(v.goal, 30) : ''}${v.plan ? '；打算：' + cut(v.plan, 30) : ''}）`).join('；') || '无'}${farLine(FAR) ? '\n' + farLine(FAR) : ''}
 ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下去还没办完的】' + s.orders.filter(o => /在办|待办|推迟/.test(o.status)).slice(-6).map(o => `${o.who}：${o.what}`).join('；') + '\n' : ''}${arr(s.gmNotes).length ? '【幕后真相（玩家不知道）】' + s.gmNotes.slice(-8).map(n => cut(n.text, 60)).join('；') + '\n' : ''}${arr(s.summaries).length ? '【最近几回】' + s.summaries.slice(-4).map(x => cut(x.text, 80)).join(' / ') + '\n' : ''}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '无'}
-${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
+${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
 ${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}${modulesBlock(said)}
 【玩家这回说】${said}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
@@ -3745,6 +3807,7 @@ function draftFaults(s, said, text, span) {
   const sl = slopHits(text), sn = countIn(text, SLOP);
   if (sn >= 6 || sn >= 3 && sn * 1000 / Math.max(1, String(text).length) > 4) out.push(`AI 腔套话太多（${sl.slice(0, 6).join('、')}，共 ${sn} 处）：一律删掉，换成具体的动作、话、物件；人的心思从他做了什么、说了什么里看出来`);
   { const cf = commandFaults(said, text); if (cf) out.push(`玩家吩咐的「${one(cf, 24)}」正文里没写：玩家一句话里的几件事，照先后一件件都写出来，每件都写清做了、对方怎么回应、结果如何`); }
+  { const pf = promoFaults(s, text); if (pf.length) out.push(`升迁不合本朝制度：${pf.join('；')}——照【本朝升迁之制】改：该走的资历、考绩、保举、任命文书一样不少，做不到的就没升成，写清卡在哪`); }
   { const nf = nameFaults(s, text); if (nf.length) out.push(`人名不对：${nf.join('；')}——不编人名、不写「某」：有记载的照记载，记载不够的照史实合理推断（名册里已推断好），小人物起合乎时代的全名`); }
   { const qf = quoteFaults(said, text); if (qf) out.push(`改了主角的原话：${qf}——主角只说玩家给的话，意思、口气一样，只把现代词换成当时的说法`); }
   { const gf = geoFaults(s, text); if (gf.length) out.push(`地理写错了：${gf.join('；')}——照【县级地理】的方位里程改`); }
@@ -4598,7 +4661,9 @@ function applyReply(s, d, said) {
     s.summaries = s.summaries.slice(-200);
   }
   if (d.career && typeof d.career === 'object' && !Array.isArray(d.career)) {
-    const c = Object.assign({}, s.career || {}), k = d.career;
+    const c = Object.assign({}, s.career || {}), k = { ...d.career };
+    // 官职变了，正文里得有任命的事（升、调、补、授、署，或者革、降、罢）：记账的凭空改官不算
+    if (k.office && k.office !== c.office && c.office && !/擢|升|迁|调|补|授|署|除|拜|任命|简放|革|降|罢|撤|免|致仕|丁忧|告身|敕|札|部文|上谕|圣旨|旨意/.test(String(d.reply || ''))) { delete k.office; delete k.rank; }
     for (const f of ['office', 'rank', 'post', 'duties', 'powers', 'superior', 'subordinates', 'evaluation', 'tenure']) if (k[f] != null && k[f] !== '') c[f] = one(k[f], f === 'powers' || f === 'duties' || f === 'subordinates' ? 120 : 50);
     if (Array.isArray(k.titles)) { const v = k.titles.map(x => one(x, 30)).filter(Boolean).slice(0, 12); if (v.length) c.titles = v; }
     if (Array.isArray(k.nextSteps)) { const v = k.nextSteps.filter(x => x && x.to).slice(0, 5).map(x => ({ to: one(x.to, 40), need: one(x.need, 80) })); if (v.length) c.nextSteps = v; }
@@ -5163,6 +5228,7 @@ function pane(tab) {
       ${kv.length ? `<dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : '<div class="muted">眼下没有官职。做了官、得了功名或爵位，这里会写清楚。</div>'}
       ${arr(c.nextSteps).length ? `<div class="h"><span class="seal">升</span>可能的下一步</div><div class="list">${c.nextSteps.map(x => `<div><b>${esc(x.to)}</b>${x.need ? `<div class="muted">要：${esc(x.need)}</div>` : ''}</div>`).join('')}</div>` : ''}
       ${arr(s.careerLog).length ? `<div class="h"><span class="seal">历</span>履历</div><div class="tblwrap"><table class="tbl"><tr><th>时间</th><th>事</th><th>此后</th></tr>${s.careerLog.slice().reverse().map(x => `<tr><td>${esc(x.when)}</td><td>${esc(x.what)}</td><td>${esc(x.office)}</td></tr>`).join('')}</table></div>` : ''}
+      ${s.promo ? `<div class="h"><span class="seal">迁</span>本朝升迁之制<span class="note">${s.promo.searched ? '联网查过' : '照史书整理'}${s.promo.basis ? '；依据：' + esc(s.promo.basis) : ''}</span></div><dl class="kv">${[['考核', s.promo.review], ['任期', s.promo.tenure], ['任命', s.promo.appoint]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${s.promo.next.length ? `<div class="list">${s.promo.next.map(x => `<div><b>${esc(x.post)}</b>${x.rank ? ' <span class="muted">' + esc(x.rank) + '</span>' : ''}<div class="muted">${esc(x.how)}</div></div>`).join('')}</div>` : ''}${s.promo.limits.length ? `<div class="muted">做不到的：${esc(s.promo.limits.join('；'))}</div>` : ''}${s.promo.entry.length && !c.office ? `<div class="muted">入仕的路子：${esc(s.promo.entry.join('；'))}</div>` : ''}` : ''}
       <div class="h"><span class="seal">制</span>本朝官制<span class="note">${I ? esc(I.when || '') : ''}</span></div>
       ${I ? `${I.era ? `<div class="muted">适用：${esc(I.era)}</div>` : ''}<div class="overview">${esc(I.summary)}</div>
         ${I.local ? `<div class="pl"><span>层级</span>${esc(I.local)}</div>` : ''}
@@ -5417,6 +5483,7 @@ async function afterTurn(s0, d, g, gen = BG_GEN) {
   if (needGaz(s0) && !(await step('查这地方此时的样子（本地志）', () => buildGazetteer(s0)))) return;
   if (s0.estateDue && !(await step('照新身份重立家底', () => buildEstate(s0)))) return;
   if (canSearch() && officialsDue(s0) && !(await step('趁空查这地方此时在任的官员', () => ensureOfficials(s0).catch(e => { s0.offFail = s0.turn; throw e; })))) return;   // 玩家读这一回、想下一步的时候先查好，下一回不用等
+  if (promoDue(s0, '') && !(await step('联网查本朝升迁之制', () => ensurePromo(s0).catch(e => { s0.promoFail = s0.turn; throw e; })))) return;
   if (needGeo(s0) && !(await step('查历史地名库、画县级地图', () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties)))) return;
   if (live()) { BGMSG = '存档'; try { await store.save(s0); } catch (_) { /* 下回再存 */ } }
   if (live() && !s0.inst) buildInst(s0);
@@ -5454,7 +5521,7 @@ async function send(said, span, note, resume) {
       PHASE = canSearch() ? 'search' : 'ruling'; render();
       const [lk, rl] = await Promise.all([
         canSearch() ? within(doLookups(S, lookupQueries(S, said)), 25000) : Promise.resolve(null),
-        wantPlan ? within(getRuling(S, said), 150000) : Promise.resolve(null),
+        wantPlan ? (promoDue(S, said) && CAREER_RE.test(String(said || '')) ? within(ensurePromo(S), 40000).catch(e => { if (e && e.code === 'cancelled') throw e; S.promoFail = S.turn; return null; }) : Promise.resolve(null)).then(() => within(getRuling(S, said), 150000)) : Promise.resolve(null),
         // 大事深挖、本地官员名册：和别的一起做，但只等这么久；没做完的在后头接着做，名册下一回就有
         within(ensureEventDetail(S).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }), 45000),
         officialsDue(S) ? within(ensureOfficials(S).catch(e => { if (e && e.code === 'cancelled') throw e; S.offFail = S.turn; return null; }), 45000) : Promise.resolve(null),
