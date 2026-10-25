@@ -85,6 +85,7 @@ function answer(p, last, json) {
   if (p.includes('精通历代职官制度')) return JSON.stringify({ era: '清', summary: '省府县', ladder: [{ tier: '地方', posts: [{ name: '知县', rank: '正七品', duty: '一县' }] }], paths: [], fixes: [], unsure: [] });
   if (p.includes('要把它写成一部书')) { fs.appendFileSync('book.log', (p.includes('浅近文言') ? 'hist' : 'novel') + '\n'); return (p.includes('浅近文言') ? '卷一　乾隆二十二年' : '第一回　钞关前问引价　运司里说盐法') + '\n' + '汪景和至钞关问引价，书吏言今岁引价腾贵。'.repeat(20); }
   if (p.includes('你是历史地理检索员')) { fs.appendFileSync('geoalias.log', 'x\n'); return JSON.stringify(/「京师」/.test(p) ? { county: '大兴县', pref: '顺天府', modern: '北京' } : { county: '', pref: '' }); }
+  if (p.includes('整理主角这一路仕途')) { fs.appendFileSync('promo.log', 'x\n'); return JSON.stringify({ office: '知县', rank: '正七品', superior: '知府', review: '三年大计', tenure: '三年俸满', next: [{ post: '同知', rank: '正五品', how: '俸满考称职，督抚题升，吏部议准' }, { post: '知州', rank: '从五品', how: '卓异保举' }], limits: ['不得本籍为官'], appoint: '吏部铨选，给文凭，限期赴任', entry: ['科举', '捐纳'], unsure: [], basis: '清会典' }); }
   if (p.includes('核实几位官员')) { fs.appendFileSync('tenure.log', 'x\n'); return JSON.stringify({ people: [] }); }
   if (p.includes('只管查资料')) { fs.appendFileSync('dsq.log', 'x\n'); const qs = [...p.matchAll(/^\d+\. (.+)$/gm)].map(m => m[1]); return JSON.stringify({ results: qs.map(q => ({ q, items: [{ title: q.split(' ')[0], snippet: q + '：据通行史书所载的一条事实', src: '通行史书' }] })) }); }
   if (p.includes('整理出确实写在资料里')) return JSON.stringify({ almanac: [{ cat: '物价', text: '米价一石一两六钱', src: '志' }] });
