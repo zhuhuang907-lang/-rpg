@@ -1006,7 +1006,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261025154315';
+const BUILD = '20261025170048';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -2087,7 +2087,7 @@ function eraOk(s, text) {
   const t = String(text || ''), y = s && s.clock ? s.clock.y : null; if (y == null || !t) return true;
   // 带现代字眼的（百科页常有「纪念馆」「今属某市」）：只要也说到了这个年代的人和事（本朝、年号、1900 年前的年份）就留着，只扔纯现代的
   if (y < 1900 && MODERN_RE.test(t)) { const pol = String((s.place || {}).polity || '').slice(0, 1), yl = String((s.clock || {}).yearLabel || '').slice(0, 2); const old = (pol && new RegExp(pol + '(朝|代|初|末|人)').test(t)) || (yl && t.includes(yl)) || /(?:^|[^\d])1[0-8]\d\d年|(?:^|[^\d])[1-9]\d\d年/.test(t); if (!old) return false; }
-  if (y < 1880) { const yrs = [...t.matchAll(/(?:^|[^\d])(1[89]\d\d|20\d\d)年/g)].map(m => +m[1]); if (yrs.length && yrs.every(v => v > y + 60)) return false; }
+  if (y < 1880) { const yrs = [...t.matchAll(/(?:^|[^\d])(\d{3,4})年/g)].map(m => +m[1]).filter(v => v >= 100); if (yrs.length && yrs.every(v => v > y + 60)) return false; }   // 只有现代年份才扔；生卒年、任官年份在这个年代的照留
   // 说到别的朝代（「秦朝」「唐代」「宋末」……），又没说到这个年代的，不要
   const near = ([, a, b]) => y >= a - 30 && y <= b + 30;
   const hit = ERA_SPANS.filter(([n]) => new RegExp(n + '(朝|代|末|初|时|人|国)').test(t));
@@ -2124,7 +2124,7 @@ function ambientQueries(s, said) {
   return out.map(q => q.replace(/\s+/g, ' ').trim()).filter(q => q.length >= 4 && !done.has(q));
 }
 /** 搜索分工：天下大势（朝政、战事、边防、财政、大事、天下形势）是「大势」，交给维基；人物、当年当地的光景（本地官员、物价、年景、行情、街巷）交给博查和 DeepSeek 推断 */
-const WORLD_Q = /朝政|局势|天下|形势|战事|边防|大事|财政|赋税|改元|即位|登基|变法|叛乱|起义|战争|兵变|政变|和议|大势/;
+const WORLD_Q = /朝政|局势|天下|形势|战事|边防|大事|财政|赋税|改元|即位|登基|变法|叛乱|起义|战争|兵变|政变|和议|大势|官制|制度|品级|铨选|考课|考满|科举|盐法|漕运|兵制|律例|田赋|年表|中枢/;
 function isWorldQ(s, q) {
   q = String(q || '');
   if (!WORLD_Q.test(q)) return false;
@@ -2187,24 +2187,20 @@ async function wikisourceFetch(q) {
   catch (_) { return []; } finally { clearTimeout(t); }
 }
 async function browserLookup(queries, both, world) {
-  // 混合查：先查维基百科，查不到查维基文库（史书原文），再查不到用博查（填了博查 Key 才有）；both：要卡准年份的（官员、真人）两层都查，博查在前
-  // 博查和维基同时查（不再等维基没查到才问博查）
-  const W = new Set(arr(world)), L = queries.filter(q => !W.has(q));
-  // 分工：大势（W）只问维基；人物、本地（L）有博查先问博查，博查没搜到的再退回维基
-  const bP = BOCHA_KEY ? Promise.all(L.map(q => bochaFetch(q).then(items => ({ q, items }), e => ({ q, items: [], error: String(e && e.message || e) })))) : Promise.resolve([]);
-  let B0 = null;
-  if (BOCHA_KEY && L.length) B0 = await bP;
-  const bEmpty = q => !B0 || !arr((B0.find(x => x.q === q) || {}).items).length;
-  const wq = queries.filter(q => W.has(q) || bEmpty(q));
-  const w = await browserLookupWiki(wq);
-  const res = queries.map(q => { const x = arr(w.results).find(o => o.q === q); if (x) return { ...x, provider: arr(x.items).length ? 'wikipedia' : '' }; const b = B0 && B0.find(o => o.q === q); return { q, items: arr(b && b.items).slice(0, 4).map(i => ({ ...i, src: 'bocha' })), provider: 'bocha' }; });
-  await Promise.all(res.filter(x => !arr(x.items).length && !x.error).slice(0, 5).map(async o => { const it = await wikisourceFetch(o.q); if (it.length) { o.items = it; o.provider = 'wikisource'; } }));
-  if (BOCHA_KEY) {
-    const B = B0 || [];
-    for (const o of res.filter(o => wq.includes(o.q) && !W.has(o.q))) { const b = B.find(x => x.q === o.q); const bi = arr(b && b.items).slice(0, 3).map(x => ({ ...x, src: 'bocha' })); if (bi.length) { const had = arr(o.items).slice(0, 2).map(x => ({ ...x, src: x.src || o.provider || 'wikipedia' })); o.items = bi.concat(had); o.provider = had.length ? 'mixed' : 'bocha'; o.error = ''; } }
-  }
-  // 大势那几条维基没搜到（国内多半连不上维基）：改问博查
-  if (BOCHA_KEY) { const miss = res.filter(o => W.has(o.q) && !arr(o.items).length); if (miss.length) await Promise.all(miss.map(async o => { try { const it = await bochaFetch(o.q); if (it.length) { o.items = it.map(x => ({ ...x, src: 'bocha' })); o.provider = 'bocha'; o.error = ''; } } catch (_) {} })); }
+  // 分工：大势、制度、史事（W）维基为主、博查跟上两条；人物、当年当地（L）博查为主，博查没搜到才用维基。博查和维基同时开查
+  const W = new Set(arr(world)), tag = (xs, src) => arr(xs).map(x => ({ ...x, src: x.src || src }));
+  const bP = BOCHA_KEY ? Promise.all(queries.map(q => bochaFetch(q).then(items => ({ q, items }), e => ({ q, items: [], error: String(e && e.message || e) })))) : Promise.resolve([]);
+  const wP = browserLookupWiki(queries);
+  const [B, w] = await Promise.all([bP, wP]);
+  const res = queries.map(q => {
+    const wi = arr((arr(w.results).find(o => o.q === q) || {}).items), we = (arr(w.results).find(o => o.q === q) || {}).error;
+    const bi = arr((B.find(o => o.q === q) || {}).items);
+    if (W.has(q)) { const items = tag(wi.slice(0, 3), 'wikipedia').concat(tag(bi.slice(0, 2), 'bocha')); return { q, items, provider: wi.length && bi.length ? 'mixed' : wi.length ? 'wikipedia' : bi.length ? 'bocha' : '', error: items.length ? '' : we || '' }; }
+    if (bi.length) return { q, items: tag(bi.slice(0, 4), 'bocha'), provider: 'bocha' };
+    return { q, items: tag(wi, 'wikipedia'), provider: wi.length ? 'wikipedia' : '', error: wi.length ? '' : we || '' };
+  });
+  // 两边都没搜到的：再翻维基文库（史书原文）
+  await Promise.all(res.filter(x => !arr(x.items).length).slice(0, 4).map(async o => { const it = await wikisourceFetch(o.q); if (it.length) { o.items = it.map(x => ({ ...x, src: 'wikisource' })); o.provider = 'wikisource'; o.error = ''; } }));
   const used = [...new Set(res.filter(x => arr(x.items).length).map(x => x.provider))];
   return { results: res, provider: used.length > 1 ? 'mixed' : used[0] || 'wikipedia' };
 }
@@ -2279,14 +2275,17 @@ async function doLookups(s, queries, both) {
   // 分工：天下大势交给维基；人物、当年当地的情况交给博查和 DeepSeek（DeepSeek 照史实推断，写明依据）
   const world = queries.filter(q => isWorldQ(s, q)), localQ = queries.filter(q => !world.includes(q));
   // DeepSeek 检索员照样每条都问（快型号，不拖时间）：大势那几条只在维基、博查都没搜到时才用它（国内多半连不上维基，不能让大势一条都没有）
-  const dsP = DSM() ? dsLookup(queries).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
+  // 有博查：博查为主、维基查大势和制度，DeepSeek 只补两边都没搜到的那几条（少用）；没有博查：DeepSeek 和维基一起查
+  const hasBocha = MODE === 'local' ? !!(KEY && KEY.bocha) : !!BOCHA_KEY;
+  const dsP = DSM() && !hasBocha ? dsLookup(queries).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
   dsP.catch(() => {});
   try { r = await Promise.race([MODE === 'local' ? api('/api/lookup', { queries, both: !!both, world }) : browserLookup(queries, both, world), new Promise((_, rej) => { if (sig) { if (sig.aborted) rej({ code: 'cancelled' }); sig.addEventListener('abort', () => rej({ code: 'cancelled' }), { once: true }); } })]); }
   catch (e) { if (e && e.code === 'cancelled') throw e; if (++SEARCH_DOWN >= 2) { SEARCH_OFF = '游戏服务没有回应'; SEARCH_OFF_AT = Date.now(); } return { err: '游戏服务没有回应' }; }
   // DeepSeek 检索员的结果并进来：放在博查、维基后面（它没经网页核对），有博查时每条最多补两句，没博查时补三句
   if (r && Array.isArray(r.results)) {
-    const ds = await within(dsP, 20000, []).catch(e => { if (e && e.code === 'cancelled') throw e; return []; });
-    for (const y of arr(ds)) { const x = r.results.find(o => o.q === y.q); if (x && world.includes(x.q) && arr(x.items).length) continue; if (x && arr(y.items).length) { x.items = arr(x.items).slice(0, 5).concat(y.items.slice(0, KEY && KEY.bocha ? 2 : 3)); x.provider = arr(x.items).length > y.items.length ? 'mixed' : 'deepseek'; x.error = ''; } }
+    let ds = await within(dsP, 15000, []).catch(e => { if (e && e.code === 'cancelled') throw e; return []; });
+    if (DSM() && hasBocha) { const miss = r.results.filter(o => !arr(o.items).length).map(o => o.q).slice(0, 6); if (miss.length) ds = await within(dsLookup(miss), 12000, []).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }); }
+    for (const y of arr(ds)) { const x = r.results.find(o => o.q === y.q); if (x && world.includes(x.q) && arr(x.items).length) continue; if (x && arr(y.items).length) { x.items = arr(x.items).slice(0, 5).concat(y.items.slice(0, hasBocha ? 2 : 3)); x.provider = arr(x.items).length > y.items.length ? 'mixed' : 'deepseek'; x.error = ''; } }
   }
   const shown = [], errs = [];
   for (const x of arr(r.results)) {
@@ -5605,7 +5604,7 @@ async function send(said, span, note, resume) {
       const wantPlan = needRuling(said) && (SETTINGS.ruling !== false || canSearch());
       PHASE = canSearch() ? 'search' : 'ruling'; render();
       const [lk, rl] = await Promise.all([
-        canSearch() ? within(doLookups(S, lookupQueries(S, said)), 25000) : Promise.resolve(null),
+        canSearch() ? within(doLookups(S, lookupQueries(S, said)), 18000) : Promise.resolve(null),
         wantPlan ? (promoDue(S, said) && CAREER_RE.test(String(said || '')) ? within(ensurePromo(S), 40000).catch(e => { if (e && e.code === 'cancelled') throw e; S.promoFail = S.turn; return null; }) : Promise.resolve(null)).then(() => within(getRuling(S, said), 150000)) : Promise.resolve(null),
         // 大事深挖、本地官员名册：和别的一起做，但只等这么久；没做完的在后头接着做，名册下一回就有
         within(ensureEventDetail(S).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }), 45000),
@@ -5616,7 +5615,7 @@ async function send(said, span, note, resume) {
       if (ruling && SETTINGS.ruling === false) ruling = { steps: [], risks: [], alt: '', search: ruling.search, scene: ruling.scene, brief: ruling.brief, places: ruling.places, realPeople: ruling.realPeople };
       // 这一回牵涉的真人：先立档（生卒、此刻在哪、做什么、见不见得到），和下面的联网查证一起做
       const dosNames = arr(ruling && ruling.realPeople);
-      const dosP = dosNames.length ? (PHASE = 'dossier', render(), within(ensureDossiers(S, dosNames).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }), 30000, [])) : Promise.resolve([]);
+      const dosP = dosNames.length ? (PHASE = 'dossier', render(), within(ensureDossiers(S, dosNames).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }), 20000, [])) : Promise.resolve([]);
       const more = canSearch() && ruling ? arr(ruling.search).filter(q => !arr(S.searchedQ).includes(q)) : [];
       // 维基深读：这一回牵涉的地方、人物、事件、制度，各读一篇条目正文
       const figs = HALL(S).flatMap(h => arr(h.figures)).filter(f => f.name.length >= 2 && String(said || '').includes(f.name)).map(f => f.name).slice(0, 2);
@@ -5624,7 +5623,7 @@ async function send(said, span, note, resume) {
       const wq = canSearch() ? arr(ruling && ruling.places).slice(0, 2).concat(figs) : [];
       if (more.length || wq.length) {
         PHASE = 'search2'; render();
-        const [lk2] = await Promise.all([more.length ? within(doLookups(S, more), 20000) : Promise.resolve(null), wq.length ? within(wikiRead(S, wq), 20000, []) : Promise.resolve([])]);
+        const [lk2] = await Promise.all([more.length ? within(doLookups(S, more), 14000) : Promise.resolve(null), wq.length ? within(wikiRead(S, wq), 12000, []) : Promise.resolve([])]);
         if (lk2) looked = { shown: arr(looked && looked.shown).concat(arr(lk2.shown).map(x => ({ ...x, ai: true }))), err: (looked && looked.err) || lk2.err, provider: lk2.provider };
       }
       // 玩家说到的地方地图上还没有：到历史地名库里查出来补上，好算里程和沿途
