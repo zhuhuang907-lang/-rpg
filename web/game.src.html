@@ -482,6 +482,22 @@ let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
 /** 桌面版自动更新：服务端下好了新版，玩家不在等 AI 的时候就自动刷新换上（存档都在本机，不会丢） */
+/** 在线版（网页）：打开时去 GitHub 看有没有更新的版本；有就在页面顶上给一个打开新版的链接（在线链接带提交号，不会被缓存成旧版） */
+async function webWatchUpdate() {
+  if (!/^https?:/.test(location.protocol) || /^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(location.hostname)) return;   // 本机打开的（测试、桌面）不查
+  try {
+    const REPO = 'zhuhuang907-lang/-rpg', BR = 'claude/gallant-davinci-l8pni0';
+    const v = await (await fetch(`https://raw.githubusercontent.com/${REPO}/${BR}/rpg-kernel/public/version.json?t=${Date.now()}`, { cache: 'no-store' })).json();
+    if (!v || !v.build || String(v.build) <= BUILD) return;
+    const c = await (await fetch(`https://api.github.com/repos/${REPO}/commits/${encodeURIComponent(BR)}`)).json();
+    if (!c || !/^[0-9a-f]{40}$/.test(c.sha || '')) return;
+    if (location.href.includes(c.sha)) return;
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#7a2e1d;color:#fff;padding:8px 16px;font-size:14px;text-align:center';
+    d.innerHTML = `有新版（${esc(String(v.build).slice(0, 8))}）：<a style="color:#ffe9a8;font-weight:bold" href="https://raw.githack.com/${REPO}/${c.sha}/web/play.html">点这里打开新版</a>（Key 和存档都还在，不用重填）`;
+    document.body.appendChild(d);
+  } catch (_) { /* 连不上 GitHub 就算了 */ }
+}
 async function watchUpdate() {
   for (let i = 0; i < 20; i++) {
     await new Promise(r => setTimeout(r, i ? 30000 : 8000));
@@ -5417,7 +5433,7 @@ render();
   } else {
     try { if (!location.protocol.startsWith('http')) throw 0; const h = await api('/api/health'); if (h && h.ok) { MODE = 'local'; SAMPLE = deskSample; watchUpdate(); await refreshKey(); try { const r = await api('/api/hpacks'); RUNHIST = arr(r.packs).filter(p => p && Array.isArray(p.range) && Array.isArray(p.events)); } catch (_) { RUNHIST = []; } } } catch (_) { MODE = 'none'; }
     // 没有本机游戏程序（在线打开、或把网页存到电脑上双击打开）：网页版，浏览器直接连 DeepSeek，只要填 Key
-    if (MODE !== 'local') { MODE = 'web'; SAMPLE = directSample; webKeyRefresh(); }
+    if (MODE !== 'local') { MODE = 'web'; SAMPLE = directSample; webKeyRefresh(); webWatchUpdate(); }
   }
   READY = true;
   const last = lsGet('hrpg:last');
