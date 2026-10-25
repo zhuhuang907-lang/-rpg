@@ -43,7 +43,9 @@ const { chromium } = require('playwright');
   if (r.pol !== '已行') bad('国策颁行了，国策书上没标已行：' + JSON.stringify(r));
   if (!r.log) bad('人事与施政记录是空的');
   if (r.pend) bad('结过账的待办还挂着');
-  if (!(r.pts > pts1 - 3)) bad('过了一个月国策点没涨：' + JSON.stringify(r) + ' 时间 ' + JSON.stringify(await p.evaluate(() => [S.clock, S.polYM])));
+  // 国策点：照上次结算到的月份，过一个月涨三点（不靠这一回假 AI 写过了几天）
+  const acc = await p.evaluate(() => { const a = S.polPts; S.polYM = Math.floor(ymOf(S.clock)) - 1; applyReply(S, { reply: '日子照常过去。', mode: 'play', elapsedDays: 0 }, '歇着'); return [a, S.polPts]; });
+  if (acc[1] !== Math.min(30, acc[0] + 3)) bad('过了一个月国策点没涨三点：' + JSON.stringify(acc));
   // 逐年核人事：查到调走、有接任真人的就换上，记进人事记录；名册里查定的真人换掉虚构的
   const rf = await p.evaluate(async () => { S.org.checkedY = null; const n = await orgRefresh(S); const jj = S.org.nodes.find(x => x.id === 'A1').posts[0]; return { n, h: jj.holder, log: arr(S.org.log).some(x => /傅恒/.test(x.text) && /来保/.test(x.text)) }; });
   if (rf.h !== '来保' || !rf.log) bad('逐年核人事没把调走的人换掉：' + JSON.stringify(rf));
