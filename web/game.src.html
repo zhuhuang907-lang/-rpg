@@ -1565,6 +1565,8 @@ async function browserLookup(queries, both, world) {
     const B = B0 || [];
     for (const o of res.filter(o => wq.includes(o.q) && !W.has(o.q))) { const b = B.find(x => x.q === o.q); const bi = arr(b && b.items).slice(0, 3).map(x => ({ ...x, src: 'bocha' })); if (bi.length) { const had = arr(o.items).slice(0, 2).map(x => ({ ...x, src: x.src || o.provider || 'wikipedia' })); o.items = bi.concat(had); o.provider = had.length ? 'mixed' : 'bocha'; o.error = ''; } }
   }
+  // 大势那几条维基没搜到（国内多半连不上维基）：改问博查
+  if (BOCHA_KEY) { const miss = res.filter(o => W.has(o.q) && !arr(o.items).length); if (miss.length) await Promise.all(miss.map(async o => { try { const it = await bochaFetch(o.q); if (it.length) { o.items = it.map(x => ({ ...x, src: 'bocha' })); o.provider = 'bocha'; o.error = ''; } } catch (_) {} })); }
   const used = [...new Set(res.filter(x => arr(x.items).length).map(x => x.provider))];
   return { results: res, provider: used.length > 1 ? 'mixed' : used[0] || 'wikipedia' };
 }
@@ -1638,14 +1640,15 @@ async function doLookups(s, queries, both) {
   // 三路一起查：博查、维基（游戏服务或浏览器里查）、DeepSeek 快型号检索员，同时开跑，谁也不等谁
   // 分工：天下大势交给维基；人物、当年当地的情况交给博查和 DeepSeek（DeepSeek 照史实推断，写明依据）
   const world = queries.filter(q => isWorldQ(s, q)), localQ = queries.filter(q => !world.includes(q));
-  const dsP = DSM() && localQ.length ? dsLookup(localQ).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
+  // DeepSeek 检索员照样每条都问（快型号，不拖时间）：大势那几条只在维基、博查都没搜到时才用它（国内多半连不上维基，不能让大势一条都没有）
+  const dsP = DSM() ? dsLookup(queries).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
   dsP.catch(() => {});
   try { r = await Promise.race([MODE === 'local' ? api('/api/lookup', { queries, both: !!both, world }) : browserLookup(queries, both, world), new Promise((_, rej) => { if (sig) { if (sig.aborted) rej({ code: 'cancelled' }); sig.addEventListener('abort', () => rej({ code: 'cancelled' }), { once: true }); } })]); }
   catch (e) { if (e && e.code === 'cancelled') throw e; if (++SEARCH_DOWN >= 2) { SEARCH_OFF = '游戏服务没有回应'; SEARCH_OFF_AT = Date.now(); } return { err: '游戏服务没有回应' }; }
   // DeepSeek 检索员的结果并进来：放在博查、维基后面（它没经网页核对），有博查时每条最多补两句，没博查时补三句
   if (r && Array.isArray(r.results)) {
     const ds = await within(dsP, 20000, []).catch(e => { if (e && e.code === 'cancelled') throw e; return []; });
-    for (const y of arr(ds)) { const x = r.results.find(o => o.q === y.q); if (x && arr(y.items).length) { x.items = arr(x.items).slice(0, 5).concat(y.items.slice(0, KEY && KEY.bocha ? 2 : 3)); x.provider = arr(x.items).length > y.items.length ? 'mixed' : 'deepseek'; x.error = ''; } }
+    for (const y of arr(ds)) { const x = r.results.find(o => o.q === y.q); if (x && world.includes(x.q) && arr(x.items).length) continue; if (x && arr(y.items).length) { x.items = arr(x.items).slice(0, 5).concat(y.items.slice(0, KEY && KEY.bocha ? 2 : 3)); x.provider = arr(x.items).length > y.items.length ? 'mixed' : 'deepseek'; x.error = ''; } }
   }
   const shown = [], errs = [];
   for (const x of arr(r.results)) {

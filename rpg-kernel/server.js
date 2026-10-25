@@ -464,6 +464,7 @@ const routes = {
         if (netDown(w.error)) WIKI_DOWN_AT = Date.now();
       }
       const wOk = (w.results || []).length;
+      if (isBocha && isW && !(w.results || []).length) { const bw = await race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(12000, left())); if ((bw.results || []).length) return { query: q, results: bw.results.map(x => ({ ...x, src: 'bocha' })), provider: 'bocha' }; }   // 大势维基没搜到（国内多半连不上维基）：改问博查
       if (!isBocha || isW || b0) return (w.results || []).length || !b0 ? { query: q, ...w, provider: w.provider || 'wikipedia' } : { query: q, ...b0, provider: 'bocha' };
       const b = await bP;
       // 两边都有：博查在前（两边说法矛盾时照博查），维基跟上；每条标明出处
