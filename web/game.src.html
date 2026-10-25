@@ -1475,8 +1475,79 @@ function courtTab(s) {
     ${O ? tree + (can ? `<div class="opost"><input class="oin" data-onode="" placeholder="新衙门名（最上一层）"><button class="link" data-org="addNode" data-n="">${vb}设立衙门</button></div>` : '') : `<div class="muted">${ORGING ? '正在整理……' : '还没整理。'}</div>${ORGING ? '' : '<button id="bOrg">联网查制度，整理人事树和国策书</button>'}`}
     <datalist id="orgPeople">${people.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
     ${arr(s.orgPending).length ? `<div class="h"><span class="seal">办</span>待办（写进了下一步）</div><div class="list">${s.orgPending.map(x => `<div>${esc(x.line)}</div>`).join('')}</div>` : ''}
+    ${s.factSheet ? `<details class="fold"><summary><span class="seal">核</span>这一年此地的史实梳理<span class="note">第${esc(s.factSheet.turn)}回合提前对过资料；推演、写正文、核实都照它</span></summary><div class="list">${s.factSheet.facts.map(x => `<div>${esc(x.text)}<span class="muted">（${esc(x.src || '')}）</span></div>`).join('')}</div>${s.factSheet.ranges.length ? `<div class="tblwrap"><table class="tbl"><tr><th>数目</th><th>常见量级</th><th>依据</th></tr>${s.factSheet.ranges.map(r => `<tr><td>${esc(r.item)}</td><td>${esc(r.low)}–${esc(r.high)}${esc(r.unit)}</td><td>${esc(r.why)}</td></tr>`).join('')}</table></div>` : ''}${arr(s.factSheet.fixed).length ? `<div class="muted">改正：${esc(s.factSheet.fixed.join('；'))}</div>` : ''}</details>` : ''}
     ${polHtml ? `<div class="h"><span class="seal">策</span>国策书<span class="note">照这个政权此刻的处境查定；有先后次序的要一步步来</span></div>${polHtml}` : ''}
     ${O && arr(O.log).length ? `<div class="h"><span class="seal">录</span>人事与施政记录</div><div class="list">${O.log.slice().reverse().slice(0, 30).map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.text)}</div>`).join('')}</div>` : ''}`;
+}
+/* ========== 提前梳理：玩家读这一回、想下一步的时候，DeepSeek 快型号先把这一年此地的史实、常见数目的量级对一遍资料，
+ *  挑出账上、人事树上不合史实的地方；下一回推演、写正文、核实都照这份梳理。数目超出量级的先临时拉回量级之内（标「待核」），记账时再照资料定 ========== */
+const factKey = s => [s.place.polity || '', s.clock.y, geoCenter(s), Math.floor((s.turn || 0) / 6)].join('|');
+const factDue = s => s && s.clock && (!s.factSheet || s.factSheet.key !== factKey(s)) && !(s.factFail != null && s.turn - s.factFail < 3);
+async function buildFacts(s) {
+  const pol = s.place.polity || '', yl = s.clock.yearLabel || s.clock.y + '年', u = (s.money || {}).unit || '';
+  const R = arr(s.research).slice(-12).map(x => `· 查「${x.q}」：${cut(x.text, 300)}`).join('\n');
+  const orgLine = s.org ? s.org.nodes.filter(n => n.path || n.depth <= 1).slice(0, 40).map(n => `${n.name}：` + n.posts.slice(0, 5).map(p => `${p.title}${p.rank ? '（' + p.rank + '）' : ''}员额${p.quota || 1}${p.holder ? '，' + p.holder : ''}`).join('；')).join('\n') : '';
+  const nums = [arr(s.prices).length ? '物价：' + s.prices.slice(0, 12).map(x => `${x.item}${x.price != null ? x.price : '?'}${u}/${x.per || ''}`).join('、') : '',
+    s.realm ? `国库${s.realm.treasury ?? '?'}、岁入${s.realm.revenue ?? '?'}、岁出${s.realm.outlay ?? '?'}、存粮${s.realm.granary ?? '?'}石、兵额${s.realm.army ?? '?'}` : '',
+    arr(s.forces).length ? '兵马：' + s.forces.slice(0, 8).map(f => `${f.name}${f.troops ?? '?'}人、粮${f.grain ?? '?'}石`).join('、') : '',
+    arr(s.territory).length ? '地盘：' + s.territory.slice(0, 8).map(t => `${t.place}户${t.pop ?? '?'}、守军${t.troops ?? '?'}`).join('、') : '',
+    s.money && s.money.cash != null ? `主角现钱${s.money.cash}${u}` : ''].filter(Boolean).join('\n');
+  const { text } = await callClaude(`你是一位严谨的史家，替一局历史游戏在下一回之前把史实梳理一遍。此刻：${timeText(s.clock)}，政权${pol}，主角${s.protagonist.name || ''}（${s.protagonist.role || ''}），人在${geoCenter(s)}。
+${histBlock(s)}
+${s.inst ? '【本朝官制要览】' + cut(instText(s, 900), 900) : ''}
+${officialsBlock(s)}
+${R ? '【联网查到的资料】\n' + R : ''}
+${orgLine ? '【人事树（主角这一路和中枢）】\n' + orgLine : ''}
+${nums ? '【账上的数目】\n' + nums : ''}
+要做三件事，只照上面的资料和确凿的史书，拿不准的不写：
+一、facts：这一年此地最要紧的史实十到二十条（君主年号、主角这一路的长官是谁、行政建置、本朝要紧制度、近一两年的大事、物价行情），每条一句。
+二、ranges：这个年代这个地方常见数目的量级（米价、布价、田价、一县户口、知县养廉、县衙吏役人数、一营兵额、兵饷、一县赋额……挑跟主角相干的八到十五样），给出下限上限和单位，单位用「${u || '本朝通行的'}」。
+三、errors：上面人事树、账上数目里不合史实的地方（官名、品级、员额、在任的人、数目），写出错的、应为、依据；没有就空。
+只输出一个 JSON 对象：{"facts":[{"cat":"君主/官员/建置/制度/大事/物价","text":"","src":"资料/内置史料/史书"}],"ranges":[{"item":"","unit":"","low":0,"high":0,"why":""}],"errors":[{"where":"人事树或账上哪一处","wrong":"","right":"","why":""}]}`, null, { maxTokens: 4000, temperature: 0.1, kind: '研读', detached: true });
+  const d = parseJSON(text); if (!d) { s.factFail = s.turn; return null; }
+  const o = (v, n) => one(v, n || 60);
+  s.factSheet = { key: factKey(s), turn: s.turn, y: s.clock.y,
+    facts: arr(d.facts).filter(x => x && x.text).slice(0, 24).map(x => ({ cat: o(x.cat, 6), text: o(x.text, 90), src: o(x.src, 10) })),
+    ranges: arr(d.ranges).filter(x => x && x.item && num(x.low) != null && num(x.high) != null && num(x.high) >= num(x.low)).slice(0, 20).map(x => ({ item: o(x.item, 16), unit: o(x.unit, 12), low: num(x.low), high: num(x.high), why: o(x.why, 60) })),
+    errors: arr(d.errors).filter(x => x && x.wrong && x.right).slice(0, 12).map(x => ({ where: o(x.where, 30), wrong: o(x.wrong, 30), right: o(x.right, 30), why: o(x.why, 60) })) };
+  applyFactFixes(s);
+  return s.factSheet;
+}
+/** 梳理挑出的错：人事树上的官名、品级、员额、在任的人当场改；数目超出量级的临时拉回量级之内，标「待核」，记账时照资料定 */
+function applyFactFixes(s) {
+  const F = s.factSheet; if (!F) return [];
+  const done = [];
+  for (const e of F.errors) {
+    if (!s.org) break;
+    for (const n of s.org.nodes) {
+      if (e.where && !e.where.includes(n.name) && !n.name.includes(e.where.slice(0, 4))) continue;
+      if (n.name === e.wrong) { n.name = e.right; done.push(`人事树：${e.wrong}→${e.right}`); continue; }
+      for (const p of n.posts) {
+        if (p.title === e.wrong) { p.title = e.right; done.push(`${n.name}：${e.wrong}→${e.right}`); }
+        else if (p.rank && p.rank === e.wrong) { p.rank = e.right; done.push(`${n.name}${p.title}品级：${e.wrong}→${e.right}`); }
+        else if (p.holder === e.wrong && e.right.length >= 2 && e.right.length <= 6) { p.holder = e.right; p.src = '史料'; done.push(`${n.name}${p.title}：${e.wrong}→${e.right}`); }
+        else if (/员额/.test(e.where + e.wrong) && String(p.quota) === String(e.wrong).replace(/\D/g, '') && num(String(e.right).replace(/\D/g, ''))) { p.quota = num(String(e.right).replace(/\D/g, '')); done.push(`${n.name}${p.title}员额：${e.wrong}→${p.quota}`); }
+      }
+    }
+  }
+  const inR = (item, re) => F.ranges.find(r => re.test(r.item) && (!item || r.item.includes(item.slice(0, 1)) || item.includes(r.item.slice(0, 1))));
+  for (const x of arr(s.prices)) {
+    const r = F.ranges.find(r => r.item && (x.item || '').length && (r.item.includes(x.item) || x.item.includes(r.item.replace(/价$/, '')))); const v = N0(x.price);
+    if (!r || v == null || (r.unit && x.per && !r.unit.includes(String(x.per).slice(-1)))) continue;
+    if (v < r.low / 2 || v > r.high * 2) { const nv = v < r.low ? r.low : r.high; done.push(`物价「${x.item}」${v}→${nv}（${r.why || '照这个年代的量级'}，待核）`); x.price = nv; x.note = '待核'; }
+  }
+  if (s.org) for (const n of s.org.nodes) for (const p of n.posts) {
+    const r = inR(p.title, /员|吏|役|兵|额/); if (!r || !(p.title && r.item.includes(p.title.slice(0, 2)))) continue;
+    if (p.quota > r.high * 2) { done.push(`${n.name}${p.title}员额 ${p.quota}→${r.high}（待核）`); p.quota = r.high; p.status = p.status || '待核'; }
+  }
+  F.fixed = done.slice(0, 20);
+  if (done.length) s.org && (s.org.log = arr(s.org.log).concat(done.slice(0, 6).map(t => ({ turn: s.turn, when: timeText(s.clock), text: '梳理改正：' + t }))).slice(-60));
+  return done;
+}
+function factBlock(s) {
+  const F = s && s.factSheet; if (!F || !F.facts.length) return '';
+  return '【这一年此地的史实梳理（下一回之前已对过资料；与此冲突的照这里）】\n' + F.facts.map(x => `· ${x.text}`).join('\n')
+    + (F.ranges.length ? '\n常见数目的量级（写数目不要出这个范围，出了就要有来由）：' + F.ranges.map(r => `${r.item} ${r.low}–${r.high}${r.unit}`).join('；') : '');
 }
 /* ========== 内置史料：史事、君主年号、真人生卒官职由程序给出，AI 不凭记忆编 ========== */
 let HIST = [];
@@ -1689,7 +1760,7 @@ function rulingInput(s, said) {
 ${realmBlock(s) ? realmBlock(s) + '\n' : ''}${arr(s.battles).length ? '【最近打过的仗（照此往下推：败了的兵要收拢、补员，胜了的要守住、要赏）】' + s.battles.slice(-3).map(b => `${b.when}在${b.place}对${b.enemy || '敌'}：${b.outcome || ''}，我死伤${b.deadUs ?? '？'}、敌死伤${b.deadThem ?? '？'}`).join('；') + '\n' : ''}【身边的人（各有盘算）】${P.map(([k, v]) => `${k}（${v.role || ''}${v.age != null ? '，' + v.age + '岁' : ''}，好感${v.favor ?? '?'}${v.personality ? '，' + v.personality : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + cut(v.goal, 30) : ''}${v.plan ? '；打算：' + cut(v.plan, 30) : ''}）`).join('；') || '无'}${farLine(FAR) ? '\n' + farLine(FAR) : ''}
 ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下去还没办完的】' + s.orders.filter(o => /在办|待办|推迟/.test(o.status)).slice(-6).map(o => `${o.who}：${o.what}`).join('；') + '\n' : ''}${arr(s.gmNotes).length ? '【幕后真相（玩家不知道）】' + s.gmNotes.slice(-8).map(n => cut(n.text, 60)).join('；') + '\n' : ''}${arr(s.summaries).length ? '【最近几回】' + s.summaries.slice(-4).map(x => cut(x.text, 80)).join(' / ') + '\n' : ''}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '无'}
-${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${orgPendingBlock(s) ? orgPendingBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
+${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${factBlock(s) ? factBlock(s) + '\n' : ''}${orgPendingBlock(s) ? orgPendingBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
 ${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}${modulesBlock(said)}
 【玩家这回说】${said}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
@@ -2880,6 +2951,7 @@ function blocks(s, forStory) {
   L.push('【史线（以此为准）】' + (w.overview || '（开局时补全）') + (arr(w.events).length && !(forStory && hasHist(s)) ? '\n已经发生：\n' + w.events.slice(forStory ? -8 : -24).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}${x.changed ? '（本局实际如此）' : ''}`).join('\n') : '')
     + (arr(w.upcoming).length ? '\n将要发生（书中人不知道；照史=照史书，已变/新出=因本局的变化）：\n' + w.upcoming.slice(0, forStory ? 6 : 14).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}（${x.status || '照史'}${x.why && x.status && x.status !== '照史' ? '：' + x.why : ''}）`).join('\n') : '\n按史书将要发生：已用完，请在 worldUpcoming 里补上之后五年的大事'));
   instBlocks(s, L, forStory);
+  { const fb = factBlock(s); if (fb) L.push(fb); }
   { const ob = orgPendingBlock(s); if (ob) L.push(ob); }
   if (s.org && permLevel(s) !== 'view') L.push('【朝局人事（人事树上此刻在任的人；正文里写到这些位子用这些人）】' + s.org.nodes.filter(n => n.status !== '已裁撤').slice(0, forStory ? 14 : 30).map(n => `${n.name}：` + n.posts.slice(0, 4).map(p => `${p.title}${p.holder || '空缺'}`).join('、')).join('；'));
   if (arr(s.factions).length) L.push('【派系与利益集团（以此为准；派系照各自诉求行动，议题不同可以分合）】' + s.factions.map(f => `${f.name}（${f.leader || ''}${f.members ? '；' + f.members : ''}；要${f.aims || '？'}；对主角${f.stance || '？'}；${f.strength || ''}${f.note ? '；' + f.note : ''}）`).join('；'));
@@ -3202,6 +3274,8 @@ function dataDoubts(s) {
       const r = shi(v); if (r < g[2] / 3 || r > g[3] * 3) out.push(`物价「${x.item}」每${x.per} ${v}${u}，合${fmt(r)}，跟这里的米价比不合常理`);
     }
   }
+  // 梳理出的常见量级：账上的数出了范围（拉回来的标了待核），记账时照资料定
+  for (const x of arr(s.prices)) if (x.note === '待核') out.push(`物价「${x.item}」原数不合这个年代的量级，临时改为 ${x.price}，照资料定准`);
   const R = s.realm; if (R) { const tre = N0(R.treasury), rev = N0(R.revenue); if (tre && rev && tre > rev * 15) out.push(`国库 ${tre} 是岁入 ${rev} 的十五倍以上，不合常理`); }
   const isR = typeof isRuler === 'function' && isRuler(s), troops = arr(s.forces).reduce((a, f) => a + (N0(f.troops) || 0), 0);
   if (!isR && !arr(s.territory).length && troops > 20000) out.push(`主角不是一方之主，名下兵马却有 ${troops} 人`);
@@ -4051,7 +4125,7 @@ const draftHtml = () => `<div class="muted" style="font-size:12px;margin-top:8px
 function verifyMaterials(s, said, text) {
   const up = unknownPlaces(s, text);
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-6).map(x => ({ ...x, text: cut(x.text, x.wiki ? 500 : 280) }));   // 写正文只要这一回新查到的要点，别把整页资料塞进去
-  return [said ? `【玩家这回说】${said}` : '', arr(s.canon).length ? '【定本】' + s.canon.slice(-15).map(c => c.text).join('；') : '', histBlock(s), dossierBlock(s, said + text), gazBlock(s), instPoints(s, said, text), mentionedFigures(s, text), modernInStory(text),
+  return [said ? `【玩家这回说】${said}` : '', factBlock(s), arr(s.canon).length ? '【定本】' + s.canon.slice(-15).map(c => c.text).join('；') : '', histBlock(s), dossierBlock(s, said + text), gazBlock(s), instPoints(s, said, text), mentionedFigures(s, text), modernInStory(text),
     fresh.length ? researchBlock({ ...s, research: fresh, locals: [] }) : '', almanacBlock(s),
     up.length ? `【历史地名库里 ${s.clock && s.clock.y} 年前后查不到这些地名（多半是编的，或用了别的朝代的名字）：逐个核实，不对的放进 doubts 或改成真实的】${up.join('、')}` : ''].filter(Boolean).join('\n\n');
 }
@@ -5296,6 +5370,7 @@ async function afterTurn(s0, d, g, gen = BG_GEN) {
   if (s0.estateDue && !(await step('照新身份重立家底', () => buildEstate(s0)))) return;
   if (canSearch() && officialsDue(s0) && !(await step('趁空查这地方此时在任的官员', () => ensureOfficials(s0).catch(e => { s0.offFail = s0.turn; throw e; })))) return;   // 玩家读这一回、想下一步的时候先查好，下一回不用等
   if (orgDue(s0) && !(await step('联网整理人事树和国策书', () => buildOrg(s0)))) return;
+  if (factDue(s0) && !(await step('提前梳理这一年此地的史实和数目', () => buildFacts(s0).catch(e => { s0.factFail = s0.turn; throw e; })))) return;
   if (promoDue(s0, '') && !(await step('联网查本朝升迁之制', () => ensurePromo(s0).catch(e => { s0.promoFail = s0.turn; throw e; })))) return;
   if (needGeo(s0) && !(await step('查历史地名库、画县级地图', () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties)))) return;
   if (live()) { BGMSG = '存档'; try { await store.save(s0); } catch (_) { /* 下回再存 */ } }
