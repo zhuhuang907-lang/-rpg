@@ -37,7 +37,7 @@ const { chromium } = require('playwright');
   if (r.pol !== '已行') bad('国策颁行了，国策书上没标已行：' + JSON.stringify(r));
   if (!r.log) bad('人事与施政记录是空的');
   if (r.pend) bad('结过账的待办还挂着');
-  if (!(r.pts > pts1 - 3)) bad('过了一个月国策点没涨：' + JSON.stringify(r));
+  if (!(r.pts > pts1 - 3)) bad('过了一个月国策点没涨：' + JSON.stringify(r) + ' 时间 ' + JSON.stringify(await p.evaluate(() => [S.clock, S.polYM])));
   // 久不来往的人：萍水相逢的过几回断，家人不断；不删
   const f = await p.evaluate(() => { S.people['卖饼的王二'] = { role: '小贩', tie: '路人', seen: S.turn - 5 }; S.people['周先生'] = { role: '塾师', tie: '老师', seen: S.turn - 5 }; S.people['汪承裕'] = { role: '儿子', tie: '儿子', seen: S.turn - 99 }; fadePeople(S); return { a: !!S.people['卖饼的王二'].faded, b: !!S.people['周先生'].faded, c: !!S.people['汪承裕'].faded, kept: '卖饼的王二' in S.people, live: livePeople(S).some(([k]) => k === '卖饼的王二') }; });
   if (!f.a) bad('萍水相逢的过了几回还没断');

@@ -1019,7 +1019,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261025172527';
+const BUILD = '20261025182058';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -4915,7 +4915,6 @@ function applyReply(s, d, said) {
     s.careerLog = s.careerLog.slice(-80);
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
-    { const mo = ymOf(s.clock) - snap0.ym; const pl = permLevel(s); if (mo > 0 && pl === 'decree') s.polPts = Math.min(30, (s.polPts || 0) + Math.round(mo * 3)); }
     fadePeople(s);
     // 传承：主角死了，由继承人接着玩
     const sc = d.succession && typeof d.succession === 'object' ? d.succession : null;
@@ -4986,6 +4985,8 @@ function applyReply(s, d, said) {
     const c1 = N0((s.money || {}).cash); if (c1 != null && snap0.cash != null && c1 !== snap0.cash) { dl.push(`现钱${c1 > snap0.cash ? '+' : ''}${fmtN(c1 - snap0.cash, s.money.unit || '两')}`); ch.add('cash'); }
     for (const [k, v] of Object.entries(s.people || {})) { const f0 = snap0.people[k], f1 = N0(v && v.favor); if (!(k in snap0.people)) dl.push(`新识${k}${v.role ? '（' + one(v.role, 8) + '）' : ''}`); else if (f0 != null && f1 != null && Math.abs(f1 - f0) >= 10) dl.push(`${k}${f1 > f0 ? '更亲近' : '更疏远'}（${f1 > f0 ? '+' : ''}${f1 - f0}）`); }
     for (const n of snap0.hh) if (arr(s.household).some(m => m.name === n && m.dead)) dl.push(`${n}故去`);
+    // 国策点：一方之主每过一个月涨三点（照上次结算到的月份算，不漏不重）
+    { const ym = Math.floor(ymOf(s.clock)); if (permLevel(s) === 'decree') { const mo = s.polYM != null ? ym - s.polYM : 0; if (mo > 0) s.polPts = Math.min(30, (s.polPts || 0) + mo * 3); } s.polYM = ym; }
     if (arr(extra.org).length) dl.push(...extra.org.slice(0, 4).map(x => '朝局：' + one(x, 40)));
     extra.delta = dl.slice(0, 12); s.changed = [...ch];
     { const R = arr(s.research).filter(x => x.turn === s.turn - 1); extra.searched = R.length; }   // 这一回联网查到几条：每回合都查，界面上看得见
