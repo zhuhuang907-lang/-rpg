@@ -16,7 +16,7 @@ function story(talk) {
   return t + '\n【幕后】周四其实收了江家二十两银子。';
 }
 function ledger(p) {
-  if (/【朝局待办/.test(p)) { const m = p.match(/任命(\S{2,4}?)为(\S+?)[（。]/); const q = p.match(/颁行「(.+?)」/); return JSON.stringify({ elapsedDays: 31, turnSummary: '下令', orgResults: m ? [{ office: m[2], person: m[1], result: '到任', why: '奉旨赴任' }] : [], policyResults: q ? [{ name: q[1], result: '颁行', why: '诏下' }] : [] }); }
+  if (/【朝局待办（主角这回/.test(p)) { const m = p.match(/任命(\S{2,4}?)为(\S+?)[（。]/); const q = p.match(/颁行「(.+?)」/); return JSON.stringify({ elapsedDays: 31, turnSummary: '下令', orgResults: m ? [{ office: m[2], person: m[1], result: '到任', why: '奉旨赴任' }] : [], policyResults: q ? [{ name: q[1], result: '颁行', why: '诏下' }] : [] }); }
   if (/【玩家这回说】[^\n]*坐船去苏州/.test(p)) return JSON.stringify({ elapsedDays: 3, nowAt: '苏州府吴县', turnSummary: '到苏州办货', presentNpcs: [{ name: '沈牙人', role: '牙行' }] });
   if (/【玩家这回说】[^\n]*回扬州家里/.test(p)) return JSON.stringify({ elapsedDays: 3, nowAt: '扬州府江都县', turnSummary: '回家' });
   if (/【玩家这回说】[^\n]*去京师/.test(p)) return JSON.stringify({ elapsedDays: 30, nowAt: '京师', turnSummary: '进京' });
