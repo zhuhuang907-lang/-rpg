@@ -220,6 +220,17 @@ textarea{resize:vertical}
 #faceModal .frow input[type=range]{width:100%}
 #faceModal .fbtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 #faceModal .ftr{font-size:12px;color:var(--mute);margin-top:8px}
+  .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:6px 0}
+  .ccard{border:1px solid var(--line,#ddd);border-radius:6px;padding:8px;background:var(--card,#fffdf8)}
+  .ccard .ct{font-weight:bold;margin-bottom:4px}
+  .ccard .cr{display:flex;justify-content:space-between;gap:6px;font-size:13px}
+  .onode{border-left:2px solid var(--line,#ddd);padding:4px 0 4px 8px;margin:4px 0}
+  .onode .oh{font-size:14px}
+  .opost{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;padding:2px 0}
+  .opost .ot{min-width:6em}.opost .ot i{font-style:normal;color:#888;margin-left:4px;font-size:12px}
+  .opost .oin{width:9em;font-size:12px;padding:2px 4px}
+  .oadd summary{font-size:12px;cursor:pointer}
+  .pol{padding:4px 0;border-top:1px dashed var(--line,#ddd);font-size:13px}.pol.done{opacity:.6}.pol.lock{opacity:.75}
 </style>
 
 <div class="wrap">
@@ -412,6 +423,7 @@ function realmBlock(s) {
 /** 账房的规则：照正文记账、核史实，只出 JSON */
 function ledgerRules() {
   return `${NOFAB}
+主角下令或上疏的人事、国策（见【朝局待办】）在 orgResults、policyResults 里逐条给出结果，照正文写的来（被委任的人肯不肯来、来不来得了、上疏准没准）；正文里别人被任免、衙门被设立裁撤的也记进 orgResults。
 你是这局历史模拟游戏的账房兼史官。主持人刚写好这一回的正文（下面给出）。你的事：照正文把账册更新，再把正文的史实核一遍。只记正文里发生了的事和照理必然发生的事（过了月份的收支、按史书此时发生的天下大事、行情随季节的涨落），不要改剧情、不要添正文没有的情节。
 
 记账规则：
@@ -464,6 +476,7 @@ function ledgerRules() {
 "succession":{"died":"主角死了才填「是」","heir":"","heirRole":"","heirAge":0,"note":""},
 "career":{"office":"","rank":"","post":"","titles":[""],"duties":"","powers":"","superior":"","subordinates":"","evaluation":"","tenure":"","nextSteps":[{"to":"","need":""}]},
 "careerEvents":[{"what":"","office":""}],
+"orgResults":[{"office":"衙门+官职（照【朝局待办】或正文）","person":"","result":"到任/辞不就/来不了/罢免/裁撤/增设/准奏/驳回/受阻","why":"一句话"}],"policyResults":[{"name":"国策名","result":"颁行/准奏/驳回/受阻","why":""}],
 "statusChanges":[{"项":"","后":"","原因":""}],
 "identity":{"role":"主角身份变了才填：新身份一句话","identityModule":"emperor/noble/official/warlord/commoner","why":"怎么变的","meters":[{"项":"新身份要紧的数值","值":"带数"}]},
 "gmNotes":[""],"gmNotesDone":[""],
@@ -1238,6 +1251,176 @@ function promoFaults(s, text) {
   }
   return out;
 }
+/* ========== 人物来往：照关系淡出——家人永远在册，至交、师友、东家、仇家久不见才淡，泛泛之交十来回不见就断，萍水相逢的过三回就断；只是不再进材料、名单里收进「旧识」，不删，再见着就回来 ========== */
+const TIE_FAMILY = /父|母|妻|妾|夫君|丈夫|儿子|女儿|子|女|兄|弟|姐|妹|姊|族|叔|伯|舅|姑|姨|侄|甥|孙|岳|婿|媳|嫂|亲家/;
+const TIE_CLOSE = /师|友|东家|东翁|上司|上官|属下|部下|同僚|幕|门生|同窗|同年|恩|仇|主人|主子|仆|婢|丫鬟|家丁|长随|管家|账房|伙计|学徒|部将|亲兵|心腹|故交|知己|相好|情|盟|结义|义/;
+const TIE_ONCE = /路人|过客|小贩|摊|店家|店小二|小二|船家|艄公|车夫|轿夫|脚夫|差役|衙役|门房|门子|牙人|乞|看客|闲汉|茶客|酒客|香客|行人/;
+function tieKind(s, k, v) {
+  const t = [v.tie, v.role].join(' ');
+  if (arr(s.household).some(m => m.name === k) || TIE_FAMILY.test(String(v.tie || ''))) return 'family';
+  if (Math.abs(Number(v.favor) || 0) >= 60 || TIE_CLOSE.test(t)) return 'close';
+  if (TIE_ONCE.test(t)) return 'once';
+  return 'acq';
+}
+const FADE_AFTER = { family: Infinity, close: 40, acq: 10, once: 3 };
+function fadePeople(s) {
+  const busy = new Set(arr(s.orders).filter(o => o && o.who && !/办妥|办砸|搁下/.test(o.status || '')).map(o => o.who));
+  const deedTxt = arr(s.deeds).filter(x => x && !x.done).map(x => (x.what || '') + (x.later || '')).join(' ');
+  const hold = orgHolders(s); for (const o of officialsHere(s)) hold.add(o.name);
+  for (const [k, v] of Object.entries(s.people || {})) {
+    if (!v) continue;
+    const idle = (s.turn || 0) - (v.seen || 0), kind = tieKind(s, k, v);
+    if (v.faded && idle <= 0) { delete v.faded; delete v.fadeWhy; continue; }   // 又见着了
+    if (v.faded || busy.has(k) || deedTxt.includes(k) || hold.has(k)) continue;   // 还有差事、有后续、在官位上的不断
+    if (idle > FADE_AFTER[kind]) { v.faded = s.turn; v.fadeWhy = kind === 'once' ? '萍水相逢，一面之后再无往来' : kind === 'acq' ? '久不来往，渐渐断了音信' : '多年不见，各奔东西'; }
+  }
+}
+/** 还在来往的人（玩家这回点名找的旧识也算） */
+const livePeople = s => Object.entries(s.people || {}).filter(([k, v]) => v && (!v.faded || String(CUR_SAID || '').includes(k)));
+
+/* ========== 朝局：人事树（衙门—官职—人事）、国策点、国策书。地位低的只能看，做官的可以上疏建议，一方之主可以直接下令 ========== */
+let ORGMSG = '', ORGING = false;
+function permLevel(s) {
+  if (isRuler(s)) return 'decree';
+  const c = s.career || {}, r = rankNum(c.rank) || postRank(s, c.office);
+  if (c.office && (r == null || r <= 7.5)) return 'propose';
+  return 'view';
+}
+const PERM_TXT = { decree: '你是一方之主：可以直接下令增设、裁撤衙门，委任、罢免官员，颁行国策（花国策点）', propose: '你有官职：可以上疏建议任免和施政，准不准由上头定（不花国策点）', view: '你眼下地位不够：只能看朝廷的架子和在任的人' };
+const ORG_COST = { appoint: 1, dismiss: 1, addPost: 2, addNode: 3, cut: 3 };
+function orgHolders(s) { const H = new Set(); for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.holder) H.add(p.holder); return H; }
+const orgDue = s => s && s.clock && !(s.orgFail != null && s.turn - s.orgFail < 4) && (!s.org || s.org.pol !== (s.place.polity || '') || s.org.ruler !== isRuler(s)) && permLevel(s) !== 'view';
+async function buildOrg(s) {
+  if (ORGING) return; ORGING = true; ORGMSG = '正在联网查制度、整理人事树……'; render();
+  try {
+    const pol = s.place.polity || '', dy = pol + (/[代朝]$/.test(pol) ? '' : '代'), yl = s.clock.yearLabel || s.clock.y + '年', ruler = isRuler(s), p = s.protagonist;
+    const found = await searchFirst(s, [`${dy} 中枢 机构 设置`, `${dy} 地方 官制 层级`, `${dy} 军制 兵制`, `${yl} ${pol} 大臣 在任`, ruler ? `${String(p.role || '').slice(0, 10)} 幕府 属官` : `${dy} 六部 职掌`, `${dy} 改革 新政`]);
+    const { text } = await callClaude(`你是精通历代职官、政制的史家。一局历史游戏此刻是${timeText(s.clock)}，政权${pol}，主角${p.name || ''}，${p.role || ''}${ruler ? '（一方之主：整理他治下这个政权、幕府自己的架子）' : '（整理他所在的本朝的架子，重点是主角所在的那一路）'}。
+${found || '（没查到网上资料：只写你确知的，拿不准的不写）'}
+${s.inst ? '【本朝官制要览】' + cut(instText(s, 1200), 1200) : ''}
+${officialsBlock(s)}
+${realmBlock(s)}
+一、人事树：这个政权此刻的制度框架——中枢、地方、军事、内廷（或幕府）——列出各衙门、隶属、职掌，每个衙门的主官和要紧属官（官名、品级、员额）。在任的人只填资料或名册里有的真人，查不到就空着，不编。十到三十个衙门。
+二、国策书：照这个政权此刻真有的处境，列出能推行的施政与改革，分「政治」「经济」「民生」「军事」「制度」五类，每类三到六条；有前后次序的写 need（前置的 id）；历史上谁、何时推行过同类的写在 real（没有写空）；effect 写推行了会怎样，利弊都写，不写空话；cost 是要花的国策点（2 到 8）。不收与这个年代不符的东西。
+只输出一个 JSON 对象：{"regime":"政权与年份","nodes":[{"id":"n1","name":"衙门名","tier":"中枢/地方/军事/内廷/幕府","parent":"上级衙门 id，没有就空","duty":"一句话职掌","posts":[{"title":"官名","rank":"品级","quota":1,"holder":"在任真人（查不到空）"}]}],"policies":[{"id":"p1","area":"政治","name":"","desc":"一句话做什么","cost":3,"need":[],"real":"","effect":""}]}`, null, { maxTokens: 7000, temperature: 0.2, kind: '研读', detached: true });
+    const d = parseJSON(text);
+    if (!d || !Array.isArray(d.nodes) || !d.nodes.length) throw { code: 'bad_json' };
+    const o = (v, n) => one(v, n || 40);
+    const nodes = d.nodes.filter(n => n && n.name).slice(0, 40).map((n, i) => ({ id: o(n.id, 8) || 'n' + (i + 1), name: o(n.name, 20), tier: o(n.tier, 6) || '中枢', parent: o(n.parent, 8), duty: o(n.duty, 60), src: '史',
+      posts: arr(n.posts).filter(x => x && x.title).slice(0, 12).map(x => ({ title: o(x.title, 16), rank: o(x.rank, 10), quota: Math.max(1, Math.min(99, num(x.quota) || 1)), holder: realOrBlank(s, o(x.holder, 10)), status: '' })) }));
+    // 名册里查定的本地官员并进来
+    for (const ofc of officialsHere(s)) for (const n of nodes) for (const p of n.posts) if (!p.holder && ofc.name && (String(ofc.post).includes(p.title) || p.title.includes(String(ofc.post))) && (n.tier === '地方' || /府|州|县/.test(n.name))) { p.holder = ofc.name; p.src = ofc.src; }
+    s.org = { regime: o(d.regime, 40), pol: s.place.polity || '', ruler, at: s.turn, y: s.clock.y, nodes, log: arr(s.org && s.org.log) };
+    s.policies = arr(d.policies).filter(x => x && x.name).slice(0, 30).map((x, i) => ({ id: o(x.id, 8) || 'p' + (i + 1), area: /政|经|民|军|制/.test(x.area || '') ? o(x.area, 4) : '政治', name: o(x.name, 20), desc: o(x.desc, 80), cost: Math.max(1, Math.min(10, num(x.cost) || 3)), need: arr(x.need).map(v => o(v, 8)).filter(Boolean), real: o(x.real, 60), effect: o(x.effect, 120), state: '' }));
+    if (s.polPts == null) s.polPts = permLevel(s) === 'decree' ? 6 : 0;
+    ORGMSG = '';
+  } catch (e) { if (e && e.code === 'cancelled') throw e; s.orgFail = s.turn; ORGMSG = '没整理成：' + errText(e) + '（下一回合自动再试）'; }
+  finally { ORGING = false; render(); }
+}
+/** 资料没提到的名字不填进去（只收真人名单里的、或名册里的） */
+function realOrBlank(s, n) { if (!n || n.length < 2 || /空|无|缺|不详|某/.test(n)) return ''; const R = realNameSet(s); return R.has(n) || arr(s.research).some(x => String(x.text).includes(n)) ? n : ''; }
+const orgNode = (s, id) => arr(s.org && s.org.nodes).find(n => n.id === id);
+/** 玩家在人事树上的操作：写成主角这一回的命令（下令或上疏）放进输入框，记下待办；花国策点；明摆着办不成的当场说 */
+function orgAct(s, act, a) {
+  const perm = permLevel(s); if (perm === 'view') { ORGMSG = PERM_TXT.view; return null; }
+  const dec = perm === 'decree', cost = dec ? (act === 'policy' ? (a.pol && a.pol.cost) || 3 : ORG_COST[act] || 1) : 0;
+  if (act === 'policy' && a.pol) { const miss = a.pol.need.filter(id => !arr(s.policies).some(x => x.id === id && x.state === '已行')); if (miss.length) { ORGMSG = `要先推行：${miss.map(id => (arr(s.policies).find(x => x.id === id) || {}).name || id).join('、')}`; return null; } }
+  if (dec && (s.polPts || 0) < cost) { ORGMSG = `国策点不够：这一项要 ${cost} 点，你现在有 ${s.polPts || 0} 点（每过一个月涨三点）`; return null; }
+  const n = a.node, p = n && a.pi != null ? n.posts[a.pi] : null, who = String(a.person || '').trim();
+  const verb = dec ? '下令' : '上疏建议';
+  let line = '';
+  if (act === 'appoint') {
+    if (!who) { ORGMSG = '先写上要委任谁'; return null; }
+    if (who === s.protagonist.name) { ORGMSG = '不能委任你自己'; return null; }
+    const ds = (s.dossiers || {})[who];
+    if (ds && ds.died != null && ds.died < s.clock.y) { ORGMSG = `${who}已于${ds.died}年去世，委任不了`; return null; }
+    if (ds && ds.born != null && ds.born > s.clock.y - 14) { ORGMSG = `${who}此时${ds.born > s.clock.y ? '还没出生' : '还是孩子'}，委任不了`; return null; }
+    const pp = (s.people || {})[who], far = pp && pp.where && !String(pp.where).includes(String(geoCenter(s)).slice(0, 2)) ? `（此人眼下在${pp.where}，召来要些日子）` : pp && pp.faded ? '（此人久已断了来往，未必找得到、未必肯来）' : !pp && !ds ? '（此人不在身边，要派人去请，未必肯来）' : '';
+    line = `${verb}：${dec ? '任命' : '以'}${who}${dec ? '为' : '补'}${n.name}${p.title}${far}。`;
+    p.pending = who; p.status = dec ? '待到任' : '已上疏';
+  } else if (act === 'dismiss') { if (!p || !p.holder) return null; line = `${verb}：${dec ? '罢免' : '罢去'}${n.name}${p.title}${p.holder}。`; p.status = dec ? '待罢免' : '已上疏'; }
+  else if (act === 'addPost') { if (!who) { ORGMSG = '先写上要增设的官名'; return null; } line = `${verb}：在${n.name}增设${who}。`; n.posts.push({ title: one(who, 16), rank: '', quota: 1, holder: '', status: dec ? '待设' : '已上疏', src: '玩家' }); }
+  else if (act === 'addNode') { if (!who) { ORGMSG = '先写上要设的衙门'; return null; } line = `${verb}：${n ? '在' + n.name + '之下' : ''}设立${who}。`; s.org.nodes.push({ id: 'u' + (s.org.nodes.length + 1) + '_' + s.turn, name: one(who, 20), tier: n ? n.tier : '中枢', parent: n ? n.id : '', duty: '', posts: [], src: '玩家', status: dec ? '待设' : '已上疏' }); }
+  else if (act === 'cut') { if (!n) return null; line = `${verb}：裁撤${n.name}。`; n.status = dec ? '待裁撤' : '已上疏'; }
+  else if (act === 'policy') { const q = a.pol; if (!q) return null; const miss = q.need.filter(id => !arr(s.policies).some(x => x.id === id && x.state === '已行')); if (miss.length) { ORGMSG = `要先推行：${miss.map(id => (arr(s.policies).find(x => x.id === id) || {}).name || id).join('、')}`; return null; } line = `${verb}：${dec ? '颁行' : '推行'}「${q.name}」——${q.desc}。`; q.state = dec ? '待颁行' : '已上疏'; }
+  if (dec) s.polPts = (s.polPts || 0) - cost;
+  s.orgPending = arr(s.orgPending).concat([{ act, line, turn: s.turn, node: n && n.id, pi: a.pi, who, pol: a.pol && a.pol.id, dec, cost }]).slice(-20);
+  ORGMSG = dec ? `已写进下一步（花了 ${cost} 点国策点，剩 ${s.polPts} 点）：点「写下一步」后照制度办，被委任的人可能不肯来、来不了` : '已写进下一步：点「写下一步」后递上去，准不准由上头定';
+  return line;
+}
+function orgPendingBlock(s) {
+  const L = arr(s.orgPending); if (!L.length) return '';
+  return '【朝局待办（主角这回下的令、上的疏；照本朝制度和人情定结果：被委任的人可能辞不就、来不了、路上要走多久；上疏的准不准由上头定；记账时在 orgResults、policyResults 里一一给出结果）】\n' + L.map(x => '· ' + x.line).join('\n');
+}
+/** 记账给出的人事、国策结果落到人事树上 */
+function applyOrgResults(s, d) {
+  if (!s.org) return [];
+  const out = [];
+  const findPost = (txt, who) => { for (const n of s.org.nodes) for (const p of n.posts) { const full = n.name + p.title; if (txt && (txt.includes(full) || (txt.includes(p.title) && txt.includes(n.name.slice(0, 2)))) || (who && (p.pending === who || p.holder === who) && (!txt || txt.includes(p.title)))) return [n, p]; } return [null, null]; };
+  for (const r of arr(d.orgResults).slice(0, 12)) {
+    if (!r) continue;
+    const res = one(r.result, 8), who = one(r.person, 10), off = one(r.office, 30), why = one(r.why, 60);
+    const [n, p] = findPost(off, who);
+    if (/裁撤/.test(res)) { const m = s.org.nodes.find(x => off.includes(x.name)); if (m) { m.status = '已裁撤'; } }
+    else if (/增设|设立/.test(res)) { const m = s.org.nodes.find(x => off.includes(x.name)); if (m) m.status = ''; else if (n) { const q = n.posts.find(x => off.includes(x.title)); if (q) q.status = ''; } }
+    else if (p) {
+      if (/到任|准奏|就任|任命|补授|署理/.test(res) && who) { p.holder = who; p.status = ''; delete p.pending; p.since = s.clock.y; }
+      else if (/罢免|革|撤|致仕|去职|病故|死/.test(res)) { if (!who || p.holder === who) p.holder = ''; p.status = ''; }
+      else { p.status = res || '受阻'; delete p.pending; }
+    }
+    out.push(`${off}${who ? '·' + who : ''}：${res}${why ? '（' + why + '）' : ''}`);
+    s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: `${off}${who ? ' ' + who : ''}：${res}${why ? '，' + why : ''}` }]).slice(-60);
+  }
+  for (const r of arr(d.policyResults).slice(0, 6)) {
+    if (!r || !r.name) continue;
+    const q = arr(s.policies).find(x => String(r.name).includes(x.name) || x.name.includes(String(r.name)));
+    const res = one(r.result, 8);
+    if (q) q.state = /颁行|准奏|推行|见效|已行/.test(res) ? '已行' : /驳回|受阻|作罢|搁置/.test(res) ? res : q.state;
+    out.push(`国策「${one(r.name, 20)}」：${res}${r.why ? '（' + one(r.why, 60) + '）' : ''}`);
+    s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: `国策「${one(r.name, 20)}」：${res}${r.why ? '，' + one(r.why, 60) : ''}` }]).slice(-60);
+  }
+  // 这一回结过账的待办清掉；没给结果的留着下回再记（最多留三回）
+  s.orgPending = arr(s.orgPending).filter(x => s.turn - x.turn < 3 && !out.some(t => (x.who && t.includes(x.who)) || (x.pol && t.includes((arr(s.policies).find(q => q.id === x.pol) || {}).name || '#'))));
+  return out;
+}
+/** 朝局页 */
+function courtTab(s) {
+  const perm = permLevel(s), O = s.org, R = s.realm || {}, TR = arr(s.territory), FC = arr(s.forces), u = (s.money || {}).unit || '';
+  const avg = (xs, k) => { const v = xs.map(x => N0(x[k])).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
+  const sum = (xs, k) => xs.reduce((a, x) => a + (N0(x[k]) || 0), 0);
+  const vac = O ? O.nodes.filter(n => n.status !== '已裁撤').reduce((a, n) => a + n.posts.filter(p => !p.holder).length, 0) : null;
+  const card = (t, rows) => `<div class="ccard"><div class="ct">${t}</div>${rows.filter(r => r[1] != null && r[1] !== '').map(([k, v]) => `<div class="cr"><span>${k}</span><b>${esc(v)}</b></div>`).join('') || '<div class="muted">还没有数</div>'}</div>`;
+  const grain = sum(FC, 'grain'), troops = sum(FC, 'troops');
+  const dash = `<div class="cgrid">
+    ${card('政治', [['派系', arr(s.factions).length || null], ['人事空缺', vac], ['待办', arr(s.orgPending).length || null], ['已行国策', arr(s.policies).filter(x => x.state === '已行').length || null]])}
+    ${card('经济', [['国库', R.treasury != null ? fmtN(N0(R.treasury), u) : null], ['岁入', R.revenue != null ? fmtN(N0(R.revenue), u) : null], ['岁出', R.outlay != null ? fmtN(N0(R.outlay), u) : null], ['太仓存粮', R.granary != null ? fmtN(N0(R.granary), '石') : null]])}
+    ${card('民生', [['地盘', TR.length || null], ['户口', TR.length ? fmtN(sum(TR, 'pop')) : null], ['民心（均）', avg(TR, 'loyalty')], ['物价', arr(s.prices).slice(0, 2).map(x => x.item + (x.price != null ? x.price + (x.per || '') : '')).join('、') || null]])}
+    ${card('军事', [['兵马', FC.length ? FC.length + ' 支' : null], ['总兵力', troops ? fmtN(troops, '人') : R.army != null ? fmtN(N0(R.army), '人') : null], ['军粮可支', troops && grain ? Math.floor(grain / (troops * 0.02)) + ' 日' : null], ['打过的仗', arr(s.battles).length || null]])}
+  </div>`;
+  const people = [...new Set(livePeople(s).map(([k]) => k).concat(Object.keys(s.dossiers || {}).filter(k => (s.dossiers[k] || {}).real !== false), arr(s.household).map(m => m.name)))].filter(n => n && n !== s.protagonist.name).slice(0, 80);
+  const can = perm !== 'view', vb = perm === 'decree' ? '下令' : '上疏';
+  const tierOrder = ['中枢', '内廷', '幕府', '地方', '军事'];
+  const kids = pid => O.nodes.filter(n => (n.parent || '') === (pid || '') && n.status !== '已裁撤');
+  const roots = O ? O.nodes.filter(n => n.status !== '已裁撤' && (!n.parent || !O.nodes.some(m => m.id === n.parent))) : [];
+  const nodeHtml = (n, depth) => `<div class="onode" style="margin-left:${Math.min(depth, 4) * 14}px"><div class="oh"><b>${esc(n.name)}</b>${n.status ? ` <span class="att">${esc(n.status)}</span>` : ''}${n.src === '玩家' ? ' <span class="att">新设</span>' : ''}${n.duty ? `<span class="muted"> · ${esc(n.duty)}</span>` : ''}${can ? ` <button class="link" data-org="cut" data-n="${esc(n.id)}">${vb}裁撤</button>` : ''}</div>
+    ${n.posts.map((p, i) => `<div class="opost"><span class="ot">${esc(p.title)}${p.rank ? `<i>${esc(p.rank)}</i>` : ''}</span><span class="oholder">${p.holder ? esc(p.holder) + (fictionSet(s).has(p.holder) ? '（虚拟）' : '') : '<span class="muted">空缺</span>'}${p.status ? ` <span class="att">${esc(p.status)}${p.pending ? '：' + esc(p.pending) : ''}</span>` : ''}</span>${can ? `<span class="oact"><input class="oin" list="orgPeople" data-oin="${esc(n.id)}_${i}" placeholder="真人姓名或从人物里选"><button class="link" data-org="appoint" data-n="${esc(n.id)}" data-p="${i}">${vb}委任</button>${p.holder ? `<button class="link" data-org="dismiss" data-n="${esc(n.id)}" data-p="${i}">${vb}罢免</button>` : ''}</span>` : ''}</div>`).join('')}
+    ${can ? `<details class="oadd"><summary class="muted">增设…</summary><div class="opost"><input class="oin" data-oadd="${esc(n.id)}" placeholder="增设官名"><button class="link" data-org="addPost" data-n="${esc(n.id)}">${vb}增设官职</button><input class="oin" data-onode="${esc(n.id)}" placeholder="下属衙门名"><button class="link" data-org="addNode" data-n="${esc(n.id)}">${vb}设下属衙门</button></div></details>` : ''}
+    ${kids(n.id).map(c => nodeHtml(c, depth + 1)).join('')}</div>`;
+  const tree = O ? tierOrder.concat([...new Set(roots.map(n => n.tier))].filter(t => !tierOrder.includes(t))).map(t => { const rs = roots.filter(n => n.tier === t); return rs.length ? `<div class="h" style="font-size:14px">${esc(t)}</div>` + rs.map(n => nodeHtml(n, 0)).join('') : ''; }).join('') : '';
+  const areas = ['政治', '经济', '民生', '军事', '制度'];
+  const pols = arr(s.policies);
+  const polHtml = pols.length ? `<div class="cgrid">${areas.map(a => { const L = pols.filter(q => q.area === a); return L.length ? `<div class="ccard"><div class="ct">${a}</div>${L.map(q => { const lock = q.need.some(id => !pols.some(x => x.id === id && x.state === '已行')); return `<div class="pol ${q.state === '已行' ? 'done' : lock ? 'lock' : ''}"><b>${esc(q.name)}</b> <span class="muted">${q.cost} 点</span>${q.state ? ` <span class="att">${esc(q.state)}</span>` : ''}<div class="muted">${esc(q.desc)}</div>${q.effect ? `<div class="muted">后果：${esc(q.effect)}</div>` : ''}${q.real ? `<div class="muted">史例：${esc(q.real)}</div>` : ''}${q.need.length ? `<div class="muted">要先：${esc(q.need.map(id => (pols.find(x => x.id === id) || {}).name || id).join('、'))}</div>` : ''}${can && !q.state && !lock ? `<button class="link" data-org="policy" data-pol="${esc(q.id)}">${perm === 'decree' ? '颁行' : '上疏请行'}</button>` : ''}</div>`; }).join('')}</div>` : ''; }).join('')}</div>` : '';
+  return `<div class="h" style="margin-top:6px"><span class="seal">朝</span>朝局<span class="note">${esc(PERM_TXT[perm])}</span></div>
+    ${perm === 'decree' ? `<div class="pl"><span>国策点</span><b>${s.polPts || 0}</b><span class="muted">（每过一个月涨三点，最多三十点；委任、罢免 1 点，增设官职 2 点，设立、裁撤衙门 3 点，国策照标价）</span></div>` : ''}
+    ${ORGMSG ? `<div class="muted" style="margin:6px 0">${esc(ORGMSG)}</div>` : ''}
+    ${dash}
+    <div class="h"><span class="seal">树</span>人事树<span class="note">${O ? esc(O.regime || '') + ' · 第' + O.at + '回合整理' : ''}</span>${O ? ` <button class="link" id="bOrgRe">重新查一遍</button>` : ''}</div>
+    ${O ? tree + (can ? `<div class="opost"><input class="oin" data-onode="" placeholder="新衙门名（最上一层）"><button class="link" data-org="addNode" data-n="">${vb}设立衙门</button></div>` : '') : `<div class="muted">${ORGING ? '正在整理……' : '还没整理。'}</div>${ORGING ? '' : '<button id="bOrg">联网查制度，整理人事树和国策书</button>'}`}
+    <datalist id="orgPeople">${people.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    ${arr(s.orgPending).length ? `<div class="h"><span class="seal">办</span>待办（写进了下一步）</div><div class="list">${s.orgPending.map(x => `<div>${esc(x.line)}</div>`).join('')}</div>` : ''}
+    ${polHtml ? `<div class="h"><span class="seal">策</span>国策书<span class="note">照这个政权此刻的处境查定；有先后次序的要一步步来</span></div>${polHtml}` : ''}
+    ${O && arr(O.log).length ? `<div class="h"><span class="seal">录</span>人事与施政记录</div><div class="list">${O.log.slice().reverse().slice(0, 30).map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.text)}</div>`).join('')}</div>` : ''}`;
+}
 /* ========== 内置史料：史事、君主年号、真人生卒官职由程序给出，AI 不凭记忆编 ========== */
 let HIST = [];
 try { HIST = JSON.parse(document.getElementById('hist').textContent || '[]'); } catch (_) { HIST = []; }
@@ -1437,7 +1620,7 @@ function splitPeople(s, P) {
 const farLine = far => far.length ? `【不在眼前的人（外地的、断了来往的）】${far.map(([k, v]) => k + (v.where ? '（在' + v.where + '）' : '')).join('、')}——没有来由不出场：主角自己去找、写信、托人才有联系；偶遇只能是同城、同路、同一场合，路程日子说得通，而且少见。` : '';
 function rulingInput(s, said) {
   const p = s.protagonist, c = s.career || {}, mo = s.money || {}, u = mo.unit || '两';
-  const [P, FAR] = splitPeople(s, Object.entries(s.people || {}).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 16)); P.splice(10);
+  const [P, FAR] = splitPeople(s, livePeople(s).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 16)); P.splice(10);
   return `你是这局历史模拟游戏的推演人（下文仍写作「裁判」）。玩家刚说了这回要做的事。玩家有完全的自由：主角自己说的话、做的事、去的地方、下的决心，一律照办，你不裁定这些。你只推演：这件事里需要别人配合、或受客观条件限制的部分，按主角此刻真实的身份、钱粮、人手、关系、路程、这个年代的制度与律例，会怎样——谁会怎么回应、要多少时间和花费、会带出什么后果与后患。
 先想清楚再推：这件事在那个年代那个地方通常怎么办、谁说了算、要多久、花多少、常人会怎么反应；推出来的结果要让一个熟读那段历史的人看了觉得合情合理——不合常理的巧合、过快过顺的成功、不合身份的待遇、那个年代没有的东西和做法，一概不要；拿不准的照最常见的情形推。
 推的是玩家原样这一步：主角自己的身体、言语、决定百分之百归玩家——走、跑、打、骂、说、写、买、卖、送礼、动手、逃，都照办，不写「办不到」、不改写成别的做法、不替他打折扣；只有身体客观上做不到的（飞、一日千里、隔空取物）才写卡在哪、照样去做会怎样。这一步莽撞、犯忌，就照原样推出它的后果。
@@ -1449,7 +1632,7 @@ function rulingInput(s, said) {
 ${realmBlock(s) ? realmBlock(s) + '\n' : ''}${arr(s.battles).length ? '【最近打过的仗（照此往下推：败了的兵要收拢、补员，胜了的要守住、要赏）】' + s.battles.slice(-3).map(b => `${b.when}在${b.place}对${b.enemy || '敌'}：${b.outcome || ''}，我死伤${b.deadUs ?? '？'}、敌死伤${b.deadThem ?? '？'}`).join('；') + '\n' : ''}【身边的人（各有盘算）】${P.map(([k, v]) => `${k}（${v.role || ''}${v.age != null ? '，' + v.age + '岁' : ''}，好感${v.favor ?? '?'}${v.personality ? '，' + v.personality : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + cut(v.goal, 30) : ''}${v.plan ? '；打算：' + cut(v.plan, 30) : ''}）`).join('；') || '无'}${farLine(FAR) ? '\n' + farLine(FAR) : ''}
 ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下去还没办完的】' + s.orders.filter(o => /在办|待办|推迟/.test(o.status)).slice(-6).map(o => `${o.who}：${o.what}`).join('；') + '\n' : ''}${arr(s.gmNotes).length ? '【幕后真相（玩家不知道）】' + s.gmNotes.slice(-8).map(n => cut(n.text, 60)).join('；') + '\n' : ''}${arr(s.summaries).length ? '【最近几回】' + s.summaries.slice(-4).map(x => cut(x.text, 80)).join(' / ') + '\n' : ''}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '无'}
-${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
+${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${orgPendingBlock(s) ? orgPendingBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
 ${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}${modulesBlock(said)}
 【玩家这回说】${said}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
@@ -2440,7 +2623,7 @@ ${arr(s.history).map(h => `· ${h.event} → ${h.now}（因${h.cause}）`).join(
 ${shifts || '无'}
 【已有的连锁变化】
 ${arr(w.ripples).slice(-10).map(r => `· ${r.cause} → ${r.effect}`).join('\n') || '无'}
-【身边的人】${Object.entries(s.people || {}).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 12).map(([k, v]) => `${k}（${v.role || ''}，对主角${v.attitude || '?'}${v.goal ? '，盘算' + v.goal : ''}${v.plan ? '，打算' + v.plan : ''}）`).join('；') || '无'}
+【身边的人】${livePeople(s).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 12).map(([k, v]) => `${k}（${v.role || ''}，对主角${v.attitude || '?'}${v.goal ? '，盘算' + v.goal : ''}${v.plan ? '，打算' + v.plan : ''}）`).join('；') || '无'}
 【各方势力】${arr(s.powers).map(x => `${x.name}（${x.leader || ''}，据${x.seat || ''}，兵${x.troops || '？'}，${x.note || ''}）`).join('；') || '无'}
 ${arr(s.territory).length ? '【主角的地盘】' + s.territory.map(x => `${x.place}（户${x.pop || '？'}，兵${x.troops || '？'}）`).join('；') + '\n' : ''}${arr(s.forces).length ? '【主角的兵马】' + s.forces.map(x => `${x.name}（${x.troops || '？'}人，在${x.at || '？'}）`).join('；') + '\n' : ''}【要紧人物（上次记的）】${arr(s.figures).map(f => `${f.name}（${f.post || ''}${f.alive === false ? '，已故' : ''}）`).join('；') || '无'}
 ${researchBlock(s)}
@@ -2488,7 +2671,7 @@ const influencePending = s => Object.values(s.influence || {}).filter(o => Math.
 function footprintBlock(s) {
   // 没了结的作为不论多早都在（有后果还没来的），了结了的只留最近几件
   const DA = arr(s.deeds), D = DA.filter(x => !x.done).slice(-25).concat(DA.filter(x => x.done).slice(-5)).sort((a, b) => (a.turn || 0) - (b.turn || 0)), RP = arr(s.world && s.world.ripples).slice(-8), INF = Object.values(s.influence || {}).filter(o => o && o.score >= 1).slice(-6), HC = arr(s.history).slice(-8);
-  const who = Object.entries(s.people || {}).filter(([k, v]) => v && (Math.abs(Number(v.favor) || 0) >= 40 || v.knows)).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 6);
+  const who = livePeople(s).filter(([k, v]) => v && (Math.abs(Number(v.favor) || 0) >= 40 || v.knows)).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 6);
   if (!D.length && !RP.length && !INF.length && !HC.length && !who.length) return '';
   return '【主角在这世上留下的痕迹（这些事外面的人记得、在传、在照着应对；这一回出场的人对主角的态度、消息、处境，要跟这些对得上，不能当没发生过）】'
     + (D.length ? '\n做过的要紧事：' + D.map(x => `第${x.turn}回${x.what}${x.effect ? '（' + x.effect + '）' : ''}${x.done ? '（已了结）' : ''}`).join('；') : '')
@@ -2620,7 +2803,7 @@ function blocks(s, forStory) {
   const ms = Object.entries(s.meters || {}).map(([k, v]) => cashNow && /^(家资|现钱|现银|钱财|银钱|积蓄|家财)/.test(k) ? [k === '家资' ? '现钱' : k, { ...v, value: cashNow }] : [k, v]), gs = Object.entries(s.groups || {});
   if (!forStory) L.push(ms.length ? '【数值条】' + ms.map(([k, v]) => `${k}：${v.value}`).join('；') + (gs.length ? '\n人群：' + gs.map(([k, v]) => `${k} ${v.value}`).join('；') : '')
     : `【数值条（本回合在 meters、groups 里给出初值）】这个身份看：${id.meters}；人群：${id.groups}。`);
-  const [NEAR, FAR] = splitPeople(s, Object.entries(s.people || {}).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 24)), P = forStory ? NEAR.slice(0, 14) : NEAR.concat(FAR).slice(0, 18);   // 写正文只拿眼前的人，远处的只给名字
+  const [NEAR, FAR] = splitPeople(s, livePeople(s).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 24)), P = forStory ? NEAR.slice(0, 14) : NEAR.concat(FAR).slice(0, 18);   // 写正文只拿眼前的人，远处的只给名字
   if (P.length) L.push('【人物（性格、本事、态度、好感、盘算、打算、所知以此为准；他们照自己的盘算行事，只知道自己能知道的事）】\n' + P.map(([k, v]) => `· ${k}：${v.role || ''}${v.tie ? '，' + v.tie : ''}${N0(v.favor) != null ? '，好感' + v.favor : ''}${v.personality ? '，性格' + v.personality : ''}${v.ability ? '，本事' + v.ability : ''}${v.attitude ? '，对主角' + v.attitude : ''}${v.want ? '，想要' + v.want : ''}${v.status ? '，近况：' + v.status : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + v.goal : ''}${v.plan ? '；打算：' + v.plan : ''}${v.knows ? '；知道主角：' + v.knows : ''}`).join('\n'));
   if (forStory && farLine(FAR)) L.push(farLine(FAR));
   if (s.arcGoal) L.push('【大势主线里这样的人可奔的长远目标（只作参考：玩家没往这边走，长远目标就照玩家自己做的事定，不往主线上拽）】' + s.arcGoal);
@@ -2640,6 +2823,8 @@ function blocks(s, forStory) {
   L.push('【史线（以此为准）】' + (w.overview || '（开局时补全）') + (arr(w.events).length && !(forStory && hasHist(s)) ? '\n已经发生：\n' + w.events.slice(forStory ? -8 : -24).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}${x.changed ? '（本局实际如此）' : ''}`).join('\n') : '')
     + (arr(w.upcoming).length ? '\n将要发生（书中人不知道；照史=照史书，已变/新出=因本局的变化）：\n' + w.upcoming.slice(0, forStory ? 6 : 14).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}（${x.status || '照史'}${x.why && x.status && x.status !== '照史' ? '：' + x.why : ''}）`).join('\n') : '\n按史书将要发生：已用完，请在 worldUpcoming 里补上之后五年的大事'));
   instBlocks(s, L, forStory);
+  { const ob = orgPendingBlock(s); if (ob) L.push(ob); }
+  if (s.org && permLevel(s) !== 'view') L.push('【朝局人事（人事树上此刻在任的人；正文里写到这些位子用这些人）】' + s.org.nodes.filter(n => n.status !== '已裁撤').slice(0, forStory ? 14 : 30).map(n => `${n.name}：` + n.posts.slice(0, 4).map(p => `${p.title}${p.holder || '空缺'}`).join('、')).join('；'));
   if (arr(s.factions).length) L.push('【派系与利益集团（以此为准；派系照各自诉求行动，议题不同可以分合）】' + s.factions.map(f => `${f.name}（${f.leader || ''}${f.members ? '；' + f.members : ''}；要${f.aims || '？'}；对主角${f.stance || '？'}；${f.strength || ''}${f.note ? '；' + f.note : ''}）`).join('；'));
   const pw = arr(s.powers), tr = arr(s.territory), fc = arr(s.forces);
   { const rb = realmBlock(s); if (rb) L.push(rb); else if (arr(s.powers).length) L.push('【天下各方（以此为准；有变化在 powers 里只给变了的）】' + s.powers.map(x => `${x.name}（${x.leader || ''}，据${x.seat || ''}${x.land ? '，' + x.land : ''}，兵${x.troops || '？'}，对主角${x.stance || '？'}）`).join('；')); }
@@ -4203,6 +4388,10 @@ function applyReply(s, d, said) {
       s.chronicle.push({ turn, when, who: s.protagonist.name, what: one(x.what, 80) });
     }
     s.careerLog = s.careerLog.slice(-80);
+    // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
+    { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
+    { const mo = ymOf(s.clock) - snap0.ym; const pl = permLevel(s); if (mo > 0 && pl === 'decree') s.polPts = Math.min(30, (s.polPts || 0) + Math.round(mo * 3)); }
+    fadePeople(s);
     // 传承：主角死了，由继承人接着玩
     const sc = d.succession && typeof d.succession === 'object' ? d.succession : null;
     if (sc && String(sc.heir || '').trim() && (sc.died === true || /^(是|true|死|亡|卒|殁|薨|崩|驾崩|去世|病故)/.test(String(sc.died || '').trim()))) {
@@ -4272,7 +4461,8 @@ function applyReply(s, d, said) {
     const c1 = N0((s.money || {}).cash); if (c1 != null && snap0.cash != null && c1 !== snap0.cash) { dl.push(`现钱${c1 > snap0.cash ? '+' : ''}${fmtN(c1 - snap0.cash, s.money.unit || '两')}`); ch.add('cash'); }
     for (const [k, v] of Object.entries(s.people || {})) { const f0 = snap0.people[k], f1 = N0(v && v.favor); if (!(k in snap0.people)) dl.push(`新识${k}${v.role ? '（' + one(v.role, 8) + '）' : ''}`); else if (f0 != null && f1 != null && Math.abs(f1 - f0) >= 10) dl.push(`${k}${f1 > f0 ? '更亲近' : '更疏远'}（${f1 > f0 ? '+' : ''}${f1 - f0}）`); }
     for (const n of snap0.hh) if (arr(s.household).some(m => m.name === n && m.dead)) dl.push(`${n}故去`);
-    extra.delta = dl.slice(0, 10); s.changed = [...ch];
+    if (arr(extra.org).length) dl.push(...extra.org.slice(0, 4).map(x => '朝局：' + one(x, 40)));
+    extra.delta = dl.slice(0, 12); s.changed = [...ch];
     { const R = arr(s.research).filter(x => x.turn === s.turn - 1); extra.searched = R.length; }   // 这一回联网查到几条：每回合都查，界面上看得见
   }
   if (String(said || '').trim()) s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'me', text: String(said).trim(), turn: s.turn });
@@ -4696,7 +4886,7 @@ function renderGame() {
       </div>
     </div>
     <aside class="side ${SIDE_FOLD ? 'fold' : ''}">
-      <div class="tabs">${[['board', '局面'], ['people', '人物'], ['estate', '家业'], ['power', '势力'], ['career', '仕途'], ['news', '见闻'], ['world', '史线'], ['geo', '地理'], ['chron', '年谱'], ['arc', '档案馆'], ['set', '设置']].map(([k, n]) => `<button data-tab="${k}" class="${TAB === k && (!SIDE_FOLD || !matchMedia('(max-width: 960px)').matches) ? 'on' : ''}">${n}</button>`).join('')}<button class="closeSide" id="bCloseSide">回到正文 ✕</button></div>
+      <div class="tabs">${[['board', '局面'], ['people', '人物'], ['estate', '家业'], ['power', '势力'], ['court', '朝局'], ['career', '仕途'], ['news', '见闻'], ['world', '史线'], ['geo', '地理'], ['chron', '年谱'], ['arc', '档案馆'], ['set', '设置']].map(([k, n]) => `<button data-tab="${k}" class="${TAB === k && (!SIDE_FOLD || !matchMedia('(max-width: 960px)').matches) ? 'on' : ''}">${n}</button>`).join('')}<button class="closeSide" id="bCloseSide">回到正文 ✕</button></div>
       <div class="pane">${pane(TAB)}</div>
     </aside>
   </div>`;
@@ -4731,7 +4921,8 @@ function pane(tab) {
       ${arr(s.orders).some(o => /在办/.test(o.status)) ? `<div class="h"><span class="seal">差</span>交代下去的事</div><div class="list">${s.orders.filter(o => /在办/.test(o.status)).map(o => `<div><span class="badge b-doing">在办</span> ${esc(o.who)}：${esc(o.what)}</div>`).join('')}</div>` : ''}`;
   }
   if (tab === 'people') {
-    const P = Object.entries(s.people).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
+    const P = Object.entries(s.people).filter(([, v]) => v && !v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
+    const OLD = Object.entries(s.people).filter(([, v]) => v && v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const fam = s.household.filter(m => !s.people[m.name]);
     const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionSet(s), FX = n => FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>';
     const famTbl = HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b></td><td>${m.age != null ? esc(m.age) + '岁' : ''}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(m.note || '')}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '';
@@ -4743,7 +4934,8 @@ function pane(tab) {
         ${v.personality || v.ability ? `<div class="pl"><span>为人</span>${esc(v.personality || '')}${v.ability ? `<span class="abil">本事${esc(v.ability)}</span>` : ''}</div>` : ''}
         ${v.want ? `<div class="pl"><span>想要</span>${esc(v.want)}</div>` : ''}${v.goal ? `<div class="pl"><span>盘算</span>${esc(v.goal)}</div>` : ''}${v.plan ? `<div class="pl"><span>打算</span>${esc(v.plan)}</div>` : ''}${v.knows ? `<div class="pl"><span>知你</span>${esc(v.knows)}</div>` : ''}${v.status ? `<div class="pl"><span>近况</span>${esc(v.status)}</div>` : ''}
         <button class="link" data-write="${esc('我去找' + k + '，')}">${/女|妇|氏$|娘|妻|妾|姐|妹|母|婆|姑/.test((v.gender || '') + (v.role || '') + (v.tie || '') + k) ? '找她' : '找他'}</button></div>`).join('')}
-      ${!P.length && !fam.length ? '<div class="muted">开场后，出场的人会列在这里。</div>' : ''}</div>`;
+      ${!P.length && !fam.length ? '<div class="muted">开场后，出场的人会列在这里。</div>' : ''}</div>
+      ${OLD.length ? `<details class="fold"><summary>断了来往的旧识（${OLD.length}）<span class="note">久不见、一面之缘的照关系淡出，不删；再去找、再碰上就回来</span></summary><div class="list">${OLD.map(([k, v]) => `<div><b>${esc(k)}</b>${FX(k)} <span class="muted">${esc(v.role || '')}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''} · ${esc(v.fadeWhy || '断了来往')}（第${esc(v.seen || 0)}回合后没再见）</span> <button class="link" data-write="${esc('我去找' + k + '，')}">去找</button></div>`).join('')}</div></details>` : ''}`;
   }
   if (tab === 'estate') {
     const e = s.estate, mo = s.money || {}, u = mo.unit || '';
@@ -4767,6 +4959,7 @@ function pane(tab) {
       <div class="h"><span class="seal">令</span>落到你身上的政令<span class="note">新法、加派、禁令；每月的多出少出程序照日子结算</span></div>${arr(s.policies).length ? `<div class="tblwrap"><table class="tbl"><tr><th>政令</th><th>起于</th><th>对你</th><th>每月</th></tr>${s.policies.map(p => `<tr><td><b>${esc(p.name)}</b>${p.what ? `<div class="muted" style="font-size:12px">${esc(p.what)}</div>` : ''}</td><td>${esc(p.since || '')}</td><td>${esc(p.onYou || '')}</td><td class="num">${N0(p.perMonth) ? (N0(p.perMonth) > 0 ? '+' : '−') + esc(fmtN(Math.abs(N0(p.perMonth)), u)) : ''}</td></tr>`).join('')}</table></div>` : '<div class="muted">眼下没有专门落到你身上的政令。</div>'}
       <div class="h"><span class="seal">市</span>本地行情<span class="note">随季节、年景、战事涨落</span></div>${arr(s.prices).length ? `<div class="tblwrap"><table class="tbl"><tr><th>货</th><th>价</th></tr>${s.prices.map(x => `<tr><td>${esc(x.item)}</td><td class="num">${esc(fmtN(x.price, u))} / ${esc(x.per || '')}</td></tr>`).join('')}</table></div>` : '<div class="muted">下一回合给出。</div>'}`;
   }
+  if (tab === 'court') return courtTab(s);
   if (tab === 'power') {
     const tbl = (rows, cols, keys) => `<div class="tblwrap"><table class="tbl"><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>${rows.map(r => `<tr>${keys.map((k, i) => `<td>${i === 0 ? '<b>' : ''}${esc(r[k] || '')}${i === 0 ? '</b>' : ''}</td>`).join('')}</tr>`).join('')}</table></div>`;
     const sumN = (xs, k) => xs.reduce((a, x) => a + (N0(x[k]) || 0), 0), R0 = s.realm, TR = arr(s.territory), FC = arr(s.forces);
@@ -5043,6 +5236,7 @@ async function afterTurn(s0, d, g, gen = BG_GEN) {
   if (needGaz(s0) && !(await step('查这地方此时的样子（本地志）', () => buildGazetteer(s0)))) return;
   if (s0.estateDue && !(await step('照新身份重立家底', () => buildEstate(s0)))) return;
   if (canSearch() && officialsDue(s0) && !(await step('趁空查这地方此时在任的官员', () => ensureOfficials(s0).catch(e => { s0.offFail = s0.turn; throw e; })))) return;   // 玩家读这一回、想下一步的时候先查好，下一回不用等
+  if (orgDue(s0) && !(await step('联网整理人事树和国策书', () => buildOrg(s0)))) return;
   if (promoDue(s0, '') && !(await step('联网查本朝升迁之制', () => ensurePromo(s0).catch(e => { s0.promoFail = s0.turn; throw e; })))) return;
   if (needGeo(s0) && !(await step('查历史地名库、画县级地图', () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties)))) return;
   if (live()) { BGMSG = '存档'; try { await store.save(s0); } catch (_) { /* 下回再存 */ } }
@@ -5309,6 +5503,19 @@ document.addEventListener('click', async e => {
   const ds = t.dataset;
   if (ds.ex) { $('#qText').value = ds.ex; QTEXT = ds.ex; return; }
   if (t.id === 'bStop') { if (BGWAIT) STOP_PENDING = true; TURN && TURN.abort(); CTL && CTL.abort(); return; }
+  // 朝局：整理人事树；在树上委任、罢免、增设、裁撤、颁行国策——写成主角下一步的命令
+  if ((t.id === 'bOrg' || t.id === 'bOrgRe') && S && !BUSY) { await buildOrg(S); try { await store.save(S); } catch (_) {} return; }
+  if (ds.org && S && S.org !== undefined) {
+    if (BUSY) { ORGMSG = '这一回还在写，写完再改人事'; render(); return; }
+    const n = ds.n ? orgNode(S, ds.n) : null, pi = ds.p != null && ds.p !== '' ? +ds.p : null;
+    const val = sel => { const el = document.querySelector(sel); return el ? el.value.trim() : ''; };
+    const person = ds.org === 'appoint' ? val(`[data-oin="${CSS.escape(ds.n + '_' + pi)}"]`) : ds.org === 'addPost' ? val(`[data-oadd="${CSS.escape(ds.n)}"]`) : ds.org === 'addNode' ? val(`[data-onode="${CSS.escape(ds.n || '')}"]`) : '';
+    const pol = ds.pol ? arr(S.policies).find(x => x.id === ds.pol) : null;
+    if (!S.org && ds.org !== 'policy') return;
+    const line = orgAct(S, ds.org, { node: n, pi, person, pol });
+    if (line) { const ta = $('#said'); if (ta) { ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + line; } try { await store.save(S); } catch (_) {} }
+    render(); return;
+  }
   if (t.id === 'bFaceEdit') { openFaceEditor(); return; }
   if (t.id === 'bFaceRand') { if (S) { S.face = FACE.make(faceGender(S.protagonist.gender), null, { role: S.protagonist.role, year: S.clock.y, age: S.protagonist.age }); store.save(S).catch(() => {}); render(); } return; }
   if (t.id === 'bLogin' || t.id === 'bRegister') { t.disabled = true; await acctLogin(t.id === 'bRegister'); t.disabled = false; return; }

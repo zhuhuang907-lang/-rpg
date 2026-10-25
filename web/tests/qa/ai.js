@@ -16,6 +16,7 @@ function story(talk) {
   return t + '\n【幕后】周四其实收了江家二十两银子。';
 }
 function ledger(p) {
+  if (/【朝局待办/.test(p)) { const m = p.match(/任命(\S{2,4}?)为(\S+?)[（。]/); const q = p.match(/颁行「(.+?)」/); return JSON.stringify({ elapsedDays: 31, turnSummary: '下令', orgResults: m ? [{ office: m[2], person: m[1], result: '到任', why: '奉旨赴任' }] : [], policyResults: q ? [{ name: q[1], result: '颁行', why: '诏下' }] : [] }); }
   if (/【玩家这回说】[^\n]*坐船去苏州/.test(p)) return JSON.stringify({ elapsedDays: 3, nowAt: '苏州府吴县', turnSummary: '到苏州办货', presentNpcs: [{ name: '沈牙人', role: '牙行' }] });
   if (/【玩家这回说】[^\n]*回扬州家里/.test(p)) return JSON.stringify({ elapsedDays: 3, nowAt: '扬州府江都县', turnSummary: '回家' });
   if (/【玩家这回说】[^\n]*去京师/.test(p)) return JSON.stringify({ elapsedDays: 30, nowAt: '京师', turnSummary: '进京' });
@@ -85,6 +86,7 @@ function answer(p, last, json) {
   if (p.includes('精通历代职官制度')) return JSON.stringify({ era: '清', summary: '省府县', ladder: [{ tier: '地方', posts: [{ name: '知县', rank: '正七品', duty: '一县' }] }], paths: [], fixes: [], unsure: [] });
   if (p.includes('要把它写成一部书')) { fs.appendFileSync('book.log', (p.includes('浅近文言') ? 'hist' : 'novel') + '\n'); return (p.includes('浅近文言') ? '卷一　乾隆二十二年' : '第一回　钞关前问引价　运司里说盐法') + '\n' + '汪景和至钞关问引价，书吏言今岁引价腾贵。'.repeat(20); }
   if (p.includes('你是历史地理检索员')) { fs.appendFileSync('geoalias.log', 'x\n'); return JSON.stringify(/「京师」/.test(p) ? { county: '大兴县', pref: '顺天府', modern: '北京' } : { county: '', pref: '' }); }
+  if (p.includes('一、人事树')) { fs.appendFileSync('org.log', 'x\n'); return JSON.stringify({ regime: '清乾隆二十二年', nodes: [{ id: 'n1', name: '军机处', tier: '中枢', parent: '', duty: '承旨办理军国大事', posts: [{ title: '军机大臣', rank: '', quota: 6, holder: '傅恒' }] }, { id: 'n2', name: '户部', tier: '中枢', parent: '', duty: '掌天下钱粮', posts: [{ title: '尚书', rank: '从一品', quota: 2, holder: '' }, { title: '侍郎', rank: '正二品', quota: 4, holder: '' }] }, { id: 'n3', name: '两淮盐运使司', tier: '地方', parent: 'n2', duty: '管两淮盐务', posts: [{ title: '盐运使', rank: '从三品', quota: 1, holder: '张某' }] }], policies: [{ id: 'p1', area: '经济', name: '清查盐课', desc: '清查两淮盐商积欠', cost: 3, need: [], real: '乾隆三十三年两淮盐引案', effect: '国库增收，盐商怨' }, { id: 'p2', area: '经济', name: '改行票盐', desc: '废纲盐行票盐', cost: 6, need: ['p1'], real: '道光年间陶澍', effect: '盐价降，总商失势' }] }); }
   if (p.includes('整理主角这一路仕途')) { fs.appendFileSync('promo.log', 'x\n'); return JSON.stringify({ office: '知县', rank: '正七品', superior: '知府', review: '三年大计', tenure: '三年俸满', next: [{ post: '同知', rank: '正五品', how: '俸满考称职，督抚题升，吏部议准' }, { post: '知州', rank: '从五品', how: '卓异保举' }], limits: ['不得本籍为官'], appoint: '吏部铨选，给文凭，限期赴任', entry: ['科举', '捐纳'], unsure: [], basis: '清会典' }); }
   if (p.includes('核实几位官员')) { fs.appendFileSync('tenure.log', 'x\n'); return JSON.stringify({ people: [] }); }
   if (p.includes('只管查资料')) { fs.appendFileSync('dsq.log', 'x\n'); const qs = [...p.matchAll(/^\d+\. (.+)$/gm)].map(m => m[1]); return JSON.stringify({ results: qs.map(q => ({ q, items: [{ title: q.split(' ')[0], snippet: q + '：据通行史书所载的一条事实', src: '通行史书' }] })) }); }
