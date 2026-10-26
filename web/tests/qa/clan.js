@@ -34,7 +34,7 @@ const { chromium } = require('playwright');
   const am = await p.evaluate(() => { pickAmbition(S, '积财'); const t = S.ambition.target; S.money.cash = t + 1; const r0 = S.renown; const out = ambitionCheck(S); return { out, d: S.renown - r0, left: S.ambition }; });
   if (!am.out.length || am.d !== 20 || am.left) bad('志向达成没结掉、没加声望：' + JSON.stringify(am));
   const yc = await p.evaluate(() => { S.yearSnap = yearSnap(S); S.renown += 7; applyReply(S, { reply: '一年过去。', mode: 'play', elapsedDays: 400 }, '歇着一年'); const c = S.chat[S.chat.length - 1]; return { card: c.extra && c.extra.yearCard, n: arr(S.yearCards).length }; });
-  if (!yc.card || !yc.card.lines.some(l => /声望/.test(l))) bad('跨年没有年终总结：' + JSON.stringify(yc));
+  if (!yc.card || !yc.card.lines.some(l => /名声|声望/.test(l))) bad('跨年没有年终总结：' + JSON.stringify(yc));
   const ad = await p.evaluate(() => addrBlock(S));
   if (!/清代/.test(ad) || !/老爷/.test(ad) || !/小的/.test(ad)) bad('称谓表不对：' + ad.slice(0, 200));
   // 议亲：打听人家，名字里不许有某
