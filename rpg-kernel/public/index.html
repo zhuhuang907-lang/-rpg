@@ -1048,7 +1048,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261026174616';
+const BUILD = '20261026182941';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -3848,8 +3848,14 @@ function geoNear(name, y, near, max) {
 }
 const admDue = s => s && s.clock && geoData().length && (!s.admin || Math.abs(s.admin.y - s.clock.y) > (s.admin.split ? 0 : 9) || s.admin.pol !== (s.place.polity || '')) && !(s.admFail != null && s.turn - s.admFail < 3);
 const regimeDue = admDue;
+const ADM_KEY = (pol, y) => 'hrpg:adm:' + pol + ':' + y;
+function admCacheSave(s) { try { if (s.admin) lsSet(ADM_KEY(s.admin.pol, s.admin.y), JSON.stringify({ ...s.admin, at: 0, saved: Date.now() })); } catch (_) { /* 存不下就算了 */ } }
 async function buildAdmin(s) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '', here = geoCenter(s);
+  // 同一年、同一政权核定过的（上一局查过的）直接用，不再等
+  try { const c = JSON.parse(lsGet(ADM_KEY(pol, y)) || 'null'); if (c && arr(c.units).length && Date.now() - (c.saved || 0) < 60 * 864e5) {
+    s.admin = { ...c, at: s.turn, counties: c.counties || {} }; s.regimes = { y, split: c.split, at: s.turn, list: arr(c.regimes).map(r => ({ ...r, pts: c.units.filter(u => u.r === r.name && u.lat).map(u => ({ n: u.n, lat: u.lat, lon: u.lon })) })).filter(r => r.pts.length) };
+    MAPC.k = ''; MAPC.links = {}; const mine = provOfPlace(s, here); if (mine && !s.admin.counties[mine]) { await buildAdminProv(s, mine).catch(e => { if (e && e.code === 'cancelled') throw e; }); admCacheSave(s); } return s.admin; } } catch (e) { if (e && e.code === 'cancelled') throw e; }
   const found = await searchFirst(s, [`${yl} 行政区划`, `${pol} 地方行政区划 ${y}年 一级政区`, `公元${y}年 中国 政权 并立 疆域`, `${here} ${yl} 隶属 沿革`]);
   const head = `你是一位严谨的历史地理学者（照谭其骧《中国历史地图集》、各朝正史《地理志》《郡国志》《州郡志》、《元丰九域志》《大明一统志》《嘉庆重修一统志》的路数），替一局历史游戏核定公元${y}年（${yl}）的政区。主角在${here}，属${pol}。
 ${found || '（这回没联网查到资料：只照确凿的《地理志》；拿不准的 basis 写「推算」）'}
@@ -3887,6 +3893,7 @@ ${g.map(p => `- ${p.regime}·${p.name}（${p.type}，治${p.seat}）`).join('\n'
   s.regimes = { y, split: s.admin.split, at: s.turn, list: regimes.map(r => ({ ...r, pts: units.filter(u => u.r === r.name && u.lat).map(u => ({ n: u.n, lat: u.lat, lon: u.lon })) })).filter(r => r.pts.length) };
   MAPC.k = ''; MAPC.links = {};
   const mine = provOfPlace(s, here); if (mine) await buildAdminProv(s, mine).catch(e => { if (e && e.code === 'cancelled') throw e; });
+  admCacheSave(s);
   return s.admin;
 }
 const buildRegimes = buildAdmin;
@@ -3918,7 +3925,7 @@ ${prov}下辖：${U.map(u => u.n + '（治' + (u.seat || '?') + '）').join('、
   A.roads = arr(A.roads).filter(r => r.prov !== prov).concat(arr(d.roads).slice(0, 16).map(r => ({ name: one(r.name, 16), prov, basis: /史载/.test(r.basis) ? '史载' : '推算', pts: arr(r.via).slice(0, 20).map(pos).filter(Boolean).map(u => ({ n: u.n, lon: u.lon, lat: u.lat })) })).filter(r => r.pts.length >= 2));
   A.passes = arr(A.passes).filter(p => p.prov !== prov).concat(arr(d.passes).slice(0, 14).map(p => { const u = pos(p.near); return u ? { n: one(p.name, 10), near: one(p.near, 12), why: one(p.guards, 30), prov, lon: u.lon + 0.03, lat: u.lat + 0.03, basis: /史载/.test(p.basis) ? '史载' : '推算' } : null; }).filter(Boolean));
   A.ferries = arr(A.ferries).filter(p => p.prov !== prov).concat(arr(d.ferries).slice(0, 10).map(p => { const u = pos(p.near); return u ? { n: one(p.name, 10), river: one(p.river, 8), prov, lon: u.lon, lat: u.lat } : null; }).filter(Boolean));
-  MAPC.k = ''; MAPC.links = {};
+  MAPC.k = ''; MAPC.links = {}; admCacheSave(s);
 }
 const pol0 = s => s.place.polity || '';
 function regimeBlock(s) {
@@ -4002,18 +4009,19 @@ function stratUnits(s) {
   const y = s.clock.y, re = PREF_T(y), G = geoData().filter(u => u.from <= y && u.to >= y && u.lat && u.lon);
   return { prefs: G.filter(u => re.test(u.type)), counties: G.filter(u => /^(县|散州|州|厅)$/.test(u.type) && !re.test(u.type)) };
 }
-const PREF_T = y => y >= 1368 ? /^(府|直隶州|直隶厅|军民府)$/ : y >= 1271 ? /^(路|府|直隶州)$/ : y >= 960 ? /^(州|府|军|监)$/ : y >= 618 ? /^(州|郡|府|都护府)$/ : /^(郡|国)$/;
+// 唐天宝元年至乾元元年（742–758）、隋大业（607–617）州改郡，其余年份是州；地名库里州、郡两套名字年份有重叠，只取当年通行的那套
+const PREF_T = y => y >= 1368 ? /^(府|直隶州|直隶厅|军民府)$/ : y >= 1271 ? /^(路|府|直隶州)$/ : y >= 960 ? /^(州|府|军|监)$/ : (y >= 742 && y <= 758) || (y >= 607 && y <= 617) ? /^(郡|府|都护府)$/ : y >= 583 ? /^(州|府|都护府)$/ : /^(郡|国)$/;
 const PROV_BAD = /^(唐|宋|元|明|清|秦|隋|晋|东汉|西汉|后汉|北周|南京)$|[州府郡]$|使|节度|防御|团练|守捉|观察/;
 const provName = t => { const x = String(t || '').replace(/[（(].*$/, '').replace(/(等处)?(承宣布政使司|布政使司|行中书省|中书省|行省|布政司|省|路|道)$/, '').replace(/中书$/, ''); return x.length >= 2 && !PROV_BAD.test(x) ? x : ''; };
 /** 这张图上画哪些地方：有核定的政区就用它（坐标取 CHGIS），没有就退回 CHGIS 当年的州府（标「未经核对」） */
 function mapUnits(s) {
   const A = s.admin && Math.abs(s.admin.y - s.clock.y) <= (s.admin.split ? 1 : 15) ? s.admin : null;
-  if (A) { const L2 = A.units.filter(u => u.lv === 2 && u.lat), L1 = A.units.filter(u => u.lv === 1);
+  if (A) { const sn = new Set(), L2 = A.units.filter(u => u.lv === 2 && u.lat && !sn.has(u.p + '|' + u.n) && sn.add(u.p + '|' + u.n)), L1 = A.units.filter(u => u.lv === 1);
     const C = MAPZ.mode === 'prov' ? arr(A.counties[MAPZ.prov]).filter(u => u.lat) : MAPZ.mode === 'near' ? Object.values(A.counties).flat().filter(u => u.lat) : [];
     return { A, L1, L2, C, prov: u => u.p || '', reg: u => A.regimes.find(r => r.name === u.r) || null, ok: true }; }
   const { prefs, counties } = stratUnits(s);
-  if (MAPC.py !== s.clock.y) { MAPC.py = s.clock.y; const P = new Map(); for (const u of prefs) P.set(u, provName(u.parent)); for (const u of prefs) if (!P.get(u)) { let b = '', bd = 300; for (const v of prefs) { const n = P.get(v); if (n && provName(v.parent)) { const d = hav(u, v); if (d < bd) { bd = d; b = n; } } } P.set(u, b); } MAPC.P = P; }
-  const L2 = prefs.map(u => ({ n: u.name, t: u.type, lv: 2, p: MAPC.P.get(u) || '', lon: u.lon, lat: u.lat }));
+  // 地名库里同名的州府常有两三条（年份重叠）：每个名字只留一处；上级政区的记载残缺、串朝代，没核定前不分省
+  const seen = new Set(), L2 = []; for (const u of prefs) { if (seen.has(u.name)) continue; seen.add(u.name); L2.push({ n: u.name, t: u.type, lv: 2, p: '', lon: u.lon, lat: u.lat }); }
   return { A: null, L1: [], L2, C: MAPZ.mode !== 'world' ? counties.map(u => ({ n: u.name, t: u.type, lv: 3, lon: u.lon, lat: u.lat })) : [], prov: u => u.p || '', reg: () => null, ok: false };
 }
 function stratMap(s) {
@@ -4099,7 +4107,7 @@ function stratMap(s) {
   return svg + `<div class="mlayers">${[['terr', '地形'], ['river', '河流'], ['road', '通路'], ['pass', '关隘'], ['adm', '政区']].map(([k, n]) => `<label><input type="checkbox" data-maplay="${k}"${Ly[k] ? ' checked' : ''}>${n}</label>`).join('')}</div>`
     + (rl.length ? `<div class="mlegend">${rl.map(r => `<span><i style="background:${r.col}"></i><b>${esc(r.name)}</b>${r.ruler ? '·' + esc(r.ruler) : ''}${r.capital ? '·都' + esc(r.capital) : ''}${r.basis === '推算' ? '<span class="att">推算</span>' : ''}${(pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) ? '（你在此）' : ''}</span>`).join('')}</div>` : '')
     + `<div class="mlegend">${owners.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}<span>★ 你在这里</span><span>⚔ 打过仗</span><span><b style="color:#5b3a1a">关</b> 关隘</span><span>╌ 平路相通</span><span>┈ 山路难行</span><span style="color:#b33">✕ 隔山不通</span><span style="color:#8a3b12">━ ━ 驿道</span><span style="color:#2f6fa8">运河</span></div>`
-    + `<div class="muted" style="font-size:11px">${M.ok ? `政区：${esc(M.A.src)}、照《地理志》核定（${esc(M.A.y)}年）${zoom && !cty.length && MAPZ.mode === 'prov' ? '；本省的县正在查' : ''}${unloc.length ? `；${unloc.length}处在地名库里没找到坐标，没画：${esc(unloc.slice(0, 8).join('、'))}${unloc.length > 8 ? '等' : ''}` : ''}` : '政区：还没核定，先照 CHGIS 地名库当年的州府画（未经核对）'}。地形据 AWS 高程、河湖海岸据 Natural Earth（黄河下游、运河按这一年的河道画）；关隘坐标据维基百科；通不通照地形推，具体走法看剧情。</div>`;
+    + `<div class="muted" style="font-size:11px">${M.ok ? `政区：${esc(M.A.src)}、照《地理志》核定（${esc(M.A.y)}年）${zoom && !cty.length && MAPZ.mode === 'prov' ? '；本省的县正在查' : ''}${unloc.length ? `；${unloc.length}处在地名库里没找到坐标，没画：${esc(unloc.slice(0, 8).join('、'))}${unloc.length > 8 ? '等' : ''}` : ''}` : '政区：正在联网核定（或这回没查成）；先照 CHGIS 地名库画这一年的州府治所，不分省（地名库里的上级政区残缺、串朝代，不拿来用）'}。地形据 AWS 高程、河湖海岸据 Natural Earth（黄河下游、运河按这一年的河道画）；关隘坐标据维基百科；通不通照地形推，具体走法看剧情。</div>`;
 }
 function mapInfo(s) {
   const n = MAPZ.sel; if (!n) return '<div class="muted" style="font-size:12px">点图上的一处看详情、通往哪里、就地下令；点省名放大到一省（到县）。</div>';
@@ -6570,7 +6578,11 @@ function renderNow() {
   $('#notice').innerHTML = UPDMSG ? `<div class="banner">${esc(UPDMSG)}</div>` : !READY ? '' : MODE === 'none' ? (location.protocol === 'file:' ? '<div class="err"><b>这样打开用不了。</b>你双击的是游戏里的网页文件。请关掉它，双击桌面上的「历史模拟RPG」图标。</div>' : '<div class="err">游戏服务没有在运行：启动游戏的小窗口是不是被关掉了？重新双击桌面上的「历史模拟RPG」。</div>') : MODE === 'claude' && !SAMPLE ? '<div class="err"><b>这个页面没拿到调用 Claude 的权限，所以开始不了。</b>请点页面右上角的菜单，在「权限」里允许它使用 Claude，然后刷新；或者用桌面版（自己的 DeepSeek Key）。</div>' : '';
   if (MODE === 'web' && ACCOUNTS_ON && !WHO && READY) { VIEW = 'start'; $('#app').innerHTML = accountPanel(); return; }
   if (VIEW === 'start') return renderStart();
+  // 后台整理完会重画：玩家点开的折叠（兵马编成、断了来往的旧识、人事树下层……）不能被重画收起来
+  const dk = d => { const sm = d.querySelector('summary'); return (sm ? sm.textContent : '').replace(/[\d\s（）()]+/g, '').slice(0, 24); };
+  const opened = new Set([...document.querySelectorAll('#app details')].filter(d => d.open).map(dk)), closed = new Set([...document.querySelectorAll('#app details')].filter(d => !d.open).map(dk));
   renderGame();
+  for (const d of document.querySelectorAll('#app details')) { const k = dk(d); if (opened.has(k)) d.open = true; else if (closed.has(k)) d.open = false; }
 }
 
 const ERAS = [['', '不限（让 AI 挑一个有戏的年代）'], ['秦', '秦（前221—前207）'], ['西汉', '西汉（前202—8）'], ['东汉', '东汉（25—220）'], ['三国', '三国（220—280）'], ['西晋', '西晋（266—316）'], ['东晋十六国', '东晋十六国（317—420）'], ['南北朝', '南北朝（420—589）'], ['隋', '隋（581—618）'], ['唐前期', '唐前期（618—755）'], ['唐后期', '唐后期（756—907）'], ['五代十国', '五代十国（907—979）'], ['北宋', '北宋（960—1127）'], ['南宋', '南宋（1127—1279）'], ['辽', '辽（916—1125）'], ['金', '金（1115—1234）'], ['元', '元（1271—1368）'], ['明前期', '明前期（1368—1521）'], ['明后期', '明后期（1522—1644）'], ['清前期', '清前期（1644—1735）'], ['清中期', '清中期（1736—1840）'], ['清后期', '清后期（1840—1911）']];
