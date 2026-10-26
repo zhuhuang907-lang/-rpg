@@ -15,8 +15,8 @@ const { chromium } = require('playwright');
   const t0 = Date.now();
   await p.evaluate(() => { S.idm = 'warlord'; S.territory = [{ place: '扬州府', pop: 500000, troops: 3000, grain: 20000, loyalty: 60 }]; S.powers = [{ name: '两江督标', leader: '尹继善', seat: '江宁府', land: '苏州府、常州府', troops: '2万', stance: '提防' }]; S.forces = [{ name: '扬州营', leader: S.protagonist.name, troops: 3000, at: '扬州府', status: '驻守' }]; S.battles = [{ when: '三月', place: '镇江府', outcome: '小胜' }]; render(); });
   const ms = Date.now() - t0;
-  const r2 = await p.evaluate(() => ({ cells: document.querySelectorAll('.smap rect[fill="var(--zhu)"]').length, txt: document.querySelector('.smap').textContent, leg: document.querySelector('.mlegend').innerText }));
-  if (process.env.SHOT) await p.locator('.smap').screenshot({ path: process.env.SHOT + '/world.png' });
+  const r2 = await p.evaluate(() => ({ cells: document.querySelectorAll('.smap rect[fill="var(--zhu)"]').length, txt: document.querySelector('.smap').textContent, leg: [...document.querySelectorAll('.mlegend')].map(x => x.innerText).join(' ') }));
+  if (process.env.SHOT) await p.locator('.smap').screenshot({ path: process.env.SHOT + '/world.png' }).catch(() => {});
   if (r2.cells < 3) bad('地盘没着色');
   if (!/扬州营 3,000/.test(r2.txt)) bad('兵马没标出来');
   if (!/⚔/.test(r2.txt) || !/★/.test(r2.txt)) bad('战场、你在哪没标');
@@ -36,9 +36,26 @@ const { chromium } = require('playwright');
   await p.click('#bMapWorld'); if ((await p.evaluate(() => MAPZ.mode)) !== 'world') bad('回不到天下');
   await p.click('.smap circle[data-mapu="扬州府"]', { timeout: 5000 }); await p.click('[data-mapnear]');
   const r4 = await p.evaluate(() => ({ m: MAPZ.mode, n: document.querySelectorAll('.smap circle').length }));
-  if (process.env.SHOT) await p.locator('.smap').screenshot({ path: process.env.SHOT + '/near.png' });
+  if (process.env.SHOT) await p.locator('.smap').screenshot({ path: process.env.SHOT + '/near.png' }).catch(() => {});
   if (r4.m !== 'near' || r4.n < 30) bad('放大这一带不对：' + JSON.stringify(r4));
   await p.click('#bMapWorld');
+  // 一统年代：本朝着色；五代十国这样分裂的年代：每年查政权，各据一方、画国界
+  await p.waitForFunction(() => S.regimes && !REG_P, null, { timeout: 60000 }).catch(() => bad('没去查这一年的政权'));
+  const q1 = await p.evaluate(() => { render(); return [...document.querySelectorAll('.mlegend')].map(x => x.innerText).join(' '); });
+  if (!/清/.test(q1)) bad('图例没有本朝：' + q1);
+  await p.evaluate(() => { S.clock.y = 950; S.clock.yearLabel = '后汉乾祐三年'; render(); });
+  await p.waitForFunction(() => S.regimes && S.regimes.y === 950 && !REG_P, null, { timeout: 60000 }).catch(() => bad('换了年代没重查政权'));
+  const q2 = await p.evaluate(() => { render(); return { leg: [...document.querySelectorAll('.mlegend')].map(x => x.innerText).join(' '), svg: document.querySelector('.smap').textContent, five: S.regimes.list.some(r => r.name === '五代'), blk: regimeBlock(S) }; });
+  for (const n of ['南唐', '吴越', '后蜀', '后汉', '辽']) if (!q2.leg.includes(n) || !q2.svg.includes(n)) bad('五代十国没画出' + n + '：' + q2.leg);
+  if (q2.five) bad('把「五代」当成了一个政权');
+  if (!/南唐/.test(q2.blk)) bad('政权没进写戏材料');
+  await p.click('.smap circle[data-mapu="杭州"]').catch(() => bad('950年图上没有杭州'));
+  const i2 = await p.evaluate(() => (document.querySelector('.affair') || {}).innerText || '');
+  if (!/吴越/.test(i2)) bad('点杭州没说归吴越：' + i2);
+  await p.click('.smap circle[data-mapu="洪州"]').catch(() => {});
+  const i3 = await p.evaluate(() => (document.querySelector('.affair') || {}).innerText || '');
+  if (!/南唐/.test(i3)) bad('点洪州没说归南唐：' + i3);
+  if (process.env.SHOT) await p.locator('.smap').screenshot({ path: process.env.SHOT + '/w950.png' }).catch(() => {});
   // 别的年代：明、宋、唐也画得出来
   for (const y of [1600, 1100, 750, 200]) { const n = await p.evaluate(y => { S.clock.y = y; render(); return document.querySelectorAll('.smap circle[data-mapu]').length; }, y); if (n < 60) bad(y + '年州府太少：' + n); }
   const vis = await p.evaluate(() => document.body.innerText); if (/NaN|undefined|\[object/.test(vis)) bad('页面有坏字');
