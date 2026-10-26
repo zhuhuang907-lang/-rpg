@@ -2001,6 +2001,62 @@ ${cut(libFacts(s, ['society']), 900)}
   if (out.length) s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: p.name, what: '家室补记：' + out.slice(0, 8).join('、') }]);
   return out;
 }
+/* ========== 常理审查：可以编，但要合逻辑。程序先挑硬伤（死人出场、一人两职、年岁离谱、钱粮为负、兵比户口多……），
+ *  再每隔几回让 DeepSeek 快型号把整本账通读一遍，挑出前后矛盾、不合常理的地方，改账、记进定本（往后的正文照此写） ========== */
+function logicFaults(s) {
+  const out = [], y = s.clock.y, p = s.protagonist || {};
+  for (const [k, v] of Object.entries(s.dossiers || {})) if (v && v.died != null && v.died < y && s.people && s.people[k] && (s.turn - (s.people[k].seen || 0)) <= 1) out.push(`${k}已于${v.died}年去世，这一回却还在场`);
+  const held = {}; for (const n of arr(s.org && s.org.nodes)) if (n.status !== '已裁撤') for (const q of arr(n.posts)) if (q.holder && q.holder !== p.name) (held[q.holder] = held[q.holder] || []).push(n.name + q.title);
+  for (const [k, L] of Object.entries(held)) if (L.length > 1 && !L.some(x => /兼|署/.test(x))) out.push(`${k}同时在${L.slice(0, 3).join('、')}任职`);
+  for (const [k, v] of Object.entries(s.people || {})) { const a = num(v && v.age); if (a != null && (a < 0 || a > 105)) out.push(`${k}年岁写成${a}`); }
+  if (num(p.age) != null && (p.age < 1 || p.age > 105)) out.push(`主角年岁写成${p.age}`);
+  if (s.money && s.money.cash != null && s.money.cash < 0) out.push(`现钱成了负数（${s.money.cash}）`);
+  for (const f of arr(s.forces)) { const t = N0(f.troops); if (t != null && t < 0) out.push(`${f.name}兵数为负`); if (N0(f.grain) != null && N0(f.grain) < 0) out.push(`${f.name}军粮为负`); }
+  const pop = arr(s.territory).reduce((a, t) => a + (N0(t.pop) || 0), 0), tr = arr(s.forces).reduce((a, f) => a + (N0(f.troops) || 0), 0);
+  if (pop && tr > pop * 0.5) out.push(`兵马 ${tr} 人，超过地盘户口 ${pop} 的一半`);
+  if (s.gov) for (const [k, v] of Object.entries(s.gov.stats)) if (v != null && v < 0) out.push(`国势「${k}」成了负数`);
+  const c = s.career || {}; if (c.office && num(p.age) != null && p.age < 16 && !/皇帝|太子|世子|王/.test(c.office + p.role)) out.push(`主角${p.age}岁就任${c.office}`);
+  return out;
+}
+const logicDue = s => s && s.clock && (s.turn || 0) >= 1 && (s.logicAt == null || s.turn - s.logicAt >= 3 || logicFaults(s).length) && !(s.logicFail != null && s.turn - s.logicFail < 2);
+async function logicAudit(s) {
+  s.logicAt = s.turn;
+  const p = s.protagonist, u = (s.money || {}).unit || '', hard = logicFaults(s);
+  const H = arr(s.household).filter(m => !m.dead).map(m => `${m.relation}${m.name}${m.age != null ? m.age + '岁' : ''}${m.mother ? '（生母' + m.mother + '）' : ''}${m.away ? '，不在家' : ''}`).join('；');
+  const P = livePeople(s).slice(0, 18).map(([k, v]) => `${k}：${v.role || ''}${v.age != null ? '，' + v.age + '岁' : ''}${v.tie ? '，' + v.tie : ''}${v.where ? '，在' + v.where : ''}`).join('；');
+  const F = arr(s.forces).slice(0, 8).map(f => `${f.name}（${f.leader || ''}统，${f.troops ?? '?'}人，粮${f.grain ?? '?'}石，驻${f.at || '?'}，${f.status || ''}）`).join('；');
+  const sum = arr(s.summaries).slice(-5).map(x => `${x.when}：${x.text}`).join('\n');
+  const { text } = await callClaude(`你是一局历史游戏的「常理审查」：可以有虚构，但一切要合逻辑、前后一致、合那个年代的常理。把下面这本账通读一遍，挑出不合逻辑、前后矛盾、不合常理的地方（年纪、亲属关系、身份与家业、官职与资历、人在哪里与路程、钱粮兵数的量级、死了的人、同一人身兼数职、时间先后……），给出改法。只挑确实不通的，不挑文风；改法要最小、合逻辑。
+此刻：${timeText(s.clock)}，${s.place.polity || ''}，主角在${geoCenter(s)}（家在${s.place.full}）。
+主角：${p.name}，${p.gender || ''}，${p.age ?? '?'}岁，${p.role}${(s.career || {}).office ? '，官职' + s.career.office + (s.career.rank ? '（' + s.career.rank + '）' : '') : ''}；现钱${s.money && s.money.cash != null ? s.money.cash + u : '?'}；${s.estate && s.estate.standing ? '家境：' + s.estate.standing : ''}
+家室：${H || '（无）'}
+来往的人：${P || '（无）'}
+${F ? '兵马：' + F : ''}
+${s.gov ? govBlock(s) : ''}
+${arr(s.canon).length ? '【定本】' + s.canon.slice(-10).map(x => x.text).join('；') : ''}
+最近几回：
+${sum}
+${hard.length ? '【程序查出的硬伤（必须给改法）】' + hard.join('；') : ''}
+只输出一个 JSON 对象：{"fixes":[{"target":"household/people/protagonist/career/money/forces/gov/canon","name":"改谁（人名、兵马名、国势项；protagonist、money、canon 留空）","field":"age/relation/role/tie/where/dead/away/office/rank/cash/troops/grain/at/leader/value","value":"改成","why":"哪里不通"}]}`, null, { maxTokens: 2500, temperature: 0.1, kind: '研读', detached: true });
+  const d = parseJSON(text); if (!d) { s.logicFail = s.turn; return []; }
+  const done = [];
+  for (const x of arr(d.fixes).slice(0, 12)) {
+    if (!x || !x.target) continue;
+    const t = String(x.target), nm = one(x.name, 16), f = String(x.field || ''), v = x.value, why = one(x.why, 60);
+    const N = num(v), str = one(v, 30);
+    let ok = false;
+    if (/household/.test(t)) { const m = arr(s.household).find(z => z.name === nm); if (m) { if (f === 'age' && N != null && N >= 0 && N < 110) { m.age = N; ok = true; } else if (f === 'relation' && str) { m.relation = str; ok = true; } else if (f === 'dead') { m.dead = v === true || /是|true|1/.test(String(v)); ok = true; } else if (f === 'away') { m.away = v === true || /是|true|1/.test(String(v)); ok = true; } } }
+    else if (/people/.test(t)) { const m = (s.people || {})[nm]; if (m && /^(age|role|tie|where|status)$/.test(f)) { m[f] = f === 'age' ? (N != null && N >= 0 && N < 110 ? N : m.age) : str; ok = true; } }
+    else if (/protagonist/.test(t)) { if (f === 'age' && N != null && N > 0 && N < 110) { p.age = N; ok = true; } else if (f === 'role' && str) { p.role = str; ok = true; } }
+    else if (/career/.test(t)) { if (/^(office|rank|post)$/.test(f)) { s.career = s.career || {}; s.career[f] = str; ok = true; } }
+    else if (/money/.test(t)) { if (N != null && N >= 0 && s.money) { s.money.cash = N; ok = true; } }
+    else if (/forces/.test(t)) { const m = arr(s.forces).find(z => z.name === nm); if (m && /^(troops|grain|at|leader)$/.test(f)) { m[f] = /troops|grain/.test(f) ? (N != null && N >= 0 ? N : m[f]) : str; ok = true; } }
+    else if (/gov/.test(t)) { if (s.gov && s.gov.keys.includes(nm) && N != null && N >= 0) { s.gov.stats[nm] = N; s.gov.basis = s.gov.basis || {}; s.gov.basis[nm] = '推算：常理审查更正——' + why; ok = true; } }
+    if (/canon/.test(t) || ok) { const txt = /canon/.test(t) ? one(v, 80) : `${nm || (t === 'protagonist' ? p.name : t === 'money' ? '现钱' : '')}${f ? '的' + f : ''}改为${str}`; if (txt) { s.canon = arr(s.canon).concat([{ text: `更正：${txt}（${why}）`, turn: s.turn }]).slice(-60); done.push(`${txt}（${why}）`); } }
+  }
+  s.logicLog = arr(s.logicLog).concat(done.map(t => ({ turn: s.turn, when: timeText(s.clock), text: t }))).slice(-40);
+  return done;
+}
 /* ========== 内置史料：史事、君主年号、真人生卒官职由程序给出，AI 不凭记忆编 ========== */
 let HIST = [];
 try { HIST = JSON.parse(document.getElementById('hist').textContent || '[]'); } catch (_) { HIST = []; }
@@ -3727,6 +3783,7 @@ function dataDoubts(s) {
       const r = shi(v); if (r < g[2] / 3 || r > g[3] * 3) out.push(`物价「${x.item}」每${x.per} ${v}${u}，合${fmt(r)}，跟这里的米价比不合常理`);
     }
   }
+  for (const x of logicFaults(s)) out.push(x);
   // 梳理出的常见量级：账上的数出了范围（拉回来的标了待核），记账时照资料定
   for (const x of arr(s.prices)) if (x.note === '待核') out.push(`物价「${x.item}」原数不合这个年代的量级，临时改为 ${x.price}，照资料定准`);
   const R = s.realm; if (R) { const tre = N0(R.treasury), rev = N0(R.revenue); if (tre && rev && tre > rev * 15) out.push(`国库 ${tre} 是岁入 ${rev} 的十五倍以上，不合常理`); }
@@ -5644,8 +5701,9 @@ function pane(tab) {
   if (tab === 'arc') return arcPane(s);
   if (tab === 'chron') {
     const p = s.protagonist;
-    const kv = [['姓名', p.name], ['性别', p.gender], ['年岁', p.age != null ? p.age + ' 岁' : '不详'], ['身份', p.role], ['籍贯', p.nativePlace], ['出身', p.real ? '史载真人' : '虚构人物']].concat(Object.entries(s.status)).filter(([, v]) => v);
+    const kv = [['姓名', p.name], ['性别', p.gender], ['年岁', p.age != null ? p.age + ' 岁' : ''], ['身份', p.role], ['籍贯', p.nativePlace], ['出身', p.real ? '史载真人' : '虚构人物']].concat(Object.entries(s.status)).filter(([, v]) => v);
     return `<div class="h" style="margin-top:6px"><span class="seal">我</span>我</div><dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+      ${arr(s.logicLog).length ? `<details class="fold"><summary>常理更正（${s.logicLog.length}）<span class="note">通读账册挑出的不合常理、前后矛盾之处，已照改，往后照此</span></summary><div class="list">${s.logicLog.slice().reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.text)}</div>`).join('')}</div></details>` : ''}
       ${arr(s.canon).length ? `<div class="h"><span class="seal">定</span>定本<span class="note">本局确立、一直成立的事；AI 每回都照这里</span></div><div class="list">${s.canon.slice().reverse().map(c => `<div><span class="when">第${c.turn}回合</span>${esc(c.text)}</div>`).join('')}</div>` : ''}
       <div class="h"><span class="seal">迹</span>你的作为<span class="note">做过的事与可能的后续；灰的是已有下文的</span></div>
       <div class="list">${arr(s.deeds).slice().reverse().map(x => `<div style="${x.done ? 'opacity:.55' : ''}"><span class="when">第${x.turn}回合</span>${esc(x.what)}${x.effect ? `<div class="muted">眼下：${esc(x.effect)}${x.later ? '；可能：' + esc(x.later) : ''}</div>` : ''}</div>`).join('') || '<div class="muted">还没有。</div>'}</div>
@@ -5840,6 +5898,7 @@ async function afterTurn(s0, d, g, gen = BG_GEN) {
   if (orgDue(s0) && !(await step('联网整理人事树和国策书', () => buildOrg(s0)))) return;
   if (orgRefreshDue(s0) && !(await step('逐年核人事树上的人（有没有调走、病故、接任）', () => orgRefresh(s0).catch(e => { s0.orgRefFail = s0.turn; throw e; })))) return;
   if (familyDue(s0) && !(await step('照常情补齐家室', () => familyFix(s0)))) return;
+  if (logicDue(s0) && !(await step('通读账册，挑不合常理、前后矛盾的地方', () => logicAudit(s0).catch(e => { s0.logicFail = s0.turn; throw e; })))) return;
   if (govDue(s0) && !(await step('照史料定国势、阶层', () => buildGov(s0).catch(e => { s0.govFail = s0.turn; throw e; })))) return;
   if (affairDue(s0) && !(await step('拟这个月的时政', () => buildAffairs(s0).catch(e => { s0.affFail = s0.turn; throw e; })))) return;
   if (s0.org && courtiers(s0).some(c => !c.attr) && !(await step('照史料定官员的派系和本事', () => buildOfficers(s0)))) return;
