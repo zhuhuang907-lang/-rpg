@@ -25,7 +25,7 @@ const { chromium } = require('playwright');
   const fid = await p.evaluate(() => S.affairs[0].id), c2 = await p.evaluate(() => courtiers(S).slice(0, 2).map(c => c.name));
   await p.selectOption(`[data-aud1="${fid}"]`, c2[0]); await p.selectOption(`[data-aud2="${fid}"]`, c2[1]);
   await p.click(`[data-aud="${fid}"]`); await p.waitForFunction(() => arr(S.aud && S.aud.log).length > 0, null, { timeout: 30000 }).catch(() => bad('召见没回话'));
-  const au = await p.evaluate(() => ({ left: audLeft(S), n: S.aud.log.slice(-1)[0].replies.length, html: document.body.innerText.includes('臣以为') }));
+  await p.waitForTimeout(500); const au = await p.evaluate(() => ({ left: audLeft(S), n: S.aud.log.slice(-1)[0].replies.length, html: document.body.innerText.includes('臣以为'), tab: TAB, fold: SIDE_FOLD, tabs: tabsFor(S).map(x => x[0]).join() }));
   if (au.left !== 2 || au.n !== 2 || !au.html) bad('召见不对：' + JSON.stringify(au));
   await p.evaluate(() => { S.aud.used = 3; render(); });
   if (await p.evaluate(fid => !document.querySelector(`[data-aud="${fid}"]`).disabled, fid)) bad('一个月召见满三次还能召');
