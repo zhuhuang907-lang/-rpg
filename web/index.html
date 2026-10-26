@@ -810,9 +810,11 @@ const FACE = (() => {
 'use strict';
 /* ========== 小工具 ========== */
 const $ = s => document.querySelector(s);
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// 显示时：坏值（NaN、undefined、[object Object]）一律不显示
+const BADV = /^(NaN|undefined|null|\[object Object\]|Infinity|-Infinity)$/;
+const esc = s => (s && typeof s === 'object' && !Array.isArray(s) ? '' : BADV.test(String(s ?? '')) ? '' : String(s ?? '')).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cut = (s, n) => { const t = String(s ?? '').replace(/[ \t]+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '……' : t; };
-const one = (s, n) => cut(String(s && typeof s === 'object' ? (Array.isArray(s) ? s.filter(x => x != null && typeof x !== 'object').join('、') : (s.name ?? s.text ?? s.value ?? s.what ?? '')) : (s ?? '')).replace(/\s+/g, ' '), n);   // AI 偶尔把字段写成对象：取里面的名字或文字，不显示 [object Object]
+const one = (s, n) => { if (typeof s === 'number' && !Number.isFinite(s)) return ''; const t = String(s && typeof s === 'object' ? (Array.isArray(s) ? s.filter(x => x != null && typeof x !== 'object').join('、') : (s.name ?? s.text ?? s.value ?? s.what ?? '')) : (s ?? '')).replace(/\s+/g, ' '); return BADV.test(t.trim()) ? '' : cut(t, n); };   // AI 偶尔把字段写成对象：取里面的名字或文字，不显示 [object Object]
 const arr = v => (Array.isArray(v) ? v : []);
 const clone = o => JSON.parse(JSON.stringify(o));
 const num = v => (v === null || v === '' || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v));
@@ -1039,7 +1041,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261026044220';
+const BUILD = '20261026045432';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -2108,7 +2110,7 @@ function courtTab(s) {
     ${ORGMSG ? `<div class="muted" style="margin:6px 0">${esc(ORGMSG)}</div>` : ''}
     ${s.gov ? govHtml(s) : rk === 'ruler' ? dash : ''}
     ${s.gov ? affairsHtml(s, perm === 'decree') : ''}
-    <div class="h"><span class="seal">树</span>人事树<span class="note">${O ? esc(O.regime || '') + ' · 第' + O.at + '回合整理' : ''}</span>${O ? ` <button class="link" id="bOrgRe">重新查一遍</button>` : ''}</div>
+    <div class="h"><span class="seal">树</span>人事树<span class="note">${O ? esc(O.regime || '') + (O.at != null ? ' · 第' + O.at + '回合整理' : '') : ''}</span>${O ? ` <button class="link" id="bOrgRe">重新查一遍</button>` : ''}</div>
     ${O ? tree + (can ? `<div class="opost"><input class="oin" data-onode="" placeholder="新衙门名（最上一层）"><button class="link" data-org="addNode" data-n="">${vb}设立衙门</button></div>` : '') : `<div class="muted">${ORGING ? '正在整理……' : '还没整理。'}</div>${ORGING ? '' : '<button id="bOrg">联网查制度，整理人事树和国策书</button>'}`}
     <datalist id="orgPeople">${people.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
     ${arr(s.orgPending).length ? `<div class="h"><span class="seal">办</span>待办（写进了下一步）</div><div class="list">${s.orgPending.map(x => `<div>${esc(x.line)}</div>`).join('')}</div>` : ''}
@@ -5764,7 +5766,7 @@ function applyReply(s, d, said) {
     for (const n of land0) if (!arr(s.territory).some(t => t.place === n)) mv.push(`丢了 ${n}`);
     if (mv.length) extra.army = mv.slice(0, 8);
   }
-  if (d.realm && typeof d.realm === 'object' && !Array.isArray(d.realm)) s.realm = { ...(s.realm || {}), ...Object.fromEntries(Object.entries(d.realm).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, one(v, 60)])) };
+  if (d.realm && typeof d.realm === 'object' && !Array.isArray(d.realm)) s.realm = { ...(s.realm || {}), ...Object.fromEntries(Object.entries(d.realm).filter(([, v]) => v !== '' && v != null && typeof v !== 'object' && !BADV.test(String(v))).map(([k, v]) => [k, one(v, 60)])) };
   for (const p of arr(d.places)) {
     if (!p || !p.name) continue;
     const k = one(p.name, 16), o = s.places[k] || {};
