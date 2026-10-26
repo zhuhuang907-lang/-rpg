@@ -11,6 +11,17 @@ const { chromium } = require('playwright');
   // 身份低（盐商）：只能看
   const v0 = await p.evaluate(() => permLevel(S));
   if (v0 !== 'view') bad('盐商竟能改人事：' + v0);
+  // 不同身份不同面板：盐商没有朝局、军务；知县有衙署、没有军务；武官有军务；皇帝都有
+  const tabs = await p.evaluate(() => { const save = { idm: S.idm, role: S.protagonist.role, career: S.career, forces: S.forces }; const k = () => tabsFor(S).map(x => x[0]).join(','); const r = {};
+    r.merchant = k(); S.career = { office: '江都县知县', rank: '正七品' }; r.local = k() + '|' + tabsFor(S).find(x => x[0] === 'court')?.[1];
+    S.career = { office: '扬州营游击', rank: '从三品' }; r.mil = k(); S.career = { office: '户部主事', rank: '正六品' }; r.court = k();
+    S.career = save.career; S.idm = 'emperor'; S.protagonist.role = '皇帝'; r.ruler = k(); S.idm = save.idm; S.protagonist.role = save.role; return r; });
+  if (/court|army/.test(tabs.merchant)) bad('盐商也有朝局或军务：' + tabs.merchant);
+  if (!/court/.test(tabs.local) || /army/.test(tabs.local) || !/衙署/.test(tabs.local)) bad('知县的面板不对：' + tabs.local);
+  if (!/army/.test(tabs.mil)) bad('武官没有军务：' + tabs.mil);
+  if (!/court/.test(tabs.court) || /army/.test(tabs.court)) bad('京官的面板不对：' + tabs.court);
+  if (!/court/.test(tabs.ruler) || !/army/.test(tabs.ruler)) bad('皇帝的面板不全：' + tabs.ruler);
+  if (await p.$('[data-tab="court"]')) bad('盐商的侧栏上有朝局');
   // 当成一方之主
   await p.evaluate(async () => { S.idm = 'emperor'; S.protagonist.role = '皇帝'; S.dossiers = { ...(S.dossiers || {}), 年羹尧: { real: true, born: 1679, died: 1726 }, 刘统勋: { real: true, born: 1698, died: 1773 }, 傅恒: { real: true, born: 1720, died: 1770 }, 来保: { real: true } }; while (ORGING) await new Promise(r => setTimeout(r, 200)); S.org = null; await buildOrg(S); });
   const o = await p.evaluate(() => ({ n: S.org && S.org.nodes.length, pols: arr(S.policies).length, pts: S.polPts, fake: S.org && S.org.nodes.some(n => n.posts.some(x => /某/.test(x.holder))) }));
