@@ -16,7 +16,11 @@ const { chromium } = require('playwright');
   if (ad.prov !== '江苏') bad('主角所在的省认错：' + ad.prov);
   if (!/江都县,甘泉县/.test(ad.cty) || /\?/.test(ad.cty.split(',').slice(0, 3).join())) bad('本省的县没查到或没坐标：' + ad.cty);
   if (!ad.yz || Math.abs(ad.yz[0] - 119.4) > 0.3 || Math.abs(ad.yz[1] - 32.4) > 0.3) bad('扬州府坐标错（同名地方挑错了）：' + ad.yz);
-  const r = await p.evaluate(() => { TAB = 'map'; SIDE_FOLD = false; render(); const sv = document.querySelector('.smap'); return { tabs: tabsFor(S).map(x => x[0]).join(), img: !!sv.querySelector('image'), dots: sv.querySelectorAll('circle[data-mapu]').length, provs: [...sv.querySelectorAll('[data-mapprov]')].map(x => x.textContent), river: [...sv.querySelectorAll('polyline title')].map(t => t.textContent).join('|'), pass: [...sv.querySelectorAll('title')].filter(t => /^山海关|^潼关|^居庸关/.test(t.textContent)).length, road: sv.querySelectorAll('polyline[stroke-dasharray="4 3"]').length, block: [...sv.querySelectorAll('title')].filter(t => /隔山不通/.test(t.textContent)).length, txt: document.body.innerText }; });
+  // 头一回打开舆图：先看自己这一带，到县（每个县一块地、县界府界）
+  const r0 = await p.evaluate(() => { TAB = 'map'; SIDE_FOLD = false; MAPZ.inited = false; render(); const sv = document.querySelector('.smap'); return { m: MAPZ.mode, cty: [...sv.querySelectorAll('rect[data-mapu]')].map(e => e.dataset.mapu), lbl: sv.textContent, dash: sv.querySelectorAll('path[stroke-dasharray="1 2"]').length, views: document.querySelectorAll('[data-mapview]').length }; });
+  if (r0.m !== 'near' || r0.cty.length < 12 || !r0.cty.includes('江都县') || !/甘泉|仪征/.test(r0.lbl) || !r0.dash || !r0.views) bad('舆图开头不是本地到县：' + JSON.stringify({ ...r0, lbl: r0.lbl.slice(0, 200) }));
+  await SHOT('near0');
+  const r = await p.evaluate(() => { TAB = 'map'; SIDE_FOLD = false; MAPZ.inited = true; MAPZ.mode = 'world'; render(); const sv = document.querySelector('.smap'); return { tabs: tabsFor(S).map(x => x[0]).join(), img: !!sv.querySelector('image'), dots: sv.querySelectorAll('circle[data-mapu]').length, provs: [...sv.querySelectorAll('[data-mapprov]')].map(x => x.textContent), river: [...sv.querySelectorAll('polyline title')].map(t => t.textContent).join('|'), pass: [...sv.querySelectorAll('title')].filter(t => /^山海关|^潼关|^居庸关/.test(t.textContent)).length, road: sv.querySelectorAll('polyline[stroke-dasharray="4 3"]').length, block: [...sv.querySelectorAll('title')].filter(t => /隔山不通/.test(t.textContent)).length, txt: document.body.innerText }; });
   if (!/map/.test(r.tabs)) bad('没有舆图页');
   if (!r.img) bad('没有地形底图');
   if (r.dots < 30) bad('府州画得太少：' + r.dots);

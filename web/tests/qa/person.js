@@ -33,6 +33,9 @@ const { chromium } = require('playwright');
   const e = await p.evaluate(() => ({ g: chkOf(S, '高恒'), q: chkOf(S, '钱无有'), fq: fictionSet(S).has('钱无有'), fg: fictionSet(S).has('高恒'), msg: ORGMSG }));
   if (!e.g || !e.g.real || e.fg) bad('高恒应是真人：' + JSON.stringify(e).slice(0, 300));
   if (!e.q || e.q.real || !e.fq) bad('钱无有应查无此人、标虚拟：' + JSON.stringify(e).slice(0, 300));
+  // 名册里只写「某氏」的女眷：当场起名，「某氏」留作称呼；起名的字库里不能有「氏」
+  const sh = await p.evaluate(() => { S.household.push({ relation: '正室', name: '程氏', age: 30 }); S.people['柳氏'] = { role: '妾', seen: S.turn }; fixShiNames(S); const m = S.household.find(x => x.alias === '程氏'); const ph = nameFixes({ ...S, nameMap: {} }, '他娶了王某氏为妻'); return { m: m && m.name, p: Object.keys(S.people).find(k => S.people[k].alias === '柳氏'), left: S.household.some(x => /^.氏$/.test(x.name)) || Object.keys(S.people).some(k => /^.氏$/.test(k)), ph: ph.map(x => x.right).join() }; });
+  if (!sh.m || /氏$/.test(sh.m) || !sh.p || /氏$/.test(sh.p) || sh.left || /氏$/.test(sh.ph)) bad('「某氏」没起名：' + JSON.stringify(sh));
   const vis = await p.evaluate(() => document.body.innerText); if (/NaN|undefined|\[object/.test(vis)) bad('页面有坏字');
   console.log('DBG', JSON.stringify({ a, b2, c, d, e: { g: e.g && e.g.src, q: e.q && e.q.why } }));
   console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(errs.length ? 1 : 0);
