@@ -1298,6 +1298,7 @@ const livePeople = s => Object.entries(s.people || {}).filter(([k, v]) => v && (
 let ORGMSG = '', ORGING = false;
 function permLevel(s) {
   if (isRuler(s)) return 'decree';
+  const k = roleKind(s); if (k === 'none' || k === 'military') return 'view';
   const c = s.career || {}, r = rankNum(c.rank) || postRank(s, c.office);
   if (c.office && (r == null || r <= 7.5)) return 'propose';
   return 'view';
@@ -1305,7 +1306,7 @@ function permLevel(s) {
 const PERM_TXT = { decree: '你是一方之主：可以直接下令增设、裁撤衙门，委任、罢免官员，颁行国策（花国策点）', propose: '你有官职：可以上疏建议任免和施政，准不准由上头定（不花国策点）', view: '你眼下地位不够：只能看朝廷的架子和在任的人' };
 const ORG_COST = { appoint: 1, dismiss: 1, quota: 1, addPost: 2, addNode: 3, cut: 3 };
 function orgHolders(s) { const H = new Set(); for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.holder) H.add(p.holder); return H; }
-const orgDue = s => s && s.clock && !(s.orgFail != null && s.turn - s.orgFail < 4) && (!s.org || s.org.pol !== (s.place.polity || '') || s.org.ruler !== isRuler(s));   // 不论身份，开局后就提前整理好（低的只能看）
+const orgDue = s => s && s.clock && !(s.orgFail != null && s.turn - s.orgFail < 4) && roleKind(s) !== 'none' && (!s.org || s.org.pol !== (s.place.polity || '') || s.org.ruler !== isRuler(s));   // 有官职、统兵、一方之主的，开局后就提前整理好；平头百姓没有这个面板
 /** 人事树：照内置制度库（按史书编的中枢、地方、军制）当骨架，联网查过，分中枢、地方（从最高地方长官一直到乡里保甲、吏役）、军事三路同时整理；
  *  主角所在这一路写实名实地；在任的真人只填资料、名册里有的，其余（尤其基层）起虚构的名字、标「虚拟」，查到真人再换；员额照制度，玩家可改 */
 function orgLibText(s, part) {
@@ -1564,11 +1565,13 @@ function courtTab(s) {
   const areas = ['政治', '经济', '民生', '军事', '制度'];
   const pols = arr(s.policies);
   const polHtml = pols.length ? `<div class="cgrid">${areas.map(a => { const L = pols.filter(q => q.area === a); return L.length ? `<div class="ccard"><div class="ct">${a}</div>${L.map(q => { const lock = q.need.some(id => !pols.some(x => x.id === id && x.state === '已行')); return `<div class="pol ${q.state === '已行' ? 'done' : lock ? 'lock' : ''}"><b>${esc(q.name)}</b> <span class="muted">${q.cost} 点</span>${q.state ? ` <span class="att">${esc(q.state)}</span>` : ''}<div class="muted">${esc(q.desc)}</div>${q.effect ? `<div class="muted">后果：${esc(q.effect)}</div>` : ''}${q.real ? `<div class="muted">史例：${esc(q.real)}</div>` : ''}${q.need.length ? `<div class="muted">要先：${esc(q.need.map(id => (pols.find(x => x.id === id) || {}).name || id).join('、'))}</div>` : ''}${can && !q.state && !lock ? `<button class="link" data-org="policy" data-pol="${esc(q.id)}">${perm === 'decree' ? '颁行' : '上疏请行'}</button>` : ''}</div>`; }).join('')}</div>` : ''; }).join('')}</div>` : '';
-  return `<div class="h" style="margin-top:6px"><span class="seal">朝</span>朝局<span class="note">${esc(PERM_TXT[perm])}</span></div>
+  const rk = roleKind(s);
+  return `<div class="h" style="margin-top:6px"><span class="seal">${rk === 'local' ? '衙' : '朝'}</span>${rk === 'local' ? '衙署' : '朝局'}<span class="note">${esc(PERM_TXT[perm])}</span></div>
+    ${ROLE_TXT[rk] ? `<div class="muted" style="font-size:12px">你的身份：${esc(s.protagonist.role || '')}${(s.career || {}).office ? '（' + esc(s.career.office) + '）' : ''}——${esc(ROLE_TXT[rk])}</div>` : ''}
     ${perm === 'decree' ? `<div class="pl"><span>国策点</span><b>${s.polPts || 0}</b><span class="muted">（每过一个月涨三点，最多三十点；委任、罢免 1 点，增设官职 2 点，设立、裁撤衙门 3 点，国策照标价）</span></div>` : ''}
     ${ORGMSG ? `<div class="muted" style="margin:6px 0">${esc(ORGMSG)}</div>` : ''}
-    ${s.gov ? govHtml(s) : dash}
-    ${affairsHtml(s, perm === 'decree')}
+    ${s.gov ? govHtml(s) : rk === 'ruler' ? dash : ''}
+    ${s.gov ? affairsHtml(s, perm === 'decree') : ''}
     <div class="h"><span class="seal">树</span>人事树<span class="note">${O ? esc(O.regime || '') + ' · 第' + O.at + '回合整理' : ''}</span>${O ? ` <button class="link" id="bOrgRe">重新查一遍</button>` : ''}</div>
     ${O ? tree + (can ? `<div class="opost"><input class="oin" data-onode="" placeholder="新衙门名（最上一层）"><button class="link" data-org="addNode" data-n="">${vb}设立衙门</button></div>` : '') : `<div class="muted">${ORGING ? '正在整理……' : '还没整理。'}</div>${ORGING ? '' : '<button id="bOrg">联网查制度，整理人事树和国策书</button>'}`}
     <datalist id="orgPeople">${people.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
@@ -1651,6 +1654,26 @@ function factBlock(s) {
 const GOV_KEYS = ['国库', '内帑', '太仓粮', '民心', '腐败', '威望', '通货', '边患', '灾情'];
 const GOV_PCT = new Set(['民心', '腐败', '威望', '通货', '边患', '灾情']);
 const LOCAL_KEYS = ['存银', '仓粮', '民心', '治安', '积案', '灾情', '吏治'];
+/** 身份决定开哪些面板：一方之主（君主、藩镇、军阀、有封地的）全开；地方官有辖区、时政、召见属官、人事树可上疏；京官有人事树和上疏；统兵的武官有军务；平头百姓、商人、读书人没有朝局和军务 */
+const MIL_OFFICE = /总兵|参将|游击|守备|千总|把总|都司|提督|将军|都督|指挥|卫所|统领|都统|参领|佐领|节度|镇守|兵备/;
+function roleKind(s) {
+  if (!s || !s.protagonist) return 'none';
+  if (isRuler(s)) return 'ruler';
+  const c = s.career || {}, off = String(c.office || '') + String(c.post || ''), leads = arr(s.forces).some(f => f && (f.leader === s.protagonist.name || /统带/.test(f.status || '')));
+  if (govScope(s) === 'local') return 'local';
+  if (MIL_OFFICE.test(off) || leads) return 'military';
+  if (c.office) return 'court';
+  return 'none';
+}
+const ROLE_TXT = { ruler: '一方之主：国势、时政、召见、人事树（直接下令）、国策书、军务全开', local: '地方官：辖区、本地时政、召见属官、人事树（可上疏）、国策（可上疏请行）', court: '京官：人事树和国策（可上疏），国势只知邸报里的', military: '武官：军务（自己统带的兵马），人事树只能看', none: '' };
+function tabsFor(s) {
+  const r = roleKind(s), T = [['board', '局面'], ['people', '人物'], ['estate', '家业']];
+  if (r === 'ruler' || arr(s.powers).length || arr(s.territory).length || arr(s.forces).length || arr(s.circles).length || arr(s.factions).length) T.push(['power', '势力']);
+  if (r !== 'none') T.push(['court', r === 'local' ? '衙署' : '朝局']);
+  if (r === 'ruler' || r === 'military' || arr(s.forces).some(f => f && f.leader === s.protagonist.name)) T.push(['army', '军务']);
+  T.push(['career', '仕途'], ['news', '见闻'], ['world', '史线'], ['geo', '地理'], ['chron', '年谱'], ['arc', '档案馆'], ['set', '设置']);
+  return T;
+}
 function govScope(s) { if (isRuler(s)) return 'realm'; const c = s.career || {}; return /知县|知州|知府|县令|太守|刺史|巡抚|总督|布政|按察|道台|节度|观察|府尹|县尹/.test(String(c.office || '') + String(s.protagonist.role || '')) ? 'local' : ''; }
 const govDue = s => s && s.clock && govScope(s) && (!s.gov || s.gov.scope !== govScope(s)) && !(s.govFail != null && s.turn - s.govFail < 3);
 async function buildGov(s) {
@@ -1737,7 +1760,9 @@ const AUD_MAX = 3;
 function audLeft(s) { const ym = Math.floor(ymOf(s.clock)); const A = s.aud || {}; return A.ym === ym ? Math.max(0, AUD_MAX - (A.used || 0)) : AUD_MAX; }
 function courtiers(s) {
   const L = [];
-  for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.holder && n.status !== '已裁撤' && (n.depth <= 2 || n.path)) L.push({ name: p.holder, post: n.name + p.title, attr: p.attr || null });
+  const loc = roleKind(s) === 'local', maxD = Math.max(0, ...arr(s.org && s.org.nodes).filter(n => n.path).map(n => n.depth || 0));
+  // 君主召见中枢和各路大员；地方官只召得到自己衙门和下面的属官、幕友、佐杂
+  for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.holder && p.holder !== s.protagonist.name && n.status !== '已裁撤' && (loc ? n.path && (n.depth || 0) >= maxD - 1 : (n.depth <= 2 || n.path))) L.push({ name: p.holder, post: n.name + p.title, attr: p.attr || null });
   return L.slice(0, 60);
 }
 async function audience(s, affairId, names) {
@@ -5365,7 +5390,7 @@ function renderGame() {
       </div>
     </div>
     <aside class="side ${SIDE_FOLD ? 'fold' : ''}">
-      <div class="tabs">${[['board', '局面'], ['people', '人物'], ['estate', '家业'], ['power', '势力'], ['court', '朝局'], ['army', '军务'], ['career', '仕途'], ['news', '见闻'], ['world', '史线'], ['geo', '地理'], ['chron', '年谱'], ['arc', '档案馆'], ['set', '设置']].map(([k, n]) => `<button data-tab="${k}" class="${TAB === k && (!SIDE_FOLD || !matchMedia('(max-width: 960px)').matches) ? 'on' : ''}">${n}</button>`).join('')}<button class="closeSide" id="bCloseSide">回到正文 ✕</button></div>
+      <div class="tabs">${tabsFor(s).map(([k, n]) => `<button data-tab="${k}" class="${TAB === k && (!SIDE_FOLD || !matchMedia('(max-width: 960px)').matches) ? 'on' : ''}">${n}</button>`).join('')}<button class="closeSide" id="bCloseSide">回到正文 ✕</button></div>
       <div class="pane">${pane(TAB)}</div>
     </aside>
   </div>`;
@@ -5438,6 +5463,7 @@ function pane(tab) {
       <div class="h"><span class="seal">令</span>落到你身上的政令<span class="note">新法、加派、禁令；每月的多出少出程序照日子结算</span></div>${arr(s.policies).length ? `<div class="tblwrap"><table class="tbl"><tr><th>政令</th><th>起于</th><th>对你</th><th>每月</th></tr>${s.policies.map(p => `<tr><td><b>${esc(p.name)}</b>${p.what ? `<div class="muted" style="font-size:12px">${esc(p.what)}</div>` : ''}</td><td>${esc(p.since || '')}</td><td>${esc(p.onYou || '')}</td><td class="num">${N0(p.perMonth) ? (N0(p.perMonth) > 0 ? '+' : '−') + esc(fmtN(Math.abs(N0(p.perMonth)), u)) : ''}</td></tr>`).join('')}</table></div>` : '<div class="muted">眼下没有专门落到你身上的政令。</div>'}
       <div class="h"><span class="seal">市</span>本地行情<span class="note">随季节、年景、战事涨落</span></div>${arr(s.prices).length ? `<div class="tblwrap"><table class="tbl"><tr><th>货</th><th>价</th></tr>${s.prices.map(x => `<tr><td>${esc(x.item)}</td><td class="num">${esc(fmtN(x.price, u))} / ${esc(x.per || '')}</td></tr>`).join('')}</table></div>` : '<div class="muted">下一回合给出。</div>'}`;
   }
+  if ((tab === 'court' || tab === 'army') && !tabsFor(s).some(([k]) => k === tab)) tab = 'board';   // 身份变了，这个面板不开了
   if (tab === 'court') return courtTab(s);
   if (tab === 'army') return armyTab(s);
   if (tab === 'power') {
