@@ -356,7 +356,7 @@ const IDM = {
 };
 
 /** 家世、住处、地点不编：开局和每一回都照这个 */
-const NOFAB = '家世、住处、地点不编：真人主角的祖上、父母、妻儿、宅第照史料（查到的照写，查不到的不添）；虚构主角的家只给那个年代那种人家最常见的样子（人口、产业、来历都往平常处写），不编显赫祖上、隐秘身世、传家宝、恩怨旧案。地名只用材料里有的真实地名（州县、乡镇、街巷、寺观、书院、会馆、码头要么在【地理】【本地志】【联网查到的资料】里，要么是那里真有的），查不到名字的街巷、村子、店铺不起名，写「城东一条巷子」「西门外的村子」。虚构的人物照常起全名，程序会在界面上标「（虚拟）」，正文里你不用自己标。';
+const NOFAB = '家世、住处、地点不编：真人主角的祖上、父母、妻儿、宅第照史料（查到的照写，查不到的不添）；虚构主角的家只给那个年代那种人家最常见的样子（人口、产业、来历都往平常处写），不编显赫祖上、隐秘身世、传家宝、恩怨旧案。但「常见的样子」要齐全：成年的贵族、官宦、富户男子照那个年代的常情有正妻，多半有妾，有子女，有仆婢；平民到了岁数也娶妻生子；史料没记载不等于没有，照常情推出来，不要漏掉。地名只用材料里有的真实地名（州县、乡镇、街巷、寺观、书院、会馆、码头要么在【地理】【本地志】【联网查到的资料】里，要么是那里真有的），查不到名字的街巷、村子、店铺不起名，写「城东一条巷子」「西门外的村子」。虚构的人物照常起全名，程序会在界面上标「（虚拟）」，正文里你不用自己标。';
 function storyRules() {
   return `你在和玩家一起写一个人在真实历史里的一生。玩家说主角做什么，你写那个年代的世界怎么回应：身边的人怎么说、怎么想、怎么做，事情怎么一步步起变化。你写世界和别人，不替主角想、不替主角说。
 
@@ -1933,6 +1933,72 @@ function applyArmy(s, d) {
     out.push(`${name || '新军'}：${act}${ok ? '' : '未成'}${r.why ? '（' + one(r.why, 30) + '）' : ''}`);
   }
   s.armyPending = arr(s.armyPending).filter(x => s.turn - x.turn < 3 && !out.some(o => x.force && o.startsWith(x.force)) && !(x.act === 'raise' && out.some(o => /募/.test(o))));
+  return out;
+}
+/* ========== 家室合常情：成年的贵族、官宦、富户男子必有正妻，多半有妾、有子女、有仆婢；史料没记载不等于没有，照那个年代那种人家的常情推出来（标推算），
+ *  真人照史载；年岁不合常理的（父母比本人小、儿女比本人还大）程序当场改 ========== */
+const WIFE_RE = /妻|正室|夫人|元配|继室|嫡福晋|福晋|王妃|皇后|正宫/, CONC_RE = /妾|侧室|姨娘|侧福晋|妃|嫔|贵人|答应|通房/, KID_RE = /^(嫡|庶|长|次|幼|三|四|五)?(子|女|儿子|女儿)$|子$|女$/;
+function familyNeeds(s) {
+  const p = s.protagonist || {}, age = num(p.age); if (age == null) return [];
+  const role = String(p.role || '') + String((s.career || {}).office || '');
+  if (/僧|和尚|道士|尼姑|出家|太监|宦官|内侍|宫女/.test(role)) return [];
+  const H = arr(s.household).filter(m => m && !m.dead), male = !/女/.test(p.gender || '');
+  const elite = ['emperor', 'noble', 'official', 'warlord'].includes(s.idm) || /皇|王|公|侯|伯|贵|宗室|勋|官|绅|富|盐商|地主|员外|举人|进士|将|帅|督|抚|知府|知县|大臣/.test(role);
+  const out = [], marry = male ? (elite ? 18 : 22) : 17, F = s.famOk || {};
+  if (age >= marry && !F.spouse && !H.some(m => male ? WIFE_RE.test(m.relation) : /^(夫|丈夫|夫君)$/.test(m.relation))) out.push(male ? '正妻' : '丈夫');
+  if (male && elite && age >= 24 && !F.conc && !H.some(m => CONC_RE.test(m.relation))) out.push('妾');
+  if (age >= marry + 4 && !F.kids && !H.some(m => KID_RE.test(m.relation) && !/孙|侄|甥/.test(m.relation))) out.push('子女');
+  if (elite && !F.serv && !H.some(m => /仆|婢|丫鬟|管家|长随|家丁|奴|嬷嬷|乳母|太监|宫女|侍/.test(m.relation))) out.push('仆婢');
+  return out;
+}
+/** 程序能定的：长辈不能比本人小、儿女不能比本人还大、妻子年纪别差出一代 */
+function familyAgeFix(s) {
+  const age = num((s.protagonist || {}).age); if (age == null) return [];
+  const out = [];
+  for (const m of arr(s.household)) {
+    const a = num(m.age); if (a == null || m.dead) continue;
+    if (/^(父|母|祖父|祖母|嫡母|生母|叔|伯|姑|舅|姨)$/.test(m.relation) && a < age + 15) { m.age = age + (/祖/.test(m.relation) ? 40 : 22); out.push(`${m.relation}${m.name}年岁 ${a}→${m.age}`); }
+    else if (KID_RE.test(m.relation) && !/孙|侄|甥|妻|妾/.test(m.relation) && a > age - 14) { m.age = Math.max(0, age - 18); out.push(`${m.relation}${m.name}年岁 ${a}→${m.age}`); }
+    else if ((WIFE_RE.test(m.relation) || CONC_RE.test(m.relation)) && (a < 14 || Math.abs(a - age) > 30)) { m.age = Math.max(15, age - (CONC_RE.test(m.relation) ? 6 : 2)); out.push(`${m.relation}${m.name}年岁 ${a}→${m.age}`); }
+  }
+  // 生母至少比孩子大十六岁：孩子写明生母的照生母算；没写的，嫡出的（和不分嫡庶的）算正妻的
+  const kids = arr(s.household).filter(k => !k.dead && num(k.age) != null && KID_RE.test(k.relation) && !/孙|侄|甥|妻|妾/.test(k.relation));
+  for (const m of arr(s.household)) {
+    if (m.dead || num(m.age) == null || !(WIFE_RE.test(m.relation) || CONC_RE.test(m.relation))) continue;
+    const mine = kids.filter(k => k.mother ? k.mother === m.name : WIFE_RE.test(m.relation) && !/庶/.test(k.relation));
+    const eldest = Math.max(-1, ...mine.map(k => num(k.age)));
+    if (eldest >= 0 && m.age < eldest + 16) { const a0 = m.age; m.age = Math.min(age + 5, eldest + 18); if (m.age < eldest + 16) m.age = eldest + 16; out.push(`${m.relation}${m.name}年岁 ${a0}→${m.age}（孩子已${eldest}岁）`); }
+  }
+  return out;
+}
+const familyDue = s => s && s.clock && familyNeeds(s).length && s.famTried !== s.clock.y + ':' + familyNeeds(s).join();
+async function familyFix(s) {
+  const need = familyNeeds(s); s.famTried = s.clock.y + ':' + need.join(); if (!need.length) return [];
+  const p = s.protagonist, yl = s.clock.yearLabel || s.clock.y + '年';
+  const found = p.real && p.name ? await searchFirst(s, [`${p.name} 妻 夫人 继室`, `${p.name} 妾 子女 后嗣`]) : '';
+  const { text } = await callClaude(`一局历史游戏（${timeText(s.clock)}，${s.place.polity || ''}，${geoCenter(s)}）。主角：${p.name}，${p.gender || '男'}，${p.age}岁，${p.role}${p.real ? '（真人）' : '（虚构）'}。
+眼下的家室：${arr(s.household).filter(m => !m.dead).map(m => `${m.relation}${m.name}${m.age != null ? m.age + '岁' : ''}`).join('、') || '（空）'}
+${found}
+${cut(libFacts(s, ['society']), 900)}
+这样的人在这个年代不可能没有：${need.join('、')}。请补上：真人照史载（写出处）；史料没记载的，照那个年代那种人家的常情推出来（basis 写「推算：」和依据，如「宗室子弟十六七岁成婚」「官宦人家多纳妾一二人」），人数、年纪、出身门第都合常情（正妻多出身门当户对的人家，妾多出身寒微；子女年岁照成婚年头推；仆婢照家世多寡）。每人起名字（女子照那个年代的习惯，可写「某氏，闺名某某」的格式：姓加氏、再写闺名），不写「某」。真有记载他终身未娶、无子的，single/noKids 填 true 并写依据。
+只输出一个 JSON 对象：{"add":[{"relation":"正室/妾/嫡子/庶女/管家/丫鬟……","name":"","age":0,"mother":"子女的生母","note":"出身、来历一句","basis":"史载出处，或「推算：」依据"}],"single":false,"noKids":false,"why":""}`, null, { maxTokens: 2500, temperature: 0.3, kind: '研读', detached: true });
+  const d = parseJSON(text); if (!d) return [];
+  const out = [], have = new Set(arr(s.household).map(m => m.name));
+  s.famOk = s.famOk || {};
+  if (d.single === true && d.why) { s.famOk.spouse = true; s.famOk.conc = true; }
+  if (d.noKids === true && d.why) s.famOk.kids = true;
+  for (const x of arr(d.add).slice(0, 12)) {
+    if (!x || !x.relation) continue;
+    let name = one(x.name, 12); if (/某/.test(name) || name.length < 2) { const sur = (name.replace(/某.*$/, '') || p.name || '王').slice(0, 1); name = pickName(s, sur, /女|妻|妾|婢|丫鬟|氏/.test(x.relation) ? GIVEN_F.filter(g => g !== '氏') : /仆|丁|役|夫/.test(x.relation) ? GIVEN_LOW : GIVEN, have); }
+    if (!name || have.has(name)) continue;
+    const g = basisGrade(x.basis);
+    s.household = arr(s.household).concat([{ relation: one(x.relation, 6), name, age: num(x.age), mother: one(x.mother, 8), note: one(x.note, 30) + (g === '推算' ? '（推算）' : ''), basis: one(x.basis, 60), inferred: g === '推算' }]);
+    have.add(name); out.push(`${one(x.relation, 6)}${name}`);
+  }
+  // 补过一轮还缺的，照常情记下已查过（不来回问）
+  for (const n of familyNeeds(s)) s.famOk[{ 正妻: 'spouse', 丈夫: 'spouse', 妾: 'conc', 子女: 'kids', 仆婢: 'serv' }[n]] = true;
+  out.push(...familyAgeFix(s));
+  if (out.length) s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: p.name, what: '家室补记：' + out.slice(0, 8).join('、') }]);
   return out;
 }
 /* ========== 内置史料：史事、君主年号、真人生卒官职由程序给出，AI 不凭记忆编 ========== */
@@ -4921,6 +4987,7 @@ function applyReply(s, d, said) {
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
     { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg); const all = g1.concat(g2, g3, g4); if (all.length) extra.gov = all; }
     fadePeople(s);
+    { const af = familyAgeFix(s); if (af.length) noteErr('家里人年岁不合常理，照改', af.join('；')); }
     // 传承：主角死了，由继承人接着玩
     const sc = d.succession && typeof d.succession === 'object' ? d.succession : null;
     if (sc && String(sc.heir || '').trim() && (sc.died === true || /^(是|true|死|亡|卒|殁|薨|崩|驾崩|去世|病故)/.test(String(sc.died || '').trim()))) {
@@ -5457,7 +5524,7 @@ function pane(tab) {
     const OLD = Object.entries(s.people).filter(([, v]) => v && v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const fam = s.household.filter(m => !s.people[m.name]);
     const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionSet(s), FX = n => FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>';
-    const famTbl = HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b></td><td>${m.age != null ? esc(m.age) + '岁' : ''}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(m.note || '')}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '';
+    const famTbl = HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b>${m.basis ? `<div class="gb"><span class="gr ${m.inferred ? 'inf' : 'rec'}">${m.inferred ? '推算' : '史载'}</span>${esc(String(m.basis).replace(/^推算[：:]/, ''))}</div>` : ''}</td><td>${m.age != null ? esc(m.age) + '岁' : ''}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(String(m.note || '').replace(/（推算）$/, ''))}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '';
     return famTbl + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
       ${fam.map(m => `<div class="pc">${m.dead || /未取名/.test(m.name) ? '' : `<canvas class="mini" data-face-npc="${esc(m.name)}" width="92" height="110"></canvas>`}<div class="pn"><b>${esc(m.name)}</b>${FX(m.name)}<span class="att">${esc(m.relation)}</span></div><div class="pr">${m.age != null ? m.age + '岁' : ''}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
       ${P.map(([k, v]) => `<div class="pc"><canvas class="mini" data-face-npc="${esc(k)}" width="92" height="110"></canvas><div class="pn"><b>${esc(k)}</b>${FX(k)}${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
@@ -5772,6 +5839,7 @@ async function afterTurn(s0, d, g, gen = BG_GEN) {
   if (canSearch() && officialsDue(s0) && !(await step('趁空查这地方此时在任的官员', () => ensureOfficials(s0).catch(e => { s0.offFail = s0.turn; throw e; })))) return;   // 玩家读这一回、想下一步的时候先查好，下一回不用等
   if (orgDue(s0) && !(await step('联网整理人事树和国策书', () => buildOrg(s0)))) return;
   if (orgRefreshDue(s0) && !(await step('逐年核人事树上的人（有没有调走、病故、接任）', () => orgRefresh(s0).catch(e => { s0.orgRefFail = s0.turn; throw e; })))) return;
+  if (familyDue(s0) && !(await step('照常情补齐家室', () => familyFix(s0)))) return;
   if (govDue(s0) && !(await step('照史料定国势、阶层', () => buildGov(s0).catch(e => { s0.govFail = s0.turn; throw e; })))) return;
   if (affairDue(s0) && !(await step('拟这个月的时政', () => buildAffairs(s0).catch(e => { s0.affFail = s0.turn; throw e; })))) return;
   if (s0.org && courtiers(s0).some(c => !c.attr) && !(await step('照史料定官员的派系和本事', () => buildOfficers(s0)))) return;
