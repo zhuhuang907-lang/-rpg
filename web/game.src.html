@@ -229,7 +229,7 @@ textarea{resize:vertical}
   .onode.path{border-left-color:#b5452f}
   .onpath{background:#f6e3dc!important;color:#8a2f1d!important}
   .vt{font-size:11px;color:#888;border:1px solid #ccc;border-radius:3px;padding:0 3px;margin-left:3px}
-  .smap{width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px;touch-action:manipulation}.mlegend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted,#888);margin:4px 0}.mlegend i,.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  .smap{width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px;touch-action:manipulation}.mlayers{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;margin:4px 0}.mlayers label{display:flex;align-items:center;gap:3px}.mlegend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted,#888);margin:4px 0}.mlegend i,.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
   .opost{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;padding:2px 0}
   .opost .ot{min-width:6em}.opost .ot i{font-style:normal;color:#888;margin-left:4px;font-size:12px}
   .opost .oin{width:9em;font-size:12px;padding:2px 4px}
@@ -286,6 +286,7 @@ textarea{resize:vertical}
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
 <script type="application/json" id="geo">__GEO__</script>
+<script type="application/json" id="terrain">__TERRAIN__</script>
 <script>
 /*__FACE__*/
 'use strict';
@@ -3198,146 +3199,347 @@ async function ensureGeo(s, names) {
   const own = !BUSY; if (own) { PHASE = 'geo'; render(); }   // 在后台跑、玩家这一回已经开写时，不去动这一回的进度提示
   try { const g = await buildGeo(s, names); if (!g) { s.geoFail = s.turn; s.geoFailAt = geoCenter(s); } return g; } catch (e) { if (e && e.code === 'cancelled') throw e; s.geoFail = s.turn; s.geoFailAt = geoCenter(s); return null; } finally { if (own && PHASE === 'geo') PHASE = ''; }
 }
-/* ========== 舆图（大战略地图）：照这一年的州府画全国（或一省），标出你的地盘、各方势力、兵马驻地、打过仗的地方、你此刻在哪；点一处看详情、就地下令 ========== */
-let MAPZ = { mode: 'world', prov: '', sel: '' }, MAPC = { k: '', v: [], py: null, P: new Map() };
-const PREF_T = y => y >= 1368 ? /^(府|直隶州|直隶厅|军民府)$/ : y >= 1271 ? /^(路|府|直隶州)$/ : y >= 960 ? /^(州|府|军|监)$/ : y >= 618 ? /^(州|郡|府|都护府)$/ : /^(郡|国)$/;
+/* ========== 舆图（大战略地图） ==========
+   底图是真实地形：高程（AWS Terrain Tiles）、河湖海岸山脉（Natural Earth）、关隘（维基百科坐标），古黄河、大运河按年代换走向；
+   政区每局开局联网查、DeepSeek 照《地理志》核定这一年的政权—一级政区—府州，本省再细到县、驿道、关隘，坐标取 CHGIS 地名库；
+   相邻州县之间照地形判断通不通：平路画虚线，翻山经关的绕关口，只有山路的画点线，隔山隔海不通的打叉 */
+let MAPZ = { mode: 'world', prov: '', sel: '', lay: { terr: true, river: true, road: true, pass: true, adm: true } }, MAPC = { k: '', v: '', img: {}, links: {}, py: null, P: new Map() }, REG_P = null;
 const PCOL = ['#3b6fb5', '#8a5bb0', '#b07a2a', '#2f8f83', '#a8435f', '#6b7d2a', '#c25e2e', '#4a5a8a'];
+const RCOL = ['#c0504d', '#4f81bd', '#7aa33a', '#8064a2', '#e8892e', '#2fa3bd', '#8c8c8c', '#c9a012', '#7f6000', '#2e8b57', '#b03a8a', '#5f6fb0'];
+let TER = null;
+function terr() {
+  if (TER) return TER;
+  try { const el = typeof document !== 'undefined' && document.getElementById('terrain'), d = el ? JSON.parse(el.textContent) : null;
+    if (d && d.elev) { const b = atob(d.elev), g = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) g[i] = b.charCodeAt(i); d.g = g; TER = d; } else TER = {}; } catch (_) { TER = {}; }
+  return TER;
+}
+const qM = q => q ? ((q - 1) / 254) ** 2 * 7000 : -1;
+/** 某处海拔（米），海上为 -1，库外为 null */
+function elevAt(lon, lat) {
+  const T = terr(); if (!T.g) return null; const [L0, L1, A0, A1, R] = T.box; if (lon < L0 || lon > L1 || lat < A0 || lat > A1) return null;
+  const fx = (lon - L0) / R - 0.5, fy = (A1 - lat) / R - 0.5, i = Math.max(0, Math.min(T.nx - 2, Math.floor(fx))), j = Math.max(0, Math.min(T.ny - 2, Math.floor(fy))), a = Math.min(1, Math.max(0, fx - i)), b = Math.min(1, Math.max(0, fy - j));
+  const v = (x, y) => T.g[y * T.nx + x], n = v(Math.round(fx) < 0 ? 0 : Math.min(T.nx - 1, Math.round(fx)), Math.round(fy) < 0 ? 0 : Math.min(T.ny - 1, Math.round(fy)));
+  if (!n) return -1;
+  const m = (x, y) => Math.max(0, qM(v(x, y)));
+  return m(i, j) * (1 - a) * (1 - b) + m(i + 1, j) * a * (1 - b) + m(i, j + 1) * (1 - a) * b + m(i + 1, j + 1) * a * b;
+}
+/** 地形底图：分层设色加山影，算一回存起来 */
+function terrainImg(x0, x1, y0, y1, W, H) {
+  const k = [x0, x1, y0, y1, W, H].map(v => (+v).toFixed(3)).join(); if (MAPC.img[k]) return MAPC.img[k];
+  if (!terr().g || typeof document === 'undefined') return '';
+  const w = Math.round(W / 2), h = Math.round(H / 2), cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d'); if (!ctx) return ''; const im = ctx.createImageData(w, h), D = im.data;
+  const dx = (x1 - x0) / w, dy = (y1 - y0) / h, km = 111 * Math.min(dx, dy);
+  const ramp = [[0, [214, 226, 196]], [200, [226, 230, 196]], [600, [233, 222, 184]], [1200, [222, 202, 160]], [2200, [200, 176, 138]], [3500, [184, 168, 150]], [5000, [226, 222, 220]]];
+  const col = e => { for (let i = 1; i < ramp.length; i++) if (e <= ramp[i][0]) { const [a, A] = ramp[i - 1], [b, B] = ramp[i], t = (e - a) / (b - a); return A.map((c, j) => c + (B[j] - c) * t); } return ramp[ramp.length - 1][1]; };
+  for (let j = 0; j < h; j++) { const lat = y1 - (j + 0.5) * dy; for (let i = 0; i < w; i++) { const lon = x0 + (i + 0.5) * dx, e = elevAt(lon, lat), o = (j * w + i) * 4;
+    if (e == null) { D[o + 3] = 0; continue; }
+    if (e < 0) { D[o] = 196; D[o + 1] = 218; D[o + 2] = 232; D[o + 3] = 255; continue; }
+    const ex = (Math.max(0, elevAt(lon + dx, lat) ?? e) - Math.max(0, elevAt(lon - dx, lat) ?? e)) / (2 * km * 1000), ey = (Math.max(0, elevAt(lon, lat + dy) ?? e) - Math.max(0, elevAt(lon, lat - dy) ?? e)) / (2 * km * 1000);
+    const sh = Math.max(0.55, Math.min(1.25, 1 + (-ex + ey) * 9)), c = col(e);
+    D[o] = Math.min(255, c[0] * sh); D[o + 1] = Math.min(255, c[1] * sh); D[o + 2] = Math.min(255, c[2] * sh); D[o + 3] = 255; } }
+  ctx.putImageData(im, 0, 0); let url = ''; try { url = cv.toDataURL('image/png'); } catch (_) { url = ''; }
+  const ks = Object.keys(MAPC.img); if (ks.length > 6) delete MAPC.img[ks[0]];
+  return (MAPC.img[k] = url);
+}
 function mapOwners(s) {
   const own = new Map(), add = (txt, who, col) => { for (const t of String(txt || '').split(/[、，,；;\s]+/)) { const k = geoStem(t.replace(/[（(].*$/, '')); if (k && k.length >= 2 && !own.has(k)) own.set(k, { who, col }); } };
   for (const t of arr(s.territory)) add(t.place, '你', 'var(--zhu)');
   arr(s.powers).forEach((p, i) => { add(p.seat, p.name, PCOL[i % PCOL.length]); add(p.land, p.name, PCOL[i % PCOL.length]); });
   return own;
 }
-/* ========== 政权疆域：每年联网查这一年天下有几家政权、各据哪些州（五代十国、南北朝、宋辽金夏这样分裂的年代逐年查，一统的年代十年一查），舆图照此着色画国界 ========== */
-const RCOL = ['#c0504d', '#4f81bd', '#9bbb59', '#8064a2', '#f79646', '#4bacc6', '#a5a5a5', '#d4a017', '#7f6000', '#2e8b57', '#b03a8a', '#5f6fb0'];
-let REG_P = null;
-const regimeDue = s => s && s.clock && (!s.regimes || (s.regimes.y !== s.clock.y && (s.regimes.split || Math.abs(s.clock.y - s.regimes.y) >= 10))) && !(s.regFail != null && s.turn - s.regFail < 3);
-async function buildRegimes(s) {
-  const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '';
-  const found = await searchFirst(s, [`公元${y}年 中国 政权 并立`, `${yl} 疆域 割据`, `${y}年 ${pol} 疆域 州`]);
-  const { text } = await callClaude(`你是一位严谨的历史地理学者，替一局历史游戏画这一年的政权疆域图。这一年是公元${y}年（${yl}），主角在${geoCenter(s)}，属${pol}。
-${found || '（这回没联网查到资料，只照确凿的史书和谭其骧《中国历史地图集》；拿不准的不写）'}
-这一年天下有哪些政权（中原王朝和并立的割据政权、周边的辽夏金吐蕃大理之类都算；一统的年代就是本朝加周边几家），各据哪些地方。只照资料和史书，不凭空编：
-- name：当时通行的称呼（如后周、南唐、吴越、北魏、南朝梁、辽），不要只写朝代总称（「五代」「南北朝」不行）。
-- ruler：这一年在位的君主（庙号、谥号或姓名）；capital：都城，用这一年的地名。
-- seeds：这一年它实际控制的州、府、郡治所，按当时的名称写（如「升州」「杭州」「洪州」「江陵府」），十到二十处，四面边境上的要写到，好把疆域圈出来；年内易手的写年末归谁。
-- basis：「史载」（史书、地图集明载）或「推算」（照前后几年推的）。
-- split：这一年是不是分裂并立的局面（几个政权分治中原、江南），是就 true。
-只输出一个 JSON 对象：{"split":true,"regimes":[{"name":"","ruler":"","capital":"","seeds":["",""],"basis":"史载"}]}`, null, { maxTokens: 3000, temperature: 0.1, kind: '研读', detached: true });
-  const d = parseJSON(text); if (!d || !arr(d.regimes).length) { s.regFail = s.turn; return null; }
-  const L = arr(d.regimes).filter(r => r && r.name && !/^(五代|十国|南北朝|五胡十六国|三国)$/.test(String(r.name).trim())).slice(0, 14).map((r, i) => {
-    const pts = [...new Set([r.capital].concat(arr(r.seeds)).map(x => one(x, 12)).filter(Boolean))].map(n => { const u = geoFind(geoStem(n), y); return u && u.lat ? { n, lat: u.lat, lon: u.lon } : null; }).filter(Boolean);
-    return { name: one(r.name, 10), ruler: one(r.ruler, 16), capital: one(r.capital, 12), basis: /史载/.test(r.basis) ? '史载' : '推算', col: RCOL[i % RCOL.length], pts };
-  }).filter(r => r.pts.length);
-  if (!L.length) { s.regFail = s.turn; return null; }
-  s.regimes = { y, split: d.split === true || L.filter(r => r.pts.length >= 3).length >= 3, list: L, at: s.turn };
-  return s.regimes;
+/* ---------- 政区：联网查 + DeepSeek 照《地理志》核定，坐标取 CHGIS ---------- */
+function geoIx() { if (!GEOIX) geoFind('京', 1600); return GEOIX || new Map(); }
+/** 同名地方多：取这一年在、离参照点最近的那个（参照点是上级治所），离得太远的不认 */
+function geoNear(name, y, near, max) {
+  const raw = one(name, 16).replace(/[（(].*$/, '').trim(); if (!raw) return null;
+  const st = geoStem(raw), ix = geoIx();
+  let L = arr(ix.get(st)).concat(raw !== st ? arr(ix.get(raw)) : []).filter(u => u.lat);
+  if (!L.length) { const u = geoFind(st, y); L = u && u.lat ? [u] : []; }
+  const yr = u => (u.from <= y && u.to >= y) ? 0 : Math.min(Math.abs(u.from - y), Math.abs(u.to - y)), d = u => near ? Math.hypot(u.lon - near.lon, u.lat - near.lat) : 0;
+  const ok = near && max ? L.filter(u => d(u) <= max) : L;
+  // 全名对上的先（「西安府」不能对成衢州的西安县），再看年代、远近
+  const ex = u => u.name === raw ? 0 : 1;
+  return ok.sort((a, b) => ex(a) - ex(b) || (yr(a) > 60) - (yr(b) > 60) || d(a) - d(b) || yr(a) - yr(b))[0] || null;
 }
+const admDue = s => s && s.clock && geoData().length && (!s.admin || Math.abs(s.admin.y - s.clock.y) > (s.admin.split ? 0 : 9) || s.admin.pol !== (s.place.polity || '')) && !(s.admFail != null && s.turn - s.admFail < 3);
+const regimeDue = admDue;
+async function buildAdmin(s) {
+  const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '', here = geoCenter(s);
+  const found = await searchFirst(s, [`${yl} 行政区划`, `${pol} 地方行政区划 ${y}年 一级政区`, `公元${y}年 中国 政权 并立 疆域`, `${here} ${yl} 隶属 沿革`]);
+  const head = `你是一位严谨的历史地理学者（照谭其骧《中国历史地图集》、各朝正史《地理志》《郡国志》《州郡志》、《元丰九域志》《大明一统志》《嘉庆重修一统志》的路数），替一局历史游戏核定公元${y}年（${yl}）的政区。主角在${here}，属${pol}。
+${found || '（这回没联网查到资料：只照确凿的《地理志》；拿不准的 basis 写「推算」）'}
+只照这一年的建置（年中改设的以年末为准），不把别朝的名目串进来（清朝不写「行省」「路」，唐朝不写「府州县」以外的明清名目）；名称写当时的全称。`;
+  const A = parseJSON((await callClaude(`${head}
+一、这一年天下有哪些政权：中原王朝和并立的割据政权（五代十国、南北朝、宋辽金夏这样的年代要分开列），周边的辽、西夏、吐蕃、大理、南诏、渤海之类也列。name 用当时通行的称呼，不要「五代」「十国」「南北朝」这种总称；ruler 是这一年在位的君主；capital 是都城（这一年的名字）。
+二、每个政权的一级政区：明清的布政使司（省）、元的行省、宋的路、唐的道、汉魏晋南北朝的州……name、type、seat（治所，当时的州县名）。周边政权只列大的，不必细。
+只输出 JSON：{"split":false,"regimes":[{"name":"","ruler":"","capital":"","basis":"史载","provs":[{"name":"","type":"","seat":""}]}]}`, null, { maxTokens: 5000, temperature: 0.1, kind: '研读', detached: true })).text);
+  if (!A || !arr(A.regimes).length) { s.admFail = s.turn; return null; }
+  const R = arr(A.regimes).filter(r => r && r.name && !/^(五代|十国|五代十国|南北朝|五胡十六国|三国)$/.test(String(r.name).trim())).slice(0, 14);
+  const P = R.flatMap(r => arr(r.provs).filter(p => p && p.name).slice(0, 40).map(p => ({ name: one(p.name, 16), type: one(p.type, 8), seat: one(p.seat, 16), regime: one(r.name, 10) })));
+  const groups = []; for (let i = 0; i < P.length; i += 6) groups.push(P.slice(i, i + 6));
+  const Bs = await Promise.all(groups.slice(0, 10).map(g => callClaude(`${head}
+下面这些一级政区，这一年各辖哪些二级政区（府、州、郡、军、监、直隶州、直隶厅、羁縻府州……照这一年实际建置，不漏）：
+${g.map(p => `- ${p.regime}·${p.name}（${p.type}，治${p.seat}）`).join('\n')}
+每个写 name（全称，如「扬州府」「通州」「京兆府」「丹阳郡」）、type、seat（治所的县名，附郭县照写）、basis（「史载」或「推算」）。
+只输出 JSON：{"provs":[{"name":"一级政区名","units":[{"name":"","type":"","seat":"","basis":"史载"}]}]}`, null, { maxTokens: 6000, temperature: 0.1, kind: '研读', detached: true }).then(r => parseJSON(r.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; })));
+  const units = [], regimes = [];
+  R.forEach((r, i) => {
+    const cap = geoNear(r.capital, y); regimes.push({ name: one(r.name, 10), ruler: one(r.ruler, 16), capital: one(r.capital, 12), basis: /史载/.test(r.basis) ? '史载' : '推算', col: RCOL[i % RCOL.length], lon: cap && cap.lon, lat: cap && cap.lat });
+  });
+  const RG = new Map(regimes.map(r => [r.name, r]));
+  for (const p of P) {
+    const rg = RG.get(p.regime), s0 = geoNear(p.seat, y, rg && rg.lat ? rg : null, 18) || geoNear(p.name, y, rg && rg.lat ? rg : null, 18);
+    units.push({ n: p.name, t: p.type, lv: 1, r: p.regime, seat: p.seat, lon: s0 && s0.lon, lat: s0 && s0.lat });
+  }
+  for (const B of Bs) for (const pv of arr(B && B.provs)) {
+    const p1 = units.find(u => u.lv === 1 && u.n === one(pv.name, 16)) || units.find(u => u.lv === 1 && geoStem(u.n) === geoStem(pv.name)); if (!p1) continue;
+    for (const x of arr(pv.units).slice(0, 60)) { if (!x || !x.name) continue;
+      const near = p1.lat ? p1 : null, g = geoNear(x.seat, y, near, 6) || geoNear(x.name, y, near, 6);
+      units.push({ n: one(x.name, 16), t: one(x.type, 8), lv: 2, p: p1.n, r: p1.r, seat: one(x.seat, 16), lon: g && g.lon, lat: g && g.lat, b: /史载/.test(x.basis) ? '史载' : '推算' }); }
+  }
+  if (units.filter(u => u.lv === 2).length < 5) { s.admFail = s.turn; return null; }
+  s.admin = { y, pol, split: A.split === true || R.length >= 3, regimes, units, counties: {}, roads: [], passes: [], at: s.turn, src: found ? '联网查证' : '照史书推定' };
+  s.regimes = { y, split: s.admin.split, at: s.turn, list: regimes.map(r => ({ ...r, pts: units.filter(u => u.r === r.name && u.lat).map(u => ({ n: u.n, lat: u.lat, lon: u.lon })) })).filter(r => r.pts.length) };
+  MAPC.k = ''; MAPC.links = {};
+  const mine = provOfPlace(s, here); if (mine) await buildAdminProv(s, mine).catch(e => { if (e && e.code === 'cancelled') throw e; });
+  return s.admin;
+}
+const buildRegimes = buildAdmin;
+/** 主角所在的一级政区：先看哪个府州的辖境（最近的治所）包着这里 */
+function provOfPlace(s, place) {
+  const A = s.admin; if (!A) return ''; const h = placeXY(s, place, s.clock.y); if (!h) return '';
+  const L = A.units.filter(u => u.lv === 2 && u.lat); let b = null, bd = 9; for (const u of L) { const d = Math.hypot(u.lon - h.lon, u.lat - h.lat); if (d < bd) { bd = d; b = u; } }
+  return b ? b.p : '';
+}
+/** 一省细到县，连同境内的驿道、关隘、津渡 */
+async function buildAdminProv(s, prov) {
+  const A = s.admin; if (!A || !prov || A.counties[prov]) return;
+  const U = A.units.filter(u => u.lv === 2 && u.p === prov); if (!U.length) return;
+  const y = A.y, yl = s.clock.yearLabel || y + '年';
+  const found = await searchFirst(s, [`${prov} ${yl} 府州县 建置`, `${prov} 驿道 驿站 ${pol0(s)}`, `${prov} 关隘 津渡`]);
+  const d = parseJSON((await callClaude(`你是一位严谨的历史地理学者，替一局历史游戏核定公元${y}年（${yl}）${prov}境内的州县、交通。
+${found || '（这回没联网查到资料：只照确凿的《地理志》、方志；拿不准的 basis 写「推算」）'}
+${prov}下辖：${U.map(u => u.n + '（治' + (u.seat || '?') + '）').join('、')}
+一、每个府州（郡）这一年领哪些县（散州、厅也算；附郭县照列），名称写当时的。
+二、境内的驿道、官道：从哪到哪、沿途经过哪些州县（按先后），通往邻省的也写到边界的那一处。
+三、境内的关隘、险要（name、在哪个州县 near、扼守哪条路 guards），和大江大河上的要津渡口。
+只照资料和《地理志》、方志，不编；basis 写「史载」或「推算」。只输出 JSON：{"units":[{"name":"府州名","counties":[{"name":"","type":"县"}]}],"roads":[{"name":"","via":["",""],"basis":""}],"passes":[{"name":"","near":"","guards":"","basis":""}],"ferries":[{"name":"","near":"","river":""}]}`, null, { maxTokens: 6000, temperature: 0.1, kind: '研读', detached: true })).text);
+  if (!d) return;
+  const C = [];
+  for (const x of arr(d.units)) { const p2 = U.find(u => u.n === one(x.name, 16)) || U.find(u => geoStem(u.n) === geoStem(x.name)); if (!p2) continue;
+    for (const c of arr(x.counties).slice(0, 40)) { if (!c || !c.name) continue; const g = geoNear(c.name, y, p2.lat ? p2 : null, 2.5); C.push({ n: one(c.name, 12), t: one(c.type, 6) || '县', lv: 3, p: p2.n, r: p2.r, lon: g && g.lon, lat: g && g.lat }); } }
+  const pos = n => { const k = geoStem(one(n, 16)); const u = C.concat(U).find(u => u.lat && (u.n === n || geoStem(u.n) === k)); if (u) return u; const g = geoNear(n, y, U.find(u => u.lat) || null, 6); return g ? { n, lon: g.lon, lat: g.lat } : null; };
+  A.counties[prov] = C;
+  A.roads = arr(A.roads).filter(r => r.prov !== prov).concat(arr(d.roads).slice(0, 16).map(r => ({ name: one(r.name, 16), prov, basis: /史载/.test(r.basis) ? '史载' : '推算', pts: arr(r.via).slice(0, 20).map(pos).filter(Boolean).map(u => ({ n: u.n, lon: u.lon, lat: u.lat })) })).filter(r => r.pts.length >= 2));
+  A.passes = arr(A.passes).filter(p => p.prov !== prov).concat(arr(d.passes).slice(0, 14).map(p => { const u = pos(p.near); return u ? { n: one(p.name, 10), near: one(p.near, 12), why: one(p.guards, 30), prov, lon: u.lon + 0.03, lat: u.lat + 0.03, basis: /史载/.test(p.basis) ? '史载' : '推算' } : null; }).filter(Boolean));
+  A.ferries = arr(A.ferries).filter(p => p.prov !== prov).concat(arr(d.ferries).slice(0, 10).map(p => { const u = pos(p.near); return u ? { n: one(p.name, 10), river: one(p.river, 8), prov, lon: u.lon, lat: u.lat } : null; }).filter(Boolean));
+  MAPC.k = ''; MAPC.links = {};
+}
+const pol0 = s => s.place.polity || '';
 function regimeBlock(s) {
-  const R = s.regimes; if (!R || Math.abs(R.y - s.clock.y) > (R.split ? 1 : 15)) return '';
-  return `【${R.y}年天下的政权（联网查定，舆图照此着色；写到外地、外国的人和事，归属照这里）】` + R.list.map(r => `${r.name}${r.ruler ? '（' + r.ruler + '）' : ''}${r.capital ? '都' + r.capital : ''}，据${r.pts.slice(0, 8).map(p => p.n).join('、')}${r.basis === '推算' ? '（推算）' : ''}`).join('；');
+  const A = s.admin, R = s.regimes; if (!R || Math.abs(R.y - s.clock.y) > (R.split ? 1 : 15)) return '';
+  const L = [`【${R.y}年天下的政权与政区（开局联网查定；写到外地、外国的人和事，归属、地名照这里）】` + R.list.map(r => `${r.name}${r.ruler ? '（' + r.ruler + '）' : ''}${r.capital ? '都' + r.capital : ''}${r.basis === '推算' ? '（推算）' : ''}`).join('；')];
+  const mine = A && provOfPlace(s, geoCenter(s));
+  if (mine) { const u = A.units.filter(x => x.lv === 2 && x.p === mine); L.push(`本地所属一级政区：${mine}，下辖${u.map(x => x.n).join('、')}`); }
+  const lk = hereLinks(s); if (lk) L.push(lk);
+  return L.join('\n');
 }
-/** 每个州府归最近的一处「据点」所属的政权；离所有据点都远（分裂年代四百公里、一统年代七百公里外）的算化外，不着色 */
-function regimeOf(s, prefs) {
-  const R = s.regimes && s.regimes.y != null && Math.abs(s.regimes.y - s.clock.y) <= (s.regimes.split ? 1 : 15) ? s.regimes.list : null, M = new Map(); if (!R) return M;
-  const seeds = R.flatMap(r => r.pts.map(p => [p, r]));
-  const cap = s.regimes.split ? 400 : 700;
-  for (const u of prefs) { let b = null, bd = cap; for (const [p, r] of seeds) { const d = hav(u, p); if (d < bd) { bd = d; b = r; } } if (b) M.set(u, b); }
-  return M;
+/* ---------- 通路：相邻州县之间照地形判断 ---------- */
+function segProfile(a, b) {
+  const D = Math.hypot(b.lon - a.lon, b.lat - a.lat), n = Math.max(4, Math.ceil(D / 0.05)); let mx = 0, sea = 0, unk = 0;
+  for (let i = 1; i < n; i++) { const t = i / n, e = elevAt(a.lon + (b.lon - a.lon) * t, a.lat + (b.lat - a.lat) * t); if (e == null) unk++; else if (e < 0) sea++; else mx = Math.max(mx, e); }
+  return { mx, sea: sea / (n - 1), unk: unk / (n - 1), ends: Math.max(0, elevAt(a.lon, a.lat) || 0, elevAt(b.lon, b.lat) || 0) };
 }
+/** 绕山找路：0.1 度的格子上走，爬坡代价大；只在两地连线周围找 */
+function mtnPath(a, b) {
+  const T = terr(); if (!T.g) return null; const R = 0.1, pad = 0.6;
+  const lo0 = Math.min(a.lon, b.lon) - pad, la0 = Math.min(a.lat, b.lat) - pad, nx = Math.ceil((Math.abs(a.lon - b.lon) + 2 * pad) / R) + 1, ny = Math.ceil((Math.abs(a.lat - b.lat) + 2 * pad) / R) + 1;
+  if (nx * ny > 6000) return null;
+  const E = new Float32Array(nx * ny); for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const e = elevAt(lo0 + i * R, la0 + j * R); E[j * nx + i] = e == null || e < 0 ? -1 : e; }
+  const id = p => Math.round((p.lat - la0) / R) * nx + Math.round((p.lon - lo0) / R), s0 = id(a), t0 = id(b);
+  const dist = new Float32Array(nx * ny).fill(Infinity), prev = new Int32Array(nx * ny).fill(-1), done = new Uint8Array(nx * ny); dist[s0] = 0;
+  // 小顶堆
+  const H = [[0, s0]], push = x => { H.push(x); let i = H.length - 1; while (i) { const p = (i - 1) >> 1; if (H[p][0] <= H[i][0]) break; [H[p], H[i]] = [H[i], H[p]]; i = p; } };
+  const pop = () => { const top = H[0], last = H.pop(); if (H.length) { H[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < H.length && H[l][0] < H[m][0]) m = l; if (r < H.length && H[r][0] < H[m][0]) m = r; if (m === i) break; [H[m], H[i]] = [H[i], H[m]]; i = m; } } return top; };
+  while (H.length) {
+    const [du, u] = pop(); if (done[u] || du > dist[u]) continue;
+    if (u === t0) break; done[u] = 1; const ui = u % nx, uj = (u / nx) | 0;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) { const vi = ui + di, vj = uj + dj; if (vi < 0 || vj < 0 || vi >= nx || vj >= ny) continue; const v = vj * nx + vi; if (done[v] || E[v] < 0) continue;
+      const c = Math.hypot(di, dj) * (1 + Math.max(0, E[v] - E[u]) / 120 + E[v] / 2500); if (dist[u] + c < dist[v]) { dist[v] = dist[u] + c; prev[v] = u; push([dist[v], v]); } }
+  }
+  if (prev[t0] < 0) return null; const P = []; let mx = 0; for (let v = t0; v >= 0; v = prev[v]) { P.push({ lon: lo0 + (v % nx) * R, lat: la0 + ((v / nx) | 0) * R }); mx = Math.max(mx, E[v]); }
+  P.reverse(); P[0] = { lon: a.lon, lat: a.lat }; P[P.length - 1] = { lon: b.lon, lat: b.lat };
+  let len = 0; for (let i = 1; i < P.length; i++) len += Math.hypot(P[i].lon - P[i - 1].lon, P[i].lat - P[i - 1].lat);
+  return { P, mx, len };
+}
+const passesIn = (s, y) => arr(terr().passes).filter(p => p.from <= y && p.to >= y).concat(arr(s.admin && s.admin.passes).map(p => ({ ...p, from: -9999, to: 9999, src: '开局查定' })));
+/** 一对相邻的地方通不通：平路 / 经关 / 山路 / 海路 / 不通 */
+function linkOf(s, a, b, y) {
+  const p = segProfile(a, b), D = Math.hypot(b.lon - a.lon, b.lat - a.lat);
+  if (p.unk > 0.3) return null;
+  if (p.sea > 0.35) return { k: 'sea', P: [a, b] };
+  const rise = p.mx - p.ends;
+  if (rise < 420) return { k: 'plain', P: [a, b] };
+  for (const q of passesIn(s, y)) { const t = ((q.lon - a.lon) * (b.lon - a.lon) + (q.lat - a.lat) * (b.lat - a.lat)) / (D * D || 1); if (t < 0.05 || t > 0.95) continue;
+    const off = Math.hypot(a.lon + (b.lon - a.lon) * t - q.lon, a.lat + (b.lat - a.lat) * t - q.lat); if (off > Math.max(0.45, D * 0.3)) continue;
+    const p1 = segProfile(a, q), p2 = segProfile(q, b); if (p1.mx - p1.ends < 900 && p2.mx - p2.ends < 900) return { k: 'pass', P: [a, q, b], via: q.n }; }
+  const m = D < 3.5 ? mtnPath(a, b) : null;
+  if (m && m.len < D * 2.2 && m.mx - p.ends < 1600) return { k: 'mtn', P: m.P, rise: Math.round(m.mx - p.ends) };
+  return { k: 'block', P: [a, b], rise: Math.round(rise) };
+}
+/** 相邻关系：近邻里取「两点为直径的圆里没有第三点」的（Gabriel 图），像真的接壤 */
+function neighborPairs(L, maxD) {
+  const out = [], seen = new Set();
+  for (const a of L) { const near = L.filter(b => b !== a).map(b => [Math.hypot(b.lon - a.lon, b.lat - a.lat), b]).filter(x => x[0] <= maxD).sort((x, y) => x[0] - y[0]).slice(0, 6);
+    for (const [d, b] of near) { const k = [a.n, b.n].sort().join('|'); if (seen.has(k)) continue;
+      const mx = (a.lon + b.lon) / 2, my = (a.lat + b.lat) / 2, r2 = (d / 2) ** 2; if (L.some(c => c !== a && c !== b && (c.lon - mx) ** 2 + (c.lat - my) ** 2 < r2 * 0.95)) continue;
+      seen.add(k); out.push([a, b, d]); } }
+  return out;
+}
+function linksFor(s, L, maxD, key) {
+  if (MAPC.links[key]) return MAPC.links[key];
+  const y = s.clock.y, R = neighborPairs(L, maxD).map(([a, b, d]) => { const l = linkOf(s, a, b, y); return l ? { a, b, d, ...l } : null; }).filter(Boolean);
+  const ks = Object.keys(MAPC.links); if (ks.length > 8) delete MAPC.links[ks[0]];
+  return (MAPC.links[key] = R);
+}
+const LINK_TXT = { plain: '平路相通', pass: '经关隘相通', mtn: '只有山路，难行', sea: '隔海，走海路', block: '隔山不通' };
+/** 写戏用：此地往四面的通路 */
+function hereLinks(s) {
+  const h = hereXY(s); if (!h || !terr().g) return '';
+  const A = s.admin, prov = A && provOfPlace(s, geoCenter(s)), C = prov && arr(A.counties[prov]).filter(u => u.lat).length ? A.counties[prov].filter(u => u.lat) : A ? A.units.filter(u => u.lv === 2 && u.lat) : stratUnits(s).prefs.map(u => ({ n: u.name, lon: u.lon, lat: u.lat }));
+  if (!C.length) return '';
+  const me = { n: h.name, lon: h.lon, lat: h.lat }, L = [me].concat(C.filter(u => Math.hypot(u.lon - h.lon, u.lat - h.lat) > 0.02));
+  const lk = neighborPairs(L, 2.5).filter(([a, b]) => a === me || b === me).map(([a, b]) => { const o = a === me ? b : a, l = linkOf(s, me, o, s.clock.y); return l ? `${o.n}（${dirOf(me, o)}约${liOf(hav(me, o))}里，${LINK_TXT[l.k]}${l.via ? '，经' + l.via : ''}）` : ''; }).filter(Boolean);
+  return lk.length ? '此地往四邻（照地形推的，走哪条路、几天到照这个写）：' + lk.join('；') : '';
+}
+/* ---------- 画图 ---------- */
 function stratUnits(s) {
   const y = s.clock.y, re = PREF_T(y), G = geoData().filter(u => u.from <= y && u.to >= y && u.lat && u.lon);
   return { prefs: G.filter(u => re.test(u.type)), counties: G.filter(u => /^(县|散州|州|厅)$/.test(u.type) && !re.test(u.type)) };
 }
-// 地名库里州府的上级常串着别朝的名目（元的行省挂在清的府上）、不少是空的：去掉「行省、布政使司、路」等字归成一片，空的跟着最近的邻府
+const PREF_T = y => y >= 1368 ? /^(府|直隶州|直隶厅|军民府)$/ : y >= 1271 ? /^(路|府|直隶州)$/ : y >= 960 ? /^(州|府|军|监)$/ : y >= 618 ? /^(州|郡|府|都护府)$/ : /^(郡|国)$/;
 const PROV_BAD = /^(唐|宋|元|明|清|秦|隋|晋|东汉|西汉|后汉|北周|南京)$|[州府郡]$|使|节度|防御|团练|守捉|观察/;
 const provName = t => { const x = String(t || '').replace(/[（(].*$/, '').replace(/(等处)?(承宣布政使司|布政使司|行中书省|中书省|行省|布政司|省|路|道)$/, '').replace(/中书$/, ''); return x.length >= 2 && !PROV_BAD.test(x) ? x : ''; };
-function provOfAll(prefs) {
-  const P = new Map(); for (const u of prefs) P.set(u, provName(u.parent));
-  for (const u of prefs) if (!P.get(u)) { let b = '', bd = 300; for (const v of prefs) { const n = P.get(v); if (n && provName(v.parent)) { const d = hav(u, v); if (d < bd) { bd = d; b = n; } } } P.set(u, b); }
-  return P;
+/** 这张图上画哪些地方：有核定的政区就用它（坐标取 CHGIS），没有就退回 CHGIS 当年的州府（标「未经核对」） */
+function mapUnits(s) {
+  const A = s.admin && Math.abs(s.admin.y - s.clock.y) <= (s.admin.split ? 1 : 15) ? s.admin : null;
+  if (A) { const L2 = A.units.filter(u => u.lv === 2 && u.lat), L1 = A.units.filter(u => u.lv === 1);
+    const C = MAPZ.mode === 'prov' ? arr(A.counties[MAPZ.prov]).filter(u => u.lat) : MAPZ.mode === 'near' ? Object.values(A.counties).flat().filter(u => u.lat) : [];
+    return { A, L1, L2, C, prov: u => u.p || '', reg: u => A.regimes.find(r => r.name === u.r) || null, ok: true }; }
+  const { prefs, counties } = stratUnits(s);
+  if (MAPC.py !== s.clock.y) { MAPC.py = s.clock.y; const P = new Map(); for (const u of prefs) P.set(u, provName(u.parent)); for (const u of prefs) if (!P.get(u)) { let b = '', bd = 300; for (const v of prefs) { const n = P.get(v); if (n && provName(v.parent)) { const d = hav(u, v); if (d < bd) { bd = d; b = n; } } } P.set(u, b); } MAPC.P = P; }
+  const L2 = prefs.map(u => ({ n: u.name, t: u.type, lv: 2, p: MAPC.P.get(u) || '', lon: u.lon, lat: u.lat }));
+  return { A: null, L1: [], L2, C: MAPZ.mode !== 'world' ? counties.map(u => ({ n: u.name, t: u.type, lv: 3, lon: u.lon, lat: u.lat })) : [], prov: u => u.p || '', reg: () => null, ok: false };
 }
 function stratMap(s) {
   if (!geoData().length) return '<div class="muted">地名库没载进来，画不了舆图。</div>';
-  const { prefs, counties } = stratUnits(s), own = mapOwners(s), here = hereXY(s);
-  if (MAPC.py !== s.clock.y) MAPC = { k: '', v: [], py: s.clock.y, P: provOfAll(prefs) };
-  const rk0 = s.regimes ? s.regimes.y + '|' + s.regimes.at : ''; if (MAPC.ra !== rk0) { MAPC.ra = rk0; MAPC.R = regimeOf(s, prefs); MAPC.k = ''; }
-  const PV = MAPC.P, RG = MAPC.R, prov = MAPZ.mode === 'prov' ? MAPZ.prov : '', near = MAPZ.mode === 'near' && MAPZ.c;
-  const inC = u => Math.abs(u.lon - near.lon) <= 3.2 && Math.abs(u.lat - near.lat) <= 2.4;
-  let pts = prov ? prefs.filter(u => PV.get(u) === prov) : near ? prefs.filter(inC) : prefs;
-  if (!pts.length) { MAPZ = { mode: 'world', prov: '', sel: '' }; pts = prefs; }
-  const zoom = MAPZ.mode !== 'world';
+  const y = s.clock.y, M = mapUnits(s), own = mapOwners(s), here = hereXY(s), Ly = MAPZ.lay, T = terr();
+  const prov = MAPZ.mode === 'prov' ? MAPZ.prov : '', near = MAPZ.mode === 'near' && MAPZ.c, zoom = MAPZ.mode !== 'world';
+  const inC = u => Math.abs(u.lon - near.lon) <= 2.6 && Math.abs(u.lat - near.lat) <= 2;
+  let pts = prov ? M.L2.filter(u => M.prov(u) === prov) : near ? M.L2.filter(inC) : M.L2.filter(u => u.lon > 73 && u.lat > 17);
+  if (!pts.length) { MAPZ.mode = 'world'; MAPZ.prov = ''; return stratMap(s); }
   const bx = pts.map(u => u.lon), by = pts.map(u => u.lat), bb = [Math.min(...bx), Math.max(...bx), Math.min(...by), Math.max(...by)];
-  const cty = zoom ? counties.filter(u => u.lon >= bb[0] - 0.2 && u.lon <= bb[1] + 0.2 && u.lat >= bb[2] - 0.2 && u.lat <= bb[3] + 0.2) : [];
-  const x0 = bb[0] - 0.3, x1 = bb[1] + 0.3, y0 = bb[2] - 0.3, y1 = bb[3] + 0.3;
-  const W = 640, H = Math.round(Math.max(320, Math.min(620, W * (y1 - y0) / Math.max(0.01, (x1 - x0) * Math.cos((y0 + y1) / 2 * Math.PI / 180)))));
-  const px = u => 10 + (u.lon - x0) / (x1 - x0) * (W - 20), py = u => 10 + (y1 - u.lat) / (y1 - y0) * (H - 20);
-  const ownOf = u => own.get(geoStem(u.name)) || null;
-  // 每个州府占就近的一块地，按省着淡色、省与省之间画界线；有主的着主人的颜色：一眼看出疆域、地盘连成一片
-  const cell = zoom ? 8 : 6, ck = [s.clock.y, MAPC.ra, MAPZ.mode, prov, near ? near.lon + ',' + near.lat : '', W, H, [...own.entries()].map(([k, v]) => k + v.who).join()].join('|'), cells = MAPC.k === ck ? MAPC.v : [];
-  if (pts.length && MAPC.k !== ck) {
-    const TINT = ['#c9b98f', '#a9bfa0', '#b8a9c4', '#c4ab9c', '#9fb6c4', '#c2c08f', '#a3b9b2', '#c7a6b0'], pIx = new Map(), tint = u => { const n = PV.get(u) || ''; if (!pIx.has(n)) pIx.set(n, pIx.size); return n ? TINT[pIx.get(n) % TINT.length] : '#bbb'; };
-    const nx = Math.ceil(W / cell), ny = Math.ceil(H / cell), Gd = [], lim = zoom ? 1700 : 1100, P2 = pts.map(u => [px(u), py(u), u]);
-    // 放大时县城也算进来：每县归最近的州府，地块就连成片、不留窟窿
-    if (zoom) for (const c of cty) { let b = null, bd = Infinity; for (const [x, y, u] of P2.slice(0, pts.length)) { const d = (x - px(c)) ** 2 + (y - py(c)) ** 2; if (d < bd) { bd = d; b = u; } } if (b) P2.push([px(c), py(c), b]); }
-    for (let i = 0; i < nx; i++) { Gd.push([]); for (let j = 0; j < ny; j++) { const gx = i * cell + cell / 2, gy = j * cell + cell / 2; let best = null, bd = Infinity; for (const [x, y, u] of P2) { const d = (x - gx) ** 2 + (y - gy) ** 2; if (d < bd) { bd = d; best = u; } } Gd[i].push(bd < lim ? best : null); } }
-    const fillOf = u => { const o = ownOf(u), r = RG.get(u); return [o ? o.col : r ? r.col : tint(u), '']; };
-    for (let j = 0; j < ny; j++) { let i = 0; while (i < nx) { const u = Gd[i][j]; if (!u) { i++; continue; } const [c, op] = fillOf(u); let k = i + 1; while (k < nx && Gd[k][j] && fillOf(Gd[k][j]).join() === c + ',' + op) k++; cells.push(`<rect x="${i * cell}" y="${j * cell}" width="${(k - i) * cell}" height="${cell}" fill="${c}"/>`); i = k; } }
-    cells.unshift('<g opacity=".32" shape-rendering="crispEdges">'); cells.push('</g>');
-    // 界线：国界粗实线，省界（放大时是州府界）细虚线
+  if (near) { bb[0] = Math.min(bb[0], near.lon - 1.5); bb[1] = Math.max(bb[1], near.lon + 1.5); bb[2] = Math.min(bb[2], near.lat - 1.2); bb[3] = Math.max(bb[3], near.lat + 1.2); }
+  const pad = zoom ? 0.35 : 0.8, x0 = bb[0] - pad, x1 = bb[1] + pad, y0 = bb[2] - pad, y1 = bb[3] + pad;
+  const cty = zoom ? (M.C.length ? M.C : []).filter(u => u.lon >= x0 && u.lon <= x1 && u.lat >= y0 && u.lat <= y1 && (!prov || M.ok ? true : true)) : [];
+  const W = 640, H = Math.round(Math.max(340, Math.min(640, W * (y1 - y0) / Math.max(0.01, (x1 - x0) * Math.cos((y0 + y1) / 2 * Math.PI / 180)))));
+  const px = u => 10 + (u.lon - x0) / (x1 - x0) * (W - 20), py = u => 10 + (y1 - u.lat) / (y1 - y0) * (H - 20), XY = u => `${px(u).toFixed(1)},${py(u).toFixed(1)}`;
+  const inBox = u => u && u.lon >= x0 && u.lon <= x1 && u.lat >= y0 && u.lat <= y1;
+  const ownOf = u => own.get(geoStem(u.n)) || null;
+  const allPts = M.L2.filter(u => u.lon >= x0 - 3 && u.lon <= x1 + 3 && u.lat >= y0 - 3 && u.lat <= y1 + 3);
+  // 政区着色：每个府州占就近的陆地（海上不着），按政权（分裂年代）、你和各方的地盘着色；国界粗实线、省界细虚线
+  const cell = zoom ? 8 : 6, ck = [y, M.ok ? M.A.at : 'c', MAPZ.mode, prov, near ? near.lon + ',' + near.lat : '', W, H, Ly.adm, [...own.entries()].map(([k, v]) => k + v.who).join()].join('|');
+  let fills = MAPC.k === ck ? MAPC.v : '';
+  if (MAPC.k !== ck) {
+    const nx = Math.ceil(W / cell), ny = Math.ceil(H / cell), Gd = [], P2 = allPts.map(u => [px(u), py(u), u]), lim = (zoom ? 70 : 45) ** 2;
+    for (let i = 0; i < nx; i++) { Gd.push([]); for (let j = 0; j < ny; j++) { const gx = i * cell + cell / 2, gy = j * cell + cell / 2, lon = x0 + (gx - 10) / (W - 20) * (x1 - x0), lat = y1 - (gy - 10) / (H - 20) * (y1 - y0), e = elevAt(lon, lat);
+      if (e != null && e < 0) { Gd[i].push(null); continue; } let best = null, bd = Infinity; for (const [x, yy, u] of P2) { const d = (x - gx) ** 2 + (yy - gy) ** 2; if (d < bd) { bd = d; best = u; } } Gd[i].push(bd < lim ? best : null); } }
+    const TINT = ['#b89f6a', '#7f9f6c', '#9a83ad', '#ad8670', '#6f95ab', '#a8a35f', '#6fa094', '#ad7a8b'], pIx = new Map(), tint = u => { const n = M.prov(u); if (!pIx.has(n)) pIx.set(n, pIx.size); return n ? TINT[pIx.get(n) % TINT.length] : '#999'; };
+    const split = M.ok && M.A.split, fillOf = u => { const o = ownOf(u), r = M.reg(u); return o ? o.col : split && r ? r.col : (zoom ? tint(u) : r && M.A.regimes.length > 1 && r !== M.A.regimes[0] ? r.col : tint(u)); };
+    const R = []; for (let j = 0; j < ny; j++) { let i = 0; while (i < nx) { const u = Gd[i][j]; if (!u) { i++; continue; } const c = fillOf(u); let k = i + 1; while (k < nx && Gd[k][j] && fillOf(Gd[k][j]) === c) k++; R.push(`<rect x="${i * cell}" y="${j * cell}" width="${(k - i) * cell}" height="${cell}" fill="${c}"/>`); i = k; } }
     const edges = key => { const E = []; for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) { const u = Gd[i][j]; if (!u) continue;
       if (i + 1 < nx && Gd[i + 1][j] && key(Gd[i + 1][j]) !== key(u)) E.push(`M${(i + 1) * cell} ${j * cell}v${cell}`);
-      if (j + 1 < ny && Gd[i][j + 1] && key(Gd[i][j + 1]) !== key(u)) E.push(`M${i * cell} ${(j + 1) * cell}h${cell}`);
-      if (i === 0 || !Gd[i - 1][j]) E.push(`M${i * cell} ${j * cell}v${cell}`); if (i + 1 >= nx || !Gd[i + 1][j]) E.push(`M${(i + 1) * cell} ${j * cell}v${cell}`);
-      if (j === 0 || !Gd[i][j - 1]) E.push(`M${i * cell} ${j * cell}h${cell}`); if (j + 1 >= ny || !Gd[i][j + 1]) E.push(`M${i * cell} ${(j + 1) * cell}h${cell}`); } return E.join(''); };
-    cells.push(`<path d="${edges(u => zoom ? u.name : PV.get(u) || u.name)}" stroke="var(--ink)" stroke-opacity=".3" stroke-width=".6" fill="none" stroke-dasharray="2 2"/>`);
-    if (RG.size) cells.push(`<path d="${edges(u => (RG.get(u) || {}).name || '化外')}" stroke="var(--ink)" stroke-opacity=".75" stroke-width="1.6" fill="none"/>`);
+      if (j + 1 < ny && Gd[i][j + 1] && key(Gd[i][j + 1]) !== key(u)) E.push(`M${i * cell} ${(j + 1) * cell}h${cell}`); } return E.join(''); };
+    fills = `<g opacity="${Ly.terr ? '.26' : '.4'}" shape-rendering="crispEdges">${R.join('')}</g><path d="${edges(u => zoom ? u.n : M.prov(u) || u.n)}" stroke="#5a4a3a" stroke-opacity=".55" stroke-width=".7" fill="none" stroke-dasharray="3 2"/>`
+      + (M.ok && M.A.regimes.length > 1 ? `<path d="${edges(u => u.r || '?')}" stroke="#7a1f1f" stroke-opacity=".85" stroke-width="2" fill="none"/>` : '');
+    MAPC.k = ck; MAPC.v = fills;
   }
-  MAPC.k = ck; MAPC.v = cells;
-  // 省界的字：各省州府的中心
-  const provs = {}; if (!zoom) for (const u of pts) if (PV.get(u)) { const p = provs[PV.get(u)] = provs[PV.get(u)] || { x: 0, y: 0, n: 0 }; p.x += px(u); p.y += py(u); p.n++; }
-  const rgs = {}; if (!zoom) for (const u of pts) { const r = RG.get(u); if (r) { const p = rgs[r.name] = rgs[r.name] || { x: 0, y: 0, n: 0, r }; p.x += px(u); p.y += py(u); p.n++; } }
-  const split = s.regimes && s.regimes.split && RG.size;
-  const regLbl = Object.entries(rgs).filter(([, p]) => p.n >= 2).map(([n, p]) => `<text x="${(p.x / p.n).toFixed(0)}" y="${(p.y / p.n).toFixed(0)}" font-size="${Math.min(22, 12 + p.n / 4).toFixed(0)}" font-weight="700" fill="${p.r.col}" stroke="var(--sheet)" stroke-width="3" paint-order="stroke" text-anchor="middle" pointer-events="none">${esc(n)}</text>`).join('');
-  const provLbl = split ? '' : Object.entries(provs).filter(([, p]) => p.n >= 3).map(([n, p]) => `<text x="${(p.x / p.n).toFixed(0)}" y="${(p.y / p.n).toFixed(0)}" font-size="13" fill="var(--muted,#999)" opacity=".7" text-anchor="middle" data-mapprov="${esc(n)}" style="cursor:pointer">${esc(n)}</text>`).join('');
-  const forces = arr(s.forces).map(f => ({ f, u: f.at ? placeXY(s, f.at, s.clock.y) : null })).filter(x => x.u && x.u.lat);
-  const battles = arr(s.battles).slice(-8).map(b => ({ b, u: b.place ? placeXY(s, b.place, s.clock.y) : null })).filter(x => x.u && x.u.lat);
-  const inBox = u => u.lon >= x0 && u.lon <= x1 && u.lat >= y0 && u.lat <= y1;
-  const dot = u => { const o = ownOf(u), sel = MAPZ.sel === u.name; return `<circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${sel ? 6 : zoom ? 4 : 3}" fill="${o ? o.col : 'var(--ink)'}" stroke="${sel ? 'var(--zhu)' : '#fff'}" stroke-width="${sel ? 2 : 0.6}" data-mapu="${esc(u.name)}" style="cursor:pointer"><title>${esc(u.name)}${o ? ' · ' + esc(o.who) : ''}</title></circle>`; };
-  // 地名：要紧的先放，和已放的字重叠就换个方位，四面都放不下就不写（鼠标停在点上仍能看到）
-  const placeLbls = (L, fs) => { const boxes = [], out = [], rk = u => (here && u.name === here.name) ? 0 : ownOf(u) ? 1 : 2;
-    for (const u of L.slice().sort((a, b) => rk(a) - rk(b))) { const t = u.name.replace(/(府|州|路|郡)$/, ''), w = t.length * fs, x = px(u), y = py(u);
-      for (const [dx, dy] of [[5, 4], [-5 - w, 4], [-w / 2, -6], [-w / 2, fs + 6]]) { const b = [x + dx, y + dy - fs, x + dx + w, y + dy + 2];
+  const P = (L) => L.map(p => `${px({ lon: p[0], lat: p[1] }).toFixed(1)},${py({ lon: p[0], lat: p[1] }).toFixed(1)}`).join(' ');
+  const visL = L => L.some(p => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1);
+  // 底图：地形、海岸、湖泊、河流（黄河下游按年代走当时的河道）、运河
+  const img = Ly.terr ? terrainImg(x0, x1, y0, y1, W, H) : '';
+  const coast = arr(T.coast).filter(visL).map(c => `<polyline points="${P(c)}" fill="none" stroke="#5f7f99" stroke-width=".8"/>`).join('');
+  const lakes = arr(T.lakes).filter(l => (!l.from || y >= l.from) && visL(l.p)).map(l => `<polygon points="${P(l.p)}" fill="#a9c8e0" stroke="#5f8fb5" stroke-width=".5"><title>${esc(l.n)}</title></polygon>`).join('');
+  const rv = Ly.river ? arr(T.rivers).filter(r => (!r.from || y >= r.from) && (zoom || r.r <= 7) && visL(r.p)) : [];
+  const rivers = rv.map(r => `<polyline points="${P(r.p)}" fill="none" stroke="#4a86c5" stroke-width="${r.n === '黄河' || r.n === '长江' ? 1.8 : r.r <= 4 ? 1.2 : 0.8}" stroke-linejoin="round"><title>${esc(r.n)}</title></polyline>`).join('')
+    + (Ly.river ? arr(T.old).filter(o => y >= o.from && y <= o.to && visL(o.p)).map(o => `<polyline points="${P(o.p)}" fill="none" stroke="#4a86c5" stroke-width="1.8" stroke-linejoin="round"><title>${esc(o.n)}（这一年黄河下游走这条河道）</title></polyline>`).join('') : '')
+    + (Ly.river ? arr(T.canal).filter(o => y >= o.from && y <= o.to && visL(o.p)).map(o => `<polyline points="${P(o.p)}" fill="none" stroke="#2f6fa8" stroke-width="1.3" stroke-dasharray="5 2"><title>${esc(o.n)}</title></polyline>`).join('') : '');
+  const rlab = []; if (Ly.river) { const seen = new Set(); for (const r of rv.concat(arr(T.old).filter(o => y >= o.from && y <= o.to).map(o => ({ ...o, n: '黄河', r: 1 }))).filter(r => r.r <= (zoom ? 9 : 4)).sort((a, b) => a.r - b.r)) { if (seen.has(r.n)) continue; const q = r.p.filter(p => p[0] > x0 && p[0] < x1 && p[1] > y0 && p[1] < y1); if (q.length < 3) continue; const m = q[Math.floor(q.length / 2)]; seen.add(r.n); rlab.push(`<text x="${(px({ lon: m[0], lat: m[1] }) + 3).toFixed(0)}" y="${(py({ lon: m[0], lat: m[1] }) - 3).toFixed(0)}" font-size="${r.r <= 3 ? 11 : 9}" fill="#2f5f95" font-style="italic" pointer-events="none" stroke="#fff" stroke-width="2" paint-order="stroke">${esc(r.n)}</text>`); } }
+  const mts = arr(T.ranges).filter(r => inBox(r) && (zoom || r.r <= 4)).map(r => `<text x="${px(r).toFixed(0)}" y="${py(r).toFixed(0)}" font-size="${r.k === '山' ? 11 : 10}" fill="#7a5a30" font-style="italic" text-anchor="middle" letter-spacing="2" pointer-events="none" opacity=".85" stroke="#fff" stroke-width="2" paint-order="stroke">${esc(r.n)}</text>`).join('');
+  // 通路：相邻州县之间，平路虚线、经关绕关口、山路点线、海路蓝点线、不通打叉
+  const LU = zoom && cty.length ? cty.concat(pts.filter(u => !cty.some(c => geoStem(c.n) === geoStem(u.n)))) : pts;
+  const links = Ly.road && T.g ? linksFor(s, LU, zoom ? 1.0 : 2.4, ck) : [];
+  const LS = { plain: 'stroke="#6b4a2a" stroke-width="1" stroke-dasharray="4 3"', pass: 'stroke="#6b4a2a" stroke-width="1.2" stroke-dasharray="4 3"', mtn: 'stroke="#6b4a2a" stroke-width="1" stroke-dasharray="1 3" stroke-linecap="round"', sea: 'stroke="#3d78b5" stroke-width="1" stroke-dasharray="1 4" stroke-linecap="round"' };
+  const roads = links.map(l => l.k === 'block' ? (() => { const m = { lon: (l.a.lon + l.b.lon) / 2, lat: (l.a.lat + l.b.lat) / 2 }; return `<g opacity=".8"><title>${esc(l.a.n)}—${esc(l.b.n)}：隔山不通（连线上山岭高出两头约${l.rise}米）</title><polyline points="${XY(l.a)} ${XY(l.b)}" fill="none" stroke="#b33" stroke-width=".6" stroke-dasharray="1 5" opacity=".6"/><text x="${px(m).toFixed(0)}" y="${(py(m) + 4).toFixed(0)}" font-size="11" fill="#b33" text-anchor="middle">✕</text></g>`; })()
+    : `<polyline points="${l.P.map(XY).join(' ')}" fill="none" ${LS[l.k]} opacity=".85"><title>${esc(l.a.n)}—${esc(l.b.n)}：${LINK_TXT[l.k]}${l.via ? '（经' + esc(l.via) + '）' : ''}，约${liOf(hav(l.a, l.b) * (l.k === 'mtn' ? 1.6 : 1.25))}里</title></polyline>`).join('')
+    + (Ly.road && M.ok ? arr(M.A.roads).filter(r => r.pts.some(inBox)).map(r => `<polyline points="${r.pts.map(XY).join(' ')}" fill="none" stroke="#8a3b12" stroke-width="2" stroke-dasharray="7 3" opacity=".9"><title>${esc(r.name)}（驿道，${esc(r.basis)}）</title></polyline>`).join('') : '');
+  const pss = Ly.pass ? passesIn(s, y).filter(inBox) : [];
+  const passes = pss.map(p => `<g pointer-events="all"><title>${esc(p.n)}：${esc(p.why || '')}${p.src ? '（坐标：' + esc(p.src) + '）' : ''}</title><rect x="${(px(p) - 6).toFixed(0)}" y="${(py(p) - 6).toFixed(0)}" width="12" height="12" rx="2" fill="#5b3a1a" stroke="#fff" stroke-width=".8"/><text x="${px(p).toFixed(0)}" y="${(py(p) + 4).toFixed(0)}" font-size="9" fill="#fff" text-anchor="middle" pointer-events="none">关</text>${zoom || /山海|居庸|潼|剑门|嘉峪|雁门|函谷|武关|大散|玉门/.test(p.n) ? `<text x="${(px(p) + 8).toFixed(0)}" y="${(py(p) + 4).toFixed(0)}" font-size="10" fill="#5b3a1a" pointer-events="none" stroke="#fff" stroke-width="2" paint-order="stroke">${esc(p.n)}</text>` : ''}</g>`).join('')
+    + (Ly.pass && zoom && M.ok ? arr(M.A.ferries).filter(inBox).map(f => `<text x="${px(f).toFixed(0)}" y="${(py(f) + 12).toFixed(0)}" font-size="9" fill="#2f5f95" text-anchor="middle"><title>${esc(f.n)}（${esc(f.river)}渡口）</title>⛴</text>`).join('') : '');
+  // 一级政区、政权的名字
+  const grp = (L, key) => { const g = {}; for (const u of L) { const k = key(u); if (!k) continue; const p = g[k] = g[k] || { x: 0, y: 0, n: 0 }; p.x += px(u); p.y += py(u); p.n++; } return g; };
+  const split = M.ok && M.A.split;
+  const provLbl = zoom ? '' : Object.entries(grp(pts, M.prov)).filter(([, p]) => p.n >= 2).map(([n, p]) => `<text x="${(p.x / p.n).toFixed(0)}" y="${(p.y / p.n + (split ? 14 : 0)).toFixed(0)}" font-size="12" fill="#4a3a2a" text-anchor="middle" data-mapprov="${esc(n)}" style="cursor:pointer" stroke="#fff" stroke-width="2.5" paint-order="stroke">${esc(n.replace(/(承宣布政使司|布政使司)$/, ''))}</text>`).join('');
+  const regLbl = !zoom && M.ok && M.A.regimes.length > 1 ? Object.entries(grp(pts, u => u.r)).filter(([, p]) => p.n >= 2).map(([n, p]) => { const r = M.A.regimes.find(x => x.name === n) || {}; return `<text x="${(p.x / p.n).toFixed(0)}" y="${(p.y / p.n).toFixed(0)}" font-size="${Math.min(24, 13 + p.n / 5).toFixed(0)}" font-weight="700" fill="${r.col || '#333'}" stroke="#fff" stroke-width="3" paint-order="stroke" text-anchor="middle" pointer-events="none">${esc(n)}</text>`; }).join('') : '';
+  // 治所、县城
+  const dot = u => { const o = ownOf(u), sel = MAPZ.sel === u.n; return `<circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${sel ? 6 : zoom ? 4.2 : 3.2}" fill="${o ? o.col : '#2a2a2a'}" stroke="${sel ? 'var(--zhu)' : '#fff'}" stroke-width="${sel ? 2 : 1}" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(u.n)}${u.t ? '（' + esc(u.t) + '）' : ''}${o ? ' · ' + esc(o.who) : ''}</title></circle>`; };
+  const cdot = u => `<rect x="${(px(u) - 2.2).toFixed(1)}" y="${(py(u) - 2.2).toFixed(1)}" width="4.4" height="4.4" fill="#fff" stroke="#333" stroke-width=".9" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(u.n)}（${esc(u.t || '县')}${u.p ? '，属' + esc(u.p) : ''}）</title></rect>`;
+  const placeLbls = (L, fs) => { const boxes = [], out = [], rk = u => (here && geoStem(u.n) === geoStem(here.name)) ? 0 : ownOf(u) ? 1 : u.lv === 2 ? 2 : 3;
+    for (const u of L.slice().sort((a, b) => rk(a) - rk(b))) { const t = u.n.replace(/(府|路|郡)$/, ''), f = u.lv === 3 ? fs - 1 : fs, w = t.length * f, x = px(u), yy = py(u);
+      for (const [dx, dy] of [[5, 4], [-5 - w, 4], [-w / 2, -6], [-w / 2, f + 6]]) { const b = [x + dx, yy + dy - f, x + dx + w, yy + dy + 2];
         if (b[0] < 0 || b[2] > W || b[1] < 0 || b[3] > H || boxes.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3]))) continue;
-        boxes.push(b); out.push(`<text x="${(x + dx).toFixed(1)}" y="${(y + dy).toFixed(1)}" font-size="${fs}" fill="var(--ink)" pointer-events="none">${esc(t)}</text>`); break; } }
+        boxes.push(b); out.push(`<text x="${(x + dx).toFixed(1)}" y="${(yy + dy).toFixed(1)}" font-size="${f}" fill="#1f1f1f" pointer-events="none" stroke="#fff" stroke-width="2" paint-order="stroke">${esc(t)}</text>`); break; } }
     return out.join(''); };
-  const showLbl = zoom ? pts : pts.filter(u => ownOf(u) || MAPZ.sel === u.name || forces.some(x => x.u.name === u.name) || (here && u.name === here.name));
-  const svg = `<svg viewBox="0 0 ${W} ${H}" class="smap" role="img" aria-label="舆图">${cells.join('')}${provLbl}${regLbl}${cty.map(u => `<circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="1.6" fill="var(--muted,#999)" data-mapu="${esc(u.name)}"><title>${esc(u.name)}</title></circle>`).join('')}${placeLbls(showLbl, zoom ? 11 : 10)}${pts.map(dot).join('')}
+  const forces = arr(s.forces).map(f => ({ f, u: f.at ? placeXY(s, f.at, y) : null })).filter(x => x.u && x.u.lat);
+  const battles = arr(s.battles).slice(-8).map(b => ({ b, u: b.place ? placeXY(s, b.place, y) : null })).filter(x => x.u && x.u.lat);
+  const showLbl = zoom ? pts.concat(cty) : pts.filter(u => ownOf(u) || MAPZ.sel === u.n || forces.some(x => geoStem(x.u.name) === geoStem(u.n)) || (here && geoStem(u.n) === geoStem(here.name)) || (M.ok && arr(M.A.regimes).some(r => r.lat && Math.abs(r.lat - u.lat) < 0.05 && Math.abs(r.lon - u.lon) < 0.05)));
+  const svg = `<svg viewBox="0 0 ${W} ${H}" class="smap" role="img" aria-label="舆图"><rect width="${W}" height="${H}" fill="#c4dae8"/>${img ? `<image href="${img}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/>` : ''}${Ly.adm ? fills : ''}${lakes}${coast}${rivers}${roads}${mts}${rlab.join('')}${regLbl}${passes}
+    ${placeLbls(showLbl, zoom ? 11 : 10)}${cty.map(cdot).join('')}${pts.map(dot).join('')}
     ${battles.filter(x => inBox(x.u)).map(x => `<text x="${px(x.u).toFixed(0)}" y="${(py(x.u) - 6).toFixed(0)}" font-size="13" text-anchor="middle" pointer-events="none"><title>${esc(x.b.when || '')} ${esc(x.b.place)}之战：${esc(x.b.outcome)}</title>⚔</text>`).join('')}
     ${forces.filter(x => inBox(x.u)).map(x => `<g data-mapu="${esc(x.u.name)}" style="cursor:pointer"><rect x="${(px(x.u) - 3).toFixed(0)}" y="${(py(x.u) - 17).toFixed(0)}" width="${Math.max(30, String(x.f.name).length * 11 + 8)}" height="13" rx="2" fill="${x.f.leader === s.protagonist.name ? 'var(--zhu)' : '#555'}"/><text x="${(px(x.u) + 1).toFixed(0)}" y="${(py(x.u) - 7).toFixed(0)}" font-size="10" fill="#fff">${esc(x.f.name)} ${esc(fmtN(N0(x.f.troops) || 0))}</text></g>`).join('')}
-    ${here && inBox(here) ? `<text x="${px(here).toFixed(0)}" y="${(py(here) + 5).toFixed(0)}" font-size="16" text-anchor="middle" fill="var(--zhu)" pointer-events="none"><title>你在${esc(geoCenter(s))}</title>★</text>` : ''}</svg>`;
+    ${here && inBox(here) ? `<text x="${px(here).toFixed(0)}" y="${(py(here) + 5).toFixed(0)}" font-size="16" text-anchor="middle" fill="var(--zhu)" pointer-events="none" stroke="#fff" stroke-width="1.5" paint-order="stroke"><title>你在${esc(geoCenter(s))}</title>★</text>` : ''}${provLbl}</svg>`;
   const owners = (arr(s.territory).length ? [['你的地盘', 'var(--zhu)']] : []).concat(arr(s.powers).map((p, i) => [p.name, PCOL[i % PCOL.length]]));
-  const rl = RG.size ? s.regimes.list.filter(r => [...RG.values()].includes(r)) : [];
-  return svg + (rl.length ? `<div class="mlegend">${rl.map(r => `<span><i style="background:${r.col}"></i><b>${esc(r.name)}</b>${r.ruler ? '·' + esc(r.ruler) : ''}${r.capital ? '·都' + esc(r.capital) : ''}${r.basis === '推算' ? '<span class="att">推算</span>' : ''}${(s.place.polity || '').includes(r.name) || r.name.includes(s.place.polity || '　') ? '（你在此）' : ''}</span>`).join('')}</div>` : '') + `<div class="mlegend">${owners.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}<span>★ 你在这里</span><span>⚔ 打过仗</span></div>`;
+  const rl = M.ok && M.A.regimes.length > 1 ? M.A.regimes : M.ok ? M.A.regimes.slice(0, 1) : [];
+  const unloc = M.ok ? M.A.units.filter(u => u.lv === 2 && !u.lat).map(u => u.n) : [];
+  return svg + `<div class="mlayers">${[['terr', '地形'], ['river', '河流'], ['road', '通路'], ['pass', '关隘'], ['adm', '政区']].map(([k, n]) => `<label><input type="checkbox" data-maplay="${k}"${Ly[k] ? ' checked' : ''}>${n}</label>`).join('')}</div>`
+    + (rl.length ? `<div class="mlegend">${rl.map(r => `<span><i style="background:${r.col}"></i><b>${esc(r.name)}</b>${r.ruler ? '·' + esc(r.ruler) : ''}${r.capital ? '·都' + esc(r.capital) : ''}${r.basis === '推算' ? '<span class="att">推算</span>' : ''}${(pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) ? '（你在此）' : ''}</span>`).join('')}</div>` : '')
+    + `<div class="mlegend">${owners.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}<span>★ 你在这里</span><span>⚔ 打过仗</span><span><b style="color:#5b3a1a">关</b> 关隘</span><span>╌ 平路相通</span><span>┈ 山路难行</span><span style="color:#b33">✕ 隔山不通</span><span style="color:#8a3b12">━ ━ 驿道</span><span style="color:#2f6fa8">运河</span></div>`
+    + `<div class="muted" style="font-size:11px">${M.ok ? `政区：${esc(M.A.src)}、照《地理志》核定（${esc(M.A.y)}年）${zoom && !cty.length && MAPZ.mode === 'prov' ? '；本省的县正在查' : ''}${unloc.length ? `；${unloc.length}处在地名库里没找到坐标，没画：${esc(unloc.slice(0, 8).join('、'))}${unloc.length > 8 ? '等' : ''}` : ''}` : '政区：还没核定，先照 CHGIS 地名库当年的州府画（未经核对）'}。地形据 AWS 高程、河湖海岸据 Natural Earth（黄河下游、运河按这一年的河道画）；关隘坐标据维基百科；通不通照地形推，具体走法看剧情。</div>`;
 }
 function mapInfo(s) {
-  const n = MAPZ.sel; if (!n) return '<div class="muted" style="font-size:12px">点图上的一处看详情、就地下令；点省名放大到一省。</div>';
-  const u = geoData().find(x => x.name === n && x.from <= s.clock.y && x.to >= s.clock.y) || geoData().find(x => x.name === n);
-  const o = mapOwners(s).get(geoStem(n)) || (u && u.parent && mapOwners(s).get(geoStem(u.parent))), t = arr(s.territory).find(x => geoStem(x.place) === geoStem(n));
-  const F = arr(s.forces).filter(f => f.at && geoStem(f.at) === geoStem(n)), here = hereXY(s), d = here && u ? liOf(hav(here, u)) : null;
+  const n = MAPZ.sel; if (!n) return '<div class="muted" style="font-size:12px">点图上的一处看详情、通往哪里、就地下令；点省名放大到一省（到县）。</div>';
+  const M = mapUnits(s), all = M.L2.concat(M.C, Object.values((M.A && M.A.counties) || {}).flat());
+  const u = all.find(x => x.n === n) || (() => { const g = geoData().find(x => x.name === n && x.from <= s.clock.y && x.to >= s.clock.y); return g ? { n, t: g.type, lon: g.lon, lat: g.lat } : null; })();
+  const o = mapOwners(s).get(geoStem(n)), t = arr(s.territory).find(x => geoStem(x.place) === geoStem(n));
+  const F = arr(s.forces).filter(f => f.at && geoStem(f.at) === geoStem(n)), here = hereXY(s), d = here && u && u.lat ? liOf(hav(here, u)) : null;
   const myF = arr(s.forces).filter(f => f.leader === s.protagonist.name || isRuler(s));
-  const P = arr(s.powers).find(p => o && p.name === o.who);
-  return `<div class="affair"><b>${esc(n)}</b> <span class="muted">${esc(u ? u.type : '')}${u && MAPC.R && MAPC.R.get(u) ? ' · ' + esc(MAPC.R.get(u).name) : ''}${u && MAPC.P.get(u) ? ' · ' + esc(MAPC.P.get(u)) : ''}${d != null ? ' · 离你约' + d + '里' : ''}</span>
-    <div>${o ? `归属：<b>${esc(o.who)}</b>` : (() => { const r = u && MAPC.R && MAPC.R.get(u); return r ? `归属：<b>${esc(r.name)}</b>${r.ruler ? '（' + esc(r.ruler) + '在位）' : ''}` : '<span class="muted">化外，或没查到归谁</span>'; })()}${P ? `（${esc(P.leader || '')}，兵${esc(P.troops || '?')}，对你${esc(P.stance || '?')}）` : ''}</div>
+  const P = arr(s.powers).find(p => o && p.name === o.who), r = u && M.reg(u);
+  const L = u && u.lat ? Object.values(MAPC.links).flat().filter(l => l.a.n === n || l.b.n === n).filter((l, i, A) => A.findIndex(x => (x.a.n === l.a.n && x.b.n === l.b.n)) === i) : [];
+  return `<div class="affair"><b>${esc(n)}</b> <span class="muted">${esc(u && u.t || '')}${u && u.p ? ' · 属' + esc(u.p) : ''}${d != null ? ' · 离你约' + d + '里' : ''}${u && u.b === '推算' ? ' · 建置推算' : ''}</span>
+    <div>${o ? `归属：<b>${esc(o.who)}</b>` : r ? `归属：<b>${esc(r.name)}</b>${r.ruler ? '（' + esc(r.ruler) + '在位）' : ''}` : '<span class="muted">归属没查定</span>'}${P ? `（${esc(P.leader || '')}，兵${esc(P.troops || '?')}，对你${esc(P.stance || '?')}）` : ''}</div>
+    ${u && u.lat ? `<div class="muted">海拔约${Math.max(0, Math.round(elevAt(u.lon, u.lat) || 0))}米</div>` : ''}
+    ${L.length ? `<div>通往：${L.map(l => { const x = l.a.n === n ? l.b : l.a; return `${esc(x.n)}（约${liOf(hav(l.a, l.b) * (l.k === 'mtn' ? 1.6 : 1.25))}里，${LINK_TXT[l.k]}${l.via ? '，经' + esc(l.via) : ''}）`; }).join('；')}</div>` : ''}
     ${t ? `<div class="muted">户${esc(fmtN(N0(t.pop)) || '?')} · 守军${esc(fmtN(N0(t.troops)) || '?')} · 存粮${esc(fmtN(N0(t.grain)) || '?')}石 · 民心${esc(t.loyalty ?? '?')}</div>` : ''}
     ${F.length ? `<div>驻军：${F.map(f => `${esc(f.name)}（${esc(f.leader || '')}，${esc(fmtN(N0(f.troops) || 0))}人，${esc(f.status || '')}）`).join('、')}</div>` : ''}
     <div class="opost">${u && u.lat ? `<button class="link" data-mapnear="${esc(n)}">放大这一带</button>` : ''}<button class="link" data-write="${esc('动身去' + n + '。')}">去这里</button><button class="link" data-write="${esc('派人去' + n + '打探消息：')}">派人打探</button>${myF.length ? `<select data-mapf>${myF.map(f => `<option>${esc(f.name)}</option>`).join('')}</select><button class="link" data-mapgo="攻">进攻这里</button><button class="link" data-mapgo="守">移驻这里</button>` : ''}${o && o.who !== '你' && isRuler(s) ? `<button class="link" data-write="${esc('遣使往' + o.who + '，')}">遣使</button>` : ''}</div></div>`;
 }
 function mapTab(s) {
   const zt = MAPZ.mode === 'prov' ? MAPZ.prov : MAPZ.mode === 'near' ? MAPZ.sel + '一带' : '';
-  if (regimeDue(s) && !BUSY && !REG_P) REG_P = Promise.resolve().then(() => buildRegimes(s)).catch(() => { s.regFail = s.turn; }).finally(() => { REG_P = null; if (TAB === 'map') render(); });
-  const regMsg = REG_P ? `<div class="muted" style="font-size:12px">正在查${esc(s.clock.y)}年天下有几家政权、各据哪些州……</div>` : '';
-  return `<div class="h" style="margin-top:6px"><span class="seal">图</span>舆图<span class="note">${esc(s.clock.yearLabel || s.clock.y + '年')}的州府${zt ? ' · ' + esc(zt) : ' · 天下'}</span>${zt ? ' <button class="link" id="bMapWorld">回到天下</button>' : ''}</div>
+  if (admDue(s) && !BUSY && !REG_P) REG_P = Promise.resolve().then(() => buildAdmin(s)).catch(() => { s.admFail = s.turn; }).finally(() => { REG_P = null; try { store.save(s); } catch (_) {} if (TAB === 'map') render(); });
+  if (!REG_P && MAPZ.mode === 'prov' && s.admin && !s.admin.counties[MAPZ.prov] && !BUSY && s.admin.units.some(u => u.p === MAPZ.prov)) REG_P = Promise.resolve().then(() => buildAdminProv(s, MAPZ.prov)).catch(() => {}).finally(() => { REG_P = null; if (s.admin && !s.admin.counties[MAPZ.prov]) s.admin.counties[MAPZ.prov] = []; if (TAB === 'map') render(); });
+  const regMsg = REG_P ? `<div class="muted" style="font-size:12px">正在联网查${esc(s.clock.y)}年的政区${MAPZ.mode === 'prov' ? '：' + esc(MAPZ.prov) + '各府州领哪些县、驿道关隘' : '：有几家政权、各有哪些省（路、道、州）、府州'}……</div>` : '';
+  return `<div class="h" style="margin-top:6px"><span class="seal">图</span>舆图<span class="note">${esc(s.clock.yearLabel || s.clock.y + '年')}${zt ? ' · ' + esc(zt) : ' · 天下'}</span>${zt ? ' <button class="link" id="bMapWorld">回到天下</button>' : ''}</div>
     ${regMsg}${stratMap(s)}${mapInfo(s)}
     ${arr(s.powers).length ? `<div class="h" style="font-size:14px">各方</div><div class="tblwrap"><table class="tbl"><tr><th>势力</th><th>首领</th><th>据地</th><th>兵</th><th>对你</th></tr>${s.powers.map((p, i) => `<tr><td><i class="sw" style="background:${PCOL[i % PCOL.length]}"></i><b>${esc(p.name)}</b></td><td>${esc(p.leader || '')}</td><td>${esc(p.seat || '')}${p.land ? '<div class="muted" style="font-size:11px">' + esc(p.land) + '</div>' : ''}</td><td>${esc(p.troops || '')}</td><td>${esc(p.stance || '')}</td></tr>`).join('')}</table></div>` : ''}
     ${ORGMSG ? `<div class="muted">${esc(ORGMSG)}</div>` : ''}`;
@@ -6411,6 +6613,7 @@ async function afterTurn(s0, d, g, gen = BG_GEN) {
   if (syncNeed(s0) && !(await step('按月联网同步此刻前后的史事', () => ensureSync(s0)))) return;
   if (d && SETTINGS.world !== false && needTick(s0, d) && !(await step('推演天下大势', async () => { const r = await worldTick(s0); if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }))) return;
   if (needGaz(s0) && !(await step('查这地方此时的样子（本地志）', () => buildGazetteer(s0)))) return;
+  if (admDue(s0) && !(await step('联网查这一年的政区（政权、省、府州，本省到县）', () => buildAdmin(s0).catch(e => { s0.admFail = s0.turn; throw e; })))) return;
   if (s0.estateDue && !(await step('照新身份重立家底', () => buildEstate(s0)))) return;
   if (canSearch() && officialsDue(s0) && !(await step('趁空查这地方此时在任的官员', () => ensureOfficials(s0).catch(e => { s0.offFail = s0.turn; throw e; })))) return;   // 玩家读这一回、想下一步的时候先查好，下一回不用等
   if (orgDue(s0) && !(await step('联网整理人事树和国策书', () => buildOrg(s0)))) return;
@@ -6423,7 +6626,6 @@ async function afterTurn(s0, d, g, gen = BG_GEN) {
   if (affairDue(s0) && !(await step('拟这个月的时政', () => buildAffairs(s0).catch(e => { s0.affFail = s0.turn; throw e; })))) return;
   if (s0.org && courtiers(s0).some(c => !c.attr) && !(await step('照史料定官员的派系和本事', () => buildOfficers(s0)))) return;
   if (utDue(s0) && !(await step('照本朝兵制核定兵种', () => buildUnitTypes(s0).catch(e => { s0.utFail = s0.turn; throw e; })))) return;
-  if (regimeDue(s0) && !(await step('查这一年天下的政权疆域', () => buildRegimes(s0).catch(e => { s0.regFail = s0.turn; throw e; })))) return;
   if (factDue(s0) && !(await step('提前梳理这一年此地的史实和数目', () => buildFacts(s0).catch(e => { s0.factFail = s0.turn; throw e; })))) return;
   if (promoDue(s0, '') && !(await step('联网查本朝升迁之制', () => ensurePromo(s0).catch(e => { s0.promoFail = s0.turn; throw e; })))) return;
   if (needGeo(s0) && !(await step('查历史地名库、画县级地图', () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties)))) return;
@@ -6696,11 +6898,12 @@ document.addEventListener('click', async e => {
       if (b.dataset.bookdl) { try { await downloadBook(b.dataset.bookdl); } catch (er) { ERRMSG = '没下载成：' + er.message; render(); } return; }
       if (b.dataset.bookclear) { ARC.clearBook(S, b.dataset.bookclear); render(); return; }
     } }
-  { const g = e.target.closest && e.target.closest('[data-mapu],[data-mapprov],#bMapWorld,[data-mapgo],[data-mapnear]');
+  { const g = e.target.closest && e.target.closest('[data-mapu],[data-mapprov],#bMapWorld,[data-mapgo],[data-mapnear],[data-maplay]');
     if (g && S) {
-      if (g.id === 'bMapWorld') MAPZ = { mode: 'world', prov: '', sel: '' };
-      else if (g.dataset.mapprov) MAPZ = { mode: 'prov', prov: g.dataset.mapprov, sel: '' };
-      else if (g.dataset.mapnear) { const u = stratUnits(S).prefs.concat(geoData()).find(x => x.name === g.dataset.mapnear && x.lat); if (u) MAPZ = { mode: 'near', prov: '', sel: u.name, c: { lon: u.lon, lat: u.lat } }; }
+      if (g.dataset.maplay) { MAPZ.lay[g.dataset.maplay] = g.checked; render(); return; }
+      if (g.id === 'bMapWorld') { MAPZ.mode = 'world'; MAPZ.prov = ''; MAPZ.sel = ''; }
+      else if (g.dataset.mapprov) { MAPZ.mode = 'prov'; MAPZ.prov = g.dataset.mapprov; MAPZ.sel = ''; }
+      else if (g.dataset.mapnear) { const M = mapUnits(S), n = g.dataset.mapnear, u = M.L2.concat(M.C, Object.values((M.A && M.A.counties) || {}).flat()).find(x => x.n === n && x.lat) || (() => { const x = geoData().find(x => x.name === n && x.lat); return x ? { lon: x.lon, lat: x.lat } : null; })(); if (u) { MAPZ.mode = 'near'; MAPZ.prov = ''; MAPZ.sel = n; MAPZ.c = { lon: u.lon, lat: u.lat }; } }
       else if (g.dataset.mapu) MAPZ.sel = MAPZ.sel === g.dataset.mapu ? '' : g.dataset.mapu;
       else if (g.dataset.mapgo) { const f = ($('[data-mapf]') || {}).value; if (armyAct(S, 'march', { force: f, target: MAPZ.sel, mode: g.dataset.mapgo })) try { await store.save(S); } catch (_) {} }
       render(); return;
