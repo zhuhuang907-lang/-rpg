@@ -40,6 +40,6 @@ const path = require('path');
     return [...new Set(bad)].slice(0, 40);
   });
   for (const x of out) errs.push(x);
-  console.log('GARBAGE', JSON.stringify([...new Set(errs)].slice(0, 40), null, 1));
+  console.log('ERRS', JSON.stringify([...new Set(errs)].slice(0, 40)));
   await b.close(); process.exit(errs.length ? 1 : 0);
 })();
