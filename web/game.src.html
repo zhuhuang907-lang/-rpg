@@ -1006,7 +1006,7 @@ const ERR = {
   upstream_error: '连接中断了，点「再试一次」。',
   bad_json: 'AI 返回的格式不对，没读出内容，点「再试一次」。',
 };
-const errText = e => (e && (e.code === 'local' || e.code === 'no_key' || e.code === 'no_sample') ? plainWhy(e.message) + (e.code === 'local' ? (/Key|余额|权限|小窗口/.test(e.message) ? '' : '。点「再试一次」；反复出现就在首页点「检查网络」。') : '') : '') || ERR[e && e.code] || ('出错了：' + ((e && (e.message || e.code)) || e) + '。点「再试一次」。');
+const errText = e => e && e.code === 'notreal' ? e.message : (e && (e.code === 'local' || e.code === 'no_key' || e.code === 'no_sample') ? plainWhy(e.message) + (e.code === 'local' ? (/Key|余额|权限|小窗口/.test(e.message) ? '' : '。点「再试一次」；反复出现就在首页点「检查网络」。') : '') : '') || ERR[e && e.code] || ('出错了：' + ((e && (e.message || e.code)) || e) + '。点「再试一次」。');
 function parseJSON(text) {
   const t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
@@ -2854,8 +2854,9 @@ async function browserLookup(queries, both, world) {
     const wi = arr((arr(w.results).find(o => o.q === q) || {}).items), we = (arr(w.results).find(o => o.q === q) || {}).error;
     const bi = arr((B.find(o => o.q === q) || {}).items);
     if (W.has(q)) { const items = tag(wi.slice(0, 3), 'wikipedia').concat(tag(bi.slice(0, 2), 'bocha')); return { q, items, provider: wi.length && bi.length ? 'mixed' : wi.length ? 'wikipedia' : bi.length ? 'bocha' : '', error: items.length ? '' : we || '' }; }
-    if (bi.length) return { q, items: tag(bi.slice(0, 4), 'bocha'), provider: 'bocha' };
-    return { q, items: tag(wi, 'wikipedia'), provider: wi.length ? 'wikipedia' : '', error: wi.length ? '' : we || '' };
+    // 人物、当年当地：博查为主，维基查到的也并进来
+    const items = tag(bi.slice(0, 3), 'bocha').concat(tag(wi.slice(0, 2), 'wikipedia'));
+    return { q, items, provider: bi.length && wi.length ? 'mixed' : bi.length ? 'bocha' : wi.length ? 'wikipedia' : '', error: items.length ? '' : we || '' };
   });
   // 两边都没搜到的：再翻维基文库（史书原文）
   await Promise.all(res.filter(x => !arr(x.items).length).slice(0, 4).map(async o => { const it = await wikisourceFetch(o.q); if (it.length) { o.items = it.map(x => ({ ...x, src: 'wikisource' })); o.provider = 'wikisource'; o.error = ''; } }));
@@ -2965,6 +2966,64 @@ async function doLookups(s, queries, both) {
   if (allErr) { if (++SEARCH_DOWN >= 2) { SEARCH_OFF = (errs[0] || '连不上搜索服务').replace(/^[^：]*：/, ''); SEARCH_OFF_AT = Date.now(); } } else if (gotAny) SEARCH_DOWN = 0;
   return { shown, err: errs.length && !shown.length ? errs[0] : '', provider: r.provider };
 }
+/* ========== 是不是史书上的真人：维基百科按条目名取、维基数据（是不是人、生卒）、博查三路查，DeepSeek 照查到的判；
+   三路都没有的，DeepSeek 只有能举出正史、方志出处才算真人（标「未联网证实」），举不出就是查无此人 ========== */
+const PCHK = {};
+const WIKIDATA_API = 'https://www.wikidata.org/w/api.php';
+async function personRaw(name, hint) {
+  if (MODE === 'local') return api('/api/person', { name, hint });
+  const toks = String(hint || '').split(/[\s，,、]+/).filter(Boolean);
+  const page = async title => { const d = await wfetch({ action: 'query', titles: title, redirects: '1', converttitles: '1', prop: 'extracts|pageprops|description', exintro: '1', explaintext: '1', exchars: '2500', variant: 'zh-cn' }, 9000); const pg = Object.values((d && d.query && d.query.pages) || {})[0]; return pg && pg.missing === undefined && pg.extract ? { title: pg.title, url: 'https://zh.wikipedia.org/wiki/' + encodeURIComponent(pg.title), text: pg.extract, desc: pg.description || '', disamb: !!(pg.pageprops && 'disambiguation' in pg.pageprops) } : null; };
+  const wiki = async () => { let p = await page(name);
+    if (!p || p.disamb) { const d = await wfetch({ action: 'query', list: 'search', srsearch: name + (toks[0] ? ' ' + toks[0] : ''), srlimit: '6' }, 9000); for (const t of arr(d && d.query && d.query.search).map(x => x.title).filter(t => t.startsWith(name) && t !== (p && p.title)).slice(0, 3)) { const q = await page(t); if (q && !q.disamb) { p = q; break; } } }
+    return p && !p.disamb ? p : null; };
+  const wdata = async () => {
+    const j = u => fetch(WIKIDATA_API + '?' + new URLSearchParams({ format: 'json', origin: '*', ...u })).then(r => r.ok ? r.json() : null);
+    const d = await j({ action: 'wbsearchentities', search: name, language: 'zh', uselang: 'zh-cn', limit: '7', type: 'item' });
+    const ids = arr(d && d.search).filter(x => x.label === name || (x.match && x.match.text === name)).map(x => x.id).slice(0, 6); if (!ids.length) return [];
+    const e = await j({ action: 'wbgetentities', ids: ids.join('|'), props: 'claims|descriptions|sitelinks', languages: 'zh-cn|zh|zh-hans|en' });
+    const yr = c => { const t = c && c[0] && c[0].mainsnak && c[0].mainsnak.datavalue && c[0].mainsnak.datavalue.value && c[0].mainsnak.datavalue.value.time; const m = t && String(t).match(/^([+-])0*(\d+)-/); return m ? (m[1] === '-' ? -1 : 1) * +m[2] : null; };
+    return Object.values((e && e.entities) || {}).filter(x => x.claims && arr(x.claims.P31).some(c => c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id === 'Q5'))
+      .map(x => { const D = x.descriptions || {}; return { id: x.id, desc: (D['zh-cn'] || D.zh || D['zh-hans'] || D.en || {}).value || '', born: yr(x.claims.P569), died: yr(x.claims.P570), zhwiki: ((x.sitelinks || {}).zhwiki || {}).title || '' }; });
+  };
+  const bocha = async () => BOCHA_KEY ? arr(await bochaFetch(`${name} ${hint} 生平`.trim())).filter(x => String(x.title + x.snippet).includes(name) && !FICTION_RE.test(x.title || '')).slice(0, 4).map(x => ({ title: x.title, url: x.url, text: cut(x.snippet, 400) })) : [];
+  const [w, wd, b] = await Promise.all([wiki().catch(e => ({ err: e.message || '连不上维基百科' })), wdata().catch(e => ({ err: e.message || '连不上维基数据' })), bocha().catch(() => [])]);
+  return { ok: true, name, hint, wiki: w && !w.err ? w : null, wikiErr: (w && w.err) || '', wikidata: Array.isArray(wd) ? wd : [], bocha: b };
+}
+/** 返回 { real, src, who, born, died, identity, evidence, why }；real 由程序照证据定，不由 AI 随口说 */
+async function personCheck(s, name, hint) {
+  name = one(String(name || '').replace(/[（(].*$/, ''), 12); if (name.length < 2) return { real: false, why: '名字太短' };
+  const key = name + '|' + (hint || ''); if (PCHK[key]) return PCHK[key];
+  if (s && s.personChk && s.personChk[key]) return (PCHK[key] = s.personChk[key]);
+  let raw = null; if (canSearch()) { try { raw = await within(personRaw(name, hint), 20000, null); } catch (e) { if (e && e.code === 'cancelled') throw e; raw = null; } }
+  const y = s && s.clock ? s.clock.y : null;
+  // 维基数据：是「人」、生卒和这一年对得上（差个三十年以内）
+  const wd = arr(raw && raw.wikidata).filter(x => y == null || ((x.born == null || x.born <= y + 30) && (x.died == null || x.died >= y - 30)));
+  const ev = [];
+  if (raw && raw.wiki) ev.push(`维基百科《${raw.wiki.title}》：${cut(raw.wiki.text, 900)}`);
+  for (const x of wd.slice(0, 3)) ev.push(`维基数据 ${x.id}：${x.desc || ''}${x.born != null || x.died != null ? `（${x.born ?? '?'}—${x.died ?? '?'}）` : ''}`);
+  for (const x of arr(raw && raw.bocha).slice(0, 3)) ev.push(`博查「${x.title}」：${cut(x.text, 300)}`);
+  let v = null;
+  if (DSM() || MODE === 'claude') {
+    try {
+      const { text } = await callClaude(`判断「${name}」是不是史书上确有其人、并且合乎这个线索：${hint || '（无）'}${y != null ? `（游戏此刻是${y}年）` : ''}。
+${ev.length ? '【联网查到的】\n' + ev.join('\n') : '【联网什么也没查到】'}
+规矩：
+- 有查到的，照查到的判：是同一个人（朝代、身份对得上）才算 real；同名的别人（别的朝代、现代人、小说人物）不算。
+- 什么也没查到的：只有你确知他见于正史、实录、方志、文集，并且能写出具体出处（书名、卷名或篇名）时才算 real；举不出出处、只是「像这个年代会有的名字」的，一律 real=false。宁可判 false，不可把编的人当真人。
+只输出 JSON：{"real":false,"who":"他是谁（一句）","born":null,"died":null,"identity":"身份、官职","source":"出处：维基百科/维基数据/博查/某书某卷","why":"凭什么这么判"}`, null, { maxTokens: 800, temperature: 0, kind: '检索', detached: true, thinking: false });
+      v = parseJSON(text);
+    } catch (e) { if (e && e.code === 'cancelled') throw e; v = null; }
+  }
+  const found = !!(raw && (raw.wiki || wd.length || arr(raw.bocha).length));
+  const real = v ? v.real === true && (found || /[《卷传志录集]/.test(String(v.source || ''))) : found && !!(raw.wiki || wd.length);
+  const src = !real ? '' : raw && raw.wiki ? '维基百科' : wd.length ? '维基数据' : arr(raw && raw.bocha).length ? '博查' : 'DeepSeek 据史书（未联网证实：' + one(v && v.source, 30) + '）';
+  const out = { real, src, who: one(v && v.who, 60) || (wd[0] && wd[0].desc) || '', born: num(v && v.born) ?? (wd[0] && wd[0].born) ?? null, died: num(v && v.died) ?? (wd[0] && wd[0].died) ?? null, identity: one(v && v.identity, 60), evidence: ev.slice(0, 4).map(x => cut(x, 300)), url: raw && raw.wiki ? raw.wiki.url : '', why: one(v && v.why, 80) || (found ? '' : raw ? '维基百科、维基数据、博查都查不到' : '没联网，查不了'), netErr: raw ? raw.wikiErr || '' : '没联网', at: Date.now() };
+  PCHK[key] = out; if (s) { s.personChk = s.personChk || {}; s.personChk[key] = out; const ks = Object.keys(s.personChk); if (ks.length > 80) delete s.personChk[ks[0]]; }
+  feedAdd([{ t: `核查真人：${name}——${real ? '有其人（' + src + '）' : '查无此人'}`, site: src || '核查' }]);
+  return out;
+}
+const BIG_ROLE = /皇帝|天子|君主|太子|亲王|郡王|王爷|宗室|贵族|公主|国公|侯爵|伯爵|公爵|勋贵|宰相|丞相|尚书|侍郎|大学士|军机|御史大夫|太尉|司徒|司空|大将军|节度使|总督|巡抚|布政|按察|提督|总兵|知府|太守|刺史|驸马|皇后|贵妃|世家|门阀|望族/;
 /** 深读维基百科：找最相关的中文条目读正文，存进资料（比搜索摘要细得多） */
 async function wikiRead(s, queries) {
   const qs = [...new Set(arr(queries).map(q => String(q || '').trim()).filter(q => q.length >= 2))].slice(0, 4);  // 同一条目再读走本机缓存，不花钱
@@ -5212,6 +5271,9 @@ async function ensureDossiers(s, names) {
   const want = [...new Set(arr(names).map(x => one(x, 12)).filter(n => n.length >= 2 && n !== s.protagonist.name))].filter(n => !knownFig(s, n) && !fresh(n)).slice(0, 3);
   if (!want.length) return [];
   let ev = '', cb = [];
+  // 是不是真人，程序先查（维基条目、维基数据、博查，DeepSeek 照查到的判）；档案里的 real 照这个定
+  const hintOf = n => `${s.place.polity || ''} ${((s.people || {})[n] || {}).role || ''}`.trim().slice(0, 30);
+  const chkP = Promise.all(want.map(n => personCheck(s, n, hintOf(n)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; })));
   if (canSearch()) {
     // 三路一起查：博查（此时的官职、处境）、维基（生平）、CBDB 中国历代人物传记资料库（任官年份、地点，推断此刻在任何职最有用）
     const yl = s.clock.yearLabel || (s.clock.y + '年');
@@ -5226,8 +5288,10 @@ async function ensureDossiers(s, names) {
       + cb.map(x => '\n· CBDB（中国历代人物传记资料库）' + x.text).join('');
     if (cb.length) feedAdd(cb.map(x => ({ t: 'CBDB 人物：' + x.name, site: 'CBDB' })));
   }
+  const chk = await chkP, CK = new Map(want.map((n, i) => [n, chk[i]]));
+  { const add = want.map(n => CK.get(n)).filter(c => c && arr(c.evidence).length); if (add.length) ev += add.map(c => '\n· 核查：' + c.evidence.join(' / ')).join(''); }
   const { text } = await callClaude(`下面这些名字是一局历史模拟游戏里玩家这一回提到、或场面里要出现的人，可能是真实历史人物。请按史实给每个人立一份档案，并写出他在${timeText(s.clock)}这一刻的状态。主角：${s.protagonist.name || '（玩家扮演的人）'}${s.protagonist.gender ? '（' + s.protagonist.gender + '）' : ''}，${s.protagonist.role}，在${s.place.full}（${s.place.polity || ''}）。
-名字：${want.join('、')}
+名字：${want.map(n => { const c = CK.get(n); return c ? `${n}（核查：${c.real ? '史上有其人，据' + c.src : '维基百科、维基数据、博查都查不到，判为查无此人——real 必须写 false'}）` : n; }).join('、')}
 ${ev ? '【查到的资料（维基、博查、CBDB：维基与博查说法矛盾时以博查为准；照 CBDB 的任官年份推算此刻他在任什么官、在哪，与博查矛盾也以博查为准）】\n' + ev + '\n' : ''}要求：只写史书确有记载的；此刻的官职照任官年份推算（某年任甲官、某年改乙官，此刻就在两者之间那一任），推算出来的照写，不要因为没有「此刻」二字就写不详；拿不准的写「不详」，绝不编造官职、地点、年份。同名的取与这个年代、这个地方相关的那一位。查无此人、或此时尚未出生、早已去世的，照实写。
 只输出一个 JSON 对象：{"people":[{"name":"","real":true,"born":0,"died":0,"native":"籍贯","identity":"一句话：他是谁、凭什么出名","state":"此刻：在世/未生/已故","age":0,"post":"此刻的官职或身份","where":"此刻大约在哪（写到州县）","doing":"此刻在做什么、处境如何","ties":"此刻与他相关的要紧人物与派系","reach":"以主角此刻的身份、所在，见不见得到他、要经谁引荐、要走多远多久；他会怎么看待主角这样的人","zi":"字、号","origin":"出身（科第、门荫、行伍、捐纳……哪一年）","career":[{"y":0,"post":"历官：哪一年任什么（照资料，五六条，到此刻为止）"}],"family":"此刻的家眷：父母妻妾子女里要紧的","character":"为人、脾气、好恶（照史书的评语）","stance":"政见与派系立场","sources":"每一条依据哪份资料（维基／博查／CBDB／正史本传），没有依据的写「史识」"}]}。born、died 不知道写 null；career 只写资料里有的，没有就 []。`, null, { maxTokens: 3000, temperature: 0.1, kind: '档案' });
   const d = parseJSON(text), got = [];
@@ -5236,14 +5300,16 @@ ${ev ? '【查到的资料（维基、博查、CBDB：维基与博查说法矛�
     const k = one(p.name, 12);
     // CBDB 有的：生卒、籍贯、此刻在任由程序定（AI 只补它没有的）；年岁、在世与否照生卒算；资料里一个字都没提到的「真人」标存疑
     const cbx = cb.find(x => x.name === k || x.name === p.name), Y = s.clock.y;
-    const born = (cbx && cbx.born) || num(p.born), died = (cbx && cbx.died) || num(p.died);
+    const ck0 = CK.get(k), fake0 = ck0 && !ck0.real;   // 查无此人：AI 给的生卒、官职不作数
+    const born = fake0 ? null : (cbx && cbx.born) || (ck0 && ck0.born) || num(p.born), died = fake0 ? null : (cbx && cbx.died) || (ck0 && ck0.died) || num(p.died);
     const state = born && Y < born ? '未生' : died && Y > died ? '已故' : born || died ? '在世' : one(p.state, 10);
     const seen = ev.includes(k) || (cbx && true);
     const nowNote = cbx && arr(cbx.now).length && p.post && !cbx.now.some(x => x.includes(String(p.post).slice(0, 2))) ? `（CBDB 任官年份推算此刻是：${cbx.now.join('；')}）` : '';
-    s.dossiers[k] = { real: p.real !== false, born, died, native: one((cbx && cbx.native) || p.native, 20), identity: one(p.identity, 80), state, age: born ? Y - born + 1 : num(p.age), post: one(p.post, 50) + nowNote, where: one(p.where, 30), doing: one(p.doing, 100), ties: one(p.ties, 100), reach: one(p.reach, 140), y: s.clock.y,
-      zi: one(p.zi, 20), origin: one(p.origin, 40), career: arr(p.career).filter(x => x && x.post).slice(0, 8).map(x => ({ y: num(x.y), post: one(x.post, 30) })).concat(cbx && !arr(p.career).length ? cbx.posts.slice(0, 6).map(x => ({ y: x.f || null, post: x.o + (x.a ? '（' + x.a + '）' : '') })) : []), family: one(p.family, 80), character: one(p.character, 80), stance: one(p.stance, 60), sources: one(p.sources, 80), doubt: p.real !== false && !seen, src: ev ? (cb.length ? 'CBDB + 博查 + 维基' : '博查 + 维基')  : '史书（AI 据史识整理，未联网）' };
+    const c0 = CK.get(k), realK = c0 ? c0.real : p.real !== false;
+    s.dossiers[k] = { real: realK, chk: c0 ? (c0.real ? c0.src : '查无此人') : '', born, died, native: one((cbx && cbx.native) || p.native, 20), identity: one(p.identity, 80), state, age: born ? Y - born + 1 : num(p.age), post: one(p.post, 50) + nowNote, where: one(p.where, 30), doing: one(p.doing, 100), ties: one(p.ties, 100), reach: one(p.reach, 140), y: s.clock.y,
+      zi: one(p.zi, 20), origin: one(p.origin, 40), career: arr(p.career).filter(x => x && x.post).slice(0, 8).map(x => ({ y: num(x.y), post: one(x.post, 30) })).concat(cbx && !arr(p.career).length ? cbx.posts.slice(0, 6).map(x => ({ y: x.f || null, post: x.o + (x.a ? '（' + x.a + '）' : '') })) : []), family: one(p.family, 80), character: one(p.character, 80), stance: one(p.stance, 60), sources: one(p.sources, 80), doubt: realK && !seen && !(c0 && c0.real), src: ev ? (cb.length ? 'CBDB + 博查 + 维基' : '博查 + 维基')  : '史书（AI 据史识整理，未联网）' };
     got.push(k);
-    feedAdd([{ t: `真人档案：${k}${p.real === false ? '（查无此人）' : ''}`, site: ev ? '维基百科' : '史识' }]);
+    feedAdd([{ t: `真人档案：${k}${!realK ? '（查无此人）' : ''}`, site: ev ? '维基百科' : '史识' }]);
   }
   // 不要无限长：只留最近 40 个
   const ks = Object.keys(s.dossiers); if (ks.length > 40) for (const k of ks.slice(0, ks.length - 40)) delete s.dossiers[k];
@@ -5284,10 +5350,14 @@ function realNameSet(s) {
   for (const f of arr(s.figures)) if (f && f.name) R.add(f.name);
   for (const x of arr(s.locals)) if (x && x.name) R.add(x.name);
   for (const o of arr(s.offices)) if (o && o.name && o.src !== '拟') R.add(o.name);
+  // 核查过查无此人的，不管别处怎么记，都不算真人
+  for (const k of Object.keys((s && s.personChk) || {})) { const n = k.split('|')[0], c = chkOf(s, n); if (c && !c.real && !arr(HALL(s)).some(h => arr(h.figures).some(f => f.name === n))) R.delete(n); }
   if (s.protagonist && s.protagonist.real && s.protagonist.name) R.add(s.protagonist.name);
   return R;
 }
 /** 虚构的人：出场过、却不在真人名单里的 */
+/** 核查过的结果（不论当时带的线索）：后核的为准 */
+const chkOf = (s, n) => { let c = null; for (const [k, v] of Object.entries((s && s.personChk) || {})) if (k.split('|')[0] === n && v && (!c || (v.at || 0) > (c.at || 0))) c = v; return c; };
 function fictionSet(s) {
   const R = realNameSet(s), F = new Set();
   for (const k of Object.keys(s.people || {})) if (k.length >= 2 && !R.has(k)) F.add(k);
@@ -5995,6 +6065,7 @@ function customForm() {
       <label>具体身份<input id="cRole" value="${v('cRole')}" placeholder="如：节度使帐下小校、盐商、县学生员"></label>
       <label>性别${sel('cGender', [['', '不限'], ['男', '男'], ['女', '女']])}</label>
       <label>年龄<input id="cAge" value="${v('cAge')}" inputmode="numeric" placeholder="如：25"></label>
+      <label>人物${sel('cReal', [['', '自动：大官、贵族、名门照真人查'], ['真', '史上真人（查不到就不开局）'], ['虚', '虚构人物（标虚拟）']])}</label>
       <label class="wide">姓名<input id="cName" value="${v('cName')}" placeholder="留空由 AI 起名；写真实人物的名字，就扮演此人（如：海瑞、李清照）"></label>
       <label class="wide">家世背景<textarea id="cFamily" rows="2" placeholder="如：父亲早亡，寡母带着弟妹，靠两亩薄田和母亲做针线过活；舅舅在县衙当书吏">${v('cFamily')}</textarea></label>
       <label class="wide">补充设定（性格、本事、处境、想做的事……）<textarea id="cMore" rows="2" placeholder="如：识字，会算账，脾气倔；想去府城考秀才，舅舅不赞成">${v('cMore')}</textarea></label>
@@ -6004,7 +6075,7 @@ function customForm() {
 /** 设定表 → 一句话（查资料、认年份用）+ 完整设定（交给 AI 照办） */
 const eraRange = k => { const lab = (ERAS.find(e => e[0] === k) || [])[1] || ''; const m = lab.match(/（(前?)(\d+)—(前?)(\d+)）/); return m ? [(m[1] ? -1 : 1) * +m[2], (m[3] ? -1 : 1) * +m[4]] : null; };
 function customSpec() {
-  const c = {}; for (const k of ['cEra', 'cYear', 'cPolity', 'cPlace', 'cKind', 'cRole', 'cGender', 'cAge', 'cName', 'cFamily', 'cMore']) c[k] = String((CUSTOM || {})[k] || '').trim();
+  const c = {}; for (const k of ['cEra', 'cYear', 'cPolity', 'cPlace', 'cKind', 'cRole', 'cGender', 'cAge', 'cName', 'cReal', 'cFamily', 'cMore']) c[k] = String((CUSTOM || {})[k] || '').trim();
   if (/^前?\d{1,4}$/.test(c.cYear)) c.cYear += '年';
   c.cAge = (c.cAge.match(/\d{1,3}/) || [''])[0]; if (c.cAge && (+c.cAge < 1 || +c.cAge > 100)) c.cAge = '';
   const era = (ERAS.find(e => e[0] === c.cEra) || ['', ''])[0];
@@ -6019,7 +6090,9 @@ function customSpec() {
   if (c.cKind || c.cRole) L.push('身份：' + [c.cKind, c.cRole].filter(Boolean).join('——'));
   if (c.cGender) L.push('性别：' + c.cGender);
   if (c.cAge) L.push('年龄：' + c.cAge + '岁');
-  if (c.cName) L.push('姓名：' + c.cName + '（若是史书上的真实人物，就扮演此人，生平、家人、处境照史实）');
+  if (c.cName) L.push('姓名：' + c.cName + (c.cReal === '虚' ? '（虚构人物）' : '（若是史书上的真实人物，就扮演此人，生平、家人、处境照史实）'));
+  if (c.cReal === '真') L.push('人物：必须是史书上确有记载的真人（照查到的资料挑；没有名字的，从资料里出现的、合乎身份年代的真人里挑；real=true）');
+  if (c.cReal === '虚') L.push('人物：虚构（real=false；可以出身真实的宗族、门第，但本人和近亲是虚构的，名字不与史书真人重名）');
   if (c.cFamily) L.push('家世背景：' + c.cFamily);
   if (c.cMore) L.push('补充设定：' + c.cMore);
   return { short: one(short, 60), full: L.join('\n'), range: cy != null ? null : rg, c };
@@ -6234,7 +6307,7 @@ function renderGame() {
         ${arr(c.hints).length ? `<div class="hints">${c.hints.map(h => `<button class="chip" data-write="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}` : ''}
     </div>`;
   }).join('');
-  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? (MODE === 'local' && SETTINGS.deep !== false && !DRAFTN ? '先构思这一回：谁在场、各自要什么、天下大事怎么砸进来（深度思考，要一两分钟）' : '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字') : PHASE === 'verify' ? '写好了，正在对照史料核实、通读、记账' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'rewrite' ? '正在写，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'dossier' ? '正在给这一回牵涉的真人立档：生卒、此刻的官职、在哪、在做什么、见不见得到' : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '正在想这一步会怎样' : PHASE === 'hsync' ? '正在按月联网查此刻前后几个月的真实史事（博查 / 维基年份条目），只收资料里写明的' : PHASE === 'critic' ? '写好了初稿，正在通读一遍，看情理通不通' : PHASE === 'resolve' ? '先把你的设定落到真实历史里：定下年月日、地点、政权、身份，对不上史实的地方按史实调' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">${BUSY && THINK_T0 ? Math.round((Date.now() - THINK_T0) / 1000) : 0}</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE === 'ledger' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : DRAFT_LIVE && /draft|rewrite|verify|critic/.test(PHASE) ? draftHtml() : feedHtml()}</div>` : '';
+  const thinking = BUSY ? `${PENDING_SAID ? `<div class="msg me">${esc(PENDING_SAID)}</div>` : ''}<div class="msg gm"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span>${BGWAIT ? '上一回的整理还在收尾（' + esc(BGMSG || '整理') + '），马上接着写你这一步' : PHASE === 'draft' ? (MODE === 'local' && SETTINGS.deep !== false && !DRAFTN ? '先构思这一回：谁在场、各自要什么、天下大事怎么砸进来（深度思考，要一两分钟）' : '正在写这一回，已写约 <span id="draftN">' + DRAFTN + '</span> 字') : PHASE === 'verify' ? '写好了，正在对照史料核实、通读、记账' : PHASE === 'ledger' ? '正在记下这一回的变化' : PHASE === 'world' ? '账记好了，正在推演天下大势（史书的走向 + 你造成的变化）' : PHASE === 'memory' ? '正在把较早的经过整理成一章（长局不走样）' : PHASE === 'search' ? (canSearch() ? '先看你这一步、决定要查什么，同时联网查本地与天下的消息' : '先看你这一步') : PHASE === 'rewrite' ? '正在写，已写约 <span id="draftN">' + DRAFTN + '</span> 字' : PHASE === 'dossier' ? '正在给这一回牵涉的真人立档：生卒、此刻的官职、在哪、在做什么、见不见得到' : PHASE === 'search2' ? '照 AI 点名要查的，再联网查一轮，并去维基百科读相关条目（人物、地方、制度、时事）' : PHASE === 'ruling' ? '正在想这一步会怎样' : PHASE === 'hsync' ? '正在按月联网查此刻前后几个月的真实史事（博查 / 维基年份条目），只收资料里写明的' : PHASE === 'critic' ? '写好了初稿，正在通读一遍，看情理通不通' : PHASE === 'realchk' ? '核查是不是史书上的真人：维基百科、维基数据、博查一起查，DeepSeek 照查到的判（查不到不当真人）' : PHASE === 'resolve' ? '先把你的设定落到真实历史里：定下年月日、地点、政权、身份，对不上史实的地方按史实调' : PHASE === 'histbuild' ? '这个年代没有内置史料：正在联网查年表、君主、重臣、战事，自建史料（十来年一段）' : PHASE === 'geo' ? '正在查历史地名库：此时此地的县、州府位置与隶属（画县级地图、算里程）' : PHASE === 'gaz' ? '正在查这地方此时的样子：衙署官员、行业、士绅、街巷、风俗、时事（写成本地志）' : '在想'}……已 <span id="secs">${BUSY && THINK_T0 ? Math.round((Date.now() - THINK_T0) / 1000) : 0}</span> 秒<button class="link" id="bStop">停下</button></div>${STREAM && PHASE === 'ledger' ? `<div class="text" style="margin-top:8px">${paras(STREAM)}</div>` : DRAFT_LIVE && /draft|rewrite|verify|critic/.test(PHASE) ? draftHtml() : feedHtml()}</div>` : '';
   const ae = document.activeElement, saidEl = $('#said');
   const edKeep = EDITING && $('#editText') ? $('#editText').innerHTML : null, rgKeep = $('#regenBox') ? $('#regenBox').innerHTML : '', rnKeep = $('#regenNote') ? $('#regenNote').value : null;
   const keep = { said: saidEl ? saidEl.value : '', span: $('#span') ? $('#span').value : 'auto', focus: ae && ae.id === 'said', a: saidEl ? saidEl.selectionStart : 0, b: saidEl ? saidEl.selectionEnd : 0, scroll: window.scrollY };
@@ -6294,9 +6367,9 @@ function pane(tab) {
     const P = Object.entries(s.people).filter(([, v]) => v && !v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const OLD = Object.entries(s.people).filter(([, v]) => v && v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const fam = s.household.filter(m => !s.people[m.name]);
-    const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionSet(s), FX = n => FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>';
+    const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionSet(s), FX = n => { const c = chkOf(s, n); return (FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>') + (c ? `<span class="muted" style="font-size:11px" title="${esc(c.why || '')}">${c.real ? '已核：' + esc(c.src) : '已核：查无此人'}</span>` : n === s.protagonist.name ? '' : `<button class="link" style="font-size:11px" data-pchk="${esc(n)}">核查是否真人</button>`); };
     const famTbl = HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b>${m.basis ? `<div class="gb"><span class="gr ${m.inferred ? 'inf' : 'rec'}">${m.inferred ? '推算' : '史载'}</span>${esc(String(m.basis).replace(/^推算[：:]/, ''))}</div>` : ''}</td><td>${m.age != null ? esc(m.age) + '岁' : ''}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(String(m.note || '').replace(/（推算）$/, ''))}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '';
-    return clanHtml(s) + famTbl + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
+    return (ORGMSG && /核查|查无此人|有其人/.test(ORGMSG) ? `<div class="muted" style="margin:4px 0">${esc(ORGMSG)}</div>` : '') + clanHtml(s) + famTbl + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
       ${fam.map(m => `<div class="pc">${m.dead || /未取名/.test(m.name) ? '' : `<canvas class="mini" data-face-npc="${esc(m.name)}" width="92" height="110"></canvas>`}<div class="pn"><b>${esc(m.name)}</b>${FX(m.name)}<span class="att">${esc(m.relation)}</span></div><div class="pr">${m.age != null ? m.age + '岁' : ''}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
       ${P.map(([k, v]) => `<div class="pc"><canvas class="mini" data-face-npc="${esc(k)}" width="92" height="110"></canvas><div class="pn"><b>${esc(k)}</b>${FX(k)}${relTag(v) ? `<span class="att onpath">${relTag(v)}</span>` : ''}${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
         <div class="pr">${esc(v.role)}${v.age != null ? ' · ' + esc(v.age) + '岁' : ''}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''}</div>
@@ -6484,7 +6557,28 @@ async function startGame(sentence, have, havePre, custom, spec) {
       let r = null;
       try { r = await resolveOpening(sentence, custom, pre); } catch (e) { if (e && e.code === 'cancelled') throw e; r = null; }
       if (r) {
-        const fake = openingState(r, pre);
+        let fake = openingState(r, pre);
+        // 是不是史书上的真人：程序查（维基百科、维基数据、博查，DeepSeek 照查到的判），不由写设定的 AI 随口说
+        { const cc0 = (spec && spec.c) || {}, cr = cc0.cReal || '', big = BIG_ROLE.test(`${r.role} ${sentence} ${custom || ''}`);
+          if (cr === '虚') { r.real = false; r.traces = []; r.inferred = []; }
+          else if (r.name && (r.real || cr === '真' || big)) {
+            PHASE = 'realchk'; render();
+            const hint = `${r.polity || ''} ${r.role || ''}`.trim().slice(0, 30);
+            let ck = await personCheck(fake, r.name, hint);
+            if (!ck.real && !cc0.cName) {
+              // 玩家没点名：只从查到的资料里另挑一位合乎身份年代的真人（宗族、门第、官职对得上的），挑不出就不硬凑
+              const pre2 = { ...(pre || {}), research: arr(pre && pre.research).concat(arr(fake.research)) };
+              const r2 = await resolveOpening(sentence, (custom || '') + `\n人物：上次给的「${r.name}」史书查无此人。只能从【联网查到的资料】里出现的、合乎身份年代的真人里挑；资料里一个合适的真人都没有，就 real=false、name 留空——绝不编一个名字当真人。`, pre2).catch(e => { if (e && e.code === 'cancelled') throw e; return null; });
+              if (r2 && r2.name && r2.name !== r.name && r2.real) { const f2 = openingState(r2, pre); const ck2 = await personCheck(f2, r2.name, `${r2.polity || ''} ${r2.role || ''}`.trim().slice(0, 30)); if (ck2.real) { r = r2; fake = f2; ck = ck2; } }
+            }
+            if (ck.real) {
+              r.real = true; r.realChk = ck; r.traces = arr(r.traces).concat(arr(ck.evidence).map(x => cut(x, 140))).slice(0, 10);
+              if (ck.born != null && r.y != null) { const age = r.y - ck.born + 1; if (age > 0 && age < 110) { if (r.age != null && Math.abs(r.age - age) > 1) r.adjust = arr(r.adjust).concat([`${r.name}生于${ck.born}年（${ck.src}），这一年${age}岁`]); r.age = age; } }
+              if (ck.died != null && r.y != null && r.y > ck.died) throw { code: 'notreal', message: `${r.name}卒于${ck.died}年（${ck.src}），${r.y}年已不在世。换个年份，或换个人再开局。` };
+            }
+            else if (cr === '真' || (cc0.cName && cr !== '')) throw { code: 'notreal', message: `查不到史书上有「${r.name}」这个人${hint ? '（' + hint + '）' : ''}：维基百科、维基数据${(MODE === 'local' ? KEY && KEY.bocha : BOCHA_KEY) ? '、博查' : ''}都没有，DeepSeek 也举不出正史、方志的出处${ck.netErr ? '（维基那边：' + ck.netErr + '）' : ''}。可以写全名、加上朝代和官职再试，或者把「人物」改成「虚构人物」。` };
+            else { r.adjust = arr(r.adjust).concat([`史书里查不到「${r.name}」，按虚构人物写（虚拟）`]); r.real = false; r.traces = []; r.inferred = []; }
+          } }
         { const A = arcsNow(fake)[0]; S0ARC = A ? arcBlock(fake, true) + ((A.a.goals || {})[roleKey(fake)] ? '\n这条主线里，这样的人可奔的长远目标（只作参考，不必照此开局）：' + A.a.goals[roleKey(fake)] : '') : ''; }
         if (canSearch()) {
           const yl = fake.clock.yearLabel || r.y + '年', pl = r.placeShort || r.place;
@@ -6546,7 +6640,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (!d || !d.setup) d = parseJSON((await callClaude(openingLedgerInput(sentence, st.text, st.hidden, custom, pre && pre.setting && pre.fake ? settingBlock(pre.setting, pre.fake) : ''), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' })).text);
     if (!d || !d.setup) throw { code: 'bad_json' };
     const rr = pre && pre.setting, cc = (spec && spec.c) || {};
-    if (rr) Object.assign(d.setup, { gregorianYear: rr.y, month: rr.m, day: rr.d, polity: rr.polity || d.setup.polity, place: rr.place || d.setup.place, name: rr.name || d.setup.name, role: rr.role || d.setup.role, nativePlace: rr.native || d.setup.nativePlace, gender: rr.gender || d.setup.gender, age: rr.age ?? d.setup.age, real: rr.real || d.setup.real, yearLabel: rr.yearLabel || d.setup.yearLabel });
+    if (rr) Object.assign(d.setup, { gregorianYear: rr.y, month: rr.m, day: rr.d, polity: rr.polity || d.setup.polity, place: rr.place || d.setup.place, name: rr.name || d.setup.name, role: rr.role || d.setup.role, nativePlace: rr.native || d.setup.nativePlace, gender: rr.gender || d.setup.gender, age: rr.age ?? d.setup.age, real: rr ? !!rr.real : !!d.setup.real, yearLabel: rr.yearLabel || d.setup.yearLabel });
     // 玩家亲手填的性别、姓名、年龄一定照办（真人的年龄按史实，已在定设定时算好）
     if (cc.cGender) d.setup.gender = cc.cGender;
     if (cc.cName) d.setup.name = cc.cName;
@@ -6558,6 +6652,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (cc.cRole && !String(d.setup.role || '').includes(cc.cRole)) d.setup.role = cc.cRole;
     if (num(d.setup.gregorianYear) == null) d.setup.gregorianYear = sentenceYear(String(d.setup.yearLabel || '')) ?? sentenceYear(sentence, OPEN_RANGE) ?? d.setup.gregorianYear;
     const s = newSave(d.setup);
+    if (pre && pre.fake && pre.fake.personChk) s.personChk = { ...pre.fake.personChk, ...(s.personChk || {}) };   // 开局核查过的真人，记进存档
     if (custom) s.custom = cut(custom, 1500);   // 玩家亲手定的设定存进这一局，以后每回都交给推演和写正文的，不只开场用一次
     s.face = FACE.make(faceGender(s.protagonist.gender), s.id, { role: s.protagonist.role, year: s.clock.y, age: s.protagonist.age });   // 开局按身份、年代随机一张脸，可在「局面」里捏
     if (pre && pre.fake && pre.fake.nameMap) s.nameMap = { ...pre.fake.nameMap };
@@ -6914,6 +7009,17 @@ document.addEventListener('click', async e => {
   if (t.id === 'bStop') { if (BGWAIT) STOP_PENDING = true; TURN && TURN.abort(); CTL && CTL.abort(); return; }
   // 朝局：整理人事树；在树上委任、罢免、增设、裁撤、颁行国策——写成主角下一步的命令
   // 家族与谋划
+  if (ds.pchk && S) {
+    const n = ds.pchk, P0 = (S.people || {})[n] || {}; ORGMSG = `正在核查「${n}」：维基百科、维基数据、博查一起查……`; t.disabled = true; render();
+    try {
+      const c = await personCheck(S, n, `${S.place.polity || ''} ${P0.role || ''}`.trim().slice(0, 30));
+      S.dossiers = S.dossiers || {}; const d0 = S.dossiers[n] || {};
+      S.dossiers[n] = c.real ? { ...d0, real: true, chk: c.src, identity: d0.identity || c.who || c.identity, born: d0.born ?? c.born, died: d0.died ?? c.died, src: d0.src || c.src, y: d0.y || S.clock.y, doubt: false } : { ...d0, real: false, chk: '查无此人', y: d0.y || S.clock.y, doubt: false };
+      ORGMSG = c.real ? `「${n}」史上有其人（${c.src}）${c.who ? '：' + c.who : ''}` : `「${n}」查无此人${c.why ? '（' + c.why + '）' : ''}，以后照虚构人物写（标虚拟）`;
+      try { await store.save(S); } catch (_) {}
+    } catch (e) { if (!(e && e.code === 'cancelled')) ORGMSG = '没核查成：' + errText(e); }
+    render(); return;
+  }
   if (ds.amb !== undefined && S) { if (ds.amb) ORGMSG = pickAmbition(S, ds.amb); else { S.ambition = null; ORGMSG = '放下了这个志向'; } try { await store.save(S); } catch (_) {} render(); return; }
   if (ds.heir && S) { S.heir = ds.heir; ORGMSG = `立${ds.heir}为嗣`; try { await store.save(S); } catch (_) {} render(); return; }
   if (ds.focus && S) { S.focus = S.focus === ds.focus ? '' : ds.focus; try { await store.save(S); } catch (_) {} render(); return; }
