@@ -229,6 +229,7 @@ textarea{resize:vertical}
   .onode.path{border-left-color:#b5452f}
   .onpath{background:#f6e3dc!important;color:#8a2f1d!important}
   .vt{font-size:11px;color:#888;border:1px solid #ccc;border-radius:3px;padding:0 3px;margin-left:3px}
+  .smap{width:100%;background:var(--sheet);border:1px solid var(--rule);border-radius:8px;touch-action:manipulation}.mlegend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted,#888);margin:4px 0}.mlegend i,.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
   .opost{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;padding:2px 0}
   .opost .ot{min-width:6em}.opost .ot i{font-style:normal;color:#888;margin-left:4px;font-size:12px}
   .opost .oin{width:9em;font-size:12px;padding:2px 4px}
@@ -1046,7 +1047,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261026054602';
+const BUILD = '20261026063315';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -2211,7 +2212,7 @@ function roleKind(s) {
 }
 const ROLE_TXT = { ruler: '一方之主：国势、时政、召见、人事树（直接下令）、国策书、军务全开', local: '地方官：辖区、本地时政、召见属官、人事树（可上疏）、国策（可上疏请行）', court: '京官：人事树和国策（可上疏），国势只知邸报里的', military: '武官：军务（自己统带的兵马），人事树只能看', none: '' };
 function tabsFor(s) {
-  const r = roleKind(s), T = [['board', '局面'], ['people', '人物'], ['skill', '本事'], ['estate', '家业'], ['trade', '营生']];
+  const r = roleKind(s), T = [['board', '局面'], ['map', '舆图'], ['people', '人物'], ['skill', '本事'], ['estate', '家业'], ['trade', '营生']];
   if (r === 'ruler' || arr(s.powers).length || arr(s.territory).length || arr(s.forces).length || arr(s.circles).length || arr(s.factions).length) T.push(['power', '势力']);
   if (r !== 'none') T.push(['court', r === 'local' ? '衙署' : '朝局']);
   if (r === 'ruler' || r === 'military' || arr(s.forces).some(f => f && f.leader === s.protagonist.name)) T.push(['army', '军务']);
@@ -3721,6 +3722,105 @@ async function ensureGeo(s, names) {
   if (!needGeo(s)) return null;
   const own = !BUSY; if (own) { PHASE = 'geo'; render(); }   // 在后台跑、玩家这一回已经开写时，不去动这一回的进度提示
   try { const g = await buildGeo(s, names); if (!g) { s.geoFail = s.turn; s.geoFailAt = geoCenter(s); } return g; } catch (e) { if (e && e.code === 'cancelled') throw e; s.geoFail = s.turn; s.geoFailAt = geoCenter(s); return null; } finally { if (own && PHASE === 'geo') PHASE = ''; }
+}
+/* ========== 舆图（大战略地图）：照这一年的州府画全国（或一省），标出你的地盘、各方势力、兵马驻地、打过仗的地方、你此刻在哪；点一处看详情、就地下令 ========== */
+let MAPZ = { mode: 'world', prov: '', sel: '' }, MAPC = { k: '', v: [], py: null, P: new Map() };
+const PREF_T = y => y >= 1368 ? /^(府|直隶州|直隶厅|军民府)$/ : y >= 1271 ? /^(路|府|直隶州)$/ : y >= 960 ? /^(州|府|军|监)$/ : y >= 618 ? /^(州|郡|府|都护府)$/ : /^(郡|国)$/;
+const PCOL = ['#3b6fb5', '#8a5bb0', '#b07a2a', '#2f8f83', '#a8435f', '#6b7d2a', '#c25e2e', '#4a5a8a'];
+function mapOwners(s) {
+  const own = new Map(), add = (txt, who, col) => { for (const t of String(txt || '').split(/[、，,；;\s]+/)) { const k = geoStem(t.replace(/[（(].*$/, '')); if (k && k.length >= 2 && !own.has(k)) own.set(k, { who, col }); } };
+  for (const t of arr(s.territory)) add(t.place, '你', 'var(--zhu)');
+  arr(s.powers).forEach((p, i) => { add(p.seat, p.name, PCOL[i % PCOL.length]); add(p.land, p.name, PCOL[i % PCOL.length]); });
+  return own;
+}
+function stratUnits(s) {
+  const y = s.clock.y, re = PREF_T(y), G = geoData().filter(u => u.from <= y && u.to >= y && u.lat && u.lon);
+  return { prefs: G.filter(u => re.test(u.type)), counties: G.filter(u => /^(县|散州|州|厅)$/.test(u.type) && !re.test(u.type)) };
+}
+// 地名库里州府的上级常串着别朝的名目（元的行省挂在清的府上）、不少是空的：去掉「行省、布政使司、路」等字归成一片，空的跟着最近的邻府
+const PROV_BAD = /^(唐|宋|元|明|清|秦|隋|晋|东汉|西汉|后汉|北周|南京)$|[州府郡]$|使|节度|防御|团练|守捉|观察/;
+const provName = t => { const x = String(t || '').replace(/[（(].*$/, '').replace(/(等处)?(承宣布政使司|布政使司|行中书省|中书省|行省|布政司|省|路|道)$/, '').replace(/中书$/, ''); return x.length >= 2 && !PROV_BAD.test(x) ? x : ''; };
+function provOfAll(prefs) {
+  const P = new Map(); for (const u of prefs) P.set(u, provName(u.parent));
+  for (const u of prefs) if (!P.get(u)) { let b = '', bd = 300; for (const v of prefs) { const n = P.get(v); if (n && provName(v.parent)) { const d = hav(u, v); if (d < bd) { bd = d; b = n; } } } P.set(u, b); }
+  return P;
+}
+function stratMap(s) {
+  if (!geoData().length) return '<div class="muted">地名库没载进来，画不了舆图。</div>';
+  const { prefs, counties } = stratUnits(s), own = mapOwners(s), here = hereXY(s);
+  if (MAPC.py !== s.clock.y) MAPC = { k: '', v: [], py: s.clock.y, P: provOfAll(prefs) };
+  const PV = MAPC.P, prov = MAPZ.mode === 'prov' ? MAPZ.prov : '', near = MAPZ.mode === 'near' && MAPZ.c;
+  const inC = u => Math.abs(u.lon - near.lon) <= 3.2 && Math.abs(u.lat - near.lat) <= 2.4;
+  let pts = prov ? prefs.filter(u => PV.get(u) === prov) : near ? prefs.filter(inC) : prefs;
+  if (!pts.length) { MAPZ = { mode: 'world', prov: '', sel: '' }; pts = prefs; }
+  const zoom = MAPZ.mode !== 'world';
+  const bx = pts.map(u => u.lon), by = pts.map(u => u.lat), bb = [Math.min(...bx), Math.max(...bx), Math.min(...by), Math.max(...by)];
+  const cty = zoom ? counties.filter(u => u.lon >= bb[0] - 0.2 && u.lon <= bb[1] + 0.2 && u.lat >= bb[2] - 0.2 && u.lat <= bb[3] + 0.2) : [];
+  const x0 = bb[0] - 0.3, x1 = bb[1] + 0.3, y0 = bb[2] - 0.3, y1 = bb[3] + 0.3;
+  const W = 640, H = Math.round(Math.max(320, Math.min(620, W * (y1 - y0) / Math.max(0.01, (x1 - x0) * Math.cos((y0 + y1) / 2 * Math.PI / 180)))));
+  const px = u => 10 + (u.lon - x0) / (x1 - x0) * (W - 20), py = u => 10 + (y1 - u.lat) / (y1 - y0) * (H - 20);
+  const ownOf = u => own.get(geoStem(u.name)) || null;
+  // 每个州府占就近的一块地，按省着淡色、省与省之间画界线；有主的着主人的颜色：一眼看出疆域、地盘连成一片
+  const cell = zoom ? 8 : 6, ck = [s.clock.y, MAPZ.mode, prov, near ? near.lon + ',' + near.lat : '', W, H, [...own.entries()].map(([k, v]) => k + v.who).join()].join('|'), cells = MAPC.k === ck ? MAPC.v : [];
+  if (pts.length && MAPC.k !== ck) {
+    const TINT = ['#c9b98f', '#a9bfa0', '#b8a9c4', '#c4ab9c', '#9fb6c4', '#c2c08f', '#a3b9b2', '#c7a6b0'], pIx = new Map(), tint = u => { const n = PV.get(u) || ''; if (!pIx.has(n)) pIx.set(n, pIx.size); return n ? TINT[pIx.get(n) % TINT.length] : '#bbb'; };
+    const nx = Math.ceil(W / cell), ny = Math.ceil(H / cell), Gd = [], lim = zoom ? 1700 : 1100, P2 = pts.map(u => [px(u), py(u), u]);
+    // 放大时县城也算进来：每县归最近的州府，地块就连成片、不留窟窿
+    if (zoom) for (const c of cty) { let b = null, bd = Infinity; for (const [x, y, u] of P2.slice(0, pts.length)) { const d = (x - px(c)) ** 2 + (y - py(c)) ** 2; if (d < bd) { bd = d; b = u; } } if (b) P2.push([px(c), py(c), b]); }
+    for (let i = 0; i < nx; i++) { Gd.push([]); for (let j = 0; j < ny; j++) { const gx = i * cell + cell / 2, gy = j * cell + cell / 2; let best = null, bd = Infinity; for (const [x, y, u] of P2) { const d = (x - gx) ** 2 + (y - gy) ** 2; if (d < bd) { bd = d; best = u; } } Gd[i].push(bd < lim ? best : null); } }
+    const fillOf = u => { const o = ownOf(u); return [o ? o.col : tint(u), '']; };
+    for (let j = 0; j < ny; j++) { let i = 0; while (i < nx) { const u = Gd[i][j]; if (!u) { i++; continue; } const [c, op] = fillOf(u); let k = i + 1; while (k < nx && Gd[k][j] && fillOf(Gd[k][j]).join() === c + ',' + op) k++; cells.push(`<rect x="${i * cell}" y="${j * cell}" width="${(k - i) * cell}" height="${cell}" fill="${c}"/>`); i = k; } }
+    cells.unshift('<g opacity=".32" shape-rendering="crispEdges">'); cells.push('</g>');
+    const pv = u => u ? (zoom ? u.name : PV.get(u) || u.name) : '', E = [];
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) { const u = Gd[i][j]; if (!u) continue;
+      if (i + 1 < nx && pv(Gd[i + 1][j]) !== pv(u)) E.push(`M${(i + 1) * cell} ${j * cell}v${cell}`);
+      if (j + 1 < ny && pv(Gd[i][j + 1]) !== pv(u)) E.push(`M${i * cell} ${(j + 1) * cell}h${cell}`);
+      if (i === 0 || !Gd[i - 1][j]) E.push(`M${i * cell} ${j * cell}v${cell}`);
+      if (j === 0 || !Gd[i][j - 1]) E.push(`M${i * cell} ${j * cell}h${cell}`); }
+    cells.push(`<path d="${E.join('')}" stroke="var(--ink)" stroke-opacity=".35" stroke-width="${zoom ? 0.8 : 0.6}" fill="none" stroke-dasharray="${zoom ? '2 2' : ''}"/>`);
+  }
+  MAPC.k = ck; MAPC.v = cells;
+  // 省界的字：各省州府的中心
+  const provs = {}; if (!zoom) for (const u of pts) if (PV.get(u)) { const p = provs[PV.get(u)] = provs[PV.get(u)] || { x: 0, y: 0, n: 0 }; p.x += px(u); p.y += py(u); p.n++; }
+  const provLbl = Object.entries(provs).filter(([, p]) => p.n >= 3).map(([n, p]) => `<text x="${(p.x / p.n).toFixed(0)}" y="${(p.y / p.n).toFixed(0)}" font-size="13" fill="var(--muted,#999)" opacity=".7" text-anchor="middle" data-mapprov="${esc(n)}" style="cursor:pointer">${esc(n)}</text>`).join('');
+  const forces = arr(s.forces).map(f => ({ f, u: f.at ? placeXY(s, f.at, s.clock.y) : null })).filter(x => x.u && x.u.lat);
+  const battles = arr(s.battles).slice(-8).map(b => ({ b, u: b.place ? placeXY(s, b.place, s.clock.y) : null })).filter(x => x.u && x.u.lat);
+  const inBox = u => u.lon >= x0 && u.lon <= x1 && u.lat >= y0 && u.lat <= y1;
+  const dot = u => { const o = ownOf(u), sel = MAPZ.sel === u.name; return `<circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${sel ? 6 : zoom ? 4 : 3}" fill="${o ? o.col : 'var(--ink)'}" stroke="${sel ? 'var(--zhu)' : '#fff'}" stroke-width="${sel ? 2 : 0.6}" data-mapu="${esc(u.name)}" style="cursor:pointer"><title>${esc(u.name)}${o ? ' · ' + esc(o.who) : ''}</title></circle>`; };
+  // 地名：要紧的先放，和已放的字重叠就换个方位，四面都放不下就不写（鼠标停在点上仍能看到）
+  const placeLbls = (L, fs) => { const boxes = [], out = [], rk = u => (here && u.name === here.name) ? 0 : ownOf(u) ? 1 : 2;
+    for (const u of L.slice().sort((a, b) => rk(a) - rk(b))) { const t = u.name.replace(/(府|州|路|郡)$/, ''), w = t.length * fs, x = px(u), y = py(u);
+      for (const [dx, dy] of [[5, 4], [-5 - w, 4], [-w / 2, -6], [-w / 2, fs + 6]]) { const b = [x + dx, y + dy - fs, x + dx + w, y + dy + 2];
+        if (b[0] < 0 || b[2] > W || b[1] < 0 || b[3] > H || boxes.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3]))) continue;
+        boxes.push(b); out.push(`<text x="${(x + dx).toFixed(1)}" y="${(y + dy).toFixed(1)}" font-size="${fs}" fill="var(--ink)" pointer-events="none">${esc(t)}</text>`); break; } }
+    return out.join(''); };
+  const showLbl = zoom ? pts : pts.filter(u => ownOf(u) || MAPZ.sel === u.name || forces.some(x => x.u.name === u.name) || (here && u.name === here.name));
+  const svg = `<svg viewBox="0 0 ${W} ${H}" class="smap" role="img" aria-label="舆图">${cells.join('')}${provLbl}${cty.map(u => `<circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="1.6" fill="var(--muted,#999)" data-mapu="${esc(u.name)}"><title>${esc(u.name)}</title></circle>`).join('')}${placeLbls(showLbl, zoom ? 11 : 10)}${pts.map(dot).join('')}
+    ${battles.filter(x => inBox(x.u)).map(x => `<text x="${px(x.u).toFixed(0)}" y="${(py(x.u) - 6).toFixed(0)}" font-size="13" text-anchor="middle" pointer-events="none"><title>${esc(x.b.when || '')} ${esc(x.b.place)}之战：${esc(x.b.outcome)}</title>⚔</text>`).join('')}
+    ${forces.filter(x => inBox(x.u)).map(x => `<g data-mapu="${esc(x.u.name)}" style="cursor:pointer"><rect x="${(px(x.u) - 3).toFixed(0)}" y="${(py(x.u) - 17).toFixed(0)}" width="${Math.max(30, String(x.f.name).length * 11 + 8)}" height="13" rx="2" fill="${x.f.leader === s.protagonist.name ? 'var(--zhu)' : '#555'}"/><text x="${(px(x.u) + 1).toFixed(0)}" y="${(py(x.u) - 7).toFixed(0)}" font-size="10" fill="#fff">${esc(x.f.name)} ${esc(fmtN(N0(x.f.troops) || 0))}</text></g>`).join('')}
+    ${here && inBox(here) ? `<text x="${px(here).toFixed(0)}" y="${(py(here) + 5).toFixed(0)}" font-size="16" text-anchor="middle" fill="var(--zhu)" pointer-events="none"><title>你在${esc(geoCenter(s))}</title>★</text>` : ''}</svg>`;
+  const owners = [['你的地盘', 'var(--zhu)']].concat(arr(s.powers).map((p, i) => [p.name, PCOL[i % PCOL.length]]));
+  return svg + `<div class="mlegend">${owners.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}<span>★ 你在这里</span><span>⚔ 打过仗</span></div>`;
+}
+function mapInfo(s) {
+  const n = MAPZ.sel; if (!n) return '<div class="muted" style="font-size:12px">点图上的一处看详情、就地下令；点省名放大到一省。</div>';
+  const u = geoData().find(x => x.name === n && x.from <= s.clock.y && x.to >= s.clock.y) || geoData().find(x => x.name === n);
+  const o = mapOwners(s).get(geoStem(n)) || (u && u.parent && mapOwners(s).get(geoStem(u.parent))), t = arr(s.territory).find(x => geoStem(x.place) === geoStem(n));
+  const F = arr(s.forces).filter(f => f.at && geoStem(f.at) === geoStem(n)), here = hereXY(s), d = here && u ? Math.round(hav(here, u) / 0.5) : null;
+  const myF = arr(s.forces).filter(f => f.leader === s.protagonist.name || isRuler(s));
+  const P = arr(s.powers).find(p => o && p.name === o.who);
+  return `<div class="affair"><b>${esc(n)}</b> <span class="muted">${esc(u ? u.type : '')}${u && MAPC.P.get(u) ? ' · ' + esc(MAPC.P.get(u)) : ''}${d != null ? ' · 离你约' + d + '里' : ''}</span>
+    <div>${o ? `归属：<b>${esc(o.who)}</b>` : '<span class="muted">没有记下归谁</span>'}${P ? `（${esc(P.leader || '')}，兵${esc(P.troops || '?')}，对你${esc(P.stance || '?')}）` : ''}</div>
+    ${t ? `<div class="muted">户${esc(fmtN(N0(t.pop)) || '?')} · 守军${esc(fmtN(N0(t.troops)) || '?')} · 存粮${esc(fmtN(N0(t.grain)) || '?')}石 · 民心${esc(t.loyalty ?? '?')}</div>` : ''}
+    ${F.length ? `<div>驻军：${F.map(f => `${esc(f.name)}（${esc(f.leader || '')}，${esc(fmtN(N0(f.troops) || 0))}人，${esc(f.status || '')}）`).join('、')}</div>` : ''}
+    <div class="opost">${u && u.lat ? `<button class="link" data-mapnear="${esc(n)}">放大这一带</button>` : ''}<button class="link" data-write="${esc('动身去' + n + '。')}">去这里</button><button class="link" data-write="${esc('派人去' + n + '打探消息：')}">派人打探</button>${myF.length ? `<select data-mapf>${myF.map(f => `<option>${esc(f.name)}</option>`).join('')}</select><button class="link" data-mapgo="攻">进攻这里</button><button class="link" data-mapgo="守">移驻这里</button>` : ''}${o && o.who !== '你' && isRuler(s) ? `<button class="link" data-write="${esc('遣使往' + o.who + '，')}">遣使</button>` : ''}</div></div>`;
+}
+function mapTab(s) {
+  const zt = MAPZ.mode === 'prov' ? MAPZ.prov : MAPZ.mode === 'near' ? MAPZ.sel + '一带' : '';
+  return `<div class="h" style="margin-top:6px"><span class="seal">图</span>舆图<span class="note">${esc(s.clock.yearLabel || s.clock.y + '年')}的州府${zt ? ' · ' + esc(zt) : ' · 天下'}</span>${zt ? ' <button class="link" id="bMapWorld">回到天下</button>' : ''}</div>
+    ${stratMap(s)}${mapInfo(s)}
+    ${arr(s.powers).length ? `<div class="h" style="font-size:14px">各方</div><div class="tblwrap"><table class="tbl"><tr><th>势力</th><th>首领</th><th>据地</th><th>兵</th><th>对你</th></tr>${s.powers.map((p, i) => `<tr><td><i class="sw" style="background:${PCOL[i % PCOL.length]}"></i><b>${esc(p.name)}</b></td><td>${esc(p.leader || '')}</td><td>${esc(p.seat || '')}${p.land ? '<div class="muted" style="font-size:11px">' + esc(p.land) + '</div>' : ''}</td><td>${esc(p.troops || '')}</td><td>${esc(p.stance || '')}</td></tr>`).join('')}</table></div>` : ''}
+    ${ORGMSG ? `<div class="muted">${esc(ORGMSG)}</div>` : ''}`;
 }
 /** 地图：县城、州府治所、你在哪、你的地盘与去过的地方 */
 function geoMap(s) {
@@ -6583,6 +6683,7 @@ function pane(tab) {
       <div class="list">${w.events.slice().reverse().map(x => `<div><span class="when">${esc(x.y)}年${x.m ? x.m + '月' : ''}</span><span class="${x.changed ? 'mine' : ''}">${esc(x.text)}</span></div>`).join('') || '<div class="muted">无</div>'}</div>
       ${arr(s.history).length ? `<div class="h"><span class="seal">改</span>被你改写的历史</div><div class="list">${s.history.map(h => `<div><span class="when">第${h.turn}回合</span>${esc(h.event)} → <span class="mine">${esc(h.now)}</span>${h.cause ? `<span class="muted">（因${esc(h.cause)}）</span>` : ''}</div>`).join('')}</div>` : ''}`;
   }
+  if (tab === 'map') return mapTab(s);
   if (tab === 'geo') {
     const pl = Object.entries(s.places);
     return `<div class="h" style="margin-top:6px"><span class="seal">地</span>地理册<span class="note">当时地名、今地、隶属、离你多远</span></div>
@@ -7073,6 +7174,15 @@ document.addEventListener('click', async e => {
       if (b.dataset.book) { const k = b.dataset.book; if (bookChs(S, k).length >= Math.ceil(ARC.count(S) / BOOK_PER)) ARC.clearBook(S, k); writeBook(k); return; }
       if (b.dataset.bookdl) { try { await downloadBook(b.dataset.bookdl); } catch (er) { ERRMSG = '没下载成：' + er.message; render(); } return; }
       if (b.dataset.bookclear) { ARC.clearBook(S, b.dataset.bookclear); render(); return; }
+    } }
+  { const g = e.target.closest && e.target.closest('[data-mapu],[data-mapprov],#bMapWorld,[data-mapgo],[data-mapnear]');
+    if (g && S) {
+      if (g.id === 'bMapWorld') MAPZ = { mode: 'world', prov: '', sel: '' };
+      else if (g.dataset.mapprov) MAPZ = { mode: 'prov', prov: g.dataset.mapprov, sel: '' };
+      else if (g.dataset.mapnear) { const u = stratUnits(S).prefs.concat(geoData()).find(x => x.name === g.dataset.mapnear && x.lat); if (u) MAPZ = { mode: 'near', prov: '', sel: u.name, c: { lon: u.lon, lat: u.lat } }; }
+      else if (g.dataset.mapu) MAPZ.sel = MAPZ.sel === g.dataset.mapu ? '' : g.dataset.mapu;
+      else if (g.dataset.mapgo) { const f = ($('[data-mapf]') || {}).value; if (armyAct(S, 'march', { force: f, target: MAPZ.sel, mode: g.dataset.mapgo })) try { await store.save(S); } catch (_) {} }
+      render(); return;
     } }
   const t = e.target.closest('button'); if (!t) return;
   const ds = t.dataset;
