@@ -22,6 +22,11 @@ const { chromium } = require('playwright');
   const fx = await p.evaluate(() => { S.household.push({ relation: '母', name: '吴氏', age: 20 }, { relation: '长子', name: '汪大成', age: 60 }); const r = familyAgeFix(S); return { r, m: S.household.find(x => x.name === '吴氏').age, c: S.household.find(x => x.name === '汪大成').age, me: S.protagonist.age }; });
   if (!(fx.m >= fx.me + 15)) bad('母亲比本人还小，没改：' + JSON.stringify(fx));
   if (!(fx.c <= fx.me - 14)) bad('儿子比本人还大，没改：' + JSON.stringify(fx));
+  // 每回合当场审：写一回，常理审查就跟着审一次（不是隔几回）
+  const n0 = (() => { try { return require('fs').readFileSync('logic.log', 'utf8').split('\n').filter(Boolean).length; } catch (_) { return 0; } })();
+  await p.fill('#said', '去账房看看今年的账'); await p.click('#bSend'); if (!(await idle())) bad('这一回卡住');
+  const n1 = (() => { try { return require('fs').readFileSync('logic.log', 'utf8').split('\n').filter(Boolean).length; } catch (_) { return 0; } })();
+  if (!(n1 > n0)) bad('这一回没有当场做常理审查');
   // 常理审查：年岁离谱的人程序先挑出来，通读后改账、记进定本
   const lg = await p.evaluate(async () => { S.people['老账房'] = { role: '账房', age: 150, seen: S.turn }; const hard = logicFaults(S); const done = await logicAudit(S); return { hard, done, age: S.people['老账房'].age, canon: arr(S.canon).some(c => /更正/.test(c.text)) }; });
   if (!lg.hard.some(x => /老账房年岁写成150/.test(x))) bad('一百五十岁的人程序没挑出来：' + JSON.stringify(lg.hard));

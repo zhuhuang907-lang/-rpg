@@ -2018,8 +2018,10 @@ function logicFaults(s) {
   const c = s.career || {}; if (c.office && num(p.age) != null && p.age < 16 && !/皇帝|太子|世子|王/.test(c.office + p.role)) out.push(`主角${p.age}岁就任${c.office}`);
   return out;
 }
-const logicDue = s => s && s.clock && (s.turn || 0) >= 1 && (s.logicAt == null || s.turn - s.logicAt >= 3 || logicFaults(s).length) && !(s.logicFail != null && s.turn - s.logicFail < 2);
-async function logicAudit(s) {
+// 每回合当场审（写完正文、给玩家看之前，和审读、核实一起做）；后台只在还有硬伤没改掉时补一次
+const logicDue = s => s && s.clock && logicFaults(s).length > 0 && !(s.logicFail != null && s.turn - s.logicFail < 1);
+async function logicAudit(s, story) { const r = await logicReview(s, story); return applyLogicFixes(s, r.fixes); }
+async function logicReview(s, story) {
   s.logicAt = s.turn;
   const p = s.protagonist, u = (s.money || {}).unit || '', hard = logicFaults(s);
   const H = arr(s.household).filter(m => !m.dead).map(m => `${m.relation}${m.name}${m.age != null ? m.age + '岁' : ''}${m.mother ? '（生母' + m.mother + '）' : ''}${m.away ? '，不在家' : ''}`).join('；');
@@ -2037,10 +2039,15 @@ ${arr(s.canon).length ? '【定本】' + s.canon.slice(-10).map(x => x.text).joi
 最近几回：
 ${sum}
 ${hard.length ? '【程序查出的硬伤（必须给改法）】' + hard.join('；') : ''}
-只输出一个 JSON 对象：{"fixes":[{"target":"household/people/protagonist/career/money/forces/gov/canon","name":"改谁（人名、兵马名、国势项；protagonist、money、canon 留空）","field":"age/relation/role/tie/where/dead/away/office/rank/cash/troops/grain/at/leader/value","value":"改成","why":"哪里不通"}]}`, null, { maxTokens: 2500, temperature: 0.1, kind: '研读', detached: true });
-  const d = parseJSON(text); if (!d) { s.logicFail = s.turn; return []; }
-  const done = [];
-  for (const x of arr(d.fixes).slice(0, 12)) {
+${story ? '【这一回刚写成的正文（也照上面的账挑：跟账、跟前文、跟常理对不上的，写进 story，引原句、说清怎么改）】\n' + cut(story, 3000) : ''}
+只输出一个 JSON 对象：{"story":[{"quote":"正文原句","problem":"哪里不通","fix":"应当怎样"}],"fixes":[{"target":"household/people/protagonist/career/money/forces/gov/canon","name":"改谁（人名、兵马名、国势项；protagonist、money、canon 留空）","field":"age/relation/role/tie/where/dead/away/office/rank/cash/troops/grain/at/leader/value","value":"改成","why":"哪里不通"}]}`, null, { maxTokens: 2500, temperature: 0.1, kind: '研读', detached: true });
+  const d = parseJSON(text); if (!d) { s.logicFail = s.turn; return { probs: [], fixes: [] }; }
+  const probs = arr(d.story).filter(x => x && x.problem && (!x.quote || !story || String(story).includes(String(x.quote).trim().slice(0, 12)))).slice(0, 5).map(x => `不合常理：${x.quote ? '「' + one(x.quote, 30) + '」' : ''}${one(x.problem, 60)}${x.fix ? '——应当：' + one(x.fix, 60) : ''}`);
+  return { probs, fixes: arr(d.fixes).slice(0, 12) };
+}
+function applyLogicFixes(s, fixes) {
+  const p = s.protagonist, done = [];
+  for (const x of arr(fixes).slice(0, 12)) {
     if (!x || !x.target) continue;
     const t = String(x.target), nm = one(x.name, 16), f = String(x.field || ''), v = x.value, why = one(x.why, 60);
     const N = num(v), str = one(v, 30);
@@ -4631,7 +4638,7 @@ function nameFixes(s, text) {
   return out;
 }
 /* ========== 审校：写好的正文先在内部核实（材料核对 → 拿不准的联网查 → 改正），只把核实过的版本给玩家看 ========== */
-let DRAFTN = 0, CUR_SAID = '';   // 写稿时只显示写了多少字，不显示没核实的文字
+let DRAFTN = 0, CUR_SAID = '', LOGIC_FIX = [];   // 写稿时只显示写了多少字，不显示没核实的文字
 /** 边写边显示：写到哪儿给玩家看到哪儿（标明是初稿，核实、记账做完换成定稿），不用对着转圈干等 */
 let DRAFT_LIVE = '', DRAFT_T = 0;
 const draftCb = t => {
@@ -6018,8 +6025,13 @@ async function send(said, span, note, resume) {
       if (par && !st.talk) startLedger();
       const critic = () => !st.talk && SETTINGS.critic !== false ? storyCritic(S, said, st.text).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
       const critP = par ? critic() : null; if (critP) critP.catch(() => { /* 停下了：下面 await 时再处理 */ });
+      // 常理审查：每回合当场审（对着整本账读这一回的正文），正文的毛病和审读的一起改，账的毛病记账后当场改
+      const logP = !st.talk ? within(logicReview(S, st.text), 60000 * TSCALE, { probs: [], fixes: [] }).catch(e => { if (e && e.code === 'cancelled') throw e; return { probs: [], fixes: [] }; }) : Promise.resolve({ probs: [], fixes: [] });
+      logP.catch(() => {});
       const vr = await verifyText(S, said, st.text);
-      const crit = critP ? await critP : await critic();
+      const crit0 = critP ? await critP : await critic();
+      const lg = await logP; LOGIC_FIX = arr(lg.fixes);
+      const crit = crit0.concat(arr(lg.probs));
       const probs = st.talk ? [] : preFaults.concat(crit, arr(vr.major).map(x => `${x.problem}${x.fix ? '——应当：' + x.fix : ''}`));
       let next = { ...st, text: vr.text, audit: arr(vr.audit).concat(early ? [{ wrong: '（整段改写）', right: '程序查出的毛病', why: '审读' }] : []), verified: true, rewrote: false };
       if (probs.length) {
@@ -6060,7 +6072,11 @@ async function send(said, span, note, resume) {
       if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
       // 账里哪一项格式怪到程序出错：正文照样留下，这一回标成「账没记上」，可以补记，不让整回作废
       const snap = clone(S);
-      try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said); }
+      try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said);
+        // 常理审查挑出的账上毛病：记完账当场改；程序还能挑出硬伤的，再审一次当场改（不留到下一回）
+        if (LOGIC_FIX.length) { applyLogicFixes(S, LOGIC_FIX); LOGIC_FIX = []; }
+        if (logicFaults(S).length) { PHASE = 'ledger'; render(); try { await within(logicAudit(S), 30000 * TSCALE); } catch (e2) { if (e2 && e2.code === 'cancelled') throw e2; } }
+      }
       catch (e) { if (e && e.code === 'cancelled') throw e; S = snap; applyReply(S, { elapsedDays: 0, reply: deslop(fx.text), mode: 'play' }, said); ok = false; }
       PENDING_SAID = '';
       if (S.mainNow) { S.mainLog = arr(S.mainLog).concat([{ key: S.mainNow.key, turn: S.turn }]).slice(-30); S.mainNow = null; }
