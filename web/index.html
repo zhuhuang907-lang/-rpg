@@ -233,6 +233,7 @@ textarea{resize:vertical}
   .opost .ot{min-width:6em}.opost .ot i{font-style:normal;color:#888;margin-left:4px;font-size:12px}
   .opost .oin{width:9em;font-size:12px;padding:2px 4px}
   .oadd summary{font-size:12px;cursor:pointer}
+  .yearcard{border:1px solid #c9a03a;background:#fffaf0;border-radius:6px;padding:6px 10px;margin:6px 0;font-size:13px}.yearcard b{display:block;margin-bottom:2px}
   .lineage{border:1px solid var(--line,#ddd);border-radius:6px;padding:6px;background:var(--card,#fffdf8)}
   .lrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:3px 0;border-bottom:1px dashed var(--line,#eee)}.lrow:last-child{border-bottom:0}
   .lt{width:4.5em;font-size:12px;color:#888}
@@ -1045,7 +1046,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261026050054';
+const BUILD = '20261026054602';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -1628,7 +1629,8 @@ async function callClaude(input, onReply, extra, tier) {
   const kind = (extra && extra.kind) || (plain ? '写戏' : '记账');
   // DeepSeek：深度思考给写正文，也给「推演玩家这一步」——别人怎么回应、要多久花多少、合不合常理和制度，全靠这一步想清楚；
   // 不想就容易出不合常理的结果。思考出岔子（太慢、服务端不认）下面会自动关掉思考重来
-  if (DSM() && SETTINGS.deep !== false && (plain && kind === '写戏' || kind === '裁定')) extra = { ...extra, thinking: true };
+  // 推演只在要紧的步子上深度思考（打官司、打仗、谋划、婚嫁、升迁、大买卖、造反……）；歇着、逛街、问话这类家常步子不思考，快得多
+  if (DSM() && SETTINGS.deep !== false && (plain && kind === '写戏' || (kind === '裁定' && !(extra && extra.light)))) extra = { ...extra, thinking: true };
   // 提速不降质：不写正文、不定史实、不推演的杂活（检索员查资料、核任期、从资料里摘年代志、压缩前情）交给 DeepSeek 的快型号，写正文、推演、记账、审读照旧用原型号
   // 审校（拿材料对史实）、审读（挑情理毛病）是照单核对的活，也交给快型号：一回合省下一两分钟，写正文、推演、记账照旧用原型号
   if (DSM() && /^(检索|核任期|研读|审校|审读)$/.test(kind)) extra = { ...extra, fast: true, thinking: false };
@@ -2737,6 +2739,7 @@ function skillTab(s) {
   const bar = (v, max) => `<div class="gbar"><i style="width:${Math.max(2, Math.min(100, v / max * 100))}%" class="${v / max < 0.2 ? 'bad' : v / max < 0.5 ? 'warn' : 'good'}"></i></div>`;
   return `<div class="h" style="margin-top:6px"><span class="seal">能</span>属性<span class="note">${esc(s.sbBasis || '')}</span></div><div class="ggrid">${ATTRS.map(a => `<div class="gcell"><div class="gk">${a}</div><div class="gv">${esc(s.attrs[a])}</div>${bar(s.attrs[a], 10)}</div>`).join('')}</div>
     <div class="h"><span class="seal">技</span>本事<span class="note">用得越多长得越快（属性高的长得快）；高低决定办事成败</span></div><div class="ggrid">${SKILLS.map(([k, a]) => { const v = s.skills[k] || { lv: 0, xp: 0 }; return `<div class="gcell"><div class="gk">${k}<small>${a}</small></div><div class="gv">${v.lv}<small>${lvTxt(v.lv)}</small></div>${bar(v.lv, 100)}<div class="muted" style="font-size:10.5px">再长一级还差 ${Math.max(0, Math.round(skillNext(v.lv) - (v.xp || 0)))}</div></div>`; }).join('')}</div>
+    ${ambitionHtml(s)}
     <div class="h"><span class="seal">名</span>声望与品行</div><div class="pl"><span>声望</span><b>${esc(s.renown)}</b><span class="att">${esc(tierOf(s.renown))}</span><span class="muted">${(() => { const nx = TIERS.find(([n]) => n > (s.renown || 0)); return nx ? `　到「${nx[1]}」还差 ${nx[0] - (s.renown || 0)}` : ''; })()}</span></div>
     <div class="ggrid">${TRAITS.map(t => `<div class="gcell"><div class="gk">${t}</div><div class="gv">${(s.traits[t] > 0 ? '+' : '') + s.traits[t]}</div></div>`).join('')}</div>`;
 }
@@ -2839,6 +2842,104 @@ function clanHtml(s) {
     <div class="h"><span class="seal">谋</span>谋划<span class="note">按月推进；成算看本事和门客，难度看对方身份和好感；越狠越容易败露</span></div>
     ${live.map(x => `<div class="affair"><b>对${esc(x.target)}${esc(x.type)}</b>${x.partner ? `（离间他和${esc(x.partner)}）` : ''} <span class="muted">成算${x.power} / 难度${x.resist}</span><div class="gbar"><i style="width:${Math.max(2, x.progress)}%" class="warn"></i></div><span class="muted">${x.progress}% · ${esc(x.start)}起</span> <button class="link" data-unscheme="${esc(x.id)}">作罢</button></div>`).join('') || '<div class="muted">眼下没有谋划。在下面「身边的人」里对谁下手。</div>'}
     ${done.length ? `<details class="fold"><summary>谋划的结果（${done.length}）</summary><div class="list">${done.map(x => `<div>对${esc(x.target)}${esc(x.type)} <span class="att">${esc(x.state)}</span> <span class="muted">${esc(x.end || '')}</span></div>`).join('')}</div></details>` : ''}`;
+}
+/* ========== 称谓表：照朝代、主角的身份、对方和主角的关系，定好谁怎么叫主角、怎么自称、主角怎么叫对方；写正文、推演照这张表，不再乱叫 ========== */
+function eraKey(y) { return y >= 1644 ? '清' : y >= 1368 ? '明' : y >= 1271 ? '元' : y >= 960 ? '宋' : y >= 618 ? '唐' : '古'; }
+function statusKind(s) {
+  const p = s.protagonist || {}, r = String(p.role || '') + String((s.career || {}).office || '');
+  if (s.idm === 'emperor' || /皇帝|天子|官家/.test(r)) return 'emperor';
+  if (/亲王|郡王|王爷|世子|贝勒|贝子|国公|侯|伯|宗室|公主|郡主/.test(r)) return 'noble';
+  if ((s.career || {}).office || /知县|知府|知州|巡抚|总督|尚书|侍郎|御史|主事|员外郎|郎中|县令|刺史|太守|节度|总兵|参将|游击|守备|将军/.test(r)) return 'official';
+  if (/举人|进士|翰林/.test(r)) return 'juren';
+  if (/秀才|生员|书生|士子|太学生|监生/.test(r)) return 'scholar';
+  if (/商|东家|掌柜|员外|地主|乡绅|绅|富户|盐商|财主/.test(r)) return 'rich';
+  if (/仆|婢|丫鬟|家丁|长随|小厮|奴/.test(r)) return 'servant';
+  return 'commoner';
+}
+const ADDR_T = {
+  清: { emperor: ['皇上、万岁爷（臣下）', '朕', '臣（汉臣）、奴才（满臣、内务府、太监）'], noble: ['王爷、爷', '本王（亲王郡王）', '奴才（府里下人）'], official: ['大人（属下、绅民称道府以上）、老爷（衙役家人；百姓称州县官「太爷」「大老爷」）', '本官、本府、本县', '卑职（属官）、小的、小人（百姓衙役）'], juren: ['老爷（举人）', '学生、晚生', '小的'], scholar: ['相公（秀才）', '学生、晚生、小生', '小的'], rich: ['老爷、东家（伙计佃户下人）；同辈称「某兄」「某翁」', '在下、鄙人', '小的'], servant: ['照名字、排行叫', '小的、奴才（旗下）', ''], commoner: ['照名字、排行叫，或「某哥」「某大叔」', '我、俺、小人（对官对上）', ''] },
+  明: { emperor: ['皇上、万岁（臣下）', '朕', '臣（朝臣）、奴婢（太监）'], noble: ['王爷、千岁', '本王、孤', '奴婢（府里宦者）、小的'], official: ['老爷（属吏家人百姓；称州县官「老父母」「青天大老爷」）、大人（称上官）', '本官、本府、本县', '下官、卑职（属官）、小的、小人（百姓）'], juren: ['老爷（举人）、相公', '学生、晚生', '小的'], scholar: ['相公', '小生、晚生、学生', '小的'], rich: ['老爷、员外、东家（伙计佃户下人）；同辈称「某兄」', '在下、小可', '小的'], servant: ['照名字、排行叫', '小的、奴婢', ''], commoner: ['照名字、排行叫，或「某哥」', '我、小人（对官对上）', ''] },
+  元: { emperor: ['皇帝、陛下', '朕', '臣'], noble: ['大王、王爷', '本王', '小的'], official: ['大人、老爷、相公', '本官', '小人'], juren: ['相公', '小生', '小人'], scholar: ['秀才、相公', '小生', '小人'], rich: ['员外、官人', '小可', '小的'], servant: ['照名字叫', '小的', ''], commoner: ['照名字、排行叫', '小人（对官对上）', ''] },
+  宋: { emperor: ['官家（宫中近侍）、陛下（朝臣）', '朕', '臣'], noble: ['大王', '孤、本王', '小人'], official: ['相公（宰执、高官）、官人、某官（称官职）；州县百姓称「知县」「明府」', '下官（对上）、本官', '小人（百姓）'], juren: ['官人、秀才', '小生', '小人'], scholar: ['秀才、官人', '小生', '小人'], rich: ['官人、大官人、员外', '小可、在下', '小人'], servant: ['照名字叫', '小人、奴（女）', ''], commoner: ['照名字、排行叫，或「某哥」「某公」', '小人（对官对上）', ''] },
+  唐: { emperor: ['陛下、圣人、大家（宫中）', '朕', '臣、妾（妃嫔）'], noble: ['大王、殿下', '孤、寡人', '奴'], official: ['明公、使君（刺史）、明府（县令）、少府（县尉）', '某、下官', '某、小人'], juren: ['郎君、先辈', '某', '某'], scholar: ['郎君', '某、仆', '某'], rich: ['郎君、阿郎（家仆称主人）', '某', '奴'], servant: ['照名字叫', '奴、婢子', ''], commoner: ['照名字、排行叫（如「张三郎」）', '某、小人', ''] },
+  古: { emperor: ['陛下', '朕', '臣'], noble: ['大王、君', '寡人、孤', '臣、仆'], official: ['明公、府君、君', '吾、下官', '小人'], juren: ['先生、君', '仆', '小人'], scholar: ['先生、君', '仆、某', '小人'], rich: ['主君、君', '某', '奴'], servant: ['照名字叫', '奴、婢', ''], commoner: ['照名字叫', '某', ''] },
+};
+const FAM_ADDR = {
+  清: { wife: '老爷（当着下人）、私下称「夫君」', kid: '父亲、爹（女儿同）', servantKid: '少爷、小姐、姑娘', wifeByServant: '太太（正室）、姨奶奶或某姨娘（妾）', parentBy: '父亲、母亲；对外称「家父」「家母」' },
+  明: { wife: '相公、官人（大户当着下人称「老爷」）', kid: '爹爹、父亲', servantKid: '少爷（或「哥儿」）、小姐（或「姐儿」）', wifeByServant: '奶奶、太太（正室）、某姨娘（妾）', parentBy: '爹、娘；对外称「家父」「家母」' },
+  元: { wife: '官人、相公', kid: '爹爹', servantKid: '舍人、小娘子', wifeByServant: '娘子、夫人', parentBy: '爹、娘' },
+  宋: { wife: '官人', kid: '爹爹', servantKid: '小官人、衙内（官家子）、小娘子', wifeByServant: '娘子、孺人（有封号的照封号）', parentBy: '爹爹、妈妈（宋时妈妈指母亲）' },
+  唐: { wife: '郎、郎君', kid: '阿耶、大人', servantKid: '郎君、小娘子', wifeByServant: '娘子、夫人', parentBy: '阿耶、阿娘' },
+  古: { wife: '夫君', kid: '父亲', servantKid: '公子、女公子', wifeByServant: '夫人', parentBy: '父、母' },
+};
+/** 家里下人怎么叫主人、怎么自称（照朝代和主人身份） */
+const SERV_CALL = { 清: { emperor: ['皇上、主子', '奴才'], noble: ['王爷、主子', '奴才'], official: ['老爷', '小的'], rich: ['老爷', '小的'], juren: ['老爷', '小的'], scholar: ['相公、大爷', '小的'], commoner: ['当家的', '小的'], servant: ['', ''] }, 明: { emperor: ['皇爷', '奴婢'], noble: ['千岁、爷', '奴婢'], official: ['老爷', '小的'], rich: ['老爹、老爷', '小的'], juren: ['老爷', '小的'], scholar: ['相公、大官人', '小的'], commoner: ['当家的', '小的'], servant: ['', ''] }, 元: { emperor: ['官里', '奴婢'], noble: ['大王', '小的'], official: ['相公、官人', '小的'], rich: ['官人', '小的'], juren: ['官人', '小的'], scholar: ['官人', '小的'], commoner: ['当家的', '小的'], servant: ['', ''] }, 宋: { emperor: ['官家', '奴婢、臣'], noble: ['大王', '小人'], official: ['官人、相公', '小人、奴（女）'], rich: ['官人、员外', '小人、奴（女）'], juren: ['官人', '小人'], scholar: ['官人', '小人'], commoner: ['当家的', '小人'], servant: ['', ''] }, 唐: { emperor: ['大家', '奴'], noble: ['大王、殿下', '奴'], official: ['阿郎、郎君', '奴、婢子'], rich: ['阿郎', '奴、婢子'], juren: ['阿郎', '奴'], scholar: ['郎君', '奴'], commoner: ['当家的', '某'], servant: ['', ''] }, 古: { emperor: ['陛下', '奴'], noble: ['主君', '奴'], official: ['主君', '奴'], rich: ['主君', '奴'], juren: ['主君', '奴'], scholar: ['主君', '奴'], commoner: ['主人', '奴'], servant: ['', ''] } };
+function addrBlock(s) {
+  if (!s || !s.clock || !s.protagonist) return '';
+  const e = eraKey(s.clock.y), k = statusKind(s), T = ADDR_T[e][k], F = FAM_ADDR[e], p = s.protagonist, fem = /女/.test(p.gender || '');
+  const L = [`【称谓（${e}代，照这张表叫人，不另造称呼；书面、正式场合可更文雅，但不越级、不错代）】`,
+    `别人怎么称主角（${p.name}，${p.role}）：${T[0]}；主角自称：${T[1]}${T[2] ? '；对主角自称：' + T[2] : ''}。`];
+  const H = arr(s.household).filter(m => !m.dead);
+  if (H.some(m => WIFE_RE.test(m.relation) || CONC_RE.test(m.relation)) && !fem) L.push(`妻妾称主角：${F.wife}；下人称主母、妾：${F.wifeByServant}。`);
+  if (H.some(m => KID_RE.test(m.relation))) L.push(`子女称主角：${F.kid}；下人称主角的子女：${F.servantKid}。`);
+  if (H.some(m => /^(父|母)$/.test(m.relation))) L.push(`主角称父母：${F.parentBy}。`);
+  // 眼前来往的人：照他和主角的关系定
+  const rows = [];
+  for (const [n, v] of livePeople(s).slice(0, 14)) {
+    const t = String(v.tie || '') + String(v.role || '');
+    let r = '';
+    if (/仆|婢|丫鬟|家丁|长随|小厮|管家|奶妈|嬷嬷/.test(t)) { const sc = SERV_CALL[e][k] || SERV_CALL[e].rich; r = `称主角「${sc[0]}」，自称「${e === '清' && /旗|包衣/.test(t) ? '奴才' : sc[1]}」；主角叫他的名字`; }
+    else if (/伙计|账房|佃|学徒|长工/.test(t)) r = `称主角「${/rich/.test(k) ? '东家' : T[0].split(/[（、]/)[0]}」，自称「小的」；主角称他名字或「老某」`;
+    else if (/上司|上官|知府|巡抚|总督|大人|尚书/.test(t) && k === 'official') r = `主角称他「大人」或照官职称，自称「${e === '清' ? '卑职' : e === '宋' || e === '唐' ? '下官' : '下官、卑职'}」`;
+    else if (/属下|属吏|县丞|主簿|典史|衙役|书吏/.test(t)) r = `称主角「${e === '清' || e === '明' ? '大人、老爷' : '明府、官人'}」，自称「${e === '清' ? '卑职、小的' : '小的'}」`;
+    else if (/知县|知府|官|运使|御史/.test(String(v.role || '')) && !/official|emperor|noble/.test(k)) r = `主角称他「${e === '清' || e === '明' ? '大人、老爷（州县官也叫太爷）' : e === '宋' ? '某官、明府' : '明公、使君'}」，自称「${e === '唐' ? '某' : '小人、草民（读书人自称学生、晚生）'}」`;
+    else if (/师|先生/.test(t)) r = `主角称他「先生」「老师」，自称「学生」`;
+    if (r) rows.push(`${n}（${v.role || v.tie || ''}）：${r}`);
+  }
+  if (rows.length) L.push('眼前的人：' + rows.join('；') + '。');
+  L.push(`「您」${s.clock.y < 1750 ? '这个年代还没有，一律用「你」「足下」「阁下」或照身份称呼' : '只在北方口语里用'}；不用「老板」「师傅」「美女」这类后世说法。`);
+  return L.join('\n');
+}
+/* ========== 志向（借十字军之王）：一次立一个，程序量进度，达成了加声望；年终总结（借崇祯模拟器）：跨了年，把这一年的得失摆出来 ========== */
+const AMBS = {
+  积财: { desc: '现钱翻上几倍', start: s => ({ target: Math.max(100, Math.round(((s.money || {}).cash || 0) * 3)) }), now: s => (s.money || {}).cash || 0 },
+  扬名: { desc: '名声再上一档', start: s => ({ target: (TIERS.find(([n]) => n > (s.renown || 0)) || [1500])[0] }), now: s => s.renown || 0 },
+  广结人脉: { desc: '多交两个知交以上的人', start: s => ({ target: livePeople(s).filter(([, v]) => /知交|挚友|恩主/.test(relTag(v))).length + 2 }), now: s => livePeople(s).filter(([, v]) => /知交|挚友|恩主/.test(relTag(v))).length },
+  开枝散叶: { desc: '再添一个孩子', start: s => ({ target: lineage(s).kids.length + 1 }), now: s => lineage(s).kids.length },
+  精一艺: { desc: '把眼下最高的一样本事再长十五', start: s => { const top = Object.entries(s.skills || {}).sort((a, b) => b[1].lv - a[1].lv)[0]; return { skill: top ? top[0] : '交际', target: Math.min(100, (top ? top[1].lv : 0) + 15) }; }, now: (s, a) => ((s.skills || {})[a.skill] || {}).lv || 0 },
+  置产: { desc: '多置一处产业', start: s => ({ target: arr((s.estate || {}).assets).length + 1 }), now: s => arr((s.estate || {}).assets).length },
+  进身: { desc: '得一个官职，或官升一级', start: s => ({ target: 1, base: (s.career || {}).office || '', rank: rankNum((s.career || {}).rank) }), now: (s, a) => { const c = s.career || {}; if (!a.base) return c.office ? 1 : 0; const r = rankNum(c.rank); return (a.rank && r && r < a.rank) || (c.office && c.office !== a.base) ? 1 : 0; } },
+};
+function pickAmbition(s, k) { const A = AMBS[k]; if (!A) return '没有这种志向'; s.ambition = { key: k, ...A.start(s), at: timeText(s.clock), from: A.now(s, {}) }; return `立志：${k}（${A.desc}）`; }
+function ambitionCheck(s) {
+  const a = s.ambition; if (!a || !AMBS[a.key]) return [];
+  const v = AMBS[a.key].now(s, a);
+  if (v >= a.target) { s.renown = Math.min(1500, (s.renown || 0) + 20); s.ambDone = arr(s.ambDone).concat([{ key: a.key, at: a.at, done: timeText(s.clock) }]).slice(-20); s.ambition = null; return [`志向「${a.key}」达成（声望+20）`]; }
+  return [];
+}
+function ambitionHtml(s) {
+  const a = s.ambition, u = (s.money || {}).unit || '';
+  const bar = a ? (() => { const v = AMBS[a.key].now(s, a), pct = a.key === '进身' ? v * 100 : Math.round(Math.max(0, Math.min(1, (v - (a.from || 0)) / Math.max(1, a.target - (a.from || 0)))) * 100); return `<div class="affair"><b>志向：${esc(a.key)}</b> <span class="muted">${esc(AMBS[a.key].desc)}${a.skill ? '（' + esc(a.skill) + '）' : ''} · 眼下 ${esc(fmtN(v))} / 目标 ${esc(fmtN(a.target))}${a.key === '积财' ? esc(u) : ''}</span><div class="gbar"><i style="width:${Math.max(2, pct)}%" class="good"></i></div><button class="link" data-amb="">放下这个志向</button></div>`; })() : '';
+  return `${ORGMSG ? `<div class="muted" style="margin:6px 0">${esc(ORGMSG)}</div>` : ''}<div class="h"><span class="seal">志</span>志向<span class="note">一次立一个；达成了加声望</span></div>${bar || `<div class="opost">${Object.entries(AMBS).map(([k, A]) => `<button class="link" data-amb="${esc(k)}" title="${esc(A.desc)}">${esc(k)}</button>`).join('')}</div><div class="muted" style="font-size:12px">${Object.entries(AMBS).map(([k, A]) => k + '：' + A.desc).join('；')}</div>`}
+    ${arr(s.ambDone).length ? `<div class="muted" style="font-size:12px">达成过：${esc(s.ambDone.map(x => x.key + '（' + x.done + '）').join('、'))}</div>` : ''}`;
+}
+/** 年终总结：每年开头记一张底，跨年时和年底比 */
+function yearSnap(s) { return { y: s.clock.y, cash: (s.money || {}).cash, renown: s.renown, office: (s.career || {}).office || '', rank: (s.career || {}).rank || '', skills: Object.fromEntries(Object.entries(s.skills || {}).map(([k, v]) => [k, v.lv])), kids: lineage(s).kids.length, people: livePeople(s).length, turn: s.turn, gov: s.gov ? { ...s.gov.stats } : null }; }
+function yearEnd(s, y0) {
+  const a = s.yearSnap; if (!a || a.y !== y0) { s.yearSnap = yearSnap(s); return null; }
+  const u = (s.money || {}).unit || '', L = [];
+  if (a.cash != null && (s.money || {}).cash != null) L.push(`现钱 ${fmtN(a.cash, u)} → ${fmtN(s.money.cash, u)}`);
+  if (a.renown != null && s.renown != null && a.renown !== s.renown) L.push(`声望 ${a.renown} → ${s.renown}（${tierOf(s.renown)}）`);
+  if ((s.career || {}).office !== a.office) L.push(`官职：${a.office || '无'} → ${(s.career || {}).office || '无'}`);
+  const up = Object.entries(s.skills || {}).filter(([k, v]) => (a.skills[k] ?? v.lv) < v.lv).map(([k, v]) => `${k}+${v.lv - (a.skills[k] ?? v.lv)}`); if (up.length) L.push('本事长进：' + up.join('、'));
+  const k1 = lineage(s).kids.length; if (k1 !== a.kids) L.push(`子女 ${a.kids} → ${k1}`);
+  const ev = arr(s.chronicle).filter(c => c.turn > a.turn && c.who === s.protagonist.name).slice(-6).map(c => c.what); if (ev.length) L.push('这一年：' + ev.join('；'));
+  const sc = arr(s.schemes).filter(x => x.end && /得手|落空|败露/.test(x.state)).slice(-3).map(x => `对${x.target}${x.type}${x.state}`); if (sc.length) L.push('谋划：' + sc.join('、'));
+  if (a.gov && s.gov) { const ch = Object.keys(s.gov.stats).filter(k => a.gov[k] != null && Math.abs(s.gov.stats[k] - a.gov[k]) >= 3).map(k => `${k}${s.gov.stats[k] > a.gov[k] ? '升' : '降'}${Math.abs(Math.round(s.gov.stats[k] - a.gov[k]))}`); if (ch.length) L.push('国势：' + ch.join('、')); }
+  const card = { y: y0, label: eraLabel(s, y0) || (y0 + '年'), lines: L };
+  s.yearCards = arr(s.yearCards).concat([card]).slice(-60);
+  s.yearSnap = yearSnap(s);
+  return card;
 }
 /* ========== 内置史料：史事、君主年号、真人生卒官职由程序给出，AI 不凭记忆编 ========== */
 let HIST = [];
@@ -3026,6 +3127,8 @@ function mentionedFigures(s, text) {
 
 /* ========== 行动裁定：先把玩家这一步拆开、按身份权限钱粮人手与制度裁定，正文照裁定写 ========== */
 const needRuling = said => { const x = String(said || '').trim(); return x.length >= 2; };
+const HEAVY_RE = /谋|争|战|兵|攻|守|围|官|升|迁|告状|审|案|婚|娶|嫁|聘|纳妾|买下|置办|盘下|放贷|借贷|造反|起事|奏|诏|旨|杀|刺|逃|投奔|结盟|离间|构陷|拉拢|科举|应试|会试|乡试|殿试|赈|税|饷|赴任|弹劾|上疏|议亲|分家|立嗣|继承/;
+const heavyStep = (s, said) => { const x = String(said || ''); return x.length > 60 || HEAVY_RE.test(x) || isRuler(s) && x.length > 20; };
 /** 人物分远近：家里人、最近三回见过的、和主角同在一地的算眼前；其余是外地的或断了来往的，没有来由不出场 */
 function splitPeople(s, P) {
   // 「眼前」照主角此刻人在哪算：出门在外时，家里人和老家的人都在远处
@@ -3051,7 +3154,7 @@ function rulingInput(s, said) {
 ${realmBlock(s) ? realmBlock(s) + '\n' : ''}${arr(s.battles).length ? '【最近打过的仗（照此往下推：败了的兵要收拢、补员，胜了的要守住、要赏）】' + s.battles.slice(-3).map(b => `${b.when}在${b.place}对${b.enemy || '敌'}：${b.outcome || ''}，我死伤${b.deadUs ?? '？'}、敌死伤${b.deadThem ?? '？'}`).join('；') + '\n' : ''}【身边的人（各有盘算）】${P.map(([k, v]) => `${k}（${v.role || ''}${v.age != null ? '，' + v.age + '岁' : ''}，好感${v.favor ?? '?'}${v.personality ? '，' + v.personality : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + cut(v.goal, 30) : ''}${v.plan ? '；打算：' + cut(v.plan, 30) : ''}）`).join('；') || '无'}${farLine(FAR) ? '\n' + farLine(FAR) : ''}
 ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下去还没办完的】' + s.orders.filter(o => /在办|待办|推迟/.test(o.status)).slice(-6).map(o => `${o.who}：${o.what}`).join('；') + '\n' : ''}${arr(s.gmNotes).length ? '【幕后真相（玩家不知道）】' + s.gmNotes.slice(-8).map(n => cut(n.text, 60)).join('；') + '\n' : ''}${arr(s.summaries).length ? '【最近几回】' + s.summaries.slice(-4).map(x => cut(x.text, 80)).join(' / ') + '\n' : ''}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '无'}
-${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${factBlock(s) ? factBlock(s) + '\n' : ''}${skillBlock(s) ? skillBlock(s) + '\n' : ''}${schemeBlock(s) ? schemeBlock(s) + '\n' : ''}${questBlock(s) ? questBlock(s) + '\n' : ''}${govBlock(s) ? govBlock(s) + '\n' : ''}${affairBlock(s) ? affairBlock(s) + '\n' : ''}${armyBlock(s) ? armyBlock(s) + '\n' : ''}${orgPendingBlock(s) ? orgPendingBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
+${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${factBlock(s) ? factBlock(s) + '\n' : ''}${addrBlock(s) ? addrBlock(s) + '\n' : ''}${skillBlock(s) ? skillBlock(s) + '\n' : ''}${schemeBlock(s) ? schemeBlock(s) + '\n' : ''}${questBlock(s) ? questBlock(s) + '\n' : ''}${govBlock(s) ? govBlock(s) + '\n' : ''}${affairBlock(s) ? affairBlock(s) + '\n' : ''}${armyBlock(s) ? armyBlock(s) + '\n' : ''}${orgPendingBlock(s) ? orgPendingBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
 ${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}${modulesBlock(said)}
 【玩家这回说】${said}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
@@ -3069,7 +3172,7 @@ async function getRuling(s, said) {
     let d = null;
     // 读不出来（括号对不上之类）就再要一次：推演、人物底、场景简报全靠这一步，不能白白丢掉
     for (let k = 0; k < 2 && !(d && Array.isArray(d.steps)); k++) {
-      const { text } = await callClaude(rulingInput(s, said) + (k ? '\n\n（上一次的回答不是合法的 JSON。这次只输出那一个 JSON 对象，括号配对，什么都不要加。）' : ''), null, { maxTokens: 4000, temperature: 0.4, kind: '裁定' }, 'quick');
+      const { text } = await callClaude(rulingInput(s, said) + (k ? '\n\n（上一次的回答不是合法的 JSON。这次只输出那一个 JSON 对象，括号配对，什么都不要加。）' : ''), null, { maxTokens: 4000, temperature: 0.4, light: !heavyStep(s, said), kind: '裁定' }, 'quick');
       d = parseJSON(text);
     }
     if (!d || !Array.isArray(d.steps)) return null;
@@ -4243,7 +4346,8 @@ function blocks(s, forStory) {
     + (arr(w.upcoming).length ? '\n将要发生（书中人不知道；照史=照史书，已变/新出=因本局的变化）：\n' + w.upcoming.slice(0, forStory ? 6 : 14).map(x => `· ${x.y}年${x.m ? x.m + '月' : ''}：${x.text}（${x.status || '照史'}${x.why && x.status && x.status !== '照史' ? '：' + x.why : ''}）`).join('\n') : '\n按史书将要发生：已用完，请在 worldUpcoming 里补上之后五年的大事'));
   instBlocks(s, L, forStory);
   { const fb = factBlock(s); if (fb) L.push(fb); }
-  { const sb = skillBlock(s); if (sb) L.push(sb); const qb = questBlock(s); if (qb) L.push(qb); const scb = schemeBlock(s); if (scb) L.push(scb); const hh = heirOf(s); if (hh) L.push(`【嗣子】${hh.relation}${hh.name}（${hh.age ?? '?'}岁）${s.heir ? '，主角亲自立的' : ''}`); }
+  { const ab3 = addrBlock(s); if (ab3) L.push(ab3); }
+  { const sb = skillBlock(s); if (sb) L.push(sb); const qb = questBlock(s); if (qb) L.push(qb); const scb = schemeBlock(s); if (scb) L.push(scb); if (s.ambition) L.push(`【主角的志向】${s.ambition.key}（${AMBS[s.ambition.key] ? AMBS[s.ambition.key].desc : ''}）——这只是主角心里的盘算，正文不替他去办`); const hh = heirOf(s); if (hh) L.push(`【嗣子】${hh.relation}${hh.name}（${hh.age ?? '?'}岁）${s.heir ? '，主角亲自立的' : ''}`); }
   { const gb2 = govBlock(s); if (gb2) L.push(gb2); const ab2 = affairBlock(s); if (ab2) L.push(ab2); const mb = armyBlock(s); if (mb) L.push(mb); }
   { const ob = orgPendingBlock(s); if (ob) L.push(ob); }
   if (s.org && permLevel(s) !== 'view') L.push('【朝局人事（人事树上此刻在任的人；正文里写到这些位子用这些人）】' + s.org.nodes.filter(n => n.status !== '已裁撤').slice(0, forStory ? 14 : 30).map(n => `${n.name}：` + n.posts.slice(0, 4).map(p => `${p.title}${p.holder || '空缺'}`).join('、')).join('；'));
@@ -5827,7 +5931,9 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg), g5 = applySkills(s, d), g6 = applyQuests(s, d), g7 = companionMonthly(s, mg); const all = g8.concat(g5, g9, g6, g7, g1, g2, g3, g4); if (all.length) extra.gov = all; }
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg), g5 = applySkills(s, d), g6 = applyQuests(s, d), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+      if (!s.yearSnap) s.yearSnap = yearSnap(s);
+      if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
     { const af = familyAgeFix(s); if (af.length) noteErr('家里人年岁不合常理，照改', af.join('；')); }
     // 传承：主角死了，由继承人接着玩
@@ -6299,7 +6405,7 @@ function renderGame() {
     return `<div class="msg gm ${c.kind === 'talk' ? 'talk' : ''}">
       <div class="lab">${c.kind === 'talk' ? '<span>戏外 · 不花时间</span>' : `<span>第 ${esc(c.turn)} 回合</span><span class="tag">${esc(c.when || '')}${c.extra && c.extra.days ? ` · 过了 ${c.extra.days} 天` : ''}</span>`}</div>
       ${c.extra && c.extra.intro ? introHtml(c.extra.intro) : ''}
-      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}${c.extra && (arr(c.extra.delta).length || c.extra.searched != null) ? `<div class="delta">这一回：${arr(c.extra.delta).map(esc).concat(c.extra.searched != null ? [c.extra.searched ? `联网查了 ${c.extra.searched} 条` : '这一回没查到资料（搜索没连上）'] : []).join(' · ')}</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${paras(isLast && EDITING ? c.text : markFict(s, c.text))}</div>${curHtml(c.cur)}
+      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}${c.extra && c.extra.yearCard && arr(c.extra.yearCard.lines).length ? `<div class="yearcard"><b>${esc(c.extra.yearCard.label)}年终</b>${c.extra.yearCard.lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>` : ''}${c.extra && (arr(c.extra.delta).length || c.extra.searched != null) ? `<div class="delta">这一回：${arr(c.extra.delta).map(esc).concat(c.extra.searched != null ? [c.extra.searched ? `联网查了 ${c.extra.searched} 条` : '这一回没查到资料（搜索没连上）'] : []).join(' · ')}</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${paras(isLast && EDITING ? c.text : markFict(s, c.text))}</div>${curHtml(c.cur)}
       ${c.kind !== 'talk' ? extrasHtml(c.extra && c.extra.salvaged && !(isLast && c.unsettled) ? { ...c.extra, salvagedBtn: false } : c.extra) : ''}
       ${isLast && !BUSY ? `<div class="msgacts">${EDITING ? '<button class="main" id="bEditSave">保存修改</button><button id="bEditCancel">取消</button>'
         : `<button id="bRegen" ${s.prev ? '' : 'disabled title="开场不能重写；想换开场，回首页重开一局"'}>重写这一条</button><button id="bEdit">改这段文字</button>`}</div>${!EDITING && s.prev && c.kind !== 'talk' ? `<div class="fbrow"><span class="muted">这一回有毛病，点一下就照这个重写：</span>${Object.keys(FEEDBACK).map(k => `<button class="chip" data-fb="${esc(k)}">${esc(k)}</button>`).join('')}</div>` : ''}<div id="regenBox"></div>
@@ -6493,6 +6599,7 @@ function pane(tab) {
     const p = s.protagonist;
     const kv = [['姓名', p.name], ['性别', p.gender], ['年岁', p.age != null ? p.age + ' 岁' : ''], ['身份', p.role], ['籍贯', p.nativePlace], ['出身', p.real ? '史载真人' : '虚构人物']].concat(Object.entries(s.status)).filter(([, v]) => v);
     return `<div class="h" style="margin-top:6px"><span class="seal">我</span>我</div><dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+      ${arr(s.yearCards).length ? `<div class="h"><span class="seal">年</span>年终总结</div>${s.yearCards.slice().reverse().map(c => `<div class="yearcard"><b>${esc(c.label)}</b>${arr(c.lines).map(l => `<div>${esc(l)}</div>`).join('')}</div>`).join('')}` : ''}
       ${arr(s.logicLog).length ? `<details class="fold"><summary>常理更正（${s.logicLog.length}）<span class="note">通读账册挑出的不合常理、前后矛盾之处，已照改，往后照此</span></summary><div class="list">${s.logicLog.slice().reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.text)}</div>`).join('')}</div></details>` : ''}
       ${arr(s.canon).length ? `<div class="h"><span class="seal">定</span>定本<span class="note">本局确立、一直成立的事；AI 每回都照这里</span></div><div class="list">${s.canon.slice().reverse().map(c => `<div><span class="when">第${c.turn}回合</span>${esc(c.text)}</div>`).join('')}</div>` : ''}
       <div class="h"><span class="seal">迹</span>你的作为<span class="note">做过的事与可能的后续；灰的是已有下文的</span></div>
@@ -6973,6 +7080,7 @@ document.addEventListener('click', async e => {
   if (t.id === 'bStop') { if (BGWAIT) STOP_PENDING = true; TURN && TURN.abort(); CTL && CTL.abort(); return; }
   // 朝局：整理人事树；在树上委任、罢免、增设、裁撤、颁行国策——写成主角下一步的命令
   // 家族与谋划
+  if (ds.amb !== undefined && S) { if (ds.amb) ORGMSG = pickAmbition(S, ds.amb); else { S.ambition = null; ORGMSG = '放下了这个志向'; } try { await store.save(S); } catch (_) {} render(); return; }
   if (ds.heir && S) { S.heir = ds.heir; ORGMSG = `立${ds.heir}为嗣`; try { await store.save(S); } catch (_) {} render(); return; }
   if (ds.focus && S) { S.focus = S.focus === ds.focus ? '' : ds.focus; try { await store.save(S); } catch (_) {} render(); return; }
   if (ds.unscheme && S) { const x = arr(S.schemes).find(z => z.id === ds.unscheme); if (x) { x.state = '作罢'; x.end = timeText(S.clock); } try { await store.save(S); } catch (_) {} render(); return; }
