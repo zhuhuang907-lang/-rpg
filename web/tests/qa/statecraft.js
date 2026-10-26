@@ -13,6 +13,12 @@ const { chromium } = require('playwright');
   await p.evaluate(async () => { S.idm = 'emperor'; S.protagonist.role = '皇帝'; S.dossiers = { ...(S.dossiers || {}), 傅恒: { real: true, born: 1720, died: 1770 } }; while (ORGING) await new Promise(r => setTimeout(r, 200)); S.org = null; await buildOrg(S); await buildGov(S); await buildAffairs(S); await buildOfficers(S); await buildUnitTypes(S); });
   const g = await p.evaluate(() => ({ keys: S.gov && Object.keys(S.gov.stats).length, cls: arr(S.classes).length, aff: arr(S.affairs).length, attr: courtiers(S).filter(c => c.attr).length, ut: arr(S.unitTypes).length, blk: govBlock(S).length > 0 && /威望/.test(govBlock(S)) }));
   if (g.keys < 8) bad('国势数值不全：' + JSON.stringify(g));
+  // 没出处的数不编：「通货」只给了「大致如此」，记不详；有出处的照登，出处摆在界面上；兵种饷粮没出处的标估
+  const src = await p.evaluate(() => ({ g0: 0, cur: S.gov.stats['通货'], cb: basisGrade(S.gov.basis['通货']), b: S.gov.basis['国库'], est: S.unitTypes.map(t => !!t.est), all: S.gov.keys.every(k => S.gov.stats[k] != null) }));
+  if (!src.all) bad('国势有空着的数');
+  if (src.cur == null || src.cb !== '推算') bad('推算的数没登上或没标推算：' + JSON.stringify(src));
+  if (!/测试实录/.test(src.b || '')) bad('国库的出处没记下');
+  if (!(src.est[0] === false && src.est[1] === true)) bad('兵种饷粮有没有出处没分开：' + JSON.stringify(src.est));
   if (!g.cls) bad('阶层没立');
   if (g.aff < 2) bad('时政没拟出来');
   if (!g.attr) bad('官员没有属性');
@@ -20,7 +26,7 @@ const { chromium } = require('playwright');
   if (!g.blk) bad('国势没进材料（推演写正文看不到威望）');
   await p.click('[data-tab="court"]'); await p.waitForTimeout(400);
   const txt = await p.evaluate(() => document.body.innerText);
-  for (const w of ['国势', '国库', '内帑', '民心', '腐败', '威望', '阶层', '时政', '召见商议', '江北水灾饥民']) if (!txt.includes(w)) bad('朝局页上没有：' + w);
+  for (const w of ['国势', '国库', '内帑', '民心', '腐败', '威望', '阶层', '时政', '召见商议', '江北水灾饥民', '推算', '史载', '测试实录']) if (!txt.includes(w)) bad('朝局页上没有：' + w);
   // 召见：选两人，各照自己说话；用掉一次
   const fid = await p.evaluate(() => S.affairs[0].id), c2 = await p.evaluate(() => courtiers(S).slice(0, 2).map(c => c.name));
   await p.selectOption(`[data-aud1="${fid}"]`, c2[0]); await p.selectOption(`[data-aud2="${fid}"]`, c2[1]);
