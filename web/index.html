@@ -240,6 +240,8 @@ textarea{resize:vertical}
   .gbar{height:5px;background:#eee;border-radius:3px;overflow:hidden;margin-top:3px}.gbar i{display:block;height:100%;background:#7a9a5a}.gbar i.warn{background:#c9a03a}.gbar i.bad{background:#b5452f}
   .gd{position:absolute;top:4px;right:6px;font-size:11px}.gd.up{color:#3b7a2e}.gd.down{color:#a33}
   .spk{display:block;margin-top:2px;color:#999}
+  .gb{font-size:10.5px;color:#8a7a60;line-height:1.35;margin-top:2px}
+  .gr{display:inline-block;font-size:10px;border-radius:3px;padding:0 3px;margin-right:3px}.gr.rec{background:#e3eedc;color:#3b6b2e}.gr.inf{background:#f5ebd3;color:#8a6a1d}
   .affair{border-top:1px dashed var(--line,#ddd);padding:6px 0;font-size:13px}
   .reply{background:var(--card,#fffdf8);border-left:3px solid #c9a03a;padding:4px 8px;margin:4px 0}
   .oattr{font-size:11px;color:#777;margin-left:6px}
@@ -1035,7 +1037,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261026013405';
+const BUILD = '20261026021003';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -1834,6 +1836,12 @@ function orgHolders(s) { const H = new Set(); for (const n of arr(s.org && s.org
 const orgDue = s => s && s.clock && !(s.orgFail != null && s.turn - s.orgFail < 4) && roleKind(s) !== 'none' && (!s.org || s.org.pol !== (s.place.polity || '') || s.org.ruler !== isRuler(s));   // 有官职、统兵、一方之主的，开局后就提前整理好；平头百姓没有这个面板
 /** 人事树：照内置制度库（按史书编的中枢、地方、军制）当骨架，联网查过，分中枢、地方（从最高地方长官一直到乡里保甲、吏役）、军事三路同时整理；
  *  主角所在这一路写实名实地；在任的真人只填资料、名册里有的，其余（尤其基层）起虚构的名字、标「虚拟」，查到真人再换；员额照制度，玩家可改 */
+/** 内置制度库里的赋税、兵制、俸禄原文（按史书编，带年份和数目）：定国势、核兵种时当底 */
+function libFacts(s, keys) { return instLibFor(s).map(h => keys.map(k => h[k] ? `【内置制度库·${h.title}·${({ tax: '赋役', military: '兵制', ranks: '品级俸禄', society: '社会' })[k] || k}】` + cut(typeof h[k] === 'string' ? h[k] : JSON.stringify(h[k]), 1400) : '').filter(Boolean).join('\n')).join('\n'); }
+/** 一个数有没有站得住的出处：要写出书名、资料条目、内置制度库或推算所据的那条史实；只说「常见」「大致」「估计」的不算 */
+/** 史载：书里、资料里写明的数；推算：照最相近的史实推出来的 */
+const basisGrade = b => /推算|推得|推估|折算|估|照.*推|据.*推/.test(String(b || '')) || !/[《》]|实录|会典|档案|奏|疏|载|志|资料|内置制度库/.test(String(b || '')) ? '推算' : '史载';
+const goodBasis = b => { b = String(b || '').trim(); return b.length >= 6 && !/^(常见|一般|大致|大约|估|推测|量级|通常|按常理|无|不详|未知)/.test(b) && /[《》]|资料|史|志|录|档|库|实录|会典|奏|疏|载|记|据|推算/.test(b); };
 function orgLibText(s, part) {
   const L = instLibFor(s); if (!L.length) return '';
   const y = s.clock.y;
@@ -2026,11 +2034,12 @@ function govHtml(s) {
   const H = arr(G.hist), prev = H.length > 1 ? H[H.length - 2] : null;
   const spark = k => { const v = H.map(h => h[k]).filter(x => x != null).slice(-12); if (v.length < 2) return ''; const mn = Math.min(...v), mx = Math.max(...v), w = 60, h = 16; const pts = v.map((x, i) => `${Math.round(i * w / (v.length - 1))},${Math.round(h - (mx === mn ? h / 2 : (x - mn) * h / (mx - mn)))}`).join(' '); return `<svg width="${w}" height="${h}" class="spk"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`; };
   const pct = k => GOV_PCT.has(k) || /民心|治安|吏治|积案|灾情/.test(k), bad = k => /腐败|边患|灾情|积案/.test(k);
-  const cell = k => { const v = G.stats[k]; if (v == null) return ''; const dv = prev && prev[k] != null ? Math.round((v - prev[k]) * 10) / 10 : 0; const good = bad(k) ? dv < 0 : dv > 0; return `<div class="gcell"><div class="gk">${k}</div><div class="gv">${esc(fmtN(v))}${pct(k) ? '' : `<small>${/粮/.test(k) ? '石' : esc(G.unit)}</small>`}</div>${pct(k) ? `<div class="gbar"><i style="width:${Math.max(2, Math.min(100, v))}%" class="${bad(k) ? (v > 60 ? 'bad' : v > 35 ? 'warn' : 'good') : (v < 30 ? 'bad' : v < 55 ? 'warn' : 'good')}"></i></div>` : ''}${dv ? `<div class="gd ${good ? 'up' : 'down'}">${dv > 0 ? '▲' : '▼'}${Math.abs(dv)}</div>` : ''}${spark(k)}</div>`; };
+  const cell = k => { const v = G.stats[k]; if (v == null) return `<div class="gcell"><div class="gk">${k}</div><div class="gv muted">核算中</div></div>`; const dv = prev && prev[k] != null ? Math.round((v - prev[k]) * 10) / 10 : 0; const good = bad(k) ? dv < 0 : dv > 0; return `<div class="gcell"><div class="gk">${k}</div><div class="gv">${esc(fmtN(v))}${pct(k) ? '' : `<small>${/粮/.test(k) ? '石' : esc(G.unit)}</small>`}</div>${pct(k) ? `<div class="gbar"><i style="width:${Math.max(2, Math.min(100, v))}%" class="${bad(k) ? (v > 60 ? 'bad' : v > 35 ? 'warn' : 'good') : (v < 30 ? 'bad' : v < 55 ? 'warn' : 'good')}"></i></div>` : ''}${dv ? `<div class="gd ${good ? 'up' : 'down'}">${dv > 0 ? '▲' : '▼'}${Math.abs(dv)}</div>` : ''}${spark(k)}${(G.basis || {})[k] ? `<div class="gb"><span class="gr ${basisGrade(G.basis[k]) === '史载' ? 'rec' : 'inf'}">${basisGrade(G.basis[k])}</span>${esc(String(G.basis[k]).replace(/^推算[：:]/, ''))}</div>` : ''}</div>`; };
   const exec = G.stats['威望'] ?? G.stats['吏治'];
   return `<div class="h"><span class="seal">${G.scope === 'realm' ? '国' : '辖'}</span>${G.scope === 'realm' ? '国势' : '辖区'}<span class="note">程序按月结算；${exec != null ? (exec < 35 ? '威望低，诏令多被阳奉阴违' : exec < 60 ? '诏令能落下去，但打折扣' : '政令通行') : ''}</span></div>
     <div class="ggrid">${G.keys.map(cell).join('')}</div>
-    ${arr(s.classes).length ? `<div class="h" style="font-size:14px">阶层</div><div class="ggrid">${s.classes.map(c => `<div class="gcell"><div class="gk">${esc(c.name)}<small>${esc(c.size || '')}</small></div><div class="gbar"><i style="width:${Math.max(2, c.sat)}%" class="${c.sat < 30 ? 'bad' : c.sat < 55 ? 'warn' : 'good'}"></i></div><div class="muted" style="font-size:11px">满意${esc(c.sat)} · ${esc(c.want)}</div></div>`).join('')}</div>` : ''}`;
+    ${arr(s.classes).length ? `<div class="h" style="font-size:14px">阶层</div><div class="ggrid">${s.classes.map(c => `<div class="gcell"><div class="gk">${esc(c.name)}<small>${esc(c.size || '')}</small></div><div class="gbar"><i style="width:${Math.max(2, c.sat)}%" class="${c.sat < 30 ? 'bad' : c.sat < 55 ? 'warn' : 'good'}"></i></div><div class="muted" style="font-size:11px">满意${esc(c.sat)} · ${esc(c.want)}</div>${c.basis ? `<div class="gb">${esc(c.basis)}</div>` : ''}</div>`).join('')}</div>` : ''}
+    <div class="muted" style="font-size:12px">每个数下面写着依据：「史载」是史书、资料里写明的；「推算」是照最相近的史实推出来的，推的依据写在旁边。往后的增减照剧情里的事结算。</div>`;
 }
 function affairsHtml(s, can) {
   const L = arr(s.affairs), open = L.filter(a => a.state === '待办'), done = L.filter(a => a.state !== '待办').slice(-6).reverse(), ym = Math.floor(ymOf(s.clock));
@@ -2038,7 +2047,7 @@ function affairsHtml(s, can) {
   const C = courtiers(s), opts = C.map(c => `<option value="${esc(c.name)}">${esc(c.name)} · ${esc(c.post)}${c.attr && c.attr.faction ? ' · ' + esc(c.attr.faction) : ''}</option>`).join('');
   const recs = arr(s.aud && s.aud.log);
   return `<div class="h"><span class="seal">政</span>时政<span class="note">本月还能召见 ${audLeft(s)} 次（每次一两人）</span></div>
-    ${open.map(a => { const R = recs.filter(r => r.affair === a.title).slice(-1)[0]; return `<div class="affair"><b>${esc(a.title)}</b> <span class="att">${esc(a.area || '')}</span> <span class="muted">限${Math.max(0, a.due - ym)}个月</span><div class="muted">${esc(a.desc)}</div><div class="muted">牵涉：${esc(a.who)}；拖下去：${esc(a.stakes)}</div>
+    ${open.map(a => { const R = recs.filter(r => r.affair === a.title).slice(-1)[0]; return `<div class="affair"><b>${esc(a.title)}</b> <span class="att">${esc(a.area || '')}</span> <span class="muted">限${Math.max(0, a.due - ym)}个月</span><div>${esc(a.desc)}</div>${a.basis ? `<div class="gb">依据：${esc(a.basis)}</div>` : ''}<div class="muted">牵涉：${esc(a.who)}${a.sides ? '；各方：' + esc(a.sides) : ''}；拖下去：${esc(a.stakes)}</div>${arr(a.ways).length ? `<div class="list">${a.ways.map(w => `<div>· ${esc(w)} <button class="link" data-write="${esc((can ? '下诏：处置「' : '处置「') + a.title + '」——' + w.replace(/[（(].*$/, '') + '。')}">照这条办</button></div>`).join('')}</div>` : ''}
       ${C.length ? `<div class="opost"><select data-aud1="${esc(a.id)}"><option value="">召见谁</option>${opts}</select><select data-aud2="${esc(a.id)}"><option value="">（再召一人）</option>${opts}</select><button class="link" data-aud="${esc(a.id)}" ${audLeft(s) ? '' : 'disabled'}>召见商议</button></div>` : ''}
       ${R ? R.replies.map(r => `<div class="reply"><b>${esc(r.name)}</b>：${esc(r.say)}${r.plan ? `<div><span class="muted">主张：${esc(r.plan)}</span> <button class="link" data-write="${esc((can ? '下诏：' : '') + '处置「' + a.title + '」，照' + r.name + '所议：' + r.plan + '。')}">照此${can ? '拟诏' : '去办'}</button></div>` : ''}</div>`).join('') : ''}
       <button class="link" data-write="${esc((can ? '下诏处置「' : '处置「') + a.title + '」：')}">${can ? '自己拟诏' : '自己去办'}</button></div>`; }).join('')}
@@ -2049,7 +2058,7 @@ function armyTab(s) {
   const T = arr(s.unitTypes), F = arr(s.forces), u = (s.money || {}).unit || '', can = isRuler(s) || F.some(f => f.leader === s.protagonist.name);
   const tplOpts = T.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
   return `<div class="h" style="margin-top:6px"><span class="seal">兵</span>兵种<span class="note">照本朝兵制核定；名字和打法可以自己定</span></div>
-    ${T.length ? `<div class="tblwrap"><table class="tbl"><tr><th>兵种</th>${UT_FIELDS.map(([, n]) => `<th>${n}</th>`).join('')}</tr>${T.map(t => `<tr><td><b>${esc(t.name)}</b>${t.mine ? ' <span class="att">自定</span>' : ''}<div class="muted" style="font-size:11px">${esc(t.desc)}</div></td>${UT_FIELDS.map(([k]) => `<td>${esc(t[k])}</td>`).join('')}</tr>`).join('')}</table></div>` : `<div class="muted">${utDue(s) ? '正在照本朝兵制核定……' : '还没有兵种。'}</div><button id="bUt">照本朝兵制核定兵种</button>`}
+    ${T.length ? `<div class="tblwrap"><table class="tbl"><tr><th>兵种</th>${UT_FIELDS.map(([, n]) => `<th>${n}</th>`).join('')}</tr>${T.map(t => `<tr><td><b>${esc(t.name)}</b>${t.mine ? ' <span class="att">自定</span>' : ''}<div class="muted" style="font-size:11px">${esc(t.desc)}</div>${t.basis || t.est ? `<div class="gb"><span class="gr ${t.est ? 'inf' : 'rec'}">${t.est ? '推算' : '史载'}</span>人数、饷、粮：${esc(t.basis || '照本朝兵制推算')}</div>` : ''}${t.judge ? `<div class="gb">评估：${esc(t.judge)}</div>` : ''}</td>${UT_FIELDS.map(([k]) => `<td>${esc(t[k])}</td>`).join('')}</tr>`).join('')}</table></div>` : `<div class="muted">${utDue(s) ? '正在照本朝兵制核定……' : '还没有兵种。'}</div><button id="bUt">照本朝兵制核定兵种</button>`}
     <div class="opost"><input class="oin" id="utName" placeholder="新兵种名（如：车营、鸟铳手）"><input class="oin" id="utDesc" style="width:16em" placeholder="怎么编、使什么、怎么打"><button class="link" id="bUtAdd">定这个兵种</button></div>
     <div class="h"><span class="seal">军</span>各军<span class="note">组织度打一仗掉、歇着回；训练靠整训；欠饷缺粮掉士气</span></div>
     ${F.length ? F.map(f => { const st = forceStats(s, f); return `<div class="affair"><b>${esc(f.name || '')}</b> <span class="muted">${esc(f.leader || '')}统 · 驻${esc(f.at || '?')} · ${esc(f.status || '')}</span>
@@ -2200,7 +2209,7 @@ function tabsFor(s) {
   return T;
 }
 function govScope(s) { if (isRuler(s)) return 'realm'; const c = s.career || {}; return /知县|知州|知府|县令|太守|刺史|巡抚|总督|布政|按察|道台|节度|观察|府尹|县尹/.test(String(c.office || '') + String(s.protagonist.role || '')) ? 'local' : ''; }
-const govDue = s => s && s.clock && govScope(s) && (!s.gov || s.gov.scope !== govScope(s)) && !(s.govFail != null && s.turn - s.govFail < 3);
+const govDue = s => s && s.clock && govScope(s) && (!s.gov || s.gov.scope !== govScope(s) || (s.gov.keys.some(k => s.gov.stats[k] == null) && s.turn - (s.gov.at || 0) >= 2)) && !(s.govFail != null && s.turn - s.govFail < 3);
 async function buildGov(s) {
   const scope = govScope(s), keys = scope === 'realm' ? GOV_KEYS : LOCAL_KEYS, u = (s.money || {}).unit || '两', pol = s.place.polity || '', yl = s.clock.yearLabel || s.clock.y + '年';
   const found = await searchFirst(s, scope === 'realm' ? [`${yl} ${pol} 国库 岁入 岁出`, `${yl} ${pol} 灾荒 民变`, `${yl} ${pol} 边患 军饷`, `${pol}代 社会阶层 士绅 商人`] : [`${geoCenter(s)} ${yl} 钱粮 赋额`, `${geoCenter(s)} ${yl} 灾 荒`, `${pol}代 州县 吏治 积案`]);
@@ -2208,14 +2217,29 @@ async function buildGov(s) {
 ${found}
 ${factBlock(s)}
 ${realmBlock(s)}
-一、数值（照资料和史书定，拿不准的取同类情形的常见量级）：${keys.map(k => GOV_PCT.has(k) || /民心|治安|吏治|积案|灾情/.test(k) ? k + '（0–100）' : k + '（' + (/粮/.test(k) ? '石' : u) + '）').join('、')}。
-二、阶层：这个年代此地要紧的五到八个社会阶层（如士绅、自耕农、佃户、商贾、军户、宗室、胥吏、流民……照本朝实情），各自的满意度 0–100、人数多寡、眼下最要紧的诉求。
-只输出一个 JSON 对象：{"stats":{${keys.map(k => `"${k}":0`).join(',')}},"why":"一句话依据","classes":[{"name":"","sat":50,"size":"多/中/少","want":""}]}`, null, { maxTokens: 2500, temperature: 0.2, kind: '研读', detached: true });
+${libFacts(s, ['tax', 'military', 'ranks', 'society'])}
+一、数值：${keys.map(k => GOV_PCT.has(k) || /民心|治安|吏治|积案|灾情/.test(k) ? k + '（0–100 的指数）' : k + '（' + (/粮/.test(k) ? '石' : u) + '）').join('、')}。每个数都要给，并写依据：史书、资料、内置制度库里写明的，写出书名或条目（如「《崇祯长编》元年户部奏太仓存银」）；没有明载的，照最相近的史实推算一个（如照前后几年的记载、同类地方的数、岁入岁出折算），basis 写「推算：」加上从哪条史实怎么推的；0–100 的指数照这一年此地确凿的史事定，写明是哪几件事。不许空着，也不许没有依据地随手写。
+二、阶层：这个年代此地要紧的五到八个社会阶层（照本朝实情），各自的满意度 0–100、人数多寡、眼下最要紧的诉求，满意度写依据。
+只输出一个 JSON 对象：{"stats":{${keys.map(k => `"${k}":{"v":null,"basis":"出处或依据"}`).join(',')}},"classes":[{"name":"","sat":50,"size":"多/中/少","want":"","basis":""}]}`, null, { maxTokens: 3500, temperature: 0.1, kind: '研读', detached: true });
   const d = parseJSON(text); if (!d || !d.stats) { s.govFail = s.turn; return null; }
-  const st = {}; for (const k of keys) { const v = num(d.stats[k]); if (v != null) st[k] = (GOV_PCT.has(k) || /民心|治安|吏治|积案|灾情/.test(k)) ? Math.max(0, Math.min(100, v)) : Math.max(0, v); }
+  // 每个数都登上，标明是史载还是推算、依据是什么（数据透明）；没给依据的照这一年此地的梳理补一句推算依据
+  const st = {}, basis = {}; for (const k of keys) { const x = d.stats[k], v = num(x && typeof x === 'object' ? x.v : x), b = x && typeof x === 'object' ? one(x.basis, 90) : ''; if (v != null) { st[k] = (GOV_PCT.has(k) || /民心|治安|吏治|积案|灾情/.test(k)) ? Math.max(0, Math.min(100, v)) : Math.max(0, v); basis[k] = b && b.length >= 4 ? b : '推算：照这一年此地的史实梳理'; } }
   if (scope === 'realm' && s.realm) { if (s.realm.treasury != null && st['国库'] == null) st['国库'] = N0(s.realm.treasury); if (s.realm.granary != null && st['太仓粮'] == null) st['太仓粮'] = N0(s.realm.granary); }
-  s.gov = { scope, keys, unit: u, stats: st, why: one(d.why, 80), hist: [{ ym: Math.floor(ymOf(s.clock)), ...st }], at: s.turn };
-  s.classes = arr(d.classes).filter(x => x && x.name).slice(0, 10).map(x => ({ name: one(x.name, 8), sat: Math.max(0, Math.min(100, num(x.sat) ?? 50)), size: one(x.size, 4), want: one(x.want, 50) }));
+  if (s.gov && s.gov.scope === scope) for (const k of keys) if (st[k] == null && s.gov.stats[k] != null) { st[k] = s.gov.stats[k]; basis[k] = (s.gov.basis || {})[k] || ''; }
+  // 还缺的：再问一次，只要这几项，必须照史实推算出数并写依据
+  const miss = keys.filter(k => st[k] == null);
+  if (miss.length) {
+    try {
+      const r2 = await callClaude(`替一局历史游戏补几项数（${timeText(s.clock)}，${pol}，${geoCenter(s)}）：${miss.join('、')}。照最相近的史实推算（前后几年的记载、同类地方的数、岁入岁出折算），每项给一个数，basis 写「推算：」加从哪条史实怎么推的。
+${factBlock(s)}
+${cut(libFacts(s, ['tax', 'military']), 1500)}
+只输出一个 JSON 对象：{"stats":{${miss.map(k => `"${k}":{"v":0,"basis":""}`).join(',')}}}`, null, { maxTokens: 1200, temperature: 0.1, kind: '研读', detached: true });
+      const d2 = parseJSON(r2.text);
+      for (const k of miss) { const x = d2 && d2.stats && d2.stats[k], v = num(x && typeof x === 'object' ? x.v : x); if (v != null) { st[k] = (GOV_PCT.has(k) || /民心|治安|吏治|积案|灾情/.test(k)) ? Math.max(0, Math.min(100, v)) : Math.max(0, v); basis[k] = one(x && x.basis, 90) || '推算：照这一年此地的史实梳理'; } }
+    } catch (e) { if (e && e.code === 'cancelled') throw e; }
+  }
+  s.gov = { scope, keys, unit: u, stats: st, basis, hist: [{ ym: Math.floor(ymOf(s.clock)), ...st }], at: s.turn, y: s.clock.y };
+  s.classes = arr(d.classes).filter(x => x && x.name).slice(0, 10).map(x => ({ name: one(x.name, 8), sat: Math.max(0, Math.min(100, num(x.sat) ?? 50)), size: one(x.size, 4), want: one(x.want, 50), basis: one(x.basis, 60) }));
   syncGovRealm(s);
   return s.gov;
 }
@@ -2262,14 +2286,14 @@ async function buildAffairs(s) {
   const ym = Math.floor(ymOf(s.clock));
   const up = arr(s.world && s.world.upcoming).slice(0, 8).map(u => `${u.y}年${u.m || ''}月 ${u.text}`).join('；');
   const open = arr(s.affairs).filter(a => a.state === '待办');
-  const { text } = await callClaude(`你替一局历史游戏拟「时政」：${govScope(s) === 'realm' ? '这个政权' : '主角治下'}此刻（${timeText(s.clock)}）眼下摆在主角案头、要他拿主意的事。照史实（下面的梳理、史线、国势）来，不编不存在的事；每件写清来由、牵涉的衙门和人、拖下去会怎样、期限（几个月）。
+  const { text } = await callClaude(`你替一局历史游戏拟「时政」：${govScope(s) === 'realm' ? '这个政权' : '主角治下'}此刻（${timeText(s.clock)}）眼下摆在主角案头、要他拿主意的事。照史实（下面的梳理、史线、国势）来，不编不存在的事；每件写清：来由（四五句，照史实写这件事是怎么起的、眼下到了哪一步、数目照资料）、史实依据（出自哪条资料或史书）、牵涉的衙门和人（真人照资料）、各方的态度、能走的两三条路子和各自的代价、拖下去会怎样、期限（几个月）。
 ${factBlock(s)}
 ${govBlock(s)}
 ${up ? '【史线·将要发生】' + up : ''}
 ${open.length ? '【还没办的】' + open.map(a => a.title).join('；') + '（不要重复）' : ''}
-拟两到四件。只输出一个 JSON 对象：{"affairs":[{"title":"八到十六字","desc":"来由与眼下的情形，两三句","who":"牵涉的衙门、人","stakes":"拖下去会怎样","months":2,"area":"政治/经济/民生/军事"}]}`, null, { maxTokens: 2000, temperature: 0.3, kind: '研读', detached: true });
+拟两到四件。只输出一个 JSON 对象：{"affairs":[{"title":"八到十六字","desc":"来由与眼下的情形，四五句","basis":"史实依据","who":"牵涉的衙门、人","sides":"各方态度","ways":["路子一及代价","路子二及代价"],"stakes":"拖下去会怎样","months":2,"area":"政治/经济/民生/军事"}]}`, null, { maxTokens: 4000, temperature: 0.3, kind: '研读', detached: true });
   const d = parseJSON(text); if (!d) { s.affFail = s.turn; return []; }
-  const add = arr(d.affairs).filter(x => x && x.title && !arr(s.affairs).some(a => a.title === one(x.title, 20))).slice(0, 4).map((x, i) => ({ id: 'f' + ym + '_' + i, title: one(x.title, 20), desc: one(x.desc, 120), who: one(x.who, 40), stakes: one(x.stakes, 60), area: one(x.area, 4), due: ym + Math.max(1, Math.min(12, num(x.months) || 2)), state: '待办', turn: s.turn }));
+  const add = arr(d.affairs).filter(x => x && x.title && !arr(s.affairs).some(a => a.title === one(x.title, 20))).slice(0, 4).map((x, i) => ({ id: 'f' + ym + '_' + i, title: one(x.title, 20), desc: cut(x.desc, 400), basis: one(x.basis, 80), sides: cut(x.sides, 200), ways: arr(x.ways).map(w => one(w, 80)).filter(Boolean).slice(0, 4), who: one(x.who, 60), stakes: one(x.stakes, 80), area: one(x.area, 4), due: ym + Math.max(1, Math.min(12, num(x.months) || 2)), state: '待办', turn: s.turn }));
   s.affairs = arr(s.affairs).concat(add).slice(-30); s.affairsYM = ym;
   return add;
 }
@@ -2300,11 +2324,11 @@ ${govBlock(s)}
 ${factBlock(s)}
 被召见的人（照各自的身份、派系、立场、本事、私心说话；真人照史料里他的为人和主张，不替他编史料没有的主张；虚构的照他的出身派系；用那个年代的奏对口吻，称谓照本朝；不替主角拿主意）：
 ${who.map((w, i) => `${i + 1}. ${w.name}，${w.post}${w.attr ? `，${w.attr.faction || ''}，政${w.attr.zheng}军${w.attr.jun}财${w.attr.cai}，忠${w.attr.zhong}廉${w.attr.lian}` : ''}${ds[i] && ds[i].identity ? '；' + ds[i].identity : ''}`).join('\n')}
-只输出一个 JSON 对象：{"replies":[{"name":"","say":"奏对原话，一百到二百字","plan":"他主张的办法，一句话（可写进诏书的）","hidden":"他没说出口的盘算，一句话"}]}`, null, { maxTokens: 2000, temperature: 0.6, kind: '召对', detached: true });
+只输出一个 JSON 对象：{"replies":[{"name":"","say":"奏对原话，二百到四百字：先说他看到的实情（数目照材料），再说主张和理由，也说别人的主张错在哪","plan":"他主张的办法，一句话（可写进诏书的）","hidden":"他没说出口的盘算，一句话"}]}`, null, { maxTokens: 2000, temperature: 0.6, kind: '召对', detached: true });
   const d = parseJSON(text); if (!d) { ORGMSG = '召见没成，再试一次'; return null; }
   const ym = Math.floor(ymOf(s.clock)); s.aud = s.aud && s.aud.ym === ym ? s.aud : { ym, used: 0, log: arr(s.aud && s.aud.log) };
   s.aud.used++;
-  const rec = { turn: s.turn, when: timeText(s.clock), affair: a ? a.title : '', replies: arr(d.replies).filter(r => r && r.name).slice(0, 2).map(r => ({ name: one(r.name, 10), say: cut(r.say, 400), plan: one(r.plan, 80), hidden: one(r.hidden, 60) })) };
+  const rec = { turn: s.turn, when: timeText(s.clock), affair: a ? a.title : '', replies: arr(d.replies).filter(r => r && r.name).slice(0, 2).map(r => ({ name: one(r.name, 10), say: cut(r.say, 800), plan: one(r.plan, 80), hidden: one(r.hidden, 60) })) };
   s.aud.log = arr(s.aud.log).concat([rec]).slice(-20);
   return rec;
 }
@@ -2331,13 +2355,17 @@ const UT_FIELDS = [['size', '每营人数'], ['atk', '攻'], ['def', '守'], ['s
 const utDue = s => s && s.clock && (isRuler(s) || arr(s.forces).length) && !arr(s.unitTypes).length && !(s.utFail != null && s.turn - s.utFail < 3);
 async function rateUnitTypes(s, list) {
   const u = (s.money || {}).unit || '两', mil = orgLibText(s, 'mil');
+  const found = await searchFirst(s, [`${s.place.polity || ''}代 兵制 营 编制 人数`, `${s.place.polity || ''}代 兵饷 月饷 粮`].concat(arr(list).map(x => `${x.name} ${s.place.polity || ''}代`)).slice(0, 5));
   const { text } = await callClaude(`你是精通历代兵制的史家。一局历史游戏：${timeText(s.clock)}，政权${s.place.polity || ''}。${mil ? '\n【本朝兵制（按史书编）】\n' + cut(mil, 1600) : ''}
 ${list ? '下面是要核定的兵种（名字和说明是玩家定的；照这个年代真实可能的编制、装备、战法核定数值，说明里超出这个年代技术的部分照这个年代能做到的程度算）：\n' + list.map((x, i) => `${i + 1}. ${x.name}：${x.desc || ''}`).join('\n') : '列出这个政权此刻实有的四到八种兵（照本朝兵制的真实名目，如营兵、家丁、车营、骑营、火器营、水师、乡勇……）。'}
-每种给：每营人数、攻、守、冲击（对阵冲破敌阵的力道）、组织（经得起几番厮杀不溃）、机动（日行军里程上下的相对值），都是 0–100 的相对值（同一年代里比）；每人月饷（${u}）、每人月粮（石）、从招募到练成要几个月。
-只输出一个 JSON 对象：{"types":[{"name":"","desc":"一句话：怎么编、使什么兵器、怎么打","size":500,"atk":50,"def":50,"shock":50,"org":50,"mob":50,"pay":1.5,"grain":0.5,"months":3}]}`, null, { maxTokens: 2500, temperature: 0.2, kind: '研读', detached: true });
+${found}
+${libFacts(s, ['military', 'ranks'])}
+每种给：每营人数、每人月饷（${u}）、每人月粮（石）、从招募到练成要几个月——这几样照兵制、资料、史书里写明的数（basis 写明出处，如「绿营马兵月饷二两（内置制度库·清前中期）」「戚继光《纪效新书》一营约二千七百人」），找不到明载的就照最相近的记载推算，basis 写「推算：」加从哪条推的；
+再给攻、守、冲击（对阵冲破敌阵的力道）、组织（经得起几番厮杀不溃）、机动（行军快慢），都是 0–100 的相对值（同一年代里比），judge 写评估依据（装备、训练、战绩，照史实）。
+只输出一个 JSON 对象：{"types":[{"name":"","desc":"两三句：怎么编、使什么兵器、怎么打、史上的战绩","size":500,"pay":1.5,"grain":0.5,"months":3,"basis":"人数、饷、粮的出处","atk":50,"def":50,"shock":50,"org":50,"mob":50,"judge":"攻守等的评估依据"}]}`, null, { maxTokens: 3500, temperature: 0.1, kind: '研读', detached: true });
   const d = parseJSON(text);
   const cl = (v, a, b, df) => { const n = num(v); return n == null ? df : Math.max(a, Math.min(b, n)); };
-  return arr(d && d.types).filter(x => x && x.name).slice(0, 10).map((x, i) => ({ id: 'u' + Date.now().toString(36).slice(-4) + i, name: one(x.name, 10), desc: one(x.desc, 80) || (list && list[i] && list[i].desc) || '', size: cl(x.size, 50, 5000, 500), atk: cl(x.atk, 1, 100, 50), def: cl(x.def, 1, 100, 50), shock: cl(x.shock, 1, 100, 40), org: cl(x.org, 1, 100, 50), mob: cl(x.mob, 1, 100, 50), pay: cl(x.pay, 0, 100, 1), grain: cl(x.grain, 0, 5, 0.5), months: cl(x.months, 0, 36, 3) }));
+  return arr(d && d.types).filter(x => x && x.name).slice(0, 10).map((x, i) => ({ id: 'u' + Date.now().toString(36).slice(-4) + i, name: one(x.name, 10), desc: cut(x.desc, 200) || (list && list[i] && list[i].desc) || '', size: cl(x.size, 50, 5000, 500), atk: cl(x.atk, 1, 100, 50), def: cl(x.def, 1, 100, 50), shock: cl(x.shock, 1, 100, 40), org: cl(x.org, 1, 100, 50), mob: cl(x.mob, 1, 100, 50), pay: cl(x.pay, 0, 100, 1), grain: cl(x.grain, 0, 5, 0.5), months: cl(x.months, 0, 36, 3), basis: one(x.basis, 80), judge: one(x.judge, 80), est: basisGrade(x.basis) === '推算' || !goodBasis(x.basis) }));
 }
 async function buildUnitTypes(s) { const L = await rateUnitTypes(s, null); if (!L.length) { s.utFail = s.turn; return []; } s.unitTypes = L; return L; }
 async function addUnitType(s, name, desc) {
