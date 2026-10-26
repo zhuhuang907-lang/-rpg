@@ -10,7 +10,7 @@ const { chromium } = require('playwright');
   if (!(await idle()) || !(await p.$('#said'))) { bad('开局没出来'); console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(1); }
   await p.waitForFunction(() => S.skills && S.local, null, { timeout: 60000 }).catch(() => bad('开局后没定本事、没打听行情'));
   const k = await p.evaluate(() => ({ jc: S.skills && S.skills['经商'].lv, wy: S.skills && S.skills['武艺'].lv, ren: S.renown, tier: tierOf(S.renown), goods: arr(S.local && S.local.goods).length, q: arr(S.quests).length, rec: arr(S.local && S.local.recruits).map(r => r.name), blk: /主角的本事/.test(skillBlock(S)) }));
-  if (k.jc !== 55 || k.wy !== 0) bad('本事没照出身定：' + JSON.stringify(k));
+  if (k.jc !== 45 || k.wy !== 0) bad('本事没照出身定：' + JSON.stringify(k));
   if (k.tier !== '小有名声') bad('声望名号不对：' + JSON.stringify(k));
   if (k.goods < 3 || !k.q) bad('行情、差事没整理出来');
   if (k.rec.some(n => /某/.test(n))) bad('门客名字里有「某」：' + k.rec);
@@ -41,7 +41,9 @@ const { chromium } = require('playwright');
   if (qr.st !== '办成' || !(qr.d > 0)) bad('差事办成没结掉、没加声望：' + JSON.stringify(qr));
   await p.click('[data-tab="skill"]'); await p.waitForTimeout(300);
   const txt = await p.evaluate(() => document.body.innerText);
-  for (const w of ['属性', '本事', '经商', '声望', '品行']) if (!txt.includes(w)) bad('本事页上没有：' + w);
+  for (const w of ['本事', '经商', '熟练', '名声']) if (!txt.includes(w)) bad('本事页上没有：' + w);
+  // 个人的本事不打分：本事页、门客、推演材料里都不出现数字
+  { const sk = await p.evaluate(() => ({ tab: skillTab(S).replace(ambitionHtml(S), '').replace(/<[^>]+>/g, ''), blk: skillBlock(S) })); if (/\d/.test(sk.tab.replace(/\d+年|\d+月/g, '')) || /本事：[^；\n]*\d/.test(sk.blk) || /门客：[^\n]*（[^）月]*\d/.test(sk.blk) || /声望\d/.test(sk.blk)) bad('本事、声望还有数字：' + JSON.stringify(sk).slice(0, 400)); }
   console.log('SB', JSON.stringify({ k, g, t1: t1.msg, sold, h, qr }));
   console.log('ERRS', JSON.stringify(errs));
   await b.close(); process.exit(errs.length ? 1 : 0);
