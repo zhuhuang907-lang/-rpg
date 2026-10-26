@@ -30,6 +30,13 @@ const { chromium } = require('playwright');
   // 败露：对高官构陷，难度高，多跑几次总有败露的，败露了好感大跌
   const ex = await p.evaluate(() => { let seen = ''; for (let i = 0; i < 30 && !seen; i++) { S.turn += 1; S.schemes = []; S.people['卢见曾'].favor = 0; startScheme(S, '除掉', '卢见曾'); schemeMonthly(S, 12); if (S.schemes[0].state === '败露') seen = JSON.stringify({ f: S.people['卢见曾'].favor }); } return seen; });
   if (!ex) bad('三十次除掉高官一次都没败露'); else if (!/-50/.test(ex)) bad('败露了好感没大跌：' + ex);
+  // 志向：立积财，钱够了就达成、加声望；跨年有年终总结；称谓表照朝代和关系
+  const am = await p.evaluate(() => { pickAmbition(S, '积财'); const t = S.ambition.target; S.money.cash = t + 1; const r0 = S.renown; const out = ambitionCheck(S); return { out, d: S.renown - r0, left: S.ambition }; });
+  if (!am.out.length || am.d !== 20 || am.left) bad('志向达成没结掉、没加声望：' + JSON.stringify(am));
+  const yc = await p.evaluate(() => { S.yearSnap = yearSnap(S); S.renown += 7; applyReply(S, { reply: '一年过去。', mode: 'play', elapsedDays: 400 }, '歇着一年'); const c = S.chat[S.chat.length - 1]; return { card: c.extra && c.extra.yearCard, n: arr(S.yearCards).length }; });
+  if (!yc.card || !yc.card.lines.some(l => /声望/.test(l))) bad('跨年没有年终总结：' + JSON.stringify(yc));
+  const ad = await p.evaluate(() => addrBlock(S));
+  if (!/清代/.test(ad) || !/老爷/.test(ad) || !/小的/.test(ad)) bad('称谓表不对：' + ad.slice(0, 200));
   // 议亲：打听人家，名字里不许有某
   await p.evaluate(() => { TAB = 'people'; render(); });
   console.log('CLAN', JSON.stringify({ fo, sc: sc.msg, res: { st: res.st, f0: res.f0, f1: res.f1 }, ex }));
