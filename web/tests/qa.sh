@@ -20,7 +20,7 @@ start() {   # $1 = 模拟 AI 的脚本名
   sed "s/MOCKPORT/$MOCK_PORT/g" "$QA/search.json" > "$WORK/rk/data/search.json"
   cp "$QA"/*.js "$WORK/mock/"
   (cd "$WORK/mock" && exec node "./$1" > "$WORK/mock.out" 2>&1) & PIDS+=($!)
-  (cd "$WORK/rk" && BOCHA_BASE=http://127.0.0.1:$MOCK_PORT RPG_NO_UPDATE=1 PORT=$GAME_PORT WIKI_BASE=http://127.0.0.1:$MOCK_PORT TGAZ_BASE=http://127.0.0.1:$MOCK_PORT NO_PROXY=127.0.0.1 exec node ./server.js > "$WORK/srv.out" 2>&1) & PIDS+=($!)
+  (cd "$WORK/rk" && BOCHA_BASE=http://127.0.0.1:$MOCK_PORT RPG_NO_UPDATE=1 PORT=$GAME_PORT WIKI_BASE=http://127.0.0.1:$MOCK_PORT WIKIDATA_BASE=http://127.0.0.1:$MOCK_PORT TGAZ_BASE=http://127.0.0.1:$MOCK_PORT NO_PROXY=127.0.0.1 exec node ./server.js > "$WORK/srv.out" 2>&1) & PIDS+=($!)
   for i in $(seq 1 40); do curl -s "http://127.0.0.1:$GAME_PORT/api/health" >/dev/null && return 0; sleep 0.5; done
   bad "游戏服务起不来"; tail -20 "$WORK/srv.out"; return 1
 }
@@ -55,6 +55,7 @@ start ai.js && {
   run "营生与本事：属性本事声望品行、本事越用越长、此地行情差事门客、当场买卖拦钱不够驮不动、贵处卖出赚、应下差事、招揽门客、按月给薪" 600 node sandbox.js
   run "新系统吃乱数据：四种身份×记账给出各种怪格式的国势、阶层、时政、军令、人事、本事、差事×每个侧栏，不报错、不露 undefined NaN [object Object]" 300 env PLAY="$ROOT/web/play.html" node garbage.js
   run "家族与人情：族谱、立嗣、生活方向按月长本事、谋划按月推进有成败败露、结果进下一回材料、好感有来由、关系名号" 600 node clan.js
+  run "真人核查：开局可选自动／史上真人／虚构，真人查维基条目、维基数据、博查再由 DeepSeek 判，查不到不开局；大官自动查、查无此人另挑真人；人物页逐人核查" 900 node person.js
   run "舆图：按当年州府画天下与一省、地盘与各方着色、兵马战场、点一处出详情、就地下军令" 600 node smap.js
   run "人走到哪地图跟到哪：出门办事地图换成所在地、标出家和离家多远、对不上的地名照年代查出当时县名、回家换回、换了年代照当年州县重画" 600 node travel.js
   run "档案馆：每回全文另存进游戏文件夹、刷新还在、按人名翻出旧事、写成史书小说能下载、刷新后书还在" 600 node archive.js

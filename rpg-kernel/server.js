@@ -464,9 +464,11 @@ const routes = {
       })();
       if (!isBocha) { const w = await wP; return { query: q, ...w, provider: w.provider || 'wikipedia' }; }
       if (!isW) {
-        const b = await bP;
-        if ((b.results || []).length) return { query: q, results: tag(b.results.slice(0, 4), 'bocha'), provider: 'bocha' };
-        const w = await wP; return (w.results || []).length ? { query: q, ...w, results: tag(w.results, w.provider || 'wikipedia'), provider: w.provider || 'wikipedia' } : { query: q, ...b, provider: 'bocha' };
+        // 人物、当年当地：博查为主，维基同时查、查到的也并进来（人物条目维基常有，博查搜到别的不能把它挤掉）
+        const [b, w] = await Promise.all([bP, wP]);
+        const br = tag((b.results || []).slice(0, 3), 'bocha'), wr = tag((w.results || []).slice(0, 2), w.provider || 'wikipedia');
+        if (br.length || wr.length) return { query: q, results: br.concat(wr), provider: br.length && wr.length ? 'mixed' : br.length ? 'bocha' : (w.provider || 'wikipedia') };
+        return { query: q, ...b, provider: 'bocha' };
       }
       const [w, b] = await Promise.all([wP, bP]);
       const wr = tag((w.results || []).slice(0, 3), w.provider || 'wikipedia'), br = tag((b.results || []).slice(0, 2), 'bocha');
@@ -554,6 +556,46 @@ const routes = {
     };
     const results = await Promise.all(qs.map(one));
     return { ok: true, results };
+  },
+  /* 查一个人是不是史书上的真人：维基百科按条目名直接取（不是全文搜索，同名的消歧义页再按朝代、身份挑）、
+     维基数据（是不是「人」、生卒年、简介）、博查（百度百科等），三路同时查；查过的存本机，不反复打扰维基（维基限流很严） */
+  async 'POST /api/person'(body) {
+    const name = String((body || {}).name || '').trim().slice(0, 12), hint = String((body || {}).hint || '').trim().slice(0, 40);
+    if (name.length < 2) return { ok: false, error: '名字太短' };
+    const dir = path.join(ROOT, 'data', 'cache', 'person'); fs.mkdirSync(dir, { recursive: true });
+    const cf = path.join(dir, require('crypto').createHash('md5').update(name + '|' + hint).digest('hex') + '.json');
+    try { const c = JSON.parse(fs.readFileSync(cf, 'utf8')); if (Date.now() - (c.at || 0) < 30 * 864e5) return c; } catch (_) { /* 没缓存 */ }
+    const net = require('./core/net'), UA = { 'User-Agent': 'HistoryRPG/1.0 (https://github.com/zhuhuang907-lang/-rpg; history game)', 'Api-User-Agent': 'HistoryRPG/1.0 (history game)' };
+    const WB = process.env.WIKI_BASE || 'https://zh.wikipedia.org', DB = process.env.WIKIDATA_BASE || 'https://www.wikidata.org';
+    const getJ = async (u, ms = 9000) => { for (let i = 0; i < 3; i++) { try { const r = await net.fetchX(u, { headers: UA, signal: AbortSignal.timeout(ms) }); if (r.status === 429 || r.status === 503) { await new Promise(z => setTimeout(z, 800 * (i + 1))); continue; } if (!r.ok) return { _err: 'HTTP ' + r.status }; return await r.json(); } catch (e) { if (i === 2) return { _err: String(e && e.message || e).slice(0, 80) }; } } return { _err: '维基限流（429）' }; };
+    const toks = hint.split(/[\s，,、]+/).filter(t => t.length >= 1);
+    const wiki = async () => {
+      const page = async title => { const d = await getJ(WB + '/w/api.php?' + new URLSearchParams({ action: 'query', format: 'json', titles: title, redirects: '1', converttitles: '1', prop: 'extracts|pageprops|description|info', inprop: 'url', exintro: '1', explaintext: '1', exchars: '2500', variant: 'zh-cn' }));
+        if (d._err) return { err: d._err }; const pg = Object.values((d.query || {}).pages || {})[0]; if (!pg || pg.missing !== undefined || !pg.extract) return null; return { title: pg.title, url: pg.fullurl, text: pg.extract, desc: pg.description || '', disamb: !!(pg.pageprops && 'disambiguation' in pg.pageprops) }; };
+      let p = await page(name); if (p && p.err) return p;
+      if (!p || p.disamb || !p.text.includes(name.slice(0, 1))) {
+        // 同名的多：搜「名字 + 朝代/身份」，取条目名以这个名字打头的（「高恒 (清朝)」）
+        const d = await getJ(WB + '/w/api.php?' + new URLSearchParams({ action: 'query', format: 'json', list: 'search', srsearch: name + (toks[0] ? ' ' + toks[0] : ''), srlimit: '6', variant: 'zh-cn' }));
+        const T = ((d.query || {}).search || []).map(x => x.title).filter(t => t.startsWith(name) && t !== (p && p.title));
+        for (const t of T.slice(0, 3)) { const q = await page(t); if (q && !q.err && !q.disamb) { p = q; break; } }
+      }
+      return p && !p.disamb ? p : null;
+    };
+    const wdata = async () => {
+      const d = await getJ(DB + '/w/api.php?' + new URLSearchParams({ action: 'wbsearchentities', format: 'json', search: name, language: 'zh', uselang: 'zh-cn', limit: '7', type: 'item' }));
+      if (d._err) return { err: d._err };
+      const ids = ((d.search || [])).filter(x => (x.label || '') === name || (x.match && x.match.text === name)).map(x => x.id).slice(0, 6); if (!ids.length) return [];
+      const e = await getJ(DB + '/w/api.php?' + new URLSearchParams({ action: 'wbgetentities', format: 'json', ids: ids.join('|'), props: 'claims|descriptions|sitelinks', languages: 'zh-cn|zh|zh-hans|en' }));
+      if (e._err) return { err: e._err };
+      const yr = c => { const t = c && c[0] && c[0].mainsnak && c[0].mainsnak.datavalue && c[0].mainsnak.datavalue.value && c[0].mainsnak.datavalue.value.time; const m = t && String(t).match(/^([+-])0*(\d+)-/); return m ? (m[1] === '-' ? -1 : 1) * +m[2] : null; };
+      return Object.values(e.entities || {}).filter(x => x.claims && x.claims.P31 && x.claims.P31.some(c => c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id === 'Q5'))
+        .map(x => ({ id: x.id, desc: ((x.descriptions || {})['zh-cn'] || (x.descriptions || {}).zh || (x.descriptions || {})['zh-hans'] || (x.descriptions || {}).en || {}).value || '', born: yr(x.claims.P569), died: yr(x.claims.P570), zhwiki: ((x.sitelinks || {}).zhwiki || {}).title || '' }));
+    };
+    const bocha = async () => { if (!(await bochaOn())) return null; const r = await search.search(`${name} ${hint} 生平`.trim(), { provider: 'bocha', noFallback: true }); return (r.results || []).filter(x => String(x.title + x.snippet).includes(name) && !/小说|演义|游戏|电视剧|剧情|穿越|同人/.test(x.title + x.snippet)).slice(0, 4).map(x => ({ title: x.title, url: x.url, text: String(x.snippet || '').slice(0, 400) })); };
+    const [w, wd, b] = await Promise.all([wiki().catch(e => ({ err: String(e.message || e) })), wdata().catch(e => ({ err: String(e.message || e) })), bocha().catch(() => null)]);
+    const out = { ok: true, name, hint, at: Date.now(), wiki: w && !w.err ? w : null, wikiErr: w && w.err || '', wikidata: Array.isArray(wd) ? wd : [], wikidataErr: wd && wd.err || '', bocha: b || [] };
+    if (!out.wikiErr && !out.wikidataErr) fs.writeFileSync(cf, JSON.stringify(out));
+    return out;
   },
   /* 中国历史地名（CHGIS 时空地名辞典 TGaz，复旦镜像优先、哈佛兜底）：按名字、年份、上级查县、州府、郡的位置与隶属；查过的存本机 */
   'GET /api/tgaz': async (_b, q) => {

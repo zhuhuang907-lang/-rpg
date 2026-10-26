@@ -70,6 +70,14 @@ function answer(p, last, json) {
   if (p.includes('还没给玩家看') && p.includes('逐条判断')) return JSON.stringify({ fixes: [{ wrong: '运司那边', right: '运使衙门那边', why: '查证' }] });
   if (p.includes('还没给玩家看')) return chance(0.1) ? 'oops' : JSON.stringify({ fixes: [{ wrong: '东家', right: '东翁', why: '称谓' }], doubts: [{ quote: '运司那边', query: '两淮运司 乾隆', why: '不确定' }] });
   if (p.includes('「本地志」')) return chance(0.1) ? '{' : JSON.stringify({ admin: '扬州府治江都、甘泉二县同城', officials: [{ post: '两淮盐运使', name: '卢见曾', note: '好文', sure: true }, null], economy: '盐业', families: '江、汪诸家', places: '东关街、天宁寺', customs: '好园林', current: '南巡余波', counties: ['江都县', '甘泉县', '无此县'] });
+  if (p.includes('先把玩家的设定落到真实历史里') && (/姓名：|人物：|知府|盐运使/.test(p.split('要求：')[0]))) { fs.appendFileSync('resolve.log', 'P ' + p.slice(0, 300).replace(/\n/g, ' ') + '\n');
+    const head = p.split('要求：')[0], nm = (head.match(/姓名：([^（\n]+)/) || [])[1], wantReal = /人物：必须是史书上/.test(head), fake = /人物：虚构/.test(head);
+    const base = { y: 1757, m: 3, d: 6, yearLabel: '乾隆二十二年', polity: '清', place: '江南扬州府江都县', placeShort: '扬州', gender: '男', age: 41, adjust: [], people: [], queries: [] };
+    if (/史书查无此人/.test(head)) return JSON.stringify({ ...base, name: '卢见曾', real: true, role: '两淮盐运使', age: 68 });
+    if (nm) return JSON.stringify({ ...base, name: nm, real: !fake && (wantReal || nm !== '汪景和'), role: '扬州盐商' });
+    if (/知府/.test(head)) return JSON.stringify({ ...base, name: '假知府', real: true, role: '扬州知府' });
+    return JSON.stringify({ ...base, name: '卢见曾', real: true, role: '两淮盐运使', age: 68 }); }
+  if (p.includes('是不是史书上确有其人')) { fs.appendFileSync('pchk.log', (p.match(/判断「([^」]+)」/) || [])[1] + '\n'); const none = p.includes('【联网什么也没查到】'); return JSON.stringify({ real: !none, who: none ? '' : '清乾隆时人', born: null, died: null, identity: '', source: none ? '' : '维基百科', why: none ? '三路都查不到' : '维基百科有条目' }); }
   if (p.includes('先把玩家的设定落到真实历史里')) { fs.appendFileSync('resolve.log', p.slice(0, 400).replace(/\n/g, ' ') + '\n'); return chance(0.1) ? 'nope' : JSON.stringify({ y: 1757, m: 3, d: 6, yearLabel: '乾隆二十二年', polity: '清', place: '江南扬州府江都县', placeShort: '扬州', name: '汪景和', real: false, gender: '男', age: 41, role: '扬州盐商', adjust: [], people: ['卢见曾'], queries: ['扬州 盐商 乾隆二十二年'] }); }
   if (p.includes('给一局极其讲究史实的历史模拟游戏补史料')) { const mm = p.match(/要补的月份：(-?\d+)年(\d+)月/), src = (p.match(/\[1\] 查「[^」]*」：([^\n]*)/) || [])[1] || ''; const nm = (src.match(/[\u4e00-\u9fff]{3}/) || ['无名氏'])[0];
     fs.appendFileSync('sync.log', JSON.stringify({ y: mm && mm[1], m: mm && mm[2], nm }) + '\n');
@@ -125,6 +133,15 @@ function answer(p, last, json) {
 http.createServer((req, res) => {
   let b = ''; req.on('data', c => b += c); req.on('end', async () => {
     if (process.env.SLOW && (req.url.startsWith('/w/api.php') || req.url.startsWith('/search'))) await new Promise(r => setTimeout(r, 30000));
+    // 真人核查：维基按条目名取、维基数据查是不是「人」
+    const REALP = { 江春: [1720, 1789, '清代扬州盐商，两淮总商'], 卢见曾: [1690, 1768, '清朝官员，两淮盐运使'], 高恒: [null, 1768, '清朝官员，两淮盐政'] };
+    if (req.url.startsWith('/w/api.php') && /[?&](titles|action=wbsearchentities|action=wbgetentities|list=search)/.test(req.url)) {
+      const sp = new URL('http://x' + req.url).searchParams; res.writeHead(200, { 'content-type': 'application/json' });
+      if (sp.get('titles')) { const t = sp.get('titles'), r = REALP[t]; return res.end(JSON.stringify({ query: { pages: r ? { '9': { pageid: 9, title: t, fullurl: 'https://zh.wikipedia.org/wiki/' + encodeURIComponent(t), extract: `${t}，${r[2]}。生于${r[0] || '?'}年，卒于${r[1]}年。` } } : { '-1': { title: t, missing: '' } } } })); }
+      if (sp.get('list') === 'search') return res.end(JSON.stringify({ query: { search: [] } }));
+      if (sp.get('action') === 'wbsearchentities') { const t = sp.get('search'); return res.end(JSON.stringify({ search: REALP[t] ? [{ id: 'Q' + t.charCodeAt(0), label: t }] : [] })); }
+      if (sp.get('action') === 'wbgetentities') { const E = {}; for (const id of String(sp.get('ids')).split('|')) { const t = Object.keys(REALP).find(k => 'Q' + k.charCodeAt(0) === id); if (!t) continue; const r = REALP[t], tm = y => y == null ? [] : [{ mainsnak: { datavalue: { value: { time: '+' + y + '-00-00T00:00:00Z' } } } }]; E[id] = { id, descriptions: { 'zh-cn': { value: r[2] } }, claims: { P31: [{ mainsnak: { datavalue: { value: { id: 'Q5' } } } }], P569: tm(r[0]), P570: tm(r[1]) }, sitelinks: { zhwiki: { title: t } } }; } return res.end(JSON.stringify({ entities: E })); }
+    }
     if (req.url.startsWith('/w/api.php')) {
       const q = new URL('http://x' + req.url).searchParams.get('gsrsearch') || '';
       res.writeHead(200, { 'content-type': 'application/json' });
