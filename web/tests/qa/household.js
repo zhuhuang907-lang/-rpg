@@ -22,6 +22,10 @@ const { chromium } = require('playwright');
   const fx = await p.evaluate(() => { S.household.push({ relation: '母', name: '吴氏', age: 20 }, { relation: '长子', name: '汪大成', age: 60 }); const r = familyAgeFix(S); return { r, m: S.household.find(x => x.name === '吴氏').age, c: S.household.find(x => x.name === '汪大成').age, me: S.protagonist.age }; });
   if (!(fx.m >= fx.me + 15)) bad('母亲比本人还小，没改：' + JSON.stringify(fx));
   if (!(fx.c <= fx.me - 14)) bad('儿子比本人还大，没改：' + JSON.stringify(fx));
+  // 常理审查：年岁离谱的人程序先挑出来，通读后改账、记进定本
+  const lg = await p.evaluate(async () => { S.people['老账房'] = { role: '账房', age: 150, seen: S.turn }; const hard = logicFaults(S); const done = await logicAudit(S); return { hard, done, age: S.people['老账房'].age, canon: arr(S.canon).some(c => /更正/.test(c.text)) }; });
+  if (!lg.hard.some(x => /老账房年岁写成150/.test(x))) bad('一百五十岁的人程序没挑出来：' + JSON.stringify(lg.hard));
+  if (lg.age !== 60 || !lg.canon) bad('常理审查没改账、没记进定本：' + JSON.stringify(lg));
   await p.click('[data-tab="people"]'); await p.waitForTimeout(400);
   if (!/推算/.test(await p.evaluate(() => document.body.innerText))) bad('家室表上看不到推算的标记');
   console.log('HOUSE', JSON.stringify(h));
