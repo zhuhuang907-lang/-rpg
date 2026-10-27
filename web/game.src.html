@@ -2073,19 +2073,47 @@ function familyAgeFix(s) {
   return out;
 }
 const familyDue = s => s && s.clock && s.protagonist && (s.protagonist.real ? !s.famRec : familyNeeds(s).length && s.famTried !== s.clock.y + ':' + familyNeeds(s).join());
-/** 真人主角的家里人：只照查到的资料和史书明载的补（每局查一次）；资料没记载的就是没有，不推 */
+/** 真人主角的身份与家谱：单独一回调用（不和写戏的调用混在一起），照博查（没有博查就 DeepSeek 检索）和正史方志，
+ *  把有名有记载的都列上——祖父母、父母、兄弟姐妹、妻妾、全部子女（早夭的、日后才出生的也列）、儿媳女婿、孙辈；
+ *  史书只记姓氏的照写「姓+氏」，连姓都没有的不列；不推、不补 */
 async function familyFromRecords(s) {
-  s.famRec = true; const p = s.protagonist; if (!canSearch()) return [];
-  const found = await searchFirst(s, [`${p.name} 妻`, `${p.name} 子 女 后嗣`, `${p.name} 父 母 家世`]);
-  if (!found) return [];
-  const { text } = await callClaude(`一局历史游戏的主角是史书真人：${p.name}（${p.role}），此刻${timeText(s.clock)}。
-眼下记着的家里人：${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name).join('、') || '（空）'}
-${found}
-只照上面查到的资料和你确知的正史、方志明文记载，列出他此刻在世的家里人（父母、妻妾、子女）。规矩：资料和史书没写到的人一个都不添；史书只记了姓氏的照写「姓+氏」（如「王氏」），不替她起名；连姓氏都没记的不列；不推、不按常情补；年岁照史载生年算，算不出的写 null。
-只输出一个 JSON 对象：{"add":[{"relation":"","name":"","age":null,"source":"出处原话或书名卷名"}]}`, null, { maxTokens: 1500, temperature: 0, kind: '研读', detached: true });
-  const d = parseJSON(text), have = new Set(arr(s.household).map(m => m.name)), out = [];
-  for (const x of arr(d && d.add)) { const name = one(x && x.name, 8), src = one(x && x.source, 60); if (!name || name.length < 2 || /某|不详|无名|佚名/.test(name) || !src || /推|常情|估计|可能/.test(src) || have.has(name)) continue;
-    s.household = arr(s.household).concat([{ relation: one(x.relation, 6), name, age: num(x.age), note: SHI_RE.test(name) ? '史载（史书只记姓氏）' : '史载', basis: src, rec: true }]); have.add(name); out.push(x.relation + name); }
+  s.famRec = true; const p = s.protagonist, y = s.clock.y;
+  const found = canSearch() ? await searchFirst(s, [`${p.name} 生平`, `${p.name} 字 号 籍贯 出身`, `${p.name} 父 母 家世`, `${p.name} 妻 妾 夫人`, `${p.name} 子女 儿子 女儿`, `${p.name} 兄弟 姐妹`, `${p.name} 后裔 世系 家谱`, `${p.name} 女婿 儿媳 孙`]) : '';
+  const { text } = await callClaude(`一局历史游戏的主角是史书真人：${p.name}（${p.role}），此刻${timeText(s.clock)}（公元${y}年）。
+眼下记着的家里人：${arr(s.household).map(m => m.relation + m.name).join('、') || '（空）'}
+${found || '（这回没联网查到资料）'}
+只照上面查到的资料和你确知的正史、方志明文记载，整理他的身份和家谱。
+一、身份：字、号、籍贯、出身（家世门第）、功名、爵位，到${y}年为止的履历（年份＋官职），写出处。
+二、家谱：史料里有名有记载的亲属全列上——祖父母、父母、兄弟姐妹、嫡妻、继室、妾、全部子女（排行写清：长子、次子……长女……；早夭的、${y}年以后才出生的也列，照生年写）、儿媳、女婿、孙辈。
+每人写 relation（对主角的称呼）、name、born、died（公元年，不知道写 null）、mother（子女的生母）、note（字号、封爵、官职，一句）、source（出处原话或书名卷名）。
+规矩：资料和史书没写到的人一个都不添；史书只记了姓氏的照写「姓+氏」（如「王氏」），不替她起名；连姓都没记的不列；不推、不按常情补；人多就全列，不要省。
+只输出一个 JSON 对象：{"ident":{"zi":"","hao":"","jiguan":"","chushen":"","gongming":"","jue":"","career":[{"y":null,"post":""}],"source":""},"family":[{"relation":"","name":"","born":null,"died":null,"mother":"","note":"","source":""}]}`, null, { maxTokens: 8000, temperature: 0, kind: '研读', detached: true });
+  const d = parseJSON(text) || {}, out = [], byName = new Map(arr(s.household).map(m => [m.name, m]));
+  const I = d.ident && typeof d.ident === 'object' ? d.ident : null;
+  if (I && one(I.source, 80) && !/推|常情|估计|可能/.test(String(I.source))) {
+    const o = v => one(v, 40); p.ident = { zi: o(I.zi), hao: o(I.hao), jiguan: o(I.jiguan), chushen: o(I.chushen), gongming: o(I.gongming), jue: o(I.jue), career: arr(I.career).filter(c => c && c.post).slice(0, 30).map(c => ({ y: num(c.y), post: one(c.post, 40) })).filter(c => c.y == null || c.y <= y), source: one(I.source, 80) }; }
+  s.famPlan = arr(s.famPlan);
+  for (const x of arr(d.family || d.add).slice(0, 80)) {
+    const name = one(x && x.name, 8), src = one(x && x.source, 60);
+    if (!name || name.length < 2 || /某|不详|无名|佚名/.test(name) || !src || /推|常情|估计|可能/.test(src)) continue;
+    const born = num(x.born), died = num(x.died), rel = one(x.relation, 8);
+    const age = born != null ? y - born : num(x.age);
+    if (born != null && born > y) { if (!s.famPlan.some(m => m.name === name)) s.famPlan.push({ relation: rel, name, born, mother: one(x.mother, 8), note: one(x.note, 40), basis: src }); continue; }
+    const m0 = byName.get(name), rec = { relation: rel, name, age, born, mother: one(x.mother, 8), note: (one(x.note, 40) || '') + (SHI_RE.test(name) ? '（史书只记姓氏）' : ''), basis: src, rec: true, ...(died != null && died <= y ? { dead: true, diedY: died } : {}) };
+    if (m0) { Object.assign(m0, rec, { relation: m0.relation || rel }); continue; }
+    s.household = arr(s.household).concat([rec]); byName.set(name, rec); out.push(rel + name);
+  }
+  if (out.length) s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: p.name, what: '照史料记下家谱：' + out.slice(0, 12).join('、') + (out.length > 12 ? '等' + out.length + '人' : '') }]);
+  return out;
+}
+/** 史载日后才出生的子女：到了生年照记 */
+function famPlanTick(s) {
+  const y = s.clock.y, out = [];
+  s.famPlan = arr(s.famPlan).filter(m => { if (m.born > y) return true; const mo = m.mother && arr(s.household).find(h => h.name === m.mother);
+    if (mo && mo.dead) return false;
+    if (!arr(s.household).some(h => h.name === m.name)) { s.household.push({ relation: m.relation, name: m.name, age: y - m.born, born: m.born, mother: m.mother, note: (m.note ? m.note + '；' : '') + '史载这一年出生', basis: m.basis, rec: true }); out.push(m.relation + m.name); }
+    return false; });
+  if (out.length) s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: s.protagonist.name, what: '家中添丁（照史载生年）：' + out.join('、') }]);
   return out;
 }
 async function familyFix(s) { try { return await familyFix0(s); } finally { fixShiNames(s); } }
@@ -3531,6 +3559,27 @@ ${prov}下辖：${U.map(u => u.n + '（治' + (u.seat || '?') + '）').join('、
   MAPC.k = ''; MAPC.links = {}; admCacheSave(s);
 }
 const pol0 = s => s.place.polity || '';
+/* ---------- 天下名录：这一年全国在任、在世的要紧人物（宗室王公、中枢、各地大员、将帅、世家），单独一回调用，照史料带出处 ---------- */
+let ROSTER_P = null;
+const rosterDue = s => s && s.clock && (!s.roster || s.roster.y !== s.clock.y || s.roster.pol !== (s.place.polity || '')) && !(s.rosterFail != null && s.turn - s.rosterFail < 2);
+async function buildRoster(s) {
+  const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '';
+  const found = await searchFirst(s, [`${yl} ${pol} 宗室 亲王 郡王`, `${y}年 ${pol} 宰相 军机大臣 大学士`, `${y}年 ${pol} 六部尚书`, `${y}年 ${pol} 总督 巡抚`, `${y}年 ${pol} 将军 统兵`, `${pol} ${y}年 世家 大族 名臣`]);
+  const { text } = await callClaude(`替一局历史游戏开一份「天下名录」：公元${y}年（${yl}）${pol}在任、在世的要紧人物。玩家要能翻看全国的人，不只本地。
+${found || '（这回没联网查到资料：只写你确知的正史明载）'}
+分组列：君主与后妃、皇子；宗室王公；中枢（宰辅、军机、大学士、六部尚书侍郎……照当时官制）；地方大员（总督、巡抚、节度使、刺史……照当时官制，各地都列）；将帅；世家大族、名士。
+规矩：只列史书真人、这一年确实在这个位子上的；名字、官职照这一年；没有出处的不列；不编人。每组至多二十人。
+只输出一个 JSON 对象：{"groups":[{"name":"宗室王公","people":[{"name":"","post":"","since":null,"note":"一句","source":"出处"}]}]}`, null, { maxTokens: 8000, temperature: 0, kind: '研读', detached: true });
+  const d = parseJSON(text), G = arr(d && d.groups).map(g => ({ name: one(g && g.name, 12), people: arr(g && g.people).filter(x => x && x.name && x.source && !/推|估计|可能/.test(String(x.source)) && !/某/.test(String(x.name))).slice(0, 20).map(x => ({ name: one(x.name, 10), post: one(x.post, 30), since: num(x.since), note: one(x.note, 40), source: one(x.source, 50) })) })).filter(g => g.name && g.people.length);
+  if (!G.length) { s.rosterFail = s.turn; return null; }
+  s.roster = { y, pol, at: s.turn, groups: G }; return s.roster;
+}
+function rosterHtml(s) {
+  if (rosterDue(s) && !BUSY && !ROSTER_P) ROSTER_P = Promise.resolve().then(() => buildRoster(s)).catch(e => { if (!(e && e.code === 'cancelled')) s.rosterFail = s.turn; }).finally(() => { ROSTER_P = null; try { store.save(s); } catch (_) {} if (TAB === 'people') render(); });
+  const R = s.roster, head = `<div class="h" style="margin-top:6px"><span class="seal">朝</span>天下名录<span class="note">${R ? R.y + '年' : '这一年'}全国在任、在世的要紧人物，照史料带出处</span></div>`;
+  if (!R || R.y !== s.clock.y) return head + `<div class="muted">${ROSTER_P ? '正在查这一年全国的宗室王公、中枢大臣、各地大员、将帅、世家……' : '这回没查成，下一回再查。'}</div>`;
+  return head + `<div class="roster">${R.groups.map((g, i) => `<details class="oadd"${i < 2 ? ' open' : ''}><summary><b>${esc(g.name)}</b> <span class="muted">${g.people.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>职位</th><th>出处</th><th></th></tr>${g.people.map(x => `<tr><td><b>${esc(x.name)}</b>${x.note ? `<div class="muted" style="font-size:11px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.post)}${x.since ? `<span class="muted">（${esc(x.since)}年起）</span>` : ''}</td><td class="muted" style="font-size:11px">${esc(x.source)}</td><td><button class="link" data-write="${esc('设法求见' + x.name + '，')}">求见</button></td></tr>`).join('')}</table></div></details>`).join('')}</div>`;
+}
 /** 政权的君主：只认内置史料（及开局查定的君主表）里这一年在位的；对不上就不写（联网核定时报的君主常串年代、张冠李戴） */
 const polNames = n => { const t = String(n || ''), m = t.match(/[（(]([^）)]+)[）)]/); return [t.replace(/[（(].*$/, ''), m ? m[1] : ''].filter(Boolean).map(x => x.replace(/^大/, '').replace(/(王朝|朝|国|政权)$/, '') || x); };
 function regRuler(s, r) {
@@ -3546,6 +3595,7 @@ function regimeBlock(s) {
   const L = [`【${R.y}年天下的政权与政区（开局联网查定；写到外地、外国的人和事，归属、地名照这里）】` + R.list.map(r => { const k = regRuler(s, r); return `${r.name}${k ? '（' + k + '在位）' : ''}${r.capital ? '都' + r.capital : ''}${r.basis === '推算' ? '（推算）' : ''}`; }).join('；')];
   const mine = A && provOfPlace(s, geoCenter(s));
   if (mine) { const u = A.units.filter(x => x.lv === 2 && x.p === mine); L.push(`本地所属一级政区：${mine}，下辖${u.map(x => x.n).join('、')}`); }
+  if (s.roster && s.roster.y === s.clock.y) L.push('这一年朝中、各地要人（写到他们时名字、官职照这里）：' + cut(s.roster.groups.map(g => g.name + '：' + g.people.map(x => x.name + '（' + x.post + '）').join('、')).join('；'), 900));
   const lk = hereLinks(s); if (lk) L.push(lk);
   return L.join('\n');
 }
@@ -3844,6 +3894,14 @@ function stratMap(s) {
     const tip = u => `${u.n}（${u.t || '府州'}${u.p ? '，属' + u.p : ''}${u.seatC ? '，治所' + u.seatC : ''}）${ownOf(u) ? ' · ' + ownOf(u).who : ''}`;
     fills = `<g fill-opacity="${Ly.terr ? '.32' : '.48'}" stroke="#4a3a2a" stroke-opacity="${zoom ? '.9' : '.6'}" stroke-width="${zoom ? '1' : '.5'}" stroke-linejoin="round">${U.map(u => `<path d="${dOf(u.poly.R)}" fill="${fillOf(u)}" fill-rule="evenodd" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(tip(u))}</title></path>`).join('')}</g>`
       + `<g fill="none" stroke="#2f2216" stroke-opacity=".85" stroke-width="${zoom ? 2.2 : 1.2}" stroke-linejoin="round" pointer-events="none">${VP.map(f => `<path d="${dOf(f.R)}"/>`).join('')}</g>`;
+    // 放大时：每个府州里有好几个县，县与县之间画虚线（府界照谭图；府界之内按各县治所远近分，不越出府界）
+    if (zoom && cty.length) { const c2 = 5, nx2 = Math.ceil(W / c2), ny2 = Math.ceil(H / c2), G = [], ofP = new Map(M.L2.filter(u => u.poly).map(u => [u.poly, u])), CP = cty.map(c => [px(c), py(c), c]);
+      for (let i = 0; i < nx2; i++) { G.push([]); for (let j = 0; j < ny2; j++) { const gx = i * c2 + c2 / 2, gy = j * c2 + c2 / 2, lon = x0 + (gx - 10) / (W - 20) * (x1 - x0), lat = y1 - (gy - 10) / (H - 20) * (y1 - y0), f = polyAt(PL, lon, lat), u = f && ofP.get(f);
+        if (!u) { G[i].push(null); continue; } let b = null, bd = Infinity; for (const [x, yy, c] of CP) { if (c.p !== u.n) continue; const d = (x - gx) ** 2 + (yy - gy) ** 2; if (d < bd) { bd = d; b = c; } } G[i].push(b ? { c: b, f } : null); } }
+      const E = []; for (let i = 0; i < nx2; i++) for (let j = 0; j < ny2; j++) { const a = G[i][j]; if (!a) continue;
+        if (i + 1 < nx2) { const b = G[i + 1][j]; if (b && b.f === a.f && b.c !== a.c) E.push(`M${(i + 1) * c2} ${j * c2}v${c2}`); }
+        if (j + 1 < ny2) { const b = G[i][j + 1]; if (b && b.f === a.f && b.c !== a.c) E.push(`M${i * c2} ${(j + 1) * c2}h${c2}`); } }
+      fills += `<path d="${E.join('')}" fill="none" stroke="#4a3a2a" stroke-opacity=".75" stroke-width=".8" stroke-dasharray="3 2" pointer-events="none" class="cntyline"/>`; }
     MAPC.k = ck; MAPC.v = fills;
   }
   if (MAPC.k !== ck) {
@@ -3880,8 +3938,7 @@ function stratMap(s) {
   const LU = zoom && cty.length ? cty.concat(pts.filter(u => !cty.some(c => geoStem(c.n) === geoStem(u.n)))) : pts;
   const links = Ly.road && T.g ? linksFor(s, LU, zoom ? 1.0 : 2.4, ck) : [];
   const LS = { plain: 'stroke="#6b4a2a" stroke-width="1" stroke-dasharray="4 3"', pass: 'stroke="#6b4a2a" stroke-width="1.2" stroke-dasharray="4 3"', mtn: 'stroke="#6b4a2a" stroke-width="1" stroke-dasharray="1 3" stroke-linecap="round"', sea: 'stroke="#3d78b5" stroke-width="1" stroke-dasharray="1 4" stroke-linecap="round"' };
-  const roads = links.map(l => l.k === 'block' ? (() => { const m = { lon: (l.a.lon + l.b.lon) / 2, lat: (l.a.lat + l.b.lat) / 2 }; return `<g opacity=".8"><title>${esc(l.a.n)}—${esc(l.b.n)}：隔山不通（连线上山岭高出两头约${l.rise}米）</title><polyline points="${XY(l.a)} ${XY(l.b)}" fill="none" stroke="#b33" stroke-width=".6" stroke-dasharray="1 5" opacity=".6"/><text x="${px(m).toFixed(0)}" y="${(py(m) + 4).toFixed(0)}" font-size="11" fill="#b33" text-anchor="middle">✕</text></g>`; })()
-    : `<polyline points="${l.P.map(XY).join(' ')}" fill="none" ${LS[l.k]} opacity=".85"><title>${esc(l.a.n)}—${esc(l.b.n)}：${LINK_TXT[l.k]}${l.via ? '（经' + esc(l.via) + '）' : ''}，约${liOf(hav(l.a, l.b) * (l.k === 'mtn' ? 1.6 : 1.25))}里</title></polyline>`).join('')
+  const roads = links.filter(l => l.k !== 'block').map(l => `<polyline points="${l.P.map(XY).join(' ')}" fill="none" ${LS[l.k]} opacity=".85"><title>${esc(l.a.n)}—${esc(l.b.n)}：${LINK_TXT[l.k]}${l.via ? '（经' + esc(l.via) + '）' : ''}，约${liOf(hav(l.a, l.b) * (l.k === 'mtn' ? 1.6 : 1.25))}里</title></polyline>`).join('')
     + (Ly.road && M.ok ? arr(M.A.roads).filter(r => r.pts.some(inBox)).map(r => `<polyline points="${r.pts.map(XY).join(' ')}" fill="none" stroke="#8a3b12" stroke-width="2" stroke-dasharray="7 3" opacity=".9"><title>${esc(r.name)}（驿道，${esc(r.basis)}）</title></polyline>`).join('') : '');
   const pss = Ly.pass ? passesIn(s, y).filter(inBox) : [];
   const passes = pss.map(p => `<g pointer-events="all"><title>${esc(p.n)}：${esc(p.why || '')}${p.src ? '（坐标：' + esc(p.src) + '）' : ''}</title><rect x="${(px(p) - 6).toFixed(0)}" y="${(py(p) - 6).toFixed(0)}" width="12" height="12" rx="2" fill="#5b3a1a" stroke="#fff" stroke-width=".8"/><text x="${px(p).toFixed(0)}" y="${(py(p) + 4).toFixed(0)}" font-size="9" fill="#fff" text-anchor="middle" pointer-events="none">关</text>${zoom || /山海|居庸|潼|剑门|嘉峪|雁门|函谷|武关|大散|玉门/.test(p.n) ? `<text x="${(px(p) + 8).toFixed(0)}" y="${(py(p) + 4).toFixed(0)}" font-size="10" fill="#5b3a1a" pointer-events="none" stroke="#fff" stroke-width="2" paint-order="stroke">${esc(p.n)}</text>` : ''}</g>`).join('')
@@ -3935,8 +3992,8 @@ function stratMap(s) {
   const unloc = M.ok && !M.era ? M.A.units.filter(u => u.lv === 2 && !u.lat).map(u => u.n) : [];
   return svg + `<div class="mlayers">${[['terr', '地形'], ['river', '河流'], ['road', '通路'], ['pass', '关隘'], ['adm', '政区']].map(([k, n]) => `<label><input type="checkbox" data-maplay="${k}"${Ly[k] ? ' checked' : ''}>${n}</label>`).join('')}</div>`
     + (rl.length ? `<div class="mlegend">${rl.map(r => `<span><i style="background:${r.col}"></i><b>${esc(r.name)}</b>${regRuler(s, r) ? '·' + esc(regRuler(s, r)) : ''}${r.capital ? '·都' + esc(r.capital) : ''}${r.basis === '推算' ? '<span class="att">推算</span>' : ''}${(pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) ? '（你在此）' : ''}</span>`).join('')}</div>` : '')
-    + `<div class="mlegend">${owners.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}${PL ? '<span>◉ 府州治所</span><span>▫ 县城</span><span><b>━</b> 省界</span><span>— 府州界</span>' : ''}<span>★ 你在这里</span><span>⚔ 打过仗</span><span><b style="color:#5b3a1a">关</b> 关隘</span><span>╌ 平路相通</span><span>┈ 山路难行</span><span style="color:#b33">✕ 隔山不通</span><span style="color:#8a3b12">━ ━ 驿道</span><span style="color:#2f6fa8">运河</span></div>`
-    + `<div class="muted" style="font-size:11px">${M.era ? `政区：谭其骧《中国历史地图集》${esc(M.era.title)}的省—府—县（治所、县点：${esc(M.era.source)}）；${PL ? `府界、省界照 CHGIS Version 6（${M.era.id === 'qing-1911' ? '1911' : '1820'} 年层，© Fairbank Center for Chinese Studies and the Institute for Chinese Historical Geography at Fudan University, Dec 2016），从哈佛 Dataverse 官方源下到本机，简化到约一里` : POLY_P[M.era.id] ? '府界正从哈佛 CHGIS 官方源下载，下好前府州地块按治所远近示意、不是实界' : `府界没下成（${esc(POLY_ERR[M.era.id] || '这个浏览器不支持解压')}），府州地块按治所远近示意、不是实界`}${M.ok ? '；驿道、关隘照联网核定' : ''}` : M.ok ? `政区：${esc(M.A.src)}、照《地理志》核定（${esc(M.A.y)}年；府州地块按治所远近示意，不是实界）${zoom && !cty.length && MAPZ.mode === 'prov' ? '；本省的县正在查' : ''}${unloc.length ? `；${unloc.length}处在地名库里没找到坐标，没画：${esc(unloc.slice(0, 8).join('、'))}${unloc.length > 8 ? '等' : ''}` : ''}` : '政区：正在联网核定（或这回没查成）；先照 CHGIS 地名库画这一年的州府治所，不分省（地名库里的上级政区残缺、串朝代，不拿来用）'}。地形据 AWS 高程、河湖海岸据 Natural Earth（黄河下游、运河按这一年的河道画）；关隘坐标据维基百科；通不通照地形推，具体走法看剧情。</div>`;
+    + `<div class="mlegend">${owners.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}${PL ? '<span>◉ 府州治所</span><span>▫ 县城</span><span><b>━</b> 省界</span><span>— 府州界</span>' : ''}<span>★ 你在这里</span><span>⚔ 打过仗</span><span><b style="color:#5b3a1a">关</b> 关隘</span><span>╌ 平路相通</span><span>┈ 山路难行</span><span class="muted">不通的不画线</span>${PL && zoom ? '<span>┄ 县界</span>' : ''}<span style="color:#8a3b12">━ ━ 驿道</span><span style="color:#2f6fa8">运河</span></div>`
+    + `<div class="muted" style="font-size:11px">${M.era ? `政区：谭其骧《中国历史地图集》${esc(M.era.title)}的省—府—县（治所、县点：${esc(M.era.source)}）；${PL ? `${zoom ? '县界：府界之内按各县治所远近划分（谭图这一层没有县界，示意）；' : ''}府界、省界照 CHGIS Version 6（${M.era.id === 'qing-1911' ? '1911' : '1820'} 年层，© Fairbank Center for Chinese Studies and the Institute for Chinese Historical Geography at Fudan University, Dec 2016），从哈佛 Dataverse 官方源下到本机，简化到约一里` : POLY_P[M.era.id] ? '府界正从哈佛 CHGIS 官方源下载，下好前府州地块按治所远近示意、不是实界' : `府界没下成（${esc(POLY_ERR[M.era.id] || '这个浏览器不支持解压')}），府州地块按治所远近示意、不是实界`}${M.ok ? '；驿道、关隘照联网核定' : ''}` : M.ok ? `政区：${esc(M.A.src)}、照《地理志》核定（${esc(M.A.y)}年；府州地块按治所远近示意，不是实界）${zoom && !cty.length && MAPZ.mode === 'prov' ? '；本省的县正在查' : ''}${unloc.length ? `；${unloc.length}处在地名库里没找到坐标，没画：${esc(unloc.slice(0, 8).join('、'))}${unloc.length > 8 ? '等' : ''}` : ''}` : '政区：正在联网核定（或这回没查成）；先照 CHGIS 地名库画这一年的州府治所，不分省（地名库里的上级政区残缺、串朝代，不拿来用）'}。地形据 AWS 高程、河湖海岸据 Natural Earth（黄河下游、运河按这一年的河道画）；关隘坐标据维基百科；通不通照地形推，具体走法看剧情。</div>`;
 }
 function mapInfo(s) {
   const n = MAPZ.sel; if (!n) return '<div class="muted" style="font-size:12px">点图上的一处看详情、通往哪里、就地下令；点省名放大到一省（到县）。</div>';
@@ -6292,6 +6349,7 @@ function applyReply(s, d, said) {
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
     { const af = familyAgeFix(s); if (af.length) noteErr('家里人年岁不合常理，照改', af.join('；')); }
+    famPlanTick(s);
     // 传承：主角死了，由继承人接着玩
     const sc = d.succession && typeof d.succession === 'object' ? d.succession : null;
     if (sc && String(sc.heir || '').trim() && (sc.died === true || /^(是|true|死|亡|卒|殁|薨|崩|驾崩|去世|病故)/.test(String(sc.died || '').trim()))) {
@@ -6839,8 +6897,9 @@ function pane(tab) {
     const OLD = Object.entries(s.people).filter(([, v]) => v && v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const fam = s.household.filter(m => !s.people[m.name]);
     const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionSet(s), FX = n => { const c = chkOf(s, n); return (FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>') + (c ? `<span class="muted" style="font-size:11px" title="${esc(c.why || '')}">${c.real ? '已核：' + esc(c.src) : '已核：查无此人'}</span>` : n === s.protagonist.name ? '' : `<button class="link" style="font-size:11px" data-pchk="${esc(n)}">核查是否真人</button>`); };
-    const famTbl = HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b>${m.basis ? `<div class="gb"><span class="gr ${m.inferred ? 'inf' : 'rec'}">${m.inferred ? '推算' : '史载'}</span>${esc(String(m.basis).replace(/^推算[：:]/, ''))}</div>` : ''}</td><td>${m.age != null ? esc(m.age) + '岁' : ''}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(String(m.note || '').replace(/（推算）$/, ''))}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '';
-    return (ORGMSG && /核查|查无此人|有其人|评定/.test(ORGMSG) ? `<div class="muted" style="margin:4px 0">${esc(ORGMSG)}</div>` : '') + (arr(s.clashLog).some(x => s.turn - x.turn <= 3) ? `<div class="muted" style="margin:4px 0">虚构人物与史书真人重名，已改名：${esc(s.clashLog.filter(x => s.turn - x.turn <= 3).map(x => x.t).join('；'))}</div>` : '') + clanHtml(s) + famTbl + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
+    const ID = s.protagonist.ident, identH = ID ? `<div class="h" style="margin-top:6px"><span class="seal">身</span>身份<span class="note">照史料：${esc(ID.source)}</span></div><div class="list"><div>${[['字', ID.zi], ['号', ID.hao], ['籍贯', ID.jiguan], ['出身', ID.chushen], ['功名', ID.gongming], ['爵位', ID.jue]].filter(x => x[1]).map(([k, v]) => `<b>${k}</b> ${esc(v)}`).join('　')}</div>${arr(ID.career).length ? `<div class="muted" style="font-size:12px">履历：${ID.career.map(c => (c.y ? c.y + '年 ' : '') + esc(c.post)).join('；')}</div>` : ''}</div>` : '';
+    const famTbl = identH + (HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算${s.protagonist.real ? '；真人照史料列全家谱' : ''}${arr(s.famPlan).length ? `；史载还有${s.famPlan.length}个子女在日后出生，到时照记` : ''}</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b>${m.basis ? `<div class="gb"><span class="gr ${m.inferred ? 'inf' : 'rec'}">${m.inferred ? '推算' : '史载'}</span>${esc(String(m.basis).replace(/^推算[：:]/, ''))}</div>` : ''}</td><td>${m.age != null ? esc(m.age) + '岁' : ''}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(String(m.note || '').replace(/（推算）$/, ''))}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '');
+    return (ORGMSG && /核查|查无此人|有其人|评定/.test(ORGMSG) ? `<div class="muted" style="margin:4px 0">${esc(ORGMSG)}</div>` : '') + (arr(s.clashLog).some(x => s.turn - x.turn <= 3) ? `<div class="muted" style="margin:4px 0">虚构人物与史书真人重名，已改名：${esc(s.clashLog.filter(x => s.turn - x.turn <= 3).map(x => x.t).join('；'))}</div>` : '') + clanHtml(s) + famTbl + rosterHtml(s) + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
       ${fam.map(m => `<div class="pc">${m.dead || /未取名/.test(m.name) ? '' : `<canvas class="mini" data-face-npc="${esc(m.name)}" width="92" height="110"></canvas>`}<div class="pn"><b>${esc(m.name)}</b>${m.alias ? `<span class="muted">（${esc(m.alias)}）</span>` : ''}${FX(m.name)}<span class="att">${esc(m.relation)}</span></div><div class="pr">${m.age != null ? m.age + '岁' : ''}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
       ${P.map(([k, v]) => `<div class="pc"><canvas class="mini" data-face-npc="${esc(k)}" width="92" height="110"></canvas><div class="pn"><b>${esc(k)}</b>${FX(k)}${relTag(v) ? `<span class="att onpath">${relTag(v)}</span>` : ''}${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
         <div class="pr">${esc(v.role)}${v.age != null ? ' · ' + esc(v.age) + '岁' : ''}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''}</div>
