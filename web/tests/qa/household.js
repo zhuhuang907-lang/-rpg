@@ -26,7 +26,12 @@ const { chromium } = require('playwright');
   if (!(fx.c <= fx.me - 14)) bad('儿子比本人还大，没改：' + JSON.stringify(fx));
   // 史书真人：家里人只照史料，查不到的不添、不推
   const rr = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = false; const due = familyDue(s); const add = await familyFix(s); return { due, add, hh: s.household.map(m => m.relation + m.name + '|' + (m.basis || '')) }; });
-  if (rr.hh.some(h => /推/.test(h.split('|')[1] || '')) || rr.hh.length > 3) bad('真人主角被按常情添了家里人：' + JSON.stringify(rr));
+  if (rr.hh.some(h => /推/.test(h.split('|')[1] || '') && !/管家|仆|婢|丫鬟/.test(h)) || rr.hh.some(h => /正室|妾|程婉贞/.test(h))) bad('真人主角被按常情添了家里人：' + JSON.stringify(rr));
+  // 默认开局就是真人主角：后院不能空——史书只记姓氏的照写不改名，府里的下人补上并标虚构（CLAUDE.md「人物」）
+  if (!rr.hh.some(h => /^母吴氏\|/.test(h))) bad('史书只记姓氏的家里人被丢了或被改了名：' + JSON.stringify(rr));
+  if (!rr.hh.some(h => /^子汪承裕/.test(h))) bad('史载的儿子没记上：' + JSON.stringify(rr));
+  { const st = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = false; await familyFix(s); return s.household.filter(m => /管家|仆|婢|丫鬟/.test(m.relation)).map(m => [m.relation, m.name, !!m.fic, m.note]); });
+    if (!st.length || st.some(x => !x[2] || !/虚构/.test(x[3]))) bad('真人主角的后院没人使唤，或下人没标虚构：' + JSON.stringify(st)); }
   // 每回合当场审：写一回，常理审查就跟着审一次（不是隔几回）
   const n0 = (() => { try { return require('fs').readFileSync('logic.log', 'utf8').split('\n').filter(Boolean).length; } catch (_) { return 0; } })();
   await p.fill('#said', '去账房看看今年的账'); await p.click('#bSend'); if (!(await idle())) bad('这一回卡住');
