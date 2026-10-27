@@ -32,10 +32,18 @@ const { chromium } = require('playwright');
     if (!g.id || g.id.zi !== '景和' || !g.id.career.length) bad('真人主角的字号、履历没照史料记下：' + JSON.stringify(g.id));
     if (!g.dead.includes('汪廷璋')) bad('史载已故的亲属没列进家谱：' + JSON.stringify(g));
     if (!/汪承禧/.test(g.plan) || !g.born.includes('汪承禧')) bad('日后才出生的子女没到年照记：' + JSON.stringify(g)); }
+  // 先查（维基整篇、维基数据亲属）再搜，DeepSeek 只整理材料里有的：材料里没有的名字不收；维基数据的亲属漏了也补上；身边人照史料列上（CLAUDE.md「人物」）
+  { const c = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = 0; s.people = {}; await familyFix(s); return { hh: s.household.map(m => m.name), ppl: Object.keys(s.people), rec: s.famRec, due: familyDue(s) }; });
+    if (c.hh.includes('汪假人')) bad('材料里没有的家里人被收进来了：' + JSON.stringify(c));
+    if (!c.hh.includes('汪景明')) bad('维基数据记的兄弟没列上：' + JSON.stringify(c));
+    if (!c.ppl.includes('江春') || !c.ppl.includes('程晋芳') || c.ppl.includes('编造部将')) bad('身边的人没照史料列，或收了材料里没有的人：' + JSON.stringify(c));
+    if (c.due) bad('家谱查完了还说要查'); }
+  // 旧存档（标了查过的老版本）也要照新办法再查一遍
+  if (!(await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.famRec = true; return familyDue(s); }))) bad('旧存档不会照新办法重查家谱');
   // 人物页：天下名录（宗室王公、中枢、各地大员），只列有出处的真人
   { await p.evaluate(() => { TAB = 'people'; SIDE_FOLD = false; render(); }); await p.waitForFunction(() => S.roster || S.rosterFail != null, null, { timeout: 60000 }).catch(() => {});
     const r = await p.evaluate(() => { render(); const t = document.querySelector('.roster'); return { txt: t ? t.textContent : '', n: arr(S.roster && S.roster.groups).length }; });
-    if (!/傅恒/.test(r.txt) || !/尹继善/.test(r.txt) || !/允禄/.test(r.txt) || /某大臣/.test(r.txt)) bad('人物页没有天下名录、或混进了没出处的人：' + JSON.stringify(r).slice(0, 300)); }
+    if (!/傅恒/.test(r.txt) || /某大臣|编造大员/.test(r.txt)) bad('人物页没有天下名录、或混进了没出处的人：' + JSON.stringify(r).slice(0, 300)); }
   // 默认开局就是真人主角：后院不能空——史书只记姓氏的照写不改名，府里的下人补上并标虚构（CLAUDE.md「人物」）
   if (!rr.hh.some(h => /^母吴氏\|/.test(h))) bad('史书只记姓氏的家里人被丢了或被改了名：' + JSON.stringify(rr));
   if (!rr.hh.some(h => /^子汪承裕/.test(h))) bad('史载的儿子没记上：' + JSON.stringify(rr));

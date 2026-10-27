@@ -16,8 +16,8 @@ function dbf(fields, rows) {
   rows.forEach((r, i) => { let o = hl + i * rl + 1; fields.forEach(([n, l]) => { const v = Buffer.from(String(r[n] ?? ''), 'utf8'); v.copy(b, o, 0, Math.min(l, v.length)); o += l; }); });
   b[b.length - 1] = 0x1a; return b;
 }
-function shp(boxes) {
-  const recs = boxes.map((bx, i) => { const [a, b, c, d] = bx, R = [[a, d], [c, d], [c, b], [a, b], [a, d]].map(([lo, la]) => gkFwd(lo, la));
+function shp(boxes, geo) {
+  const recs = boxes.map((bx, i) => { const [a, b, c, d] = bx, R = [[a, d], [c, d], [c, b], [a, b], [a, d]].map(([lo, la]) => geo ? [lo, la] : gkFwd(lo, la));
     const body = Buffer.alloc(44 + 4 + R.length * 16); body.writeInt32LE(5, 0); body.writeInt32LE(1, 36); body.writeInt32LE(R.length, 40); body.writeInt32LE(0, 44);
     R.forEach(([x, y], k) => { body.writeDoubleLE(x, 48 + k * 16); body.writeDoubleLE(y, 56 + k * 16); });
     const h = Buffer.alloc(8); h.writeInt32BE(i + 1, 0); h.writeInt32BE(body.length / 2, 4); return Buffer.concat([h, body]); });
@@ -33,9 +33,12 @@ function zip(files) {
 }
 const PREF = [['江宁府', '府', [118.35, 31.25, 119.25, 32.25], [118.769, 32.053]], ['扬州府', '府', [119.0, 32.25, 120.9, 33.4], [119.437, 32.391]], ['镇江府', '府', [119.25, 31.6, 119.9, 32.25], [119.45, 32.2]],
   ['常州府', '府', [119.9, 31.3, 120.5, 32.25], [119.95, 31.78]], ['苏州府', '府', [120.5, 30.8, 121.2, 32.0], [120.6, 31.3]]];
-const KIND = { 2966717: 'pref', 2966689: 'pref', 2966720: 'prov', 2966688: 'prov', 2966725: 'pts', 2966691: 'pts' };
+// 历代府州界（WGS84，带起止年）
+const TS = [['杭州', '州', [119.5, 29.6, 120.6, 30.6], 600, 1129], ['润州', '州', [119.0, 31.8, 119.9, 32.3], 600, 1112], ['扬州', '州', [119.0, 32.3, 120.9, 33.4], 620, 1276], ['江宁府', '府', [118.35, 31.25, 119.25, 32.25], 1129, 1911]];
+const KIND = { 2966510: 'ts', 2966717: 'pref', 2966689: 'pref', 2966720: 'prov', 2966688: 'prov', 2966725: 'pts', 2966691: 'pts' };
 module.exports = id => {
   const k = KIND[id]; if (!k) return null;
+  if (k === 'ts') return zip([['fix_time_pref_pgn.shp', shp(TS.map(p => p[2]), true)], ['fix_time_pref_pgn.dbf', dbf([['NAME_CH', 30], ['TYPE_CH', 15], ['BEG_YR', 10], ['END_YR', 10]], TS.map(p => ({ NAME_CH: p[0], TYPE_CH: p[1], BEG_YR: p[3], END_YR: p[4] })))]]);
   if (k === 'pref') return zip([['fix_pref_pgn.shp', shp(PREF.map(p => p[2]))], ['fix_pref_pgn.dbf', dbf([['NAME_CH', 35], ['TYPE_CH', 17], ['LEV1_CH', 17]], PREF.map(p => ({ NAME_CH: p[0], TYPE_CH: p[1], LEV1_CH: '江苏' })))]]);
   if (k === 'prov') return zip([['fix_prov_pgn.shp', shp([[118.35, 30.8, 121.2, 33.4]])], ['fix_prov_pgn.dbf', dbf([['NAME_CH', 35]], [{ NAME_CH: '江苏' }])]]);
   return zip([['fix_pref_pts.dbf', dbf([['NAME_CH', 20], ['LEV1_CH', 17], ['X_COORD', 19], ['Y_COORD', 19]], PREF.map(p => ({ NAME_CH: p[0], LEV1_CH: '江苏', X_COORD: p[3][0], Y_COORD: p[3][1] })))]]);

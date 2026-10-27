@@ -231,6 +231,40 @@ async function doTurn(body, onDelta) {
   return r;
 }
 
+const arr0 = x => Array.isArray(x) ? x : [];
+/* 谭图府、省界（CHGIS V6，哈佛 Dataverse 官方发布；1820、1911 两层和历代府州界）：许可不准转发，不随游戏打包，用到时替玩家从官方源下到本机（data/cache/chgis） */
+const CHGIS_IDS = /^(2966717|2966720|2966725|2966689|2966688|2966691|2966510)$/;
+async function chgisGet(id) {
+  if (!CHGIS_IDS.test(id)) return { why: '没有这一层' };
+  const dir = path.join(ROOT, 'data', 'cache', 'chgis'); fs.mkdirSync(dir, { recursive: true }); const cf = path.join(dir, id + '.zip');
+  try { const b = fs.readFileSync(cf); if (b.length > 100 && b.readUInt32LE(0) === 0x04034b50) return { buf: b }; } catch (_) { /* 没缓存 */ }
+  try {
+    const r = await require('./core/net').fetchX((process.env.CHGIS_BASE || 'https://dataverse.harvard.edu/api/access/datafile/') + id, { signal: AbortSignal.timeout(600000) });
+    if (!r.ok) return { why: 'HTTP ' + r.status };
+    const b = Buffer.from(await r.arrayBuffer()); if (b.length < 100 || b.readUInt32LE(0) !== 0x04034b50) return { why: '下到的不是压缩包' };
+    try { fs.writeFileSync(cf, b); } catch (_) { /* 存不下就算了 */ } return { buf: b };
+  } catch (e) { return { why: String(e && e.message || e).slice(0, 120) }; }
+}
+/** 维基百科整篇 + 维基数据亲属；get(o, 'wd'|'wiki') 发请求 */
+async function personFullCore(name, hint, get) {
+  const toks = String(hint || '').split(/[\s，,、]+/).filter(Boolean);
+  const page = async title => { const d = await get({ action: 'query', titles: title, redirects: '1', converttitles: '1', prop: 'extracts|pageprops', explaintext: '1', exchars: '20000', variant: 'zh-cn' }, 'wiki'); const pg = Object.values((d.query || {}).pages || {})[0]; if (!pg || pg.missing !== undefined || !pg.extract) return null; return { title: pg.title, text: pg.extract, disamb: !!(pg.pageprops && 'disambiguation' in pg.pageprops), qid: pg.pageprops && pg.pageprops.wikibase_item }; };
+  let p = await page(name);
+  if (!p || p.disamb) { const d = await get({ action: 'query', list: 'search', srsearch: name + (toks[0] ? ' ' + toks[0] : ''), srlimit: '6' }, 'wiki'); for (const t of arr0((d.query || {}).search).map(x => x.title).filter(t => t.startsWith(name)).slice(0, 3)) { const q = await page(t); if (q && !q.disamb) { p = q; break; } } }
+  if (p && p.disamb) p = null;
+  const kin = [];
+  if (p && p.qid) {
+    const e = await get({ action: 'wbgetentities', ids: p.qid, props: 'claims' }, 'wd'), C = (((e.entities || {})[p.qid]) || {}).claims || {};
+    const REL = { P22: '父', P25: '母', P26: '配偶', P40: '子女', P3373: '兄弟姐妹', P1038: '亲属', P451: '伴侣' }, ids = [];
+    for (const [k, rel] of Object.entries(REL)) for (const c of arr0(C[k])) { const id = c && c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id; if (id) ids.push([id, rel]); }
+    if (ids.length) { const L = await get({ action: 'wbgetentities', ids: [...new Set(ids.map(x => x[0]))].slice(0, 50).join('|'), props: 'labels|claims', languages: 'zh-cn|zh-hans|zh|zh-tw|en' }, 'wd'), E = L.entities || {};
+      const yr = c => { const t = c && c[0] && c[0].mainsnak && c[0].mainsnak.datavalue && c[0].mainsnak.datavalue.value && c[0].mainsnak.datavalue.value.time; const m = t && String(t).match(/^([+-])0*(\d+)-/); return m ? (m[1] === '-' ? -1 : 1) * +m[2] : null; };
+      for (const [id, rel] of ids) { const x = E[id] || {}, lb = x.labels || {}, nm = (lb['zh-cn'] || lb['zh-hans'] || lb.zh || lb['zh-tw'] || {}).value; if (!nm) continue; const cl = x.claims || {};
+        const sex = arr0(cl.P21).map(c => c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id)[0];
+        kin.push({ rel, name: nm, born: yr(cl.P569), died: yr(cl.P570), sex: sex === 'Q6581097' ? '男' : sex === 'Q6581072' ? '女' : '' }); } }
+  }
+  return { title: p ? p.title : '', text: p ? p.text : '', kin };
+}
 const routes = {
   /* ---- 一句话开局 ---- */
   async 'POST /api/quick-start'(body) {
@@ -358,17 +392,7 @@ const routes = {
     } catch (e) { return { ok: false, why: String(e && e.message || e).slice(0, 120) }; }
   },
   /* 谭图府、省界（CHGIS V6 的 1820、1911 层，哈佛 Dataverse 官方发布）：许可不准转发，所以不随游戏打包，用到时替玩家从官方源下到本机（data/cache/chgis） */
-  'GET /api/chgis': async (_b, q) => {
-    const id = String(q.get('id') || ''); if (!/^(2966717|2966720|2966725|2966689|2966688|2966691)$/.test(id)) return { ok: false, why: '没有这一层' };
-    const dir = path.join(ROOT, 'data', 'cache', 'chgis'); fs.mkdirSync(dir, { recursive: true }); const cf = path.join(dir, id + '.zip');
-    try { const b = fs.readFileSync(cf); if (b.length > 100 && b.readUInt32LE(0) === 0x04034b50) return { ok: true, b64: b.toString('base64') }; } catch (_) { /* 没缓存 */ }
-    try {
-      const r = await require('./core/net').fetchX((process.env.CHGIS_BASE || 'https://dataverse.harvard.edu/api/access/datafile/') + id, { signal: AbortSignal.timeout(120000) });
-      if (!r.ok) return { ok: false, why: 'HTTP ' + r.status };
-      const b = Buffer.from(await r.arrayBuffer()); if (b.length < 100 || b.readUInt32LE(0) !== 0x04034b50) return { ok: false, why: '下到的不是压缩包' };
-      try { fs.writeFileSync(cf, b); } catch (_) { /* 存不下就算了 */ } return { ok: true, b64: b.toString('base64') };
-    } catch (e) { return { ok: false, why: String(e && e.message || e).slice(0, 120) }; }
-  },
+  'GET /api/chgis': async (_b, q) => { const r = await chgisGet(String(q.get('id') || '')); return r.buf ? { ok: true, b64: r.buf.toString('base64') } : { ok: false, why: r.why }; },
   /* 问题报告用：版本、更新、最近出过的错、模型与搜索的状态（不含 Key） */
   'GET /api/diag': async () => {
     const c = await adapters.loadAdapterConfig(), d = (c.configs || {})[c.selected || 'deepseek'] || {}, sc = await search.loadConfig();
@@ -571,6 +595,21 @@ const routes = {
   },
   /* 查一个人是不是史书上的真人：维基百科按条目名直接取（不是全文搜索，同名的消歧义页再按朝代、身份挑）、
      维基数据（是不是「人」、生卒年、简介）、博查（百度百科等），三路同时查；查过的存本机，不反复打扰维基（维基限流很严） */
+  /* 真人的家谱、身边人：维基百科整篇（不只开头）+ 维基数据的亲属条目（父、母、配偶、子女、兄弟姐妹、亲属），带生卒年 */
+  async 'POST /api/personfull'(body) {
+    const name = String((body || {}).name || '').trim().slice(0, 12), hint = String((body || {}).hint || '').trim().slice(0, 40);
+    if (name.length < 2) return { ok: false, error: '名字太短' };
+    const dir = path.join(ROOT, 'data', 'cache', 'personfull'); fs.mkdirSync(dir, { recursive: true });
+    const cf = path.join(dir, require('crypto').createHash('md5').update(name + '|' + hint).digest('hex') + '.json');
+    try { const c = JSON.parse(fs.readFileSync(cf, 'utf8')); if (Date.now() - (c.at || 0) < 30 * 864e5) return c; } catch (_) { /* 没缓存 */ }
+    const net = require('./core/net'), UA = { 'User-Agent': 'HistoryRPG/1.0 (https://github.com/zhuhuang907-lang/-rpg; history game)', 'Api-User-Agent': 'HistoryRPG/1.0 (history game)' };
+    const WB = process.env.WIKI_BASE || 'https://zh.wikipedia.org', DB = process.env.WIKIDATA_BASE || 'https://www.wikidata.org';
+    const getJ = async (u, ms = 12000) => { try { const r = await net.fetchX(u, { headers: UA, signal: AbortSignal.timeout(ms) }); return r.ok ? await r.json() : {}; } catch (_) { return {}; } };
+    const out = await personFullCore(name, hint, (o, base) => getJ((base === 'wd' ? DB : WB) + '/w/api.php?' + new URLSearchParams({ format: 'json', ...o })));
+    const res = { ok: true, name, hint, at: Date.now(), ...out };
+    if (res.text || arr0(res.kin).length) try { fs.writeFileSync(cf, JSON.stringify(res)); } catch (_) { /* 存不下就算了 */ }
+    return res;
+  },
   async 'POST /api/person'(body) {
     const name = String((body || {}).name || '').trim().slice(0, 12), hint = String((body || {}).hint || '').trim().slice(0, 40);
     if (name.length < 2) return { ok: false, error: '名字太短' };
@@ -1009,6 +1048,7 @@ const server = http.createServer(async (req, res) => {
   if ((req.method === 'POST' || req.method === 'PUT') && routes[key] && !/json/i.test(req.headers['content-type'] || '')) return send(res, 415, { ok: false, why: '请求格式不对' });
   let body = {};
   try { if (req.method === 'POST' || req.method === 'PUT') body = await readBody(req); } catch (e) { return send(res, 413, { ok: false, why: String(e.message || e) }); }
+  if (key === 'GET /api/chgisbin') { const r = await chgisGet(String(url.searchParams.get('id') || '')); if (!r.buf) return send(res, 200, { ok: false, why: r.why }); res.writeHead(200, { 'content-type': 'application/zip', 'content-length': r.buf.length }); return res.end(r.buf); }
   const handler = routes[key];
   if (!handler) return serveStatic(req, res, url.pathname);
   if (DEV_ONLY.has(key) && !process.env.RPG_DEV) {   // 高级调试接口：带 Key 明文、能起子进程，玩家用不到

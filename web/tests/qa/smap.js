@@ -54,6 +54,11 @@ const { chromium } = require('playwright');
   if (!/两江督标/.test(r2.leg) || !/清/.test(r2.leg)) bad('图例不全：' + r2.leg);
   if (!/弘历/.test(r2.leg) || !/◉ 府州治所/.test(r2.leg)) bad('图例里的君主没照史料核、或没标治所：' + r2.leg);
   { const w = await p.evaluate(() => { const sv = document.querySelector('.smap'); return { area: [...sv.querySelectorAll('.arealbl')].map(e => e.textContent), foot: document.body.innerText.includes('CHGIS Version 6') }; }); if (!w.area.includes('扬州府') || !w.foot) bad('天下图上府州名没写在地块上、或没注明府界出处：' + JSON.stringify(w).slice(0, 200)); }
+  // 兵马归谁调：你的部将领的也归你调；别家的只能看（CLAUDE.md 兵马）
+  { const m = await p.evaluate(() => { const keep = S.forces; S.people['王得禄'] = { role: '把总', tie: '部将', seen: S.turn }; S.forces = keep.concat([{ name: '亲兵营', leader: '王得禄', troops: '800', at: '扬州府' }, { name: '督标', leader: '尹继善', owner: '两江督标', troops: '20000', at: '江宁府' }]);
+      const r = { sub: myForce(S, S.forces.find(f => f.name === '亲兵营')), other: myForce(S, S.forces.find(f => f.name === '督标')), go: !!armyAct(S, 'march', { force: '亲兵营', target: '仪征县' }), no: !armyAct(S, 'march', { force: '督标', target: '仪征县' }) };
+      S.forces = keep; S.armyPending = []; delete S.people['王得禄']; return r; });
+    if (!m.sub || !m.go) bad('部将领的兵调不动：' + JSON.stringify(m)); if (m.other || !m.no) bad('别家的兵也能调：' + JSON.stringify(m)); }
   await p.click('.smap circle[data-mapu="江宁府"]');
   const info = await p.evaluate(() => document.querySelector('.affair').innerText);
   if (!/治所：上元县/.test(info) || !/界址照谭图/.test(info)) bad('点了府州没说治所在哪：' + info.slice(0, 200));
@@ -90,6 +95,10 @@ const { chromium } = require('playwright');
   for (const n of ['南唐', '吴越', '后蜀', '后汉']) if (!q2.leg.includes(n) || !q2.svg.includes(n)) bad('五代十国没画出' + n);
   if (q2.five) bad('把「五代」当成了一个政权');
   if (!/东汉至北宋/.test(q2.river) || /夺淮/.test(q2.river) || /会通河/.test(q2.river) || !/通济渠/.test(q2.river)) bad('950年的黄河、运河不对：' + q2.river.slice(0, 300));
+  // 不是清代的年份也照谭图历代府州界画真界，填色按政权（CLAUDE.md「舆图」）
+  await p.waitForFunction(() => TS || TS_ERR, null, { timeout: 60000 }).catch(() => {});
+  { const t = await p.evaluate(() => { MAPC.k = ''; render(); const sv = document.querySelector('.smap'), h = sv.querySelector('path[data-mapu="杭州"]'), wy = (S.admin.regimes.find(r => r.name === '吴越') || {}).col; return { err: TS_ERR, h: !!h, fill: h && h.getAttribute('fill'), wy, foot: document.body.innerText.includes('历代府州界') }; });
+    if (t.err || !t.h || !t.foot) bad('950年没照谭图历代府州界画：' + JSON.stringify(t)); else if (t.fill !== t.wy) bad('杭州的地块没按吴越着色：' + JSON.stringify(t)); }
   await p.click('.smap circle[data-mapu="杭州"]').catch(() => bad('950年图上没有杭州'));
   if (!/吴越/.test(await p.evaluate(() => (document.querySelector('.affair') || {}).innerText || ''))) bad('点杭州没说归吴越');
   await SHOT('w950');
