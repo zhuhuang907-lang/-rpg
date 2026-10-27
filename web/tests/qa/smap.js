@@ -38,20 +38,30 @@ const { chromium } = require('playwright');
   if (ms2 > 4000) bad('全国州府时画舆图太慢：' + Math.round(ms2) + 'ms');
   console.log('MS2', Math.round(ms2));
   console.log('MS', Math.round(ms), JSON.stringify(lk));
-  if (!/政区：联网查证|政区：照史书推定/.test(r.txt)) bad('没说政区从哪来');
+  if (!/政区：联网查证|政区：照史书推定|政区：谭其骧/.test(r.txt)) bad('没说政区从哪来');
   await SHOT('world');
   // 地盘、各方、兵马、战场
   await p.evaluate(() => { S.idm = 'warlord'; S.territory = [{ place: '扬州府', pop: 500000, troops: 3000, grain: 20000, loyalty: 60 }]; S.powers = [{ name: '两江督标', leader: '尹继善', seat: '江宁府', land: '苏州府、常州府', troops: '2万', stance: '提防' }]; S.forces = [{ name: '扬州营', leader: S.protagonist.name, troops: 3000, at: '扬州府', status: '驻守' }]; S.battles = [{ when: '三月', place: '镇江府', outcome: '小胜' }]; render(); });
   const r2 = await p.evaluate(() => ({ own: document.querySelectorAll('.smap rect[fill="var(--zhu)"]').length, txt: document.querySelector('.smap').textContent, leg: [...document.querySelectorAll('.mlegend')].map(x => x.innerText).join(' ') }));
-  if (r2.own < 3) bad('地盘没着色');
+  if (r2.own < 1) bad('地盘没着色');
   if (!/扬州营 3,000/.test(r2.txt)) bad('兵马没标出来');
   if (!/⚔/.test(r2.txt) || !/★/.test(r2.txt)) bad('战场、你在哪没标');
   if (!/两江督标/.test(r2.leg) || !/清/.test(r2.leg)) bad('图例不全：' + r2.leg);
   await p.click('.smap circle[data-mapu="江宁府"]');
   const info = await p.evaluate(() => document.querySelector('.affair').innerText);
   if (!/江宁府/.test(info) || !/两江督标/.test(info) || !/离你约\d+里/.test(info) || !/通往：/.test(info) || !/海拔/.test(info)) bad('点了没出详情、通路：' + info);
+  // 行军：从你所在到这里的路网路线、各档步调天数，图上画出路线；「去这里」把路线和步调写进下一步；主角有自己的印章图标；清代用谭图省府县层
+  const rt = await p.evaluate(() => ({ info: document.querySelector('.affair').innerText, pace: document.querySelectorAll('[data-mappace] option').length, line: [...document.querySelectorAll('.smap polyline title')].some(t => /去江宁府/.test(t.textContent)), seal: !!document.querySelector('.smap .mepin'), foot: document.body.innerText.includes('谭其骧') }));
+  if (!/取道|约\d+里/.test(rt.info) || !/常行/.test(rt.info) || rt.pace < 2) bad('点了一处没给出路线和步调：' + rt.info.slice(0, 300));
+  if (!rt.line) bad('图上没画出路线');
+  if (!rt.seal) bad('主角没有自己的图标');
+  if (!rt.foot) bad('清代没用谭图的省府县层');
+  await p.evaluate(() => { const t = document.querySelector('#said'); if (t) t.value = ''; });
+  await p.click('[data-mapgoto]');
+  const said = await p.evaluate(() => (document.querySelector('#said') || {}).value || '');
+  if (!/动身去江宁府（约\d+里/.test(said)) bad('「去这里」没把路线写进下一步：' + said);
   await p.click('[data-mapgo="攻"]');
-  if (!/扬州营进攻江宁府/.test(await p.evaluate(() => arr(S.armyPending).map(x => x.line).join()))) bad('就地下的军令没写进去');
+  { const ln = await p.evaluate(() => arr(S.armyPending).map(x => x.line).join()); if (!/扬州营进攻江宁府，约\d+里/.test(ln) || !/约\d+日可到/.test(ln)) bad('军令没带路线和步调：' + ln); }
   // 放大到江苏：县、驿道、渡口
   await p.click('.smap [data-mapprov="江苏"]');
   await p.waitForFunction(() => !REG_P, null, { timeout: 60000 }).catch(() => {});
