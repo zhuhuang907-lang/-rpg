@@ -591,9 +591,15 @@ const routes = {
       return Object.values(e.entities || {}).filter(x => x.claims && x.claims.P31 && x.claims.P31.some(c => c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id === 'Q5'))
         .map(x => ({ id: x.id, desc: ((x.descriptions || {})['zh-cn'] || (x.descriptions || {}).zh || (x.descriptions || {})['zh-hans'] || (x.descriptions || {}).en || {}).value || '', born: yr(x.claims.P569), died: yr(x.claims.P570), zhwiki: ((x.sitelinks || {}).zhwiki || {}).title || '' }));
     };
-    const bocha = async () => { if (!(await bochaOn())) return null; const r = await search.search(`${name} ${hint} 生平`.trim(), { provider: 'bocha', noFallback: true }); return (r.results || []).filter(x => String(x.title + x.snippet).includes(name) && !/小说|演义|游戏|电视剧|剧情|穿越|同人/.test(x.title + x.snippet)).slice(0, 4).map(x => ({ title: x.title, url: x.url, text: String(x.snippet || '').slice(0, 400) })); };
+    // 博查为主：同一个人换几种问法一起搜（名字、生平、带朝代身份、百度百科），去重后留提到这个名字的
+    const bocha = async () => { if (!(await bochaOn())) return null;
+      const qs = [...new Set([name, `${name} 生平`, `${name} ${hint}`.trim(), `${name} 百度百科`, `${name} 历史人物`])];
+      const rs = await Promise.all(qs.map(q => search.search(q, { provider: 'bocha', noFallback: true }).catch(() => ({ results: [] }))));
+      const seen = new Set(), out = [];
+      for (const r of rs) for (const x of (r.results || [])) { const k = x.url || x.title; if (seen.has(k)) continue; seen.add(k); if (String(x.title + x.snippet).includes(name) && !/小说|演义|游戏|电视剧|剧情|穿越|同人|网文|短剧/.test(x.title + String(x.snippet).slice(0, 80))) out.push({ title: x.title, url: x.url, text: String(x.snippet || '').slice(0, 500) }); }
+      return out.slice(0, 8); };
     const [w, wd, b] = await Promise.all([wiki().catch(e => ({ err: String(e.message || e) })), wdata().catch(e => ({ err: String(e.message || e) })), bocha().catch(() => null)]);
-    const out = { ok: true, name, hint, at: Date.now(), wiki: w && !w.err ? w : null, wikiErr: w && w.err || '', wikidata: Array.isArray(wd) ? wd : [], wikidataErr: wd && wd.err || '', bocha: b || [] };
+    const out = { ok: true, name, hint, at: Date.now(), bochaOn: await bochaOn(), wiki: w && !w.err ? w : null, wikiErr: w && w.err || '', wikidata: Array.isArray(wd) ? wd : [], wikidataErr: wd && wd.err || '', bocha: b || [] };
     if (!out.wikiErr && !out.wikidataErr) fs.writeFileSync(cf, JSON.stringify(out));
     return out;
   },

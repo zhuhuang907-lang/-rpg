@@ -11,14 +11,14 @@ const { chromium } = require('playwright');
     await p.fill('#cYear', '乾隆二十二年'); await p.fill('#cPlace', '扬州'); await p.fill('#cRole', '盐商'); await p.fill('#cName', name); await p.selectOption('#cReal', real);
     await p.click('#bCustomStart'); return idle(); };
   // 一、选「史上真人」，名字是真人：开局，主角是真人，核查记在档里
-  await custom('江春', '真');
+  await custom('江春', '');
   const a = await p.evaluate(() => S ? { name: S.protagonist.name, real: S.protagonist.real, chk: Object.keys(S.personChk || {}).join() } : { err: ERRMSG });
   if (!/江春/.test(a.chk || '')) bad('开局核查没记进存档');
   if (!a.name || a.name !== '江春' || a.real !== true) bad('选了真人、名字是真人，开局不对：' + JSON.stringify(a));
   // 二、选「史上真人」，名字查不到：不开局，说清楚
-  await custom('汪无名', '真');
+  await custom('汪无名', '');
   const b2 = await p.evaluate(() => ({ s: !!(S && VIEW === 'game'), err: ERRMSG || document.body.innerText.match(/查不到史书上有[^。]*。/)?.[0] || '' }));
-  if (b2.s || !/查不到史书上有「汪无名」/.test(b2.err)) bad('真人查不到还开了局或没说：' + JSON.stringify(b2));
+  if (b2.s || !/查不到史书上有「汪无名」/.test(b2.err) || !/博查/.test(b2.err)) bad('真人查不到还开了局或没说：' + JSON.stringify(b2));
   // 三、选「虚构」：主角是虚构，标虚拟
   await custom('汪景和', '虚');
   const c = await p.evaluate(() => S ? { real: S.protagonist.real, fx: fictionSet(S).has(S.protagonist.name) } : { err: ERRMSG });
@@ -26,7 +26,10 @@ const { chromium } = require('playwright');
   // 四、一句话开局，大官：AI 给的名字查无此人 → 从资料里另挑真人（卢见曾），查得到才用
   await fresh(); await p.fill('#qText', '乾隆二十二年的扬州知府'); await p.click('#bStart'); await idle();
   const d = await p.evaluate(() => S ? { name: S.protagonist.name, real: S.protagonist.real } : { err: ERRMSG });
-  if (d.name === '假知府' || (d.real && d.name !== '卢见曾')) bad('大官查无此人还当真人用了：' + JSON.stringify(d));
+  if (d.name !== '卢见曾' || d.real !== true) bad('没选虚构，主角查不到就该另找真人（卢见曾），不能是虚构的：' + JSON.stringify(d));
+  // 没选虚构：一句话开局的平民也得是真人（这里汪景和在测试的维基里算真人）
+  await fresh(); await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart'); await idle();
+  const d2 = await p.evaluate(() => S ? { name: S.protagonist.name, real: S.protagonist.real } : { err: ERRMSG }); if (d2.real !== true) bad('没选虚构却开出了虚构主角：' + JSON.stringify(d2));
   // 五、人物页「核查是否真人」
   await p.evaluate(() => { S.people['高恒'] = { role: '两淮盐政', favor: 0, seen: S.turn }; S.people['钱无有'] = { role: '盐商', favor: 0, seen: S.turn }; delete (S.dossiers || {})['高恒']; TAB = 'people'; SIDE_FOLD = false; ORGMSG = ''; render(); });
   for (const n of ['高恒', '钱无有']) { const bt = await p.$(`[data-pchk="${n}"]`); if (!bt) { bad('人物页没有核查按钮：' + n); continue; } await bt.click(); await p.waitForFunction(n => /已核/.test([...document.querySelectorAll('.pc')].find(x => x.innerText.includes(n))?.innerText || ''), n, { timeout: 60000 }).catch(() => bad('核查没出结果：' + n)); }
