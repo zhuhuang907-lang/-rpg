@@ -134,7 +134,7 @@ http.createServer((req, res) => {
   let b = ''; req.on('data', c => b += c); req.on('end', async () => {
     if (process.env.SLOW && (req.url.startsWith('/w/api.php') || req.url.startsWith('/search'))) await new Promise(r => setTimeout(r, 30000));
     // 真人核查：维基按条目名取、维基数据查是不是「人」
-    const REALP = { 江春: [1720, 1789, '清代扬州盐商，两淮总商'], 卢见曾: [1690, 1768, '清朝官员，两淮盐运使'], 高恒: [null, 1768, '清朝官员，两淮盐政'] };
+    const REALP = { 汪景和: [1717, 1790, '清代扬州盐商（测试用真人）'], 江春: [1720, 1789, '清代扬州盐商，两淮总商'], 卢见曾: [1690, 1768, '清朝官员，两淮盐运使'], 高恒: [null, 1768, '清朝官员，两淮盐政'] };
     if (req.url.startsWith('/w/api.php') && /[?&](titles|action=wbsearchentities|action=wbgetentities|list=search)/.test(req.url)) {
       const sp = new URL('http://x' + req.url).searchParams; res.writeHead(200, { 'content-type': 'application/json' });
       if (sp.get('titles')) { const t = sp.get('titles'), r = REALP[t]; return res.end(JSON.stringify({ query: { pages: r ? { '9': { pageid: 9, title: t, fullurl: 'https://zh.wikipedia.org/wiki/' + encodeURIComponent(t), extract: `${t}，${r[2]}。生于${r[0] || '?'}年，卒于${r[1]}年。` } } : { '-1': { title: t, missing: '' } } } })); }

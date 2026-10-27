@@ -3039,9 +3039,15 @@ async function personRaw(name, hint) {
     return Object.values((e && e.entities) || {}).filter(x => x.claims && arr(x.claims.P31).some(c => c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id === 'Q5'))
       .map(x => { const D = x.descriptions || {}; return { id: x.id, desc: (D['zh-cn'] || D.zh || D['zh-hans'] || D.en || {}).value || '', born: yr(x.claims.P569), died: yr(x.claims.P570), zhwiki: ((x.sitelinks || {}).zhwiki || {}).title || '' }; });
   };
-  const bocha = async () => BOCHA_KEY ? arr(await bochaFetch(`${name} ${hint} 生平`.trim())).filter(x => String(x.title + x.snippet).includes(name) && !FICTION_RE.test(x.title || '')).slice(0, 4).map(x => ({ title: x.title, url: x.url, text: cut(x.snippet, 400) })) : [];
+  // 博查为主：同一个人换几种问法一起搜，去重后留提到这个名字的
+  const bocha = async () => { if (!BOCHA_KEY) return [];
+    const qs = [...new Set([name, `${name} 生平`, `${name} ${hint}`.trim(), `${name} 百度百科`, `${name} 历史人物`])];
+    const rs = await Promise.all(qs.map(q => bochaFetch(q).catch(() => [])));
+    const seen = new Set(), out = [];
+    for (const r of rs) for (const x of arr(r)) { const k = x.url || x.title; if (seen.has(k)) continue; seen.add(k); if (String(x.title + x.snippet).includes(name) && !FICTION_RE.test(x.title || '') && !/网文|短剧|穿越/.test(String(x.snippet).slice(0, 80))) out.push({ title: x.title, url: x.url, text: cut(x.snippet, 500) }); }
+    return out.slice(0, 8); };
   const [w, wd, b] = await Promise.all([wiki().catch(e => ({ err: e.message || '连不上维基百科' })), wdata().catch(e => ({ err: e.message || '连不上维基数据' })), bocha().catch(() => [])]);
-  return { ok: true, name, hint, wiki: w && !w.err ? w : null, wikiErr: (w && w.err) || '', wikidata: Array.isArray(wd) ? wd : [], bocha: b };
+  return { ok: true, name, hint, bochaOn: !!BOCHA_KEY, wiki: w && !w.err ? w : null, wikiErr: (w && w.err) || '', wikidata: Array.isArray(wd) ? wd : [], bocha: b };
 }
 /** 返回 { real, src, who, born, died, identity, evidence, why }；real 由程序照证据定，不由 AI 随口说 */
 async function personCheck(s, name, hint) {
@@ -3053,9 +3059,9 @@ async function personCheck(s, name, hint) {
   // 维基数据：是「人」、生卒和这一年对得上（差个三十年以内）
   const wd = arr(raw && raw.wikidata).filter(x => y == null || ((x.born == null || x.born <= y + 30) && (x.died == null || x.died >= y - 30)));
   const ev = [];
+  for (const x of arr(raw && raw.bocha).slice(0, 6)) ev.push(`博查「${x.title}」：${cut(x.text, 400)}`);
   if (raw && raw.wiki) ev.push(`维基百科《${raw.wiki.title}》：${cut(raw.wiki.text, 900)}`);
   for (const x of wd.slice(0, 3)) ev.push(`维基数据 ${x.id}：${x.desc || ''}${x.born != null || x.died != null ? `（${x.born ?? '?'}—${x.died ?? '?'}）` : ''}`);
-  for (const x of arr(raw && raw.bocha).slice(0, 3)) ev.push(`博查「${x.title}」：${cut(x.text, 300)}`);
   let v = null;
   if (DSM() || MODE === 'claude') {
     try {
@@ -3070,8 +3076,8 @@ ${ev.length ? '【联网查到的】\n' + ev.join('\n') : '【联网什么也没
   }
   const found = !!(raw && (raw.wiki || wd.length || arr(raw.bocha).length));
   const real = v ? v.real === true && (found || /[《卷传志录集]/.test(String(v.source || ''))) : found && !!(raw.wiki || wd.length);
-  const src = !real ? '' : raw && raw.wiki ? '维基百科' : wd.length ? '维基数据' : arr(raw && raw.bocha).length ? '博查' : 'DeepSeek 据史书（未联网证实：' + one(v && v.source, 30) + '）';
-  const out = { real, src, who: one(v && v.who, 60) || (wd[0] && wd[0].desc) || '', born: num(v && v.born) ?? (wd[0] && wd[0].born) ?? null, died: num(v && v.died) ?? (wd[0] && wd[0].died) ?? null, identity: one(v && v.identity, 60), evidence: ev.slice(0, 4).map(x => cut(x, 300)), url: raw && raw.wiki ? raw.wiki.url : '', why: one(v && v.why, 80) || (found ? '' : raw ? '维基百科、维基数据、博查都查不到' : '没联网，查不了'), netErr: raw ? raw.wikiErr || '' : '没联网', at: Date.now() };
+  const src = !real ? '' : arr(raw && raw.bocha).length ? '博查' + (raw.wiki ? '、维基百科' : '') : raw && raw.wiki ? '维基百科' : wd.length ? '维基数据' : 'DeepSeek 据史书（未联网证实：' + one(v && v.source, 30) + '）';
+  const out = { real, src, who: one(v && v.who, 60) || (wd[0] && wd[0].desc) || '', born: num(v && v.born) ?? (wd[0] && wd[0].born) ?? null, died: num(v && v.died) ?? (wd[0] && wd[0].died) ?? null, identity: one(v && v.identity, 60), evidence: ev.slice(0, 6).map(x => cut(x, 300)), searched: { bocha: raw ? (raw.bochaOn === false ? -1 : arr(raw.bocha).length) : -1, wiki: raw && raw.wiki ? 1 : 0, wd: wd.length }, url: raw && raw.wiki ? raw.wiki.url : '', why: one(v && v.why, 80) || (found ? '' : raw ? '维基百科、维基数据、博查都查不到' : '没联网，查不了'), netErr: raw ? raw.wikiErr || '' : '没联网', at: Date.now() };
   PCHK[key] = out; if (s) { s.personChk = s.personChk || {}; s.personChk[key] = out; const ks = Object.keys(s.personChk); if (ks.length > 80) delete s.personChk[ks[0]]; }
   feedAdd([{ t: `核查真人：${name}——${real ? '有其人（' + src + '）' : '查无此人'}`, site: src || '核查' }]);
   return out;
@@ -5495,7 +5501,7 @@ async function fictionClash(s) {
   // 虚构主角的家里人一定是虚构的：名字撞了名人也算重名（不能当成那位名人）
   s.clashOK = s.clashOK || {}; const R = realAll(s), famF = s.protagonist && !s.protagonist.real ? arr(s.household).map(m => m && m.name).filter(Boolean).concat([s.protagonist.name]) : [];
   const RN = realNameSet(s);   // 本局已认作真人的（名册里的真官员、档案里的真人、玩家委任的真人）不改名
-  const F = [...new Set([...[...fictionSet(s)].filter(n => !RN.has(n)), ...famF])].filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 40), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
+  const F = [...new Set([...[...fictionSet(s)].filter(n => !RN.has(n)), ...famF])].filter(n => !(s.protagonist && s.protagonist.userNamed && n === s.protagonist.name)).filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 40), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
   let net = 0;
   for (const n of F) {
     let why = R.has(n) ? `${n}是史书上的真人（内置史料）` : null;
@@ -6227,7 +6233,7 @@ function customForm() {
       <label>具体身份<input id="cRole" value="${v('cRole')}" placeholder="如：节度使帐下小校、盐商、县学生员"></label>
       <label>性别${sel('cGender', [['', '不限'], ['男', '男'], ['女', '女']])}</label>
       <label>年龄<input id="cAge" value="${v('cAge')}" inputmode="numeric" placeholder="如：25"></label>
-      <label>人物${sel('cReal', [['', '自动：大官、贵族、名门照真人查'], ['真', '史上真人（查不到就不开局）'], ['虚', '虚构人物（标虚拟）']])}</label>
+      <label>人物${sel('cReal', [['', '史上真人（查不到就不开局）'], ['虚', '虚构人物（标虚拟）']])}</label>
       <label class="wide">姓名<input id="cName" value="${v('cName')}" placeholder="留空由 AI 起名；写真实人物的名字，就扮演此人（如：海瑞、李清照）"></label>
       <label class="wide">家世背景<textarea id="cFamily" rows="2" placeholder="如：父亲早亡，寡母带着弟妹，靠两亩薄田和母亲做针线过活；舅舅在县衙当书吏">${v('cFamily')}</textarea></label>
       <label class="wide">补充设定（性格、本事、处境、想做的事……）<textarea id="cMore" rows="2" placeholder="如：识字，会算账，脾气倔；想去府城考秀才，舅舅不赞成">${v('cMore')}</textarea></label>
@@ -6253,7 +6259,7 @@ function customSpec() {
   if (c.cGender) L.push('性别：' + c.cGender);
   if (c.cAge) L.push('年龄：' + c.cAge + '岁');
   if (c.cName) L.push('姓名：' + c.cName + (c.cReal === '虚' ? '（虚构人物）' : '（若是史书上的真实人物，就扮演此人，生平、家人、处境照史实）'));
-  if (c.cReal === '真') L.push('人物：必须是史书上确有记载的真人（照查到的资料挑；没有名字的，从资料里出现的、合乎身份年代的真人里挑；real=true）');
+  if (c.cReal !== '虚') L.push('人物：必须是史书上确有记载的真人（照查到的资料挑；没有名字的，从资料里出现的、合乎身份年代地方的真人里挑；real=true；不许编）');
   if (c.cReal === '虚') L.push('人物：虚构（real=false；可以出身真实的宗族、门第，但本人和近亲是虚构的，名字不与史书真人重名）');
   if (c.cFamily) L.push('家世背景：' + c.cFamily);
   if (c.cMore) L.push('补充设定：' + c.cMore);
@@ -6721,26 +6727,28 @@ async function startGame(sentence, have, havePre, custom, spec) {
       try { r = await resolveOpening(sentence, custom, pre); } catch (e) { if (e && e.code === 'cancelled') throw e; r = null; }
       if (r) {
         let fake = openingState(r, pre);
-        // 是不是史书上的真人：程序查（维基百科、维基数据、博查，DeepSeek 照查到的判），不由写设定的 AI 随口说
-        { const cc0 = (spec && spec.c) || {}, cr = cc0.cReal || '', big = BIG_ROLE.test(`${r.role} ${sentence} ${custom || ''}`);
+        // 主角是不是史书上的真人：程序查（博查为主，维基百科、维基数据一起查，DeepSeek 照查到的判）。
+        // 玩家没选「虚构人物」，主角就必须是真人：查不到就专门用博查找合乎身份年代地方的真人，再找不到就不开局，绝不悄悄换成虚构的
+        { const cc0 = (spec && spec.c) || {}, cr = cc0.cReal || '';
           if (cr === '虚') { r.real = false; r.traces = []; r.inferred = []; }
-          else if (r.name && (r.real || cr === '真' || big)) {
+          else {
             PHASE = 'realchk'; render();
             const hint = `${r.polity || ''} ${r.role || ''}`.trim().slice(0, 30);
-            let ck = await personCheck(fake, r.name, hint);
+            let ck = r.name ? await personCheck(fake, r.name, hint) : { real: false, why: '没给出名字', searched: {} };
             if (!ck.real && !cc0.cName) {
-              // 玩家没点名：只从查到的资料里另挑一位合乎身份年代的真人（宗族、门第、官职对得上的），挑不出就不硬凑
+              const yl = fake.clock.yearLabel || r.y + '年', pl = r.placeShort || r.place;
+              await searchFirst(fake, [`${yl} ${pl} ${r.role}`, `${pl} ${r.polity}代 ${String(r.role).slice(0, 8)} 人物`, `${r.polity}代 ${String(r.role).slice(0, 8)} 著名人物`, `${yl} ${String(r.role).slice(0, 8)}`, `${pl} 历史名人 ${r.polity}`]).catch(e => { if (e && e.code === 'cancelled') throw e; });
               const pre2 = { ...(pre || {}), research: arr(pre && pre.research).concat(arr(fake.research)) };
-              const r2 = await resolveOpening(sentence, (custom || '') + `\n人物：上次给的「${r.name}」史书查无此人。只能从【联网查到的资料】里出现的、合乎身份年代的真人里挑；资料里一个合适的真人都没有，就 real=false、name 留空——绝不编一个名字当真人。`, pre2).catch(e => { if (e && e.code === 'cancelled') throw e; return null; });
-              if (r2 && r2.name && r2.name !== r.name && r2.real) { const f2 = openingState(r2, pre); const ck2 = await personCheck(f2, r2.name, `${r2.polity || ''} ${r2.role || ''}`.trim().slice(0, 30)); if (ck2.real) { r = r2; fake = f2; ck = ck2; } }
+              const r2 = await resolveOpening(sentence, (custom || '') + `\n人物：${r.name ? `上次给的「${r.name}」史书查无此人。` : ''}主角必须是史书上的真人：只能从【联网查到的资料】里出现的、合乎身份年代地方的真人里挑（史书有名有姓、有事迹可查）；资料里一个合适的真人都没有，就 real=false、name 留空——绝不编一个名字当真人。`, pre2).catch(e => { if (e && e.code === 'cancelled') throw e; return null; });
+              if (r2 && r2.name && r2.name !== r.name) { const f2 = openingState(r2, pre); f2.research = arr(fake.research); const ck2 = await personCheck(f2, r2.name, `${r2.polity || ''} ${r2.role || ''}`.trim().slice(0, 30)); if (ck2.real) { r = r2; fake = f2; ck = ck2; } else ck = ck2.searched ? ck2 : ck; }
             }
-            if (ck.real) {
-              r.real = true; r.realChk = ck; r.traces = arr(r.traces).concat(arr(ck.evidence).map(x => cut(x, 140))).slice(0, 10);
-              if (ck.born != null && r.y != null) { const age = r.y - ck.born + 1; if (age > 0 && age < 110) { if (r.age != null && Math.abs(r.age - age) > 1) r.adjust = arr(r.adjust).concat([`${r.name}生于${ck.born}年（${ck.src}），这一年${age}岁`]); r.age = age; } }
-              if (ck.died != null && r.y != null && r.y > ck.died) throw { code: 'notreal', message: `${r.name}卒于${ck.died}年（${ck.src}），${r.y}年已不在世。换个年份，或换个人再开局。` };
+            if (!ck.real) {
+              const sx = ck.searched || {}, bo = (MODE === 'local' ? KEY && KEY.bocha : BOCHA_KEY);
+              throw { code: 'notreal', message: `${r.name ? `查不到史书上有「${r.name}」这个人` : '没找到合乎这个身份的史书真人'}${hint ? '（' + hint + '）' : ''}。查过：${bo ? `博查${sx.bocha > 0 ? '有' + sx.bocha + '条但对不上' : '没搜到'}` : '博查（没填博查 Key，没法查——在「设置」里填上博查 Key 再开局，人物才查得准）'}、维基百科${sx.wiki ? '有条目但对不上' : '没有'}、维基数据${sx.wd ? '有同名但年代对不上' : '没有'}，DeepSeek 也举不出正史、方志的出处。可以写这个人的全名、加上朝代和官职再开局；想当虚构人物，就在「自己定制开局」里把「人物」选成「虚构人物」。` };
             }
-            else if (cr === '真' || (cc0.cName && cr !== '')) throw { code: 'notreal', message: `查不到史书上有「${r.name}」这个人${hint ? '（' + hint + '）' : ''}：维基百科、维基数据${(MODE === 'local' ? KEY && KEY.bocha : BOCHA_KEY) ? '、博查' : ''}都没有，DeepSeek 也举不出正史、方志的出处${ck.netErr ? '（维基那边：' + ck.netErr + '）' : ''}。可以写全名、加上朝代和官职再试，或者把「人物」改成「虚构人物」。` };
-            else { r.adjust = arr(r.adjust).concat([`史书里查不到「${r.name}」，按虚构人物写（虚拟）`]); r.real = false; r.traces = []; r.inferred = []; }
+            r.real = true; r.realChk = ck; r.traces = arr(r.traces).concat(arr(ck.evidence).map(x => cut(x, 140))).slice(0, 10);
+            if (ck.born != null && r.y != null) { const age = r.y - ck.born + 1; if (age > 0 && age < 110) { if (r.age != null && Math.abs(r.age - age) > 1) r.adjust = arr(r.adjust).concat([`${r.name}生于${ck.born}年（${ck.src}），这一年${age}岁`]); r.age = age; } }
+            if (ck.died != null && r.y != null && r.y > ck.died) throw { code: 'notreal', message: `${r.name}卒于${ck.died}年（${ck.src}），${r.y}年已不在世。换个年份，或换个人再开局。` };
           } }
         // 虚构的主角不和史书真人重名：AI 起的名字撞了（不论哪个朝代的名人）就换一个同姓的；玩家自己填的照用，开场说明里点明
         if (!r.real && r.name && r.name.length >= 2) {
@@ -6820,6 +6828,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (cc.cRole && !String(d.setup.role || '').includes(cc.cRole)) d.setup.role = cc.cRole;
     if (num(d.setup.gregorianYear) == null) d.setup.gregorianYear = sentenceYear(String(d.setup.yearLabel || '')) ?? sentenceYear(sentence, OPEN_RANGE) ?? d.setup.gregorianYear;
     const s = newSave(d.setup);
+    if (cc.cName && s.protagonist) s.protagonist.userNamed = true;
     if (pre && pre.fake && pre.fake.personChk) s.personChk = { ...pre.fake.personChk, ...(s.personChk || {}) };   // 开局核查过的真人，记进存档
     if (custom) s.custom = cut(custom, 1500);   // 玩家亲手定的设定存进这一局，以后每回都交给推演和写正文的，不只开场用一次
     s.face = FACE.make(faceGender(s.protagonist.gender), s.id, { role: s.protagonist.role, year: s.clock.y, age: s.protagonist.age });   // 开局按身份、年代随机一张脸，可在「局面」里捏
