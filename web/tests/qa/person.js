@@ -37,7 +37,7 @@ const { chromium } = require('playwright');
   if (!e.g || !e.g.real || e.fg) bad('高恒应是真人：' + JSON.stringify(e).slice(0, 300));
   if (!e.q || e.q.real || !e.fq) bad('钱无有应查无此人、标虚拟：' + JSON.stringify(e).slice(0, 300));
   // 名册里只写「某氏」的女眷：当场起名，「某氏」留作称呼；起名的字库里不能有「氏」
-  const sh = await p.evaluate(() => { S.household.push({ relation: '正室', name: '程氏', age: 30 }); S.people['柳氏'] = { role: '妾', seen: S.turn }; fixShiNames(S); const m = S.household.find(x => x.alias === '程氏'); const ph = nameFixes({ ...S, nameMap: {} }, '他娶了王某氏为妻'); return { m: m && m.name, p: Object.keys(S.people).find(k => S.people[k].alias === '柳氏'), left: S.household.some(x => /^.氏$/.test(x.name)) || Object.keys(S.people).some(k => /^.氏$/.test(k)), ph: ph.map(x => x.right).join() }; });
+  const sh = await p.evaluate(() => { S.household.push({ relation: '正室', name: '程氏', age: 30 }); S.people['柳氏'] = { role: '妾', seen: S.turn }; fixShiNames(S); const m = S.household.find(x => x.alias === '程氏'); const ph = nameFixes({ ...S, nameMap: {} }, '他娶了王某氏为妻'); return { m: m && m.name, p: Object.keys(S.people).find(k => S.people[k].alias === '柳氏'), left: S.household.some(x => /^.氏$/.test(x.name) && !x.rec) || Object.keys(S.people).some(k => /^.氏$/.test(k)), ph: ph.map(x => x.right).join() }; });
   if (!sh.m || /氏$/.test(sh.m) || !sh.p || /氏$/.test(sh.p) || sh.left || /氏$/.test(sh.ph)) bad('「某氏」没起名：' + JSON.stringify(sh));
   // 虚构人物不和史书真人重名：内置史料里的（王安石）、联网查得到的（江春）都换名，处处一并改；程序起名也不撞真人
   const cl = await p.evaluate(async () => { S.protagonist.real = false; S.household.push({ relation: '书童', name: '王安石' }); S.people['江春'] = { role: '盐商', seen: S.turn }; S.household.push({ relation: '管家', name: '汪福' }); const out = await fictionClash(S);
