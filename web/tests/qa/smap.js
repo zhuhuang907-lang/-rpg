@@ -16,9 +16,12 @@ const { chromium } = require('playwright');
   if (ad.prov !== '江苏') bad('主角所在的省认错：' + ad.prov);
   if (!/江都县,甘泉县/.test(ad.cty) || /\?/.test(ad.cty.split(',').slice(0, 3).join())) bad('本省的县没查到或没坐标：' + ad.cty);
   if (!ad.yz || Math.abs(ad.yz[0] - 119.4) > 0.3 || Math.abs(ad.yz[1] - 32.4) > 0.3) bad('扬州府坐标错（同名地方挑错了）：' + ad.yz);
-  // 头一回打开舆图：先看自己这一带，到县（每个县一块地、县界府界）
-  const r0 = await p.evaluate(() => { TAB = 'map'; SIDE_FOLD = false; MAPZ.inited = false; render(); const sv = document.querySelector('.smap'); return { m: MAPZ.mode, cty: [...sv.querySelectorAll('rect[data-mapu]')].map(e => e.dataset.mapu), lbl: sv.textContent, dash: sv.querySelectorAll('path[stroke-dasharray="1 2"]').length, views: document.querySelectorAll('[data-mapview]').length }; });
-  if (r0.m !== 'near' || r0.cty.length < 12 || !r0.cty.includes('江都县') || !/甘泉|仪征/.test(r0.lbl) || !r0.dash || !r0.views) bad('舆图开头不是本地到县：' + JSON.stringify({ ...r0, lbl: r0.lbl.slice(0, 200) }));
+  // 谭图府、省界：开局就从官方源（测试里是假服务给的假界）下好
+  await p.waitForFunction(() => POLY['qing-1820'] || POLY_ERR['qing-1820'], null, { timeout: 60000 }).catch(() => {});
+  { const e = await p.evaluate(() => POLY_ERR['qing-1820'] || (POLY['qing-1820'] ? '' : '没下')); if (e) bad('府界没下成：' + e); }
+  // 头一回打开舆图：先看自己这一带，到县（府州照真界，名字写在地块上，治所单标）
+  const r0 = await p.evaluate(() => { TAB = 'map'; SIDE_FOLD = false; MAPZ.inited = false; render(); const sv = document.querySelector('.smap'); return { m: MAPZ.mode, cty: [...sv.querySelectorAll('rect[data-mapu]')].map(e => e.dataset.mapu), lbl: sv.textContent, poly: [...sv.querySelectorAll('path[data-mapu]')].map(e => e.dataset.mapu), area: [...sv.querySelectorAll('.arealbl')].map(e => e.textContent), views: document.querySelectorAll('[data-mapview]').length }; });
+  if (r0.m !== 'near' || r0.cty.length < 12 || !r0.cty.includes('江都县') || !/甘泉|仪征/.test(r0.lbl) || !r0.poly.includes('扬州府') || !r0.area.includes('扬州府') || !r0.views) bad('舆图开头不是本地到县：' + JSON.stringify({ ...r0, lbl: r0.lbl.slice(0, 200) }));
   await SHOT('near0');
   const r = await p.evaluate(() => { TAB = 'map'; SIDE_FOLD = false; MAPZ.inited = true; MAPZ.mode = 'world'; render(); const sv = document.querySelector('.smap'); return { tabs: tabsFor(S).map(x => x[0]).join(), img: !!sv.querySelector('image'), dots: sv.querySelectorAll('circle[data-mapu]').length, provs: [...sv.querySelectorAll('[data-mapprov]')].map(x => x.textContent), river: [...sv.querySelectorAll('polyline title')].map(t => t.textContent).join('|'), pass: [...sv.querySelectorAll('title')].filter(t => /^山海关|^潼关|^居庸关/.test(t.textContent)).length, road: sv.querySelectorAll('polyline[stroke-dasharray="4 3"]').length, block: [...sv.querySelectorAll('title')].filter(t => /隔山不通/.test(t.textContent)).length, txt: document.body.innerText }; });
   if (!/map/.test(r.tabs)) bad('没有舆图页');
@@ -42,13 +45,16 @@ const { chromium } = require('playwright');
   await SHOT('world');
   // 地盘、各方、兵马、战场
   await p.evaluate(() => { S.idm = 'warlord'; S.territory = [{ place: '扬州府', pop: 500000, troops: 3000, grain: 20000, loyalty: 60 }]; S.powers = [{ name: '两江督标', leader: '尹继善', seat: '江宁府', land: '苏州府、常州府', troops: '2万', stance: '提防' }]; S.forces = [{ name: '扬州营', leader: S.protagonist.name, troops: 3000, at: '扬州府', status: '驻守' }]; S.battles = [{ when: '三月', place: '镇江府', outcome: '小胜' }]; render(); });
-  const r2 = await p.evaluate(() => ({ own: document.querySelectorAll('.smap rect[fill="var(--zhu)"]').length, txt: document.querySelector('.smap').textContent, leg: [...document.querySelectorAll('.mlegend')].map(x => x.innerText).join(' ') }));
+  const r2 = await p.evaluate(() => ({ own: document.querySelectorAll('.smap [fill="var(--zhu)"]').length, txt: document.querySelector('.smap').textContent, leg: [...document.querySelectorAll('.mlegend')].map(x => x.innerText).join(' ') }));
   if (r2.own < 1) bad('地盘没着色');
   if (!/扬州营 3,000/.test(r2.txt)) bad('兵马没标出来');
   if (!/⚔/.test(r2.txt) || !/★/.test(r2.txt)) bad('战场、你在哪没标');
   if (!/两江督标/.test(r2.leg) || !/清/.test(r2.leg)) bad('图例不全：' + r2.leg);
+  if (!/弘历/.test(r2.leg) || !/◉ 府州治所/.test(r2.leg)) bad('图例里的君主没照史料核、或没标治所：' + r2.leg);
+  { const w = await p.evaluate(() => { const sv = document.querySelector('.smap'); return { area: [...sv.querySelectorAll('.arealbl')].map(e => e.textContent), foot: document.body.innerText.includes('CHGIS Version 6') }; }); if (!w.area.includes('扬州府') || !w.foot) bad('天下图上府州名没写在地块上、或没注明府界出处：' + JSON.stringify(w).slice(0, 200)); }
   await p.click('.smap circle[data-mapu="江宁府"]');
   const info = await p.evaluate(() => document.querySelector('.affair').innerText);
+  if (!/治所：上元县/.test(info) || !/界址照谭图/.test(info)) bad('点了府州没说治所在哪：' + info.slice(0, 200));
   if (!/江宁府/.test(info) || !/两江督标/.test(info) || !/离你约\d+里/.test(info) || !/通往：/.test(info) || !/海拔/.test(info)) bad('点了没出详情、通路：' + info);
   // 行军：从你所在到这里的路网路线、各档步调天数，图上画出路线；「去这里」把路线和步调写进下一步；主角有自己的印章图标；清代用谭图省府县层
   const rt = await p.evaluate(() => ({ info: document.querySelector('.affair').innerText, pace: document.querySelectorAll('[data-mappace] option').length, line: [...document.querySelectorAll('.smap polyline title')].some(t => /去江宁府/.test(t.textContent)), seal: !!document.querySelector('.smap .mepin'), foot: document.body.innerText.includes('谭其骧') }));

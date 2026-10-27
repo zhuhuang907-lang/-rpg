@@ -357,6 +357,18 @@ const routes = {
       const data = await r.json(); try { fs.writeFileSync(cf, JSON.stringify(data)); } catch (_) { /* 存不下就算了 */ } return { ok: true, data };
     } catch (e) { return { ok: false, why: String(e && e.message || e).slice(0, 120) }; }
   },
+  /* 谭图府、省界（CHGIS V6 的 1820、1911 层，哈佛 Dataverse 官方发布）：许可不准转发，所以不随游戏打包，用到时替玩家从官方源下到本机（data/cache/chgis） */
+  'GET /api/chgis': async (_b, q) => {
+    const id = String(q.get('id') || ''); if (!/^(2966717|2966720|2966725|2966689|2966688|2966691)$/.test(id)) return { ok: false, why: '没有这一层' };
+    const dir = path.join(ROOT, 'data', 'cache', 'chgis'); fs.mkdirSync(dir, { recursive: true }); const cf = path.join(dir, id + '.zip');
+    try { const b = fs.readFileSync(cf); if (b.length > 100 && b.readUInt32LE(0) === 0x04034b50) return { ok: true, b64: b.toString('base64') }; } catch (_) { /* 没缓存 */ }
+    try {
+      const r = await require('./core/net').fetchX((process.env.CHGIS_BASE || 'https://dataverse.harvard.edu/api/access/datafile/') + id, { signal: AbortSignal.timeout(120000) });
+      if (!r.ok) return { ok: false, why: 'HTTP ' + r.status };
+      const b = Buffer.from(await r.arrayBuffer()); if (b.length < 100 || b.readUInt32LE(0) !== 0x04034b50) return { ok: false, why: '下到的不是压缩包' };
+      try { fs.writeFileSync(cf, b); } catch (_) { /* 存不下就算了 */ } return { ok: true, b64: b.toString('base64') };
+    } catch (e) { return { ok: false, why: String(e && e.message || e).slice(0, 120) }; }
+  },
   /* 问题报告用：版本、更新、最近出过的错、模型与搜索的状态（不含 Key） */
   'GET /api/diag': async () => {
     const c = await adapters.loadAdapterConfig(), d = (c.configs || {})[c.selected || 'deepseek'] || {}, sc = await search.loadConfig();
