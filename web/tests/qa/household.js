@@ -5,7 +5,9 @@ const { chromium } = require('playwright');
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message)); const bad = m => errs.push(m);
   const idle = async (ms = 300000) => { try { await p.waitForFunction(() => !BUSY && !BG && !document.querySelector('.thinking'), null, { timeout: ms, polling: 200 }); return true; } catch (_) { return false; } };
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
-  await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart');
+  // 虚构的主角（玩家选了虚构人物）：家照常情给齐
+  await p.evaluate(() => { const d = document.querySelector('#dCustom'); if (d) d.open = true; });
+  await p.fill('#cYear', '乾隆二十二年'); await p.fill('#cPlace', '扬州'); await p.fill('#cRole', '盐商'); await p.fill('#cName', '汪景和'); await p.selectOption('#cReal', '虚'); await p.click('#bCustomStart');
   if (!(await idle()) || !(await p.$('#said'))) { bad('开局没出来'); console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(1); }
   await p.waitForFunction(() => arr(S.household).some(m => /正室|妻/.test(m.relation)), null, { timeout: 60000 }).catch(() => {});
   const h = await p.evaluate(() => ({ age: S.protagonist.age, H: arr(S.household).map(m => [m.relation, m.name, m.age, !!m.inferred, m.basis || '']), needs: familyNeeds(S) }));
@@ -22,6 +24,9 @@ const { chromium } = require('playwright');
   const fx = await p.evaluate(() => { S.household.push({ relation: '母', name: '吴氏', age: 20 }, { relation: '长子', name: '汪大成', age: 60 }); const r = familyAgeFix(S); return { r, m: S.household.find(x => x.name === '吴氏').age, c: S.household.find(x => x.name === '汪大成').age, me: S.protagonist.age }; });
   if (!(fx.m >= fx.me + 15)) bad('母亲比本人还小，没改：' + JSON.stringify(fx));
   if (!(fx.c <= fx.me - 14)) bad('儿子比本人还大，没改：' + JSON.stringify(fx));
+  // 史书真人：家里人只照史料，查不到的不添、不推
+  const rr = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = false; const due = familyDue(s); const add = await familyFix(s); return { due, add, hh: s.household.map(m => m.relation + m.name + '|' + (m.basis || '')) }; });
+  if (rr.hh.some(h => /推/.test(h.split('|')[1] || '')) || rr.hh.length > 3) bad('真人主角被按常情添了家里人：' + JSON.stringify(rr));
   // 每回合当场审：写一回，常理审查就跟着审一次（不是隔几回）
   const n0 = (() => { try { return require('fs').readFileSync('logic.log', 'utf8').split('\n').filter(Boolean).length; } catch (_) { return 0; } })();
   await p.fill('#said', '去账房看看今年的账'); await p.click('#bSend'); if (!(await idle())) bad('这一回卡住');
