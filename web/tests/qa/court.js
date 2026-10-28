@@ -22,6 +22,13 @@ const { chromium } = require('playwright');
   if (!/court/.test(tabs.court) || /army/.test(tabs.court)) bad('京官的面板不对：' + tabs.court);
   if (!/court/.test(tabs.ruler) || !/army/.test(tabs.ruler)) bad('皇帝的面板不全：' + tabs.ruler);
   if (await p.$('[data-tab="court"]')) bad('盐商的侧栏上有朝局');
+  // 眼下的事：每个月理一回，合常情，摆在输入框上面，点了写进框里（CLAUDE.md「剧情」）
+  { const ag = await p.evaluate(async () => { S.agenda = null; await buildAgenda(S); TAB = 'board'; render(); const g = document.querySelector('.agenda'); return { n: arr(S.agenda && S.agenda.items).length, ui: g ? g.innerText : '' }; });
+    if (ag.n < 3 || !/盐课/.test(ag.ui)) bad('这个月手头的事没理出来、或没摆在输入框上面：' + JSON.stringify(ag));
+    await p.evaluate(() => { const t = document.querySelector('#said'); if (t) t.value = ''; }); await p.click('.agenda .goal'); if (!/盐课/.test(await p.inputValue('#said'))) bad('点眼下的事没写进框里'); await p.evaluate(() => { document.querySelector('#said').value = ''; }); }
+  // 势力着色：做个盐商，督标、商帮这些不占地盘的不画到图上（只有一方之主、割据的才画地盘）
+  { const ow = await p.evaluate(() => { const k = S.powers; S.powers = [{ name: '两江督标', leader: '尹继善', seat: '江宁府', land: '苏州府' }]; const m = mapOwners(S); S.powers = k; return [...m.keys()]; });
+    if (ow.length) bad('不占地盘的势力也画了地盘：' + ow.join()); }
   // 当成一方之主
   await p.evaluate(async () => { S.idm = 'emperor'; S.protagonist.role = '皇帝'; S.dossiers = { ...(S.dossiers || {}), 年羹尧: { real: true, born: 1679, died: 1726 }, 刘统勋: { real: true, born: 1698, died: 1773 }, 傅恒: { real: true, born: 1720, died: 1770 }, 来保: { real: true } }; while (ORGING) await new Promise(r => setTimeout(r, 200)); S.org = null; await buildOrg(S); });
   const o = await p.evaluate(() => ({ n: S.org && S.org.nodes.length, pols: arr(S.policies).length, pts: S.polPts, fake: S.org && S.org.nodes.some(n => n.posts.some(x => /某/.test(x.holder))) }));
@@ -35,12 +42,23 @@ const { chromium } = require('playwright');
   await p.click('[data-tab="court"]'); await p.waitForTimeout(500);
   const t0 = await p.evaluate(() => document.querySelector('.side, #side, body').innerText);
   for (const w of ['政治', '经济', '民生', '军事', '人事树', '国策书', '户部', '尚书', '国策点', '线路：', '江都县署', '保正', '虚拟', '扬州营']) if (!t0.includes(w)) bad('朝局页上没有：' + w);
+  // 人事树先填真人：史料里这一年在任的（杨应琚 1757 年陕甘总督）换掉虚构的
+  { const fr = await p.evaluate(() => { S.org.nodes.push({ id: 'T1', name: '陕甘总督衙门', tier: '地方', parent: 'root', depth: 1, posts: [{ title: '陕甘总督', holder: '王守成', src: '拟', quota: 1 }] }); orgFillReal(S); const q = S.org.nodes.find(n => n.id === 'T1').posts[0]; return { h: q.holder, src: q.src, fake: fictionSet(S).has(q.holder) }; });
+    if (fr.h !== '杨应琚' || fr.fake) bad('史料里有在任的真人，人事树上还是虚构的：' + JSON.stringify(fr)); }
+  // 人选只能是开科、招贤来的人、身边的门客幕僚、已在官的人；凭空写个名字不行；开科取的下一回才到；真人照真实处境肯不肯来（王猛不会给别人当官）
+  { const tl = await p.evaluate(async () => { const n = S.org.nodes.find(x => x.id === 'A2'); const r = {}; ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: '张三丰' }); r.free = ORGMSG;
+      const got = recruitFake(S, 'exam'); ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: got[0] }); r.wait = ORGMSG; r.got = got.length; r.fake = got.every(x => fictionSet(S).has(x));
+      S.talent.list.push({ name: '王猛', real: true, from: '查访', where: '长安', situation: '前秦丞相', will: '不肯' }); const w = await willCheck(S, '王猛', '户部尚书'); r.wm = w; return r; });
+    if (!/不在人选里/.test(tl.free)) bad('凭空写个名字也能委任：' + tl.free);
+    if (tl.got < 3 || !tl.fake) bad('开科取士没来人、或来的人没标虚构：' + JSON.stringify(tl));
+    if (!/还在路上/.test(tl.wait)) bad('开科取的人当回就能用：' + tl.wait);
+    if (tl.wm.ok) bad('王猛竟肯来：' + JSON.stringify(tl.wm)); }
   // 死人委任不了
   const unfold = () => p.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; }));
   await unfold(); await p.fill('[data-oin="A2_0"]', '年羹尧'); await p.click('[data-org="appoint"][data-n="A2"][data-p="0"]'); await p.waitForTimeout(300);
   if (!/去世/.test(await p.evaluate(() => ORGMSG))) bad('委任已死的人没拦下');
   // 委任刘统勋为户部尚书：写进输入框，花一点国策点
-  await unfold(); await p.fill('[data-oin="A2_0"]', '刘统勋'); await p.click('[data-org="appoint"][data-n="A2"][data-p="0"]'); await p.waitForTimeout(300);
+  await unfold(); await p.fill('[data-oin="A2_0"]', '刘统勋'); await p.click('[data-org="appoint"][data-n="A2"][data-p="0"]'); await p.waitForFunction(() => !/正在看/.test(ORGMSG), null, { timeout: 60000 }).catch(() => bad('看刘统勋肯不肯来卡住了'));
   const said = await p.inputValue('#said'), pts1 = await p.evaluate(() => S.polPts);
   if (!/下令：任命刘统勋为户部尚书/.test(said)) bad('委任没写进下一步：' + said);
   if (pts1 !== o.pts - 1) bad(`国策点没扣：${o.pts} → ${pts1}`);
@@ -57,6 +75,17 @@ const { chromium } = require('playwright');
   // 国策点：照上次结算到的月份，过一个月涨三点（不靠这一回假 AI 写过了几天）
   const acc = await p.evaluate(() => { const a = S.polPts; S.polYM = Math.floor(ymOf(S.clock)) - 1; applyReply(S, { reply: '日子照常过去。', mode: 'play', elapsedDays: 0 }, '歇着'); return [a, S.polPts]; });
   if (acc[1] !== Math.min(30, acc[0] + 3)) bad('过了一个月国策点没涨三点：' + JSON.stringify(acc));
+  // 职权照辖区和品级：知县只管得到自己的县衙——吏役自己辟用，县丞这些朝廷命官只能详请保举；别的衙门、设官定员、国策都轮不到他
+  { const sc = await p.evaluate(() => { const keep = { idm: S.idm, role: S.protagonist.role, career: S.career }; S.idm = 'official'; S.protagonist.role = '江都县知县'; S.career = { office: '江都县知县', rank: '正七品' };
+      const hx = S.org.nodes.find(n => n.name === '江都县署'); hx.posts[0].holder = S.protagonist.name; const sub = S.org.nodes.find(n => n.parent === hx.id && /房|班/.test(n.name)) || hx;
+      const staff = sub.posts.find(q => /吏|役|班|房|书|快|皂|壮/.test(sub.name + q.title)) || sub.posts[0], zf = hx.posts.find(q => /县丞|主簿|典史/.test(q.title)), hb = S.org.nodes.find(n => n.id === 'A2');
+      const r = { lv: orgScope(S).lv, other: orgCan(S, hb, hb.posts[0], 'appoint'), staff: orgCan(S, sub, staff, 'appoint'), zf: zf ? orgCan(S, hx, zf, 'appoint') : 'none', node: orgCan(S, hx, null, 'addNode'), pol: orgCan(S, null, null, 'policy') };
+      ORGMSG = ''; orgAct(S, 'appoint', { node: hb, pi: 0, person: '刘统勋' }); r.msg = ORGMSG;
+      hx.posts[0].holder = ''; S.idm = keep.idm; S.protagonist.role = keep.role; S.career = keep.career; return r; });
+    if (sc.lv !== 'scoped' || sc.other || sc.node || sc.pol) bad('小官管得着别的衙门、设官、国策：' + JSON.stringify(sc));
+    if (sc.staff !== 'hire') bad('知县不能自己辟用吏役：' + JSON.stringify(sc));
+    if (sc.zf !== 'none' && sc.zf !== 'propose') bad('知县竟能直接任命县丞：' + JSON.stringify(sc));
+    if (!/不归你管/.test(sc.msg)) bad('知县委任户部尚书没拦下：' + sc.msg); }
   // 逐年核人事：查到调走、有接任真人的就换上，记进人事记录；名册里查定的真人换掉虚构的
   const rf = await p.evaluate(async () => { S.org.checkedY = null; const n = await orgRefresh(S); const jj = S.org.nodes.find(x => x.id === 'A1').posts[0]; return { n, h: jj.holder, log: arr(S.org.log).some(x => /傅恒/.test(x.text) && /来保/.test(x.text)) }; });
   if (rf.h !== '来保' || !rf.log) bad('逐年核人事没把调走的人换掉：' + JSON.stringify(rf));
