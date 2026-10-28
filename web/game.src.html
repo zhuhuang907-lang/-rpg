@@ -2089,35 +2089,29 @@ const familyDue = s => s && s.clock && s.protagonist && (s.protagonist.real ? s.
  *  先查：维基百科整篇、维基数据的亲属条目；再搜：博查（没有博查就 DeepSeek 检索）；DeepSeek 只从这些材料里整理，
  *  名字在材料里找不到的一律不收（不编人）。史书只记姓氏的照写「姓+氏」，连姓都没有的不列 */
 async function familyFromRecords(s) {
-  const p = s.protagonist, y = s.clock.y, hint = [p.role, s.place.polity].filter(Boolean).join(' ');
-  let pf = null; try { pf = await personFull(p.name, hint); } catch (e) { if (e && e.code === 'cancelled') throw e; }
-  const kin = arr(pf && pf.kin), wikiTxt = pf && pf.text ? String(pf.text) : '';
-  const found = canSearch() ? await searchFirst(s, [`${p.name} 家世 父 母`, `${p.name} 妻 妾 夫人 侧室`, `${p.name} 子女 儿子 女儿`, `${p.name} 兄弟 姐妹`, `${p.name} 后裔 世系 家谱`, `${p.name} 女婿 儿媳 孙`, `${p.name} 字 号 籍贯 出身`]) : '';
-  const kinTxt = kin.length ? '【维基数据记的亲属】' + kin.map(k => `${k.rel}${k.sex ? '（' + k.sex + '）' : ''}：${k.name}${k.born != null || k.died != null ? `（${k.born ?? '?'}—${k.died ?? '?'}）` : ''}`).join('；') : '';
-  const mats = [kinTxt, wikiTxt ? `【维基百科「${pf.title}」全文】\n${cut(wikiTxt, 9000)}` : '', found].filter(Boolean).join('\n\n');
-  const hay = [kinTxt, wikiTxt, found].join('\n'), grounded = n => !hay.trim() || hay.includes(n);
+  const p = s.protagonist, y = s.clock.y, n = p.name, pol = s.place.polity || '', role = String(p.role || '').slice(0, 12);
+  const B = await bochaDeep(s, [n, `${n} ${pol}`, `${n} ${role}`, `${n} 生平`, `${n} 字 号 籍贯`, `${n} 家世 出身`, `${n} 父亲`, `${n} 母亲`, `${n} 妻子 夫人`, `${n} 妾 侧室`, `${n} 儿子`, `${n} 女儿`, `${n} 子女 后嗣`, `${n} 兄弟 姐妹`, `${n} 后代 子孙`, `${n} 家谱 世系`, `${n} 女婿 儿媳`, `${n} 孙子`]);
+  const kin = [], mats = B.text, hay = B.items.map(i => `${i.title} ${i.snippet}`).join('\n'), grounded = nm => !hay.trim() || hay.includes(nm);
   const { text } = await callClaude(`一局历史游戏的主角是史书真人：${p.name}（${p.role}），此刻${timeText(s.clock)}（公元${y}年）。
 眼下记着的家里人：${arr(s.household).map(m => m.relation + m.name).join('、') || '（空）'}
-${mats || '（维基百科、维基数据、联网搜索都没查到：只写你确知的正史、方志明文记载，并写清书名卷名）'}
+${mats || '（博查和检索都没搜到：只写你确知的正史、方志明文记载，并写清书名卷名）'}
 只照上面查到的资料和你确知的正史、方志明文记载，整理他的身份和家谱。
 一、身份：字、号、籍贯、出身（家世门第）、功名、爵位，到${y}年为止的履历（年份＋官职），写出处。
-二、家谱：资料里有名有记载的亲属全列上——祖父母、父母、兄弟姐妹、嫡妻、继室、侧室、妾、全部子女（排行写清：长子、次子……长女……；早夭的、${y}年以后才出生的也列，照生年写）、儿媳、女婿、孙辈。维基数据记的亲属一个不漏。
+二、家谱：资料里有名有记载的亲属全列上——祖父母、父母、兄弟姐妹、嫡妻、继室、侧室、妾、全部子女（排行写清：长子、次子……长女……；早夭的、${y}年以后才出生的也列，照生年写）、儿媳、女婿、孙辈。资料里说的是同名的别人（朝代、籍贯、身份和他对不上）的，那一条不用。
 每人写 relation（对主角的称呼）、name、born、died（公元年，不知道写 null）、mother（子女的生母）、note（字号、封爵、官职，一句）、source（出处原话或书名卷名）。
 规矩：资料没写到的人一个都不添；史书只记了姓氏的照写「姓+氏」（如「王氏」），不替她起名；连姓都没记的不列；不推、不按常情补；人多就全列，不要省。
 只输出一个 JSON 对象：{"ident":{"zi":"","hao":"","jiguan":"","chushen":"","gongming":"","jue":"","career":[{"y":null,"post":""}],"source":""},"family":[{"relation":"","name":"","born":null,"died":null,"mother":"","note":"","source":""}]}`, null, { maxTokens: 12000, temperature: 0, kind: '研读', detached: true });
   const d = parseJSON(text);
-  if (!d && !kin.length) { s.famFail = s.turn; throw new Error('家谱没整理出来'); }
+  if (!d) { s.famFail = s.turn; throw new Error('家谱没整理出来'); }
   const out = [], byName = new Map(arr(s.household).map(m => [m.name, m])), dd = d || {};
   const I = dd.ident && typeof dd.ident === 'object' ? dd.ident : null;
   if (I && one(I.source, 80) && !/推|常情|估计|可能/.test(String(I.source))) {
     const o = v => one(v, 40); p.ident = { zi: o(I.zi), hao: o(I.hao), jiguan: o(I.jiguan), chushen: o(I.chushen), gongming: o(I.gongming), jue: o(I.jue), career: arr(I.career).filter(c => c && c.post).slice(0, 30).map(c => ({ y: num(c.y), post: one(c.post, 40) })).filter(c => c.y == null || c.y <= y), source: one(I.source, 80) }; }
   s.famPlan = arr(s.famPlan);
-  // 维基数据的亲属是现成的条目：整理里漏了的照补（称呼照性别给个大概）
-  const L = arr(dd.family || dd.add).slice(0, 100), have = new Set(L.map(x => x && one(x.name, 8)));
-  for (const k of kin) if (!have.has(k.name)) L.push({ relation: k.rel === '子女' ? (k.sex === '女' ? '女' : '子') : k.rel === '配偶' ? (/女/.test(p.gender || '') ? '夫' : '妻') : k.rel === '兄弟姐妹' ? (k.sex === '女' ? '姐妹' : '兄弟') : k.rel, name: k.name, born: k.born, died: k.died, source: '维基数据' });
+  const L = arr(dd.family || dd.add).slice(0, 100);
   for (const x of L) {
     const name = one(x && x.name, 8), src = one(x && x.source, 60);
-    if (!name || name.length < 2 || name === p.name || /某|不详|无名|佚名/.test(name) || !src || /推|常情|估计|可能/.test(src)) continue;
+    if (!name || name.length < 2 || name === n || /某|不详|无名|佚名/.test(name) || !src || /推|常情|估计|可能/.test(src)) continue;
     if (!grounded(name)) continue;   // 材料里没有这个名字：不收
     const born = num(x.born), died = num(x.died), rel = one(x.relation, 8);
     const age = born != null ? y - born : num(x.age);
@@ -2134,11 +2128,11 @@ ${mats || '（维基百科、维基数据、联网搜索都没查到：只写你
 /** 真人主角身边的人（照史料）：上司、同僚、部下（部将、幕僚、门客、亲兵）、师长、门生、好友、政敌——这一年在他身边的，名字须在查到的材料里 */
 async function circleFromRecords(s, mats0, hay0) {
   const p = s.protagonist, y = s.clock.y;
-  const more = canSearch() ? await searchFirst(s, [`${p.name} 部将 部下`, `${p.name} 幕僚 幕府 门客`, `${p.name} 上司 同僚`, `${p.name} 门生 弟子 师从`, `${p.name} 好友 交游`, `${p.name} 政敌 弹劾`]) : '';
-  const mats = [mats0, more].filter(Boolean).join('\n\n'), hay = hay0 + '\n' + more;
+  const n = p.name, B = await bochaDeep(s, [`${n} 部将`, `${n} 部下`, `${n} 麾下`, `${n} 幕僚`, `${n} 幕府`, `${n} 门客`, `${n} 上司`, `${n} 同僚`, `${n} 门生`, `${n} 弟子 师从`, `${n} 好友`, `${n} 交游 唱和`, `${n} 政敌`, `${n} 弹劾`, `${n} 姻亲`, `${n} ${y}年`, `${n} ${geoCenter(s)}`]);
+  const mats = [mats0, B.text].filter(Boolean).join('\n\n'), hay = hay0 + '\n' + B.items.map(i => `${i.title} ${i.snippet}`).join('\n');
   const { text } = await callClaude(`一局历史游戏的主角是史书真人：${p.name}（${p.role}），此刻公元${y}年（${timeText(s.clock)}），在${geoCenter(s)}。
 ${mats || '（没查到资料：只写你确知的正史明载，写清书名卷名）'}
-只照上面的资料和正史明载，列出这一年在他身边、和他有往来的人：上司、同僚、部下（部将、幕僚、门客、亲兵统领、家将）、师长、门生、好友、政敌、姻亲。军中的人把部将、偏裨都列上。
+只照上面的资料和正史明载（资料里说的是同名的别人的不用），列出这一年在他身边、和他有往来的人：上司、同僚、部下（部将、幕僚、门客、亲兵统领、家将）、师长、门生、好友、政敌、姻亲。军中的人把部将、偏裨都列上。
 每人写 name、tie（和他什么关系）、role（这一年的身份官职）、where（这一年在哪）、source（出处）。只列这一年在世、确有往来的；资料没写到的不添，不编人；人多就全列，至多四十人。
 只输出一个 JSON 对象：{"people":[{"name":"","tie":"","role":"","where":"","source":""}]}`, null, { maxTokens: 10000, temperature: 0, kind: '研读', detached: true });
   const d = parseJSON(text), out = [], H = new Set(arr(s.household).map(m => m.name));
@@ -3023,17 +3017,17 @@ async function wfetch(params, ms = 9000) {
 /* 网页版也走博查：博查的接口允许浏览器直接调，用玩家自己在「设置」里填的博查 Key；没填或出错才退回维基 */
 let BOCHA_KEY = (() => { try { return lsGet('hrpg:bochakey') || ''; } catch (_) { return ''; } })();
 const BOCHA_FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节/i;
-async function bochaFetch(q, ms = 12000) {
+async function bochaFetch(q, ms = 12000, count = 8) {
   const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
   try {
-    let r; const opt = { method: 'POST', signal: c.signal, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + BOCHA_KEY }, body: JSON.stringify({ query: q, count: 8, summary: true, freshness: 'noLimit' }) };
+    let r; const opt = { method: 'POST', signal: c.signal, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + BOCHA_KEY }, body: JSON.stringify({ query: q, count, summary: true, freshness: 'noLimit' }) };
     try { r = await fetch('https://api.bocha.cn/v1/web-search', opt); } catch (e) { if (e.name === 'AbortError') throw e; r = await fetch('https://api.bochaai.com/v1/web-search', opt); }   // 新域名连不上就用旧域名
     const j = await r.json().catch(() => null);
     if (!r.ok || (j && j.code !== undefined && String(j.code) !== '200')) throw new Error(String(j && j.code) === '401' || r.status === 401 ? '博查 Key 无效' : String(j && j.code) === '403' || r.status === 403 ? '博查余额不足' : '博查出错（' + ((j && j.message) || r.status) + '）');
     const pages = (j && j.data && ((j.data.webPages && j.data.webPages.value) || j.data.value)) || [];
     const seen = new Set();
     return pages.filter(h => h && h.name && !BOCHA_FICTION.test(h.name + ' ' + (h.url || ''))).filter(h => { const k = String(h.url || h.name).replace(/[?#].*$/, ''); if (seen.has(k)) return false; seen.add(k); return true; })
-      .slice(0, 4).map(h => ({ title: String(h.name).slice(0, 60), url: String(h.url || ''), snippet: String(h.summary || h.snippet || '').replace(/\s+/g, ' ').slice(0, 600) }));
+      .slice(0, count > 8 ? count : 4).map(h => ({ title: String(h.name).slice(0, count > 8 ? 80 : 60), url: String(h.url || ''), snippet: String(h.summary || h.snippet || '').replace(/\s+/g, ' ').slice(0, count > 8 ? 1500 : 600) }));
   } finally { clearTimeout(t); }
 }
 async function wikisourceFetch(q) {
@@ -3045,18 +3039,19 @@ async function browserLookup(queries, both, world) {
   // 分工：大势、制度、史事（W）维基为主、博查跟上两条；人物、当年当地（L）博查为主，博查没搜到才用维基。博查和维基同时开查
   const W = new Set(arr(world)), tag = (xs, src) => arr(xs).map(x => ({ ...x, src: x.src || src }));
   const bP = BOCHA_KEY ? Promise.all(queries.map(q => bochaFetch(q).then(items => ({ q, items }), e => ({ q, items: [], error: String(e && e.message || e) })))) : Promise.resolve([]);
-  const wP = browserLookupWiki(queries);
+  // 维基只查天下大势（玩家定的规矩）：人物、当年当地不问维基
+  const wq = queries.filter(q => W.has(q)), wP = wq.length ? browserLookupWiki(wq) : Promise.resolve({ results: [] });
   const [B, w] = await Promise.all([bP, wP]);
   const res = queries.map(q => {
     const wi = arr((arr(w.results).find(o => o.q === q) || {}).items), we = (arr(w.results).find(o => o.q === q) || {}).error;
     const bi = arr((B.find(o => o.q === q) || {}).items);
     if (W.has(q)) { const items = tag(wi.slice(0, 3), 'wikipedia').concat(tag(bi.slice(0, 2), 'bocha')); return { q, items, provider: wi.length && bi.length ? 'mixed' : wi.length ? 'wikipedia' : bi.length ? 'bocha' : '', error: items.length ? '' : we || '' }; }
-    // 人物、当年当地：博查为主，维基查到的也并进来
-    const items = tag(bi.slice(0, 3), 'bocha').concat(tag(wi.slice(0, 2), 'wikipedia'));
-    return { q, items, provider: bi.length && wi.length ? 'mixed' : bi.length ? 'bocha' : wi.length ? 'wikipedia' : '', error: items.length ? '' : we || '' };
+    // 人物、当年当地：只用博查（没有博查由 DeepSeek 检索补）
+    const items = tag(bi.slice(0, 6), 'bocha');
+    return { q, items, provider: bi.length ? 'bocha' : '', error: '' };
   });
   // 两边都没搜到的：再翻维基文库（史书原文）
-  await Promise.all(res.filter(x => !arr(x.items).length).slice(0, 4).map(async o => { const it = await wikisourceFetch(o.q); if (it.length) { o.items = it.map(x => ({ ...x, src: 'wikisource' })); o.provider = 'wikisource'; o.error = ''; } }));
+  await Promise.all(res.filter(x => !arr(x.items).length && W.has(x.q)).slice(0, 4).map(async o => { const it = await wikisourceFetch(o.q); if (it.length) { o.items = it.map(x => ({ ...x, src: 'wikisource' })); o.provider = 'wikisource'; o.error = ''; } }));
   const used = [...new Set(res.filter(x => arr(x.items).length).map(x => x.provider))];
   return { results: res, provider: used.length > 1 ? 'mixed' : used[0] || 'wikipedia' };
 }
@@ -3167,83 +3162,52 @@ async function doLookups(s, queries, both) {
    三路都没有的，DeepSeek 只有能举出正史、方志出处才算真人（标「未联网证实」），举不出就是查无此人 ========== */
 const PCHK = {};
 const WIKIDATA_API = 'https://www.wikidata.org/w/api.php';
-/** 真人的家谱、身边人要用的材料：维基百科整篇 + 维基数据的亲属条目（先查这些，查不到再靠博查和 DeepSeek 检索） */
-async function personFull(name, hint) {
-  if (MODE === 'local') return api('/api/personfull', { name, hint });
-  const get = async (o, base) => { try { if (base === 'wd') { const r = await fetch(WIKIDATA_API + '?' + new URLSearchParams({ format: 'json', origin: '*', ...o })); return r.ok ? await r.json() : {}; } return (await wfetch(o, 12000)) || {}; } catch (_) { return {}; } };
-  const toks = String(hint || '').split(/[\s，,、]+/).filter(Boolean);
-  const page = async title => { const d = await get({ action: 'query', titles: title, redirects: '1', converttitles: '1', prop: 'extracts|pageprops', explaintext: '1', exchars: '20000', variant: 'zh-cn' }, 'wiki'); const pg = Object.values((d.query || {}).pages || {})[0]; if (!pg || pg.missing !== undefined || !pg.extract) return null; return { title: pg.title, text: pg.extract, disamb: !!(pg.pageprops && 'disambiguation' in pg.pageprops), qid: pg.pageprops && pg.pageprops.wikibase_item }; };
-  let p = await page(name);
-  if (!p || p.disamb) { const d = await get({ action: 'query', list: 'search', srsearch: name + (toks[0] ? ' ' + toks[0] : ''), srlimit: '6' }, 'wiki'); for (const t of arr((d.query || {}).search).map(x => x.title).filter(t => t.startsWith(name)).slice(0, 3)) { const q = await page(t); if (q && !q.disamb) { p = q; break; } } }
-  if (p && p.disamb) p = null;
-  const kin = [];
-  if (p && p.qid) {
-    const e = await get({ action: 'wbgetentities', ids: p.qid, props: 'claims' }, 'wd'), C = (((e.entities || {})[p.qid]) || {}).claims || {};
-    const REL = { P22: '父', P25: '母', P26: '配偶', P40: '子女', P3373: '兄弟姐妹', P1038: '亲属', P451: '伴侣' }, ids = [];
-    for (const [k, rel] of Object.entries(REL)) for (const c of arr(C[k])) { const id = c && c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id; if (id) ids.push([id, rel]); }
-    if (ids.length) { const L = await get({ action: 'wbgetentities', ids: [...new Set(ids.map(x => x[0]))].slice(0, 50).join('|'), props: 'labels|claims', languages: 'zh-cn|zh-hans|zh|zh-tw|en' }, 'wd'), E = L.entities || {};
-      const yr = c => { const t = c && c[0] && c[0].mainsnak && c[0].mainsnak.datavalue && c[0].mainsnak.datavalue.value && c[0].mainsnak.datavalue.value.time; const m = t && String(t).match(/^([+-])0*(\d+)-/); return m ? (m[1] === '-' ? -1 : 1) * +m[2] : null; };
-      for (const [id, rel] of ids) { const x = E[id] || {}, lb = x.labels || {}, nm = (lb['zh-cn'] || lb['zh-hans'] || lb.zh || lb['zh-tw'] || {}).value; if (!nm) continue; const cl = x.claims || {};
-        const sex = arr(cl.P21).map(c => c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id)[0];
-        kin.push({ rel, name: nm, born: yr(cl.P569), died: yr(cl.P570), sex: sex === 'Q6581097' ? '男' : sex === 'Q6581072' ? '女' : '' }); } }
-  }
-  return { ok: true, title: p ? p.title : '', text: p ? p.text : '', kin };
-}
-async function personRaw(name, hint) {
-  if (MODE === 'local') return api('/api/person', { name, hint });
-  const toks = String(hint || '').split(/[\s，,、]+/).filter(Boolean);
-  const page = async title => { const d = await wfetch({ action: 'query', titles: title, redirects: '1', converttitles: '1', prop: 'extracts|pageprops|description', exintro: '1', explaintext: '1', exchars: '2500', variant: 'zh-cn' }, 9000); const pg = Object.values((d && d.query && d.query.pages) || {})[0]; return pg && pg.missing === undefined && pg.extract ? { title: pg.title, url: 'https://zh.wikipedia.org/wiki/' + encodeURIComponent(pg.title), text: pg.extract, desc: pg.description || '', disamb: !!(pg.pageprops && 'disambiguation' in pg.pageprops) } : null; };
-  const wiki = async () => { let p = await page(name);
-    if (!p || p.disamb) { const d = await wfetch({ action: 'query', list: 'search', srsearch: name + (toks[0] ? ' ' + toks[0] : ''), srlimit: '6' }, 9000); for (const t of arr(d && d.query && d.query.search).map(x => x.title).filter(t => t.startsWith(name) && t !== (p && p.title)).slice(0, 3)) { const q = await page(t); if (q && !q.disamb) { p = q; break; } } }
-    return p && !p.disamb ? p : null; };
-  const wdata = async () => {
-    const j = u => fetch(WIKIDATA_API + '?' + new URLSearchParams({ format: 'json', origin: '*', ...u })).then(r => r.ok ? r.json() : null);
-    const d = await j({ action: 'wbsearchentities', search: name, language: 'zh', uselang: 'zh-cn', limit: '7', type: 'item' });
-    const ids = arr(d && d.search).filter(x => x.label === name || (x.match && x.match.text === name)).map(x => x.id).slice(0, 6); if (!ids.length) return [];
-    const e = await j({ action: 'wbgetentities', ids: ids.join('|'), props: 'claims|descriptions|sitelinks', languages: 'zh-cn|zh|zh-hans|en' });
-    const yr = c => { const t = c && c[0] && c[0].mainsnak && c[0].mainsnak.datavalue && c[0].mainsnak.datavalue.value && c[0].mainsnak.datavalue.value.time; const m = t && String(t).match(/^([+-])0*(\d+)-/); return m ? (m[1] === '-' ? -1 : 1) * +m[2] : null; };
-    return Object.values((e && e.entities) || {}).filter(x => x.claims && arr(x.claims.P31).some(c => c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id === 'Q5'))
-      .map(x => { const D = x.descriptions || {}; return { id: x.id, desc: (D['zh-cn'] || D.zh || D['zh-hans'] || D.en || {}).value || '', born: yr(x.claims.P569), died: yr(x.claims.P570), zhwiki: ((x.sitelinks || {}).zhwiki || {}).title || '' }; });
-  };
-  // 博查为主：同一个人换几种问法一起搜，去重后留提到这个名字的
-  const bocha = async () => { if (!BOCHA_KEY) return [];
-    const qs = [...new Set([name, `${name} 生平`, `${name} ${hint}`.trim(), `${name} 百度百科`, `${name} 历史人物`])];
-    const rs = await Promise.all(qs.map(q => bochaFetch(q).catch(() => [])));
-    const seen = new Set(), out = [];
-    for (const r of rs) for (const x of arr(r)) { const k = x.url || x.title; if (seen.has(k)) continue; seen.add(k); if (String(x.title + x.snippet).includes(name) && !FICTION_RE.test(x.title || '') && !/网文|短剧|穿越/.test(String(x.snippet).slice(0, 80))) out.push({ title: x.title, url: x.url, text: cut(x.snippet, 500) }); }
-    return out.slice(0, 8); };
-  const [w, wd, b] = await Promise.all([wiki().catch(e => ({ err: e.message || '连不上维基百科' })), wdata().catch(e => ({ err: e.message || '连不上维基数据' })), bocha().catch(() => [])]);
-  return { ok: true, name, hint, bochaOn: !!BOCHA_KEY, wiki: w && !w.err ? w : null, wikiErr: (w && w.err) || '', wikidata: Array.isArray(wd) ? wd : [], bocha: b };
+/** 人物专用：大量博查（维基只查天下大势，人物一律不问维基）——一批二十来条问法同时搜，每条十条结果、带长摘要；
+ *  没有博查（或一条都没搜到）才用 DeepSeek 检索补 */
+async function bochaDeep(s, qs, cap = 50) {
+  qs = [...new Set(arr(qs).map(q => String(q || '').replace(/\s+/g, ' ').trim()).filter(q => q.length >= 2))].slice(0, 24);
+  if (!qs.length || !canSearch()) return { text: '', items: [], bocha: false };
+  let R = [], on = false;
+  try {
+    if (MODE === 'local') { const r = await api('/api/bochadeep', { queries: qs }); on = !!(r && r.bochaOn); R = arr(r && r.results); }
+    else if (BOCHA_KEY) { on = true; for (let i = 0; i < qs.length; i += 6) R.push(...await Promise.all(qs.slice(i, i + 6).map(q => bochaFetch(q, 25000, 10).then(items => ({ q, items })).catch(e => ({ q, items: [], error: String(e && e.message || e) }))))); }
+  } catch (e) { if (e && e.code === 'cancelled') throw e; }
+  if (!R.some(x => arr(x.items).length) && DSM()) { try { R = arr(await within(dsLookup(qs.slice(0, 12)), 40000, [])).map(y => ({ q: y.q, items: arr(y.items).map(i => ({ ...i, ds: true })) })); } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+  const items = [], seen = new Set();
+  for (const x of R) for (const i of arr(x.items)) { const k = String(i.url || i.title || '').replace(/[?#].*$/, '') || String(i.snippet).slice(0, 40); if (seen.has(k)) continue; seen.add(k); if (FICTION_RE.test(i.title || '')) continue; items.push({ q: x.q, ...i }); }
+  if (items.length) feedAdd(items.slice(0, 4).map(i => ({ t: i.title, u: i.url, q: i.q, site: i.ds ? 'DeepSeek 检索' : '博查' })));
+  const use = items.slice(0, cap);
+  const text = use.length ? `【${on ? '博查' : 'DeepSeek 检索'}搜到的 ${use.length} 条（以此为准；同名的别人不算）】\n` + use.map(i => `· ${i.ds ? '〔DeepSeek〕' : '〔博查〕'}${i.title}：${cut(i.snippet, 700)}`).join('\n') : '';
+  return { text, items, bocha: on };
 }
 /** 返回 { real, src, who, born, died, identity, evidence, why }；real 由程序照证据定，不由 AI 随口说 */
 async function personCheck(s, name, hint) {
   name = one(String(name || '').replace(/[（(].*$/, ''), 12); if (name.length < 2) return { real: false, why: '名字太短' };
   const key = name + '|' + (hint || ''); if (PCHK[key]) return PCHK[key];
   if (s && s.personChk && s.personChk[key]) return (PCHK[key] = s.personChk[key]);
-  let raw = null; if (canSearch()) { try { raw = await within(personRaw(name, hint), 20000, null); } catch (e) { if (e && e.code === 'cancelled') throw e; raw = null; } }
-  const y = s && s.clock ? s.clock.y : null;
-  // 维基数据：是「人」、生卒和这一年对得上（差个三十年以内）
-  const wd = arr(raw && raw.wikidata).filter(x => y == null || ((x.born == null || x.born <= y + 30) && (x.died == null || x.died >= y - 30)));
-  const ev = [];
-  for (const x of arr(raw && raw.bocha).slice(0, 6)) ev.push(`博查「${x.title}」：${cut(x.text, 400)}`);
-  if (raw && raw.wiki) ev.push(`维基百科《${raw.wiki.title}》：${cut(raw.wiki.text, 900)}`);
-  for (const x of wd.slice(0, 3)) ev.push(`维基数据 ${x.id}：${x.desc || ''}${x.born != null || x.died != null ? `（${x.born ?? '?'}—${x.died ?? '?'}）` : ''}`);
+  const y = s && s.clock ? s.clock.y : null, pol = s && s.place ? s.place.polity || '' : '';
+  // 维基只查天下大势：人物一律大量博查（同一个人换十来种问法），没有博查用 DeepSeek 检索，再由 DeepSeek 判
+  let B = { text: '', items: [], bocha: false }; if (canSearch()) { try { B = await within(bochaDeep(s, [name, `${name} 生平`, `${name} ${hint || ''}`.trim(), `${name} ${pol}`.trim(), `${name} 百度百科`, `${name} 历史人物`, `${name} 传`, `${name} 字 号`, `${name} 籍贯`, `${name} 官职`], 30), 60000, B); } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+  const hits = B.items.filter(x => String(x.title + x.snippet).includes(name)), web = hits.filter(x => !x.ds), dsh = hits.filter(x => x.ds);
+  const raw = { bochaOn: B.bocha, bocha: web };
+  // 博查搜到的才算「联网查到」；DeepSeek 检索没经网页核对，另列，只作参考
+  const ev = web.slice(0, 10).map(x => `博查「${x.title}」：${cut(x.snippet, 500)}`), evDs = dsh.slice(0, 4).map(x => `DeepSeek 检索「${x.title}」：${cut(x.snippet, 300)}`);
   let v = null;
   if (DSM() || MODE === 'claude') {
     try {
       const { text } = await callClaude(`判断「${name}」是不是史书上确有其人、并且合乎这个线索：${hint || '（无）'}${y != null ? `（游戏此刻是${y}年）` : ''}。
-${ev.length ? '【联网查到的】\n' + ev.join('\n') : '【联网什么也没查到】'}
+${ev.length ? '【联网查到的】\n' + ev.join('\n') : '【联网什么也没查到】'}${evDs.length ? '\n【DeepSeek 检索（没经网页核对，只作参考）】\n' + evDs.join('\n') : ''}
 规矩：
 - 有查到的，照查到的判：是同一个人（朝代、身份对得上）才算 real；同名的别人（别的朝代、现代人、小说人物）不算。
 - 什么也没查到的：只有你确知他见于正史、实录、方志、文集，并且能写出具体出处（书名、卷名或篇名）时才算 real；举不出出处、只是「像这个年代会有的名字」的，一律 real=false。宁可判 false，不可把编的人当真人。
-只输出 JSON：{"real":false,"who":"他是谁（一句）","born":null,"died":null,"identity":"身份、官职","source":"出处：维基百科/维基数据/博查/某书某卷","why":"凭什么这么判"}`, null, { maxTokens: 800, temperature: 0, kind: '检索', detached: true, thinking: false });
+只输出 JSON：{"real":false,"who":"他是谁（一句）","born":null,"died":null,"identity":"身份、官职","source":"出处：博查/某书某卷","why":"凭什么这么判"}`, null, { maxTokens: 800, temperature: 0, kind: '检索', detached: true, thinking: false });
       v = parseJSON(text);
     } catch (e) { if (e && e.code === 'cancelled') throw e; v = null; }
   }
-  const found = !!(raw && (raw.wiki || wd.length || arr(raw.bocha).length));
-  const real = v ? v.real === true && (found || /[《卷传志录集]/.test(String(v.source || ''))) : found && !!(raw.wiki || wd.length);
-  const src = !real ? '' : arr(raw && raw.bocha).length ? '博查' + (raw.wiki ? '、维基百科' : '') : raw && raw.wiki ? '维基百科' : wd.length ? '维基数据' : 'DeepSeek 据史书（未联网证实：' + one(v && v.source, 30) + '）';
-  const out = { real, src, who: one(v && v.who, 60) || (wd[0] && wd[0].desc) || '', born: num(v && v.born) ?? (wd[0] && wd[0].born) ?? null, died: num(v && v.died) ?? (wd[0] && wd[0].died) ?? null, identity: one(v && v.identity, 60), evidence: ev.slice(0, 6).map(x => cut(x, 300)), searched: { bocha: raw ? (raw.bochaOn === false ? -1 : arr(raw.bocha).length) : -1, wiki: raw && raw.wiki ? 1 : 0, wd: wd.length }, url: raw && raw.wiki ? raw.wiki.url : '', why: one(v && v.why, 80) || (found ? '' : raw ? '维基百科、维基数据、博查都查不到' : '没联网，查不了'), netErr: raw ? raw.wikiErr || '' : '没联网', at: Date.now() };
+  const found = web.length > 0;
+  const real = v ? v.real === true && (found || /[《卷传志录集]/.test(String(v.source || ''))) : false;
+  const src = !real ? '' : web.length ? '博查' : 'DeepSeek 据史书（未联网证实：' + one(v && v.source, 30) + '）';
+  const out = { real, src, who: one(v && v.who, 60), born: num(v && v.born) ?? null, died: num(v && v.died) ?? null, identity: one(v && v.identity, 60), evidence: ev.slice(0, 6).map(x => cut(x, 300)), searched: { bocha: raw.bochaOn === false ? -1 : web.length }, url: (web.find(x => /^https?:/.test(x.url || '')) || {}).url || '', why: one(v && v.why, 80) || (found ? '' : '博查、检索都查不到'), netErr: canSearch() ? '' : '没联网', at: Date.now() };
   PCHK[key] = out; if (s) { s.personChk = s.personChk || {}; s.personChk[key] = out; const ks = Object.keys(s.personChk); if (ks.length > 80) delete s.personChk[ks[0]]; }
   feedAdd([{ t: `核查真人：${name}——${real ? '有其人（' + src + '）' : '查无此人'}`, site: src || '核查' }]);
   return out;
@@ -3638,8 +3602,8 @@ async function buildRoster(s) {
   const base = [], seen = new Set();
   for (const r of rulersAt(y, s)) if (!seen.has(r.name)) { seen.add(r.name); base.push({ g: '君主', name: r.name, post: r.title || r.polity, src: '内置史料' }); }
   for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && !seen.has(f.name + ps[2])) { seen.add(f.name + ps[2]); base.push({ g: '', name: f.name, post: ps[2], since: ps[0], src: '内置史料' }); }
-  const found = canSearch() ? await searchFirst(s, [`${yl} ${pol} 宗室 亲王 郡王`, `${y}年 ${pol} 宰相 军机大臣 大学士`, `${y}年 ${pol} 六部尚书`, `${y}年 ${pol} 总督 巡抚`, `${y}年 ${pol} 将军 统兵`, `${pol} ${y}年 世家 大族 名臣`]) : '';
-  const hay = found + '\n' + base.map(b => b.name).join('、');
+  const B = await bochaDeep(s, [`${yl} ${pol} 宗室 亲王`, `${yl} 郡王 贝勒`, `${y}年 ${pol} 宰相`, `${yl} 军机大臣`, `${yl} 大学士`, `${yl} 吏部尚书`, `${yl} 户部尚书`, `${yl} 礼部尚书`, `${yl} 兵部尚书`, `${yl} 刑部尚书`, `${yl} 工部尚书`, `${yl} 总督`, `${yl} 巡抚`, `${yl} 将军`, `${y}年 ${pol} 统兵 将领`, `${y}年 ${pol} 后妃 皇子`, `${pol} ${y}年 世家 大族`, `${pol} ${y}年 名臣`], 60);
+  const found = B.text, hay = B.items.map(i => `${i.title} ${i.snippet}`).join('\n') + '\n' + base.map(b => b.name).join('、');
   let G = [];
   if (found || base.length) {
     const { text } = await callClaude(`替一局历史游戏开一份「天下名录」：公元${y}年（${yl}）${pol}在任、在世的要紧人物。玩家要能翻看全国的人，不只本地。
@@ -5961,15 +5925,12 @@ function realAll(s) {
     for (const o of arr(s.offices)) if (o && o.name && o.src !== '拟') R.add(o.name); }
   return R;
 }
-/** 联网看这个名字是不是历史上的名人（任何朝代；现代人同名不算） */
+/** 联网看这个名字是不是历史上的名人（任何朝代；现代人同名不算）——人物只问博查（维基只查天下大势） */
 async function clashNet(name) {
   if (!canSearch() || name.length < 2) return null;
-  let raw = null; try { raw = await within(personRaw(name, ''), 15000, null); } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
-  if (!raw) return null;
-  const old = arr(raw.wikidata).find(x => (x.born != null && x.born < 1912) || (x.died != null && x.died < 1950) || /朝|代|古|官员|诗人|将领|皇帝|画家|学者|僧|商人/.test(x.desc || ''));
-  if (old) return `${name}：${old.desc || '史上有此人'}${old.born != null || old.died != null ? `（${old.born ?? '?'}—${old.died ?? '?'}）` : ''}（维基数据）`;
-  const w = raw.wiki; if (w && w.text && !/中华人民共和国|演员|歌手|运动员|足球|网络|电视剧|小说|游戏|动画/.test(w.text.slice(0, 200)) && /朝|代|年号|进士|举人|官|帝|王|将|诗|字|号|生于|卒于|[（(]\d{2,4}年?[—–-]/.test(w.text.slice(0, 300))) return `${name}：${cut(w.text, 60)}（维基百科）`;
-  return null;
+  let B = null; try { B = await within(bochaDeep(null, [name, `${name} 历史人物`, `${name} 生平`], 12), 30000, null); } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
+  const h = arr(B && B.items).find(x => !x.ds && String(x.title).includes(name) && !/中华人民共和国|演员|歌手|运动员|足球|网络|电视剧|小说|游戏|动画|公司|教授|博士/.test(String(x.title + x.snippet).slice(0, 200)) && /朝|代|年号|进士|举人|官|帝|王|将|诗|字|号|生于|卒于|[（(]\d{2,4}年?[—–-]/.test(String(x.snippet).slice(0, 300)));
+  return h ? `${name}：${cut(h.snippet, 60)}（博查）` : null;
 }
 /** 把存档里的一个名字处处换成另一个（名册、家室、官员、人事树、记账的名字对照；正文里三字以上的名字也换） */
 function renameEverywhere(s, old, nm) {
@@ -7244,7 +7205,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
             }
             if (!ck.real) {
               const sx = ck.searched || {}, bo = (MODE === 'local' ? KEY && KEY.bocha : BOCHA_KEY);
-              throw { code: 'notreal', message: `${r.name ? `查不到史书上有「${r.name}」这个人` : '没找到合乎这个身份的史书真人'}${hint ? '（' + hint + '）' : ''}。查过：${bo ? `博查${sx.bocha > 0 ? '有' + sx.bocha + '条但对不上' : '没搜到'}` : '博查（没填博查 Key，没法查——在「设置」里填上博查 Key 再开局，人物才查得准）'}、维基百科${sx.wiki ? '有条目但对不上' : '没有'}、维基数据${sx.wd ? '有同名但年代对不上' : '没有'}，DeepSeek 也举不出正史、方志的出处。可以写这个人的全名、加上朝代和官职再开局；想当虚构人物，就在「自己定制开局」里把「人物」选成「虚构人物」。` };
+              throw { code: 'notreal', message: `${r.name ? `查不到史书上有「${r.name}」这个人` : '没找到合乎这个身份的史书真人'}${hint ? '（' + hint + '）' : ''}。查过：${bo ? `博查${sx.bocha > 0 ? '有' + sx.bocha + '条但对不上' : '没搜到'}` : '博查（没填博查 Key，没法查——在「设置」里填上博查 Key 再开局，人物才查得准）'}，DeepSeek 也举不出正史、方志的出处。可以写这个人的全名、加上朝代和官职再开局；想当虚构人物，就在「自己定制开局」里把「人物」选成「虚构人物」。` };
             }
             r.real = true; r.realChk = ck; r.traces = arr(r.traces).concat(arr(ck.evidence).map(x => cut(x, 140))).slice(0, 10);
             if (ck.born != null && r.y != null) { const age = r.y - ck.born + 1; if (age > 0 && age < 110) { if (r.age != null && Math.abs(r.age - age) > 1) r.adjust = arr(r.adjust).concat([`${r.name}生于${ck.born}年（${ck.src}），这一年${age}岁`]); r.age = age; } }

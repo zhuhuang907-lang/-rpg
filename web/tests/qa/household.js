@@ -24,18 +24,23 @@ const { chromium } = require('playwright');
   const fx = await p.evaluate(() => { S.household.push({ relation: '母', name: '吴氏', age: 20 }, { relation: '长子', name: '汪大成', age: 60 }); const r = familyAgeFix(S); return { r, m: S.household.find(x => x.name === '吴氏').age, c: S.household.find(x => x.name === '汪大成').age, me: S.protagonist.age }; });
   if (!(fx.m >= fx.me + 15)) bad('母亲比本人还小，没改：' + JSON.stringify(fx));
   if (!(fx.c <= fx.me - 14)) bad('儿子比本人还大，没改：' + JSON.stringify(fx));
+  // 人物一律大量博查（维基只查天下大势）：这里把博查 Key 存上，家谱、身边人都从博查来
+  { const k = await p.evaluate(async () => { const r = await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); SEARCH_OFF = ''; SEARCH_DOWN = 0; return { r, bocha: KEY && KEY.bocha, can: canSearch() }; }); console.log('BOCHAKEY', JSON.stringify(k).slice(0, 400)); if (!k.bocha) bad('博查 Key 没存上：' + JSON.stringify(k).slice(0, 300)); }
   // 史书真人：家里人只照史料，查不到的不添、不推
   const rr = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = false; const due = familyDue(s); const add = await familyFix(s); return { due, add, hh: s.household.map(m => m.relation + m.name + '|' + (m.basis || '')) }; });
   if (rr.hh.some(h => /推/.test(h.split('|')[1] || '') && !/管家|仆|婢|丫鬟/.test(h)) || rr.hh.some(h => /正室|妾|程婉贞/.test(h))) bad('真人主角被按常情添了家里人：' + JSON.stringify(rr));
   // 真人主角的身份、家谱照史料全列（单独一回调用）：字号籍贯履历、已故的祖父、日后才出生的子女到年照记（CLAUDE.md「人物」）
-  { const g = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = false; s.famPlan = []; await familyFix(s); const plan = s.famPlan.map(m => m.name).join(); s.clock.y += 3; famPlanTick(s); return { id: s.protagonist.ident, dead: s.household.filter(m => m.dead).map(m => m.name), plan, born: s.household.filter(m => /史载这一年出生/.test(m.note || '')).map(m => m.name) }; });
+  { const g = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = false; s.famPlan = []; try { await familyFix(s); } catch (e) { return { err: JSON.stringify(e) + String(e && e.message || '') }; } const plan = s.famPlan.map(m => m.name).join(); s.clock.y += 3; famPlanTick(s); return { id: s.protagonist.ident, dead: s.household.filter(m => m.dead).map(m => m.name), plan, born: s.household.filter(m => /史载这一年出生/.test(m.note || '')).map(m => m.name) }; });
+    if (g.err) bad('查家谱出错：' + g.err);
     if (!g.id || g.id.zi !== '景和' || !g.id.career.length) bad('真人主角的字号、履历没照史料记下：' + JSON.stringify(g.id));
     if (!g.dead.includes('汪廷璋')) bad('史载已故的亲属没列进家谱：' + JSON.stringify(g));
     if (!/汪承禧/.test(g.plan) || !g.born.includes('汪承禧')) bad('日后才出生的子女没到年照记：' + JSON.stringify(g)); }
-  // 先查（维基整篇、维基数据亲属）再搜，DeepSeek 只整理材料里有的：材料里没有的名字不收；维基数据的亲属漏了也补上；身边人照史料列上（CLAUDE.md「人物」）
+  // 大量博查，DeepSeek 只整理博查搜到的：材料里没有的名字不收；身边人照史料列上；查家谱时一次博查二十来条问法、不问维基（CLAUDE.md「人物」）
   { const c = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = 0; s.people = {}; await familyFix(s); return { hh: s.household.map(m => m.name), ppl: Object.keys(s.people), rec: s.famRec, due: familyDue(s) }; });
     if (c.hh.includes('汪假人')) bad('材料里没有的家里人被收进来了：' + JSON.stringify(c));
-    if (!c.hh.includes('汪景明')) bad('维基数据记的兄弟没列上：' + JSON.stringify(c));
+    if (!c.hh.includes('汪景明')) bad('博查搜到的兄弟没列上：' + JSON.stringify(c));
+    { let wl = ''; try { wl = require('fs').readFileSync('wiki.log', 'utf8'); } catch (_) {} if (/汪景和|江春|程晋芳/.test(wl)) bad('查人物还去问了维基（维基只查天下大势）'); }
+    { const lg = require('fs').readFileSync('bocha.log', 'utf8').split('\n').filter(l => /汪景和/.test(l)).length; if (lg < 15) bad('查家谱、身边人博查用得太少：' + lg + ' 条'); }
     if (!c.ppl.includes('江春') || !c.ppl.includes('程晋芳') || c.ppl.includes('编造部将')) bad('身边的人没照史料列，或收了材料里没有的人：' + JSON.stringify(c));
     if (c.due) bad('家谱查完了还说要查'); }
   // 旧存档（标了查过的老版本）也要照新办法再查一遍

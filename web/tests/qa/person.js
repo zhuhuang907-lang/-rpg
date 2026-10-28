@@ -1,4 +1,4 @@
-// 是不是史书上的真人：开局「人物」可选自动／史上真人／虚构；真人程序查（维基条目、维基数据、博查，DeepSeek 照查到的判），
+// 是不是史书上的真人：开局「人物」可选自动／史上真人／虚构；真人程序查（大量博查，没有博查用 DeepSeek 检索；维基只查天下大势，不查人物；DeepSeek 照查到的判），
 // 选了真人却查不到就不开局、说清楚；大官贵族自动查，查无此人就从资料里另挑真人；人物页每人一个「核查是否真人」
 const { chromium } = require('playwright');
 (async () => {
@@ -27,7 +27,7 @@ const { chromium } = require('playwright');
   await fresh(); await p.fill('#qText', '乾隆二十二年的扬州知府'); await p.click('#bStart'); await idle();
   const d = await p.evaluate(() => S ? { name: S.protagonist.name, real: S.protagonist.real } : { err: ERRMSG });
   if (d.name !== '卢见曾' || d.real !== true) bad('没选虚构，主角查不到就该另找真人（卢见曾），不能是虚构的：' + JSON.stringify(d));
-  // 没选虚构：一句话开局的平民也得是真人（这里汪景和在测试的维基里算真人）
+  // 没选虚构：一句话开局的平民也得是真人（这里汪景和算真人：DeepSeek 举得出正史出处）
   await fresh(); await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart'); await idle();
   const d2 = await p.evaluate(() => S ? { name: S.protagonist.name, real: S.protagonist.real } : { err: ERRMSG }); if (d2.real !== true) bad('没选虚构却开出了虚构主角：' + JSON.stringify(d2));
   // 五、人物页「核查是否真人」
@@ -39,7 +39,8 @@ const { chromium } = require('playwright');
   // 名册里只写「某氏」的女眷：当场起名，「某氏」留作称呼；起名的字库里不能有「氏」
   const sh = await p.evaluate(() => { S.household.push({ relation: '正室', name: '程氏', age: 30 }); S.people['柳氏'] = { role: '妾', seen: S.turn }; fixShiNames(S); const m = S.household.find(x => x.alias === '程氏'); const ph = nameFixes({ ...S, nameMap: {} }, '他娶了王某氏为妻'); return { m: m && m.name, p: Object.keys(S.people).find(k => S.people[k].alias === '柳氏'), left: S.household.some(x => /^.氏$/.test(x.name) && !x.rec) || Object.keys(S.people).some(k => /^.氏$/.test(k)), ph: ph.map(x => x.right).join() }; });
   if (!sh.m || /氏$/.test(sh.m) || !sh.p || /氏$/.test(sh.p) || sh.left || /氏$/.test(sh.ph)) bad('「某氏」没起名：' + JSON.stringify(sh));
-  // 虚构人物不和史书真人重名：内置史料里的（王安石）、联网查得到的（江春）都换名，处处一并改；程序起名也不撞真人
+  // 虚构人物不和史书真人重名：内置史料里的（王安石）、博查查得到的（江春；人物只问博查，不问维基）都换名，处处一并改；程序起名也不撞真人
+  await p.evaluate(async () => { await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); SEARCH_OFF = ''; SEARCH_DOWN = 0; });
   const cl = await p.evaluate(async () => { S.protagonist.real = false; S.household.push({ relation: '书童', name: '王安石' }); S.people['江春'] = { role: '盐商', seen: S.turn }; S.household.push({ relation: '管家', name: '汪福' }); const out = await fictionClash(S);
     const R = realAll(S), picks = []; for (let i = 0; i < 30; i++) picks.push(pickName(S, '王', GIVEN, new Set())); TAB = 'people'; render();
     return { out, left: ['王安石', '江春'].filter(n => S.people[n] || S.household.some(m => m.name === n)), ren: S.renamed, bad: picks.filter(n => R.has(n)), txt: document.body.innerText.includes('已改名'), keep: !!S.household.find(m => m.name === '汪福') }; });
