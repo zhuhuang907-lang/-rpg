@@ -245,26 +245,6 @@ async function chgisGet(id) {
     try { fs.writeFileSync(cf, b); } catch (_) { /* 存不下就算了 */ } return { buf: b };
   } catch (e) { return { why: String(e && e.message || e).slice(0, 120) }; }
 }
-/** 维基百科整篇 + 维基数据亲属；get(o, 'wd'|'wiki') 发请求 */
-async function personFullCore(name, hint, get) {
-  const toks = String(hint || '').split(/[\s，,、]+/).filter(Boolean);
-  const page = async title => { const d = await get({ action: 'query', titles: title, redirects: '1', converttitles: '1', prop: 'extracts|pageprops', explaintext: '1', exchars: '20000', variant: 'zh-cn' }, 'wiki'); const pg = Object.values((d.query || {}).pages || {})[0]; if (!pg || pg.missing !== undefined || !pg.extract) return null; return { title: pg.title, text: pg.extract, disamb: !!(pg.pageprops && 'disambiguation' in pg.pageprops), qid: pg.pageprops && pg.pageprops.wikibase_item }; };
-  let p = await page(name);
-  if (!p || p.disamb) { const d = await get({ action: 'query', list: 'search', srsearch: name + (toks[0] ? ' ' + toks[0] : ''), srlimit: '6' }, 'wiki'); for (const t of arr0((d.query || {}).search).map(x => x.title).filter(t => t.startsWith(name)).slice(0, 3)) { const q = await page(t); if (q && !q.disamb) { p = q; break; } } }
-  if (p && p.disamb) p = null;
-  const kin = [];
-  if (p && p.qid) {
-    const e = await get({ action: 'wbgetentities', ids: p.qid, props: 'claims' }, 'wd'), C = (((e.entities || {})[p.qid]) || {}).claims || {};
-    const REL = { P22: '父', P25: '母', P26: '配偶', P40: '子女', P3373: '兄弟姐妹', P1038: '亲属', P451: '伴侣' }, ids = [];
-    for (const [k, rel] of Object.entries(REL)) for (const c of arr0(C[k])) { const id = c && c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id; if (id) ids.push([id, rel]); }
-    if (ids.length) { const L = await get({ action: 'wbgetentities', ids: [...new Set(ids.map(x => x[0]))].slice(0, 50).join('|'), props: 'labels|claims', languages: 'zh-cn|zh-hans|zh|zh-tw|en' }, 'wd'), E = L.entities || {};
-      const yr = c => { const t = c && c[0] && c[0].mainsnak && c[0].mainsnak.datavalue && c[0].mainsnak.datavalue.value && c[0].mainsnak.datavalue.value.time; const m = t && String(t).match(/^([+-])0*(\d+)-/); return m ? (m[1] === '-' ? -1 : 1) * +m[2] : null; };
-      for (const [id, rel] of ids) { const x = E[id] || {}, lb = x.labels || {}, nm = (lb['zh-cn'] || lb['zh-hans'] || lb.zh || lb['zh-tw'] || {}).value; if (!nm) continue; const cl = x.claims || {};
-        const sex = arr0(cl.P21).map(c => c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id)[0];
-        kin.push({ rel, name: nm, born: yr(cl.P569), died: yr(cl.P570), sex: sex === 'Q6581097' ? '男' : sex === 'Q6581072' ? '女' : '' }); } }
-  }
-  return { title: p ? p.title : '', text: p ? p.text : '', kin };
-}
 const routes = {
   /* ---- 一句话开局 ---- */
   async 'POST /api/quick-start'(body) {
@@ -498,14 +478,9 @@ const routes = {
         if (netDown(w.error)) WIKI_DOWN_AT = Date.now();
         return w;
       })();
+      // 维基只查天下大势（玩家定的规矩）：人物、当年当地一律博查（没有博查就由页面那边的 DeepSeek 检索补），不问维基
+      if (!isW) { if (!isBocha) return { query: q, results: [], provider: 'bocha', error: '' }; const b = await bP; return { query: q, results: tag((b.results || []).slice(0, 6), 'bocha'), error: b.error, provider: 'bocha' }; }
       if (!isBocha) { const w = await wP; return { query: q, ...w, provider: w.provider || 'wikipedia' }; }
-      if (!isW) {
-        // 人物、当年当地：博查为主，维基同时查、查到的也并进来（人物条目维基常有，博查搜到别的不能把它挤掉）
-        const [b, w] = await Promise.all([bP, wP]);
-        const br = tag((b.results || []).slice(0, 3), 'bocha'), wr = tag((w.results || []).slice(0, 2), w.provider || 'wikipedia');
-        if (br.length || wr.length) return { query: q, results: br.concat(wr), provider: br.length && wr.length ? 'mixed' : br.length ? 'bocha' : (w.provider || 'wikipedia') };
-        return { query: q, ...b, provider: 'bocha' };
-      }
       const [w, b] = await Promise.all([wP, bP]);
       const wr = tag((w.results || []).slice(0, 3), w.provider || 'wikipedia'), br = tag((b.results || []).slice(0, 2), 'bocha');
       if (wr.length || br.length) return { query: q, results: wr.concat(br), provider: wr.length && br.length ? 'mixed' : wr.length ? (w.provider || 'wikipedia') : 'bocha' };
@@ -596,19 +571,14 @@ const routes = {
   /* 查一个人是不是史书上的真人：维基百科按条目名直接取（不是全文搜索，同名的消歧义页再按朝代、身份挑）、
      维基数据（是不是「人」、生卒年、简介）、博查（百度百科等），三路同时查；查过的存本机，不反复打扰维基（维基限流很严） */
   /* 真人的家谱、身边人：维基百科整篇（不只开头）+ 维基数据的亲属条目（父、母、配偶、子女、兄弟姐妹、亲属），带生卒年 */
-  async 'POST /api/personfull'(body) {
-    const name = String((body || {}).name || '').trim().slice(0, 12), hint = String((body || {}).hint || '').trim().slice(0, 40);
-    if (name.length < 2) return { ok: false, error: '名字太短' };
-    const dir = path.join(ROOT, 'data', 'cache', 'personfull'); fs.mkdirSync(dir, { recursive: true });
-    const cf = path.join(dir, require('crypto').createHash('md5').update(name + '|' + hint).digest('hex') + '.json');
-    try { const c = JSON.parse(fs.readFileSync(cf, 'utf8')); if (Date.now() - (c.at || 0) < 30 * 864e5) return c; } catch (_) { /* 没缓存 */ }
-    const net = require('./core/net'), UA = { 'User-Agent': 'HistoryRPG/1.0 (https://github.com/zhuhuang907-lang/-rpg; history game)', 'Api-User-Agent': 'HistoryRPG/1.0 (history game)' };
-    const WB = process.env.WIKI_BASE || 'https://zh.wikipedia.org', DB = process.env.WIKIDATA_BASE || 'https://www.wikidata.org';
-    const getJ = async (u, ms = 12000) => { try { const r = await net.fetchX(u, { headers: UA, signal: AbortSignal.timeout(ms) }); return r.ok ? await r.json() : {}; } catch (_) { return {}; } };
-    const out = await personFullCore(name, hint, (o, base) => getJ((base === 'wd' ? DB : WB) + '/w/api.php?' + new URLSearchParams({ format: 'json', ...o })));
-    const res = { ok: true, name, hint, at: Date.now(), ...out };
-    if (res.text || arr0(res.kin).length) try { fs.writeFileSync(cf, JSON.stringify(res)); } catch (_) { /* 存不下就算了 */ }
-    return res;
+  /* 人物（家谱、身边人、名录、真人核查）专用：大量博查——一批二十来条问法同时搜，每条十条结果、带长摘要；不问维基 */
+  async 'POST /api/bochadeep'(body) {
+    const qs = [...new Set((Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean))].slice(0, 24);
+    if (!(await bochaOn())) return { ok: true, bochaOn: false, results: [] };
+    const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
+    const one = q => Promise.race([search.search(q, { provider: 'bocha', noFallback: true, count: 10 }).catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: '超时' }), 25000))]);
+    const rs = []; for (let i = 0; i < qs.length; i += 6) rs.push(...await Promise.all(qs.slice(i, i + 6).map(one)));
+    return { ok: true, bochaOn: true, results: rs.map((r, i) => { const seen = new Set(); return { q: qs[i], error: r.error || '', items: (r.results || []).filter(h => h && h.title && !FICTION.test(h.title + ' ' + (h.url || '')) && !/古装剧|电视剧|连续剧|网剧|主演|执导|编剧|首播/.test(String(h.snippet || '').slice(0, 120))).filter(h => { const k = String(h.url || h.title).replace(/[?#].*$/, ''); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 10).map(h => ({ title: String(h.title).slice(0, 80), url: String(h.url || ''), snippet: String(h.snippet || '').replace(/\s+/g, ' ').slice(0, 1500) })) }; }) };
   },
   async 'POST /api/person'(body) {
     const name = String((body || {}).name || '').trim().slice(0, 12), hint = String((body || {}).hint || '').trim().slice(0, 40);

@@ -317,7 +317,7 @@ async function searchOne(query, providerId, cfg, opts = {}) {
   if (!provider) throw new Error(`未知检索后端：${providerId}`);
   const pcfg = cfg.providers?.[providerId] || {};
 
-  const key = hash(`${providerId}|${pcfg.limit || ''}|${query}`);
+  const key = hash(`${providerId}|${pcfg.limit || ''}|${opts.count || ''}|${query}`);
   if (!opts.noCache) {
     const hit = await cacheRead(key);
     if (hit) return { ...hit, cached: true };
@@ -325,7 +325,7 @@ async function searchOne(query, providerId, cfg, opts = {}) {
 
   const t0 = Date.now();
   try {
-    const results = await provider.search(query, pcfg);
+    const results = await provider.search(query, opts.count ? { ...pcfg, count: opts.count } : pcfg);
     const out = { provider: providerId, query, results, tookMs: Date.now() - t0, at: new Date().toISOString() };
     if (results.length) await cacheWrite(key, out);   // 空结果不缓存，免得一次网络抖动就永远查不到
     return out;
