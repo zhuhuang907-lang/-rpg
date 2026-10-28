@@ -78,6 +78,10 @@ function answer(p, last, json) {
     if (nm) return JSON.stringify({ ...base, name: nm, real: !fake && (wantReal || nm !== '汪景和'), role: '扬州盐商' });
     if (/知府/.test(head)) return JSON.stringify({ ...base, name: '假知府', real: true, role: '扬州知府' });
     return JSON.stringify({ ...base, name: '卢见曾', real: true, role: '两淮盐运使', age: 68 }); }
+  // 真人肯不肯来：王猛（已委身前秦苻坚）不肯，其余肯
+  if (p.includes('照他这一年的真实遭遇和心态判断他肯不肯来')) return JSON.stringify(/史书真人王猛/.test(p) ? { ok: false, why: '王猛此时为前秦苻坚所倚重，不会改投' } : { ok: true, why: '闲居待用' });
+  // 这个月手头的事
+  if (p.includes('替主角理一理这个月手头的事')) { fs.appendFileSync('agenda.log', 'x\n'); return JSON.stringify({ items: [{ kind: '生计', text: '去盐运司衙门缴这一季的盐课', why: '春季开纲，盐课照例这个月缴', who: '卢见曾' }, { kind: '家事', text: '给汪承裕议亲', why: '儿子到了议亲的年纪', who: '汪承裕' }, { kind: '人情', text: '回江春的帖子，赴他的诗会', why: '江春前日送了帖子', who: '江春' }] }); }
   // 真人核查：博查搜到了照博查判；没搜到时只认测试用的几个真人（模拟 DeepSeek 举得出正史出处），其余一律查无此人
   if (p.includes('是不是史书上确有其人')) { const nm = (p.match(/判断「([^」]+)」/) || [])[1] || ''; fs.appendFileSync('pchk.log', nm + '\n'); const web = p.includes('【联网查到的】'), known = ['汪景和', '江春', '卢见曾', '高恒'].includes(nm), real = web || known; return JSON.stringify({ real, who: real ? '清乾隆时人' : '', born: null, died: null, identity: '', source: web ? '博查' : known ? '《清史稿》卷一百二十三' : '', why: web ? '博查有其人' : known ? '正史有传' : '博查、检索都查不到' }); }
   if (p.includes('先把玩家的设定落到真实历史里')) { fs.appendFileSync('resolve.log', p.slice(0, 400).replace(/\n/g, ' ') + '\n'); return chance(0.1) ? 'nope' : JSON.stringify({ y: 1757, m: 3, d: 6, yearLabel: '乾隆二十二年', polity: '清', place: '江南扬州府江都县', placeShort: '扬州', name: '汪景和', real: false, gender: '男', age: 41, role: '扬州盐商', adjust: [], people: ['卢见曾'], queries: ['扬州 盐商 乾隆二十二年'] }); }
