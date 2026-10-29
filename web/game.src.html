@@ -1115,7 +1115,7 @@ async function callClaude(input, onReply, extra, tier) {
   // DeepSeek：深度思考给写正文，也给「推演玩家这一步」——别人怎么回应、要多久花多少、合不合常理和制度，全靠这一步想清楚；
   // 不想就容易出不合常理的结果。思考出岔子（太慢、服务端不认）下面会自动关掉思考重来
   // 推演只在要紧的步子上深度思考（打官司、打仗、谋划、婚嫁、升迁、大买卖、造反……）；歇着、逛街、问话这类家常步子不思考，快得多
-  if (DSM() && SETTINGS.deep !== false && (plain && kind === '写戏' || (kind === '裁定' && !(extra && extra.light)))) extra = { ...extra, thinking: true };
+  if (DSM() && SETTINGS.deep !== false && (plain && kind === '写戏' || (kind === '裁定' && !(extra && extra.light)) || (kind === '推演' && !(extra && extra.thinking === false)))) extra = { ...extra, thinking: true };   // 方略、临门、家宅、天下这几回推演也深想：要的是推理链，不是快
   // 提速不降质：不写正文、不定史实、不推演的杂活（检索员查资料、核任期、从资料里摘年代志、压缩前情）交给 DeepSeek 的快型号，写正文、推演、记账、审读照旧用原型号
   // 审校（拿材料对史实）、审读（挑情理毛病）是照单核对的活，也交给快型号：一回合省下一两分钟，写正文、推演、记账照旧用原型号
   if (DSM() && /^(检索|核任期|研读|审校|审读)$/.test(kind)) extra = { ...extra, fast: true, thinking: false };
@@ -1153,6 +1153,7 @@ function problemReport() {
   L.push(`运行方式：${MODE === 'local' ? '桌面版 DeepSeek（型号 ' + (KEY.model || '?') + '）' + (DS_DIRECT ? '，浏览器直连' : '') : MODE === 'web' ? '网页版 DeepSeek（型号 ' + (KEY.model || '?') + '，浏览器直连）' : MODE === 'claude' ? 'claude.ai 网页版' : MODE}；浏览器：${navigator.userAgent.slice(0, 120)}`);
   if (s) {
     L.push(`存档：${s.title}；${timeText(s.clock)}；第 ${s.turn} 回合；存档大小 ${Math.round(bytes(JSON.stringify(s)) / 1024)}KB`);
+    if (arr(s.perf).length) L.push('最近几回用时（秒，按阶段）：' + s.perf.slice(-8).map(x => `第${x.turn}回 ${x.secs}秒〔${Object.entries(x.ph || {}).filter(([, v]) => v > 0).map(([k, v]) => ({ search: '查', ruling: '推演', search2: '再查', dossier: '立档', draft: '写', verify: '核', rewrite: '改稿', ledger: '记账' })[k] + v).filter(Boolean).join(' ')}〕${x.rw ? '改稿' + x.rw + '次' : ''}`).join('；'));
     L.push(`现钱 ${s.money && s.money.cash}；人物 ${Object.keys(s.people || {}).length}；史线将来 ${arr(s.world && s.world.upcoming).length} 条；上次推演 ${s.world && s.world.tickAt ? s.world.tickAt.label : '无'}`);
     L.push('联网查证：' + (MODE === 'local' ? (SETTINGS.search === false ? '关' : (KEY.bocha ? '博查' : '维基')) : MODE === 'claude' ? (SETTINGS.search === false ? '关' : '浏览器直查维基' + (SEARCH_OFF ? '（连不上：' + SEARCH_OFF + '）' : '')) : '无') + '；资料 ' + arr(s.research).length + ' 条；最近查：' + arr(s.research).slice(-3).map(x => x.q).join('、'));
     L.push('—— 最近的对话 ——');
@@ -1572,7 +1573,7 @@ function applyOrgResults(s, d) {
     if (!r || !r.name) continue;
     const q = arr(s.polBook).find(x => String(r.name).includes(x.name) || x.name.includes(String(r.name)));
     const res = one(r.result, 8);
-    if (q) q.state = /颁行|准奏|推行|见效|已行/.test(res) ? '已行' : /驳回|受阻|作罢|搁置/.test(res) ? res : q.state;
+    if (q) { const was = q.state; q.state = /颁行|准奏|推行|见效|已行/.test(res) ? '已行' : /驳回|受阻|作罢|搁置/.test(res) ? res : q.state; if (q.state === '已行' && was !== '已行' && !arr(s.plans).some(x => x.pol === q.id)) s.polQueue = arr(s.polQueue).concat([q.id]); }
     out.push(`国策「${one(r.name, 20)}」：${res}${r.why ? '（' + one(r.why, 60) + '）' : ''}`);
     s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: `国策「${one(r.name, 20)}」：${res}${r.why ? '，' + one(r.why, 60) : ''}` }]).slice(-60);
   }
@@ -1826,7 +1827,7 @@ function applyGov(s, d, months) {
     }
     for (const k of Object.keys(S0)) S0[k] = Math.round(S0[k] * 10) / 10;
   }
-  for (const x of arr(d.classChanges).slice(0, 8)) { const c = arr(s.classes).find(z => x && z.name === one(x.name, 8)); const dv = num(x && x.delta); if (c && dv) { c.sat = Math.max(0, Math.min(100, c.sat + Math.max(-15, Math.min(15, dv)))); out.push(`${c.name}${dv > 0 ? '+' : ''}${dv}`); } }
+  for (const x of arr(d.classChanges).slice(0, 8)) { const c = arr(s.classes).find(z => x && z.name === one(x.name, 8)); const dv = num(x && x.delta); if (c && dv && c.sat != null) { c.sat = Math.max(0, Math.min(100, c.sat + Math.max(-15, Math.min(15, dv)))); out.push(`${c.name}${dv > 0 ? '+' : ''}${dv}`); } }
   syncGovRealm(s);
   const ym = Math.floor(ymOf(s.clock)); if (!G.hist.length || G.hist[G.hist.length - 1].ym !== ym) G.hist = G.hist.concat([{ ym, ...G.stats }]).slice(-36); else G.hist[G.hist.length - 1] = { ym, ...G.stats };
   return out;
@@ -1836,7 +1837,7 @@ function govBlock(s) {
   const pr = G.stats['威望'] ?? G.stats['吏治'];
   const exec = pr == null ? '' : pr < 35 ? '：威望（吏治）低，诏令政令多被阳奉阴违、拖延敷衍、层层打折，地方各有对策；办成要靠得力的人盯着' : pr < 60 ? '：诏令能落下去，但打折扣、走样、慢' : '：政令通行，下面不敢怠慢';
   return `【${G.scope === 'realm' ? '国势' : '辖区'}（程序结算，以此为准；正文写到的钱粮数目、人心向背照这里，变化在 govChanges 里给出）】` + G.keys.filter(k => G.stats[k] != null).map(k => `${k} ${fmtN(G.stats[k])}${GOV_PCT.has(k) || /民心|治安|吏治|积案|灾情/.test(k) ? '' : (/粮/.test(k) ? '石' : G.unit)}`).join('；') + exec
-    + (arr(s.classes).length ? '\n阶层：' + s.classes.map(c => `${c.name}满意${c.sat}（${c.want}）`).join('；') : '');
+    + (arr(s.classes).length ? '\n阶层：' + s.classes.map(c => `${c.name}${c.sat == null ? '满意几分不详' : '满意' + c.sat}（${c.want}）`).join('；') : '');
 }
 /* ---------- 时政：每个月照史实、国势、天下大势拟出眼下要处置的几件事，有期限；过期不办的照实恶化 ---------- */
 const affairDue = s => s && s.gov && s.affairsYM !== Math.floor(ymOf(s.clock)) && !(s.affFail != null && s.turn - s.affFail < 2);
@@ -2446,6 +2447,17 @@ function companionMonthly(s, months) {
 /* ========== 临门的事：史书上这个月、下个月真发生的大事，怎么实打实落到主角头上；身边、上头、对头的人这个月照利害对主角出什么手。
    单独一回深度推演（不和写戏混在一起）；程序记账：到期没办、办砸了，照推好的后果落到国势、名声、好感上；正文必须写到 ========== */
 const pressDue = s => s && s.clock && s.turn >= 1 && SETTINGS.world !== false && (!s.pressAt || s.pressAt !== Math.floor(ymOf(s.clock))) && !(s.prFail != null && s.turn - s.prFail < 2);
+function crisisText(s) {
+  const G = s.gov ? s.gov.stats : {}, L = [], u = (s.money || {}).unit || '两';
+  if (G['民心'] != null && G['民心'] < 30) L.push(`民心只剩${G['民心']}`); if (G['腐败'] != null && G['腐败'] > 70) L.push(`腐败到了${G['腐败']}`);
+  if (G['国库'] != null && G['国库'] <= 0 || G['存银'] != null && G['存银'] <= 0) L.push('库里没钱了'); if (G['灾情'] != null && G['灾情'] > 60) L.push(`灾情${G['灾情']}`); if (G['边患'] != null && G['边患'] > 60) L.push(`边患${G['边患']}`);
+  if (s.money && s.money.cash != null && s.money.cash < 0) L.push(`主角欠着${fmtN(-s.money.cash, u)}`);
+  for (const f of arr(s.forces).filter(f => myForce(s, f))) { if (N0(f.owed) > 0) L.push(`${f.name}欠饷${fmtN(N0(f.owed), u)}`); const t = N0(f.troops), g = N0(f.grain); if (t && g != null && g / (t * 0.02) < 20) L.push(`${f.name}粮只够${Math.floor(g / (t * 0.02))}天`); }
+  if (s.home && s.home.harmony != null && s.home.harmony < 30) L.push(`家宅不和（${s.home.harmony}）`);
+  if (s.renown != null && s.renown < 0) L.push('名声坏了');
+  for (const c of arr(s.classes)) if (c.sat != null && c.sat < 25) L.push(`${c.name}极为不满（${c.sat}，${c.want}）`);
+  return L.join('；');
+}
 async function buildPress(s) {
   const ym = Math.floor(ymOf(s.clock)), y = s.clock.y, p = s.protagonist, c = s.career || {}, pol = s.place.polity || '', yl = s.clock.yearLabel || y + '年';
   const W = s.world || {}, up = arr(W.upcoming).filter(u => evYM(u) <= ym + 2).slice(0, 10), ev = arr(W.events).slice(-8);
@@ -2458,7 +2470,7 @@ ${planCtx(s)}
 【身边和相关的人】${ppl || '（还没有）'}
 【天下近来】${ev.map(x => `${x.y}年${x.m ? x.m + '月' : ''}：${x.text}`).join('；') || '（不详）'}
 【史书上眼下要发生的】${up.map(x => `${x.y}年${x.m ? x.m + '月' : ''}：${x.text}${x.status && x.status !== '照史' ? '（本局' + x.status + '）' : ''}`).join('；') || '（不详）'}
-${hasHist(s) ? histBlock(s) + '\n' : ''}${B.text ? '【搜到的资料】\n' + B.text + '\n' : ''}${open.length ? '【上个月起还没了结的（不要重复列）】' + open.map(x => x.title).join('、') + '\n' : ''}
+${hasHist(s) ? histBlock(s) + '\n' : ''}${B.text ? '【搜到的资料】\n' + B.text + '\n' : ''}${crisisText(s) ? '【程序看到的险情（照常理必有后果：兵变、民变、讨债、参劾、断粮……要推进 hits 或 moves 里）】' + crisisText(s) + '\n' : ''}${open.length ? '【上个月起还没了结的（不要重复列）】' + open.map(x => x.title).join('、') + '\n' : ''}
 一、hits：这一两个月史书上真有的大事里，会实打实落到主角身上的（零到三件；没有就 []，不编史书没有的事）。写清：event 哪件事（照史料，写 source 出处）；reach 它怎么到主角这里（谁、什么文书或消息、走几天）；demand 主角得面对什么、照这个身份要办什么（加派、征调、迎驾、筹饷、站队、避祸、赴任……）；due 限几个月；chance 里头的机会；ignore 不理会或办砸会怎样；effects 办砸、误期时落到账上的（key 用国势名目${s.gov ? '（' + Object.keys(s.gov.stats).join('、') + '）' : ''}、「名声」或「好感:人名」，delta 是增减）。
 二、moves：这个月主角周围的人（上司、同僚、对头、家里人、依附的人，或史料里此时与主角有利害的真人）照自己的利害对主角出的手（零到三件，只写真会出手的，照常过日子的不写）：who、stake 他的利害、visible 主角看得到的样子（他嘴上说的、面上做的）、hidden 他背后的真打算（可能和面上相反）、tell 外人看不看得穿（0–100）、due 几个月内见分晓、ignore 主角不应对会怎样、effects 同上。
 推的要合当时的局势、各人的利害、当代的道德礼法和可行性；人不蠢，对手会算计，不为难主角也不讨好主角。数字照你推的写，不照抄格式里的空位。
@@ -2471,13 +2483,71 @@ ${hasHist(s) ? histBlock(s) + '\n' : ''}${B.text ? '【搜到的资料】\n' + B
   s.press = arr(s.press).concat(add.filter(a => !open.some(o => o.title === a.title))).slice(-30);
   s.pressAt = ym; delete s.prFail; return add;
 }
+/** 后宅与人情：家里每个人这个月照名分、年岁、宠爱、子嗣、利害各有心思（争宠、嫡庶、立嗣、婆媳、妯娌、仆婢、外人）；经手钱粮的人有没有揩油；
+ *  谁对谁动了情、生了怨；产业生意这个月照行情盈亏。照那个年代的礼法与人情推，不按今天的眼光；程序把结果落到家宅和睦、好感、现钱上 */
+const homeDue = s => s && s.clock && s.turn >= 1 && SETTINGS.world !== false && (arr(s.household).some(m => !m.dead) || Object.keys(s.people || {}).length) && s.homeAt !== Math.floor(ymOf(s.clock)) && !(s.hmFail != null && s.turn - s.hmFail < 2);
+async function buildHome(s) {
+  const ym = Math.floor(ymOf(s.clock)), p = s.protagonist, u = (s.money || {}).unit || '两';
+  const HH = arr(s.household).filter(m => !m.dead).slice(0, 24).map(m => `${m.relation}${m.name}${m.age != null ? '（' + m.age + '岁）' : ''}${m.mother ? '，生母' + m.mother : ''}${m.pregnant ? '，有孕' : ''}${m.note ? '，' + cut(m.note, 30) : ''}${m.away ? '，不在家' : ''}${(s.people || {})[m.name] && s.people[m.name].favor != null ? '，对主角好感' + s.people[m.name].favor : ''}`).join('；');
+  const ppl = livePeople(s).filter(([k]) => !arr(s.household).some(m => m.name === k)).slice(0, 12).map(([k, v]) => `${k}（${v.tie || v.role || ''}${v.favor != null ? '，好感' + v.favor : ''}${v.feel ? '，心里' + v.feel.feel + v.feel.toward : ''}）`).join('；');
+  const est = s.estate || {}, open = arr(s.press).filter(x => x.state === '临门' && x.kind === '家事');
+  const { text } = await callClaude(`你是深通世情、礼法和人心的推演者，替一局历史游戏推主角家里和身边这个月的事。不写故事，只推演。照这个年代（${timeText(s.clock)}，${s.place.polity || ''}）的礼法、名分、风俗和人情推，不用今天的眼光；人人有私心，但不是人人都在使坏，多数日子平平常常。
+主角：${p.name}，${p.age != null ? p.age + '岁，' : ''}${p.role}${(s.career || {}).office ? '，现任' + s.career.office : ''}，在${geoCenter(s)}。现钱：${s.money && s.money.cash != null ? fmtN(s.money.cash, u) : '不详'}。
+【家里的人】${HH || '（没有）'}
+【身边的人】${ppl || '（没有）'}
+【产业】${arr(est.assets).map(a => a.name + (a.qty ? a.qty : '')).join('、') || '无'}；【进项】${arr(est.income).map(a => a.name + (a.amount != null ? fmtN(a.amount, u) : '')).join('、') || '无'}；【经手钱粮的人】${arr(est.staff || est.managers).map(a => a.name || a).join('、') || '（不详，照家里、身边的人看）'}
+【最近的经过】${arr(s.chronicle).slice(-6).map(x => x.what).join('；') || '（无）'}
+${open.length ? '【还没了结的家事（不要重复列）】' + open.map(x => x.title).join('、') + '\n' : ''}
+推这几样（每样零到三件，没有就 []，不凑数，只用上面列着的人，不添新人）：
+一、inner：家里的人这个月各自的心思和动作（妻妾争宠、嫡庶之争、为子女争前程和家产、婆媳妯娌、子女的婚事学业、仆婢的私弊）：who、wants 他想要什么、visible 主角看得到的样子、hidden 背后的打算或真相、tell 看不看得穿（0–100）、due 几个月见分晓、ignore 主角不理会会怎样、effects（key 用「家宅和睦」「好感:人名」「现钱」「名声」，delta 增减）。
+二、graft：经手钱粮的人（管家、账房、掌柜、书吏、属下）这个月有没有揩油贪墨：who、how 怎么弄的、amount 弄走多少（${u}，照这家的家底推，合常情）、clue 主角留心看得出的破绽；没有就 []。
+三、hearts：这个月谁对谁的情分有了变化（爱慕、怨恨、敬服、畏惧、疏远；包括主角和家里人、身边人之间，也包括他们彼此之间）：who、toward（人名；对主角写「主角」）、feel、why、shows 露在外面的样子。
+四、biz：主角的产业生意这个月照行情的盈亏：what、delta（${u}，亏写负数）、why。没有产业就 []。
+五、harmony：家宅和睦（0–100，照上面的人和事推）和 harmonyWhy 一句。
+数字照你推的写，不照抄格式里的空位。
+只输出一个 JSON 对象：{"inner":[{"who":"","wants":"","visible":"","hidden":"","tell":null,"due":null,"ignore":"","effects":[{"key":"","delta":null}]}],"graft":[{"who":"","how":"","amount":null,"clue":""}],"hearts":[{"who":"","toward":"","feel":"","why":"","shows":""}],"biz":[{"what":"","delta":null,"why":""}],"harmony":null,"harmonyWhy":""}`, null, { maxTokens: 6000, temperature: 0.4, kind: '推演', detached: true });
+  const d = parseJSON(text); if (!d) { s.hmFail = s.turn; throw new Error('没推出来'); }
+  const known = new Set([...arr(s.household).map(m => m.name), ...Object.keys(s.people || {}), p.name]), out = [];
+  const fx = L => arr(L).filter(e => e && e.key && num(e.delta) != null).slice(0, 4).map(e => ({ key: one(e.key, 12), delta: Math.max(-40, Math.min(40, num(e.delta))) }));
+  const add = [];
+  for (const m of arr(d.inner).filter(x => x && x.who && x.visible && known.has(one(x.who, 10))).slice(0, 3)) if (!open.some(o => o.who === one(m.who, 10))) add.push({ id: 'pr' + Date.now().toString(36) + 'h' + add.length, kind: '家事', who: one(m.who, 10), title: one(m.who, 10) + '：' + one(m.visible, 20), stake: one(m.wants, 50), demand: one(m.visible, 80), hidden: one(m.hidden, 80), tell: num(m.tell), ignore: one(m.ignore, 60), effects: fx(m.effects), due: ym + Math.max(1, Math.min(6, num(m.due) || 1)), state: '临门', at: s.turn });
+  // 贪墨：每月真从现钱里少掉；账上留个破绽，主角查了才算了结
+  for (const g of arr(d.graft).filter(x => x && x.who && known.has(one(x.who, 10)) && num(x.amount) > 0).slice(0, 2)) {
+    // 衙门里的书吏、属下贪的是公帑：落到辖区、国库和吏治上；家里的管家、掌柜贪的是主角的现钱
+    const gw = one(g.who, 10), pv = (s.people || {})[gw], pub = s.gov && (orgHolders(s).has(gw) || /书吏|胥吏|衙役|属下|属官|佐贰|典史|吏员|差役|库吏|仓吏/.test(String(pv && (pv.role || pv.tie) || '')));
+    if (pub) { const G = s.gov.stats, k = ['存银', '国库'].find(x => G[x] != null), a0 = k ? Math.min(num(g.amount), Math.max(0, G[k]) * 0.05) : 0; if (k && a0) { G[k] = Math.round((G[k] - a0) * 100) / 100; if (s.gov.scope === 'realm') syncGovRealm(s); }
+      if (G['腐败'] != null) G['腐败'] = Math.min(100, G['腐败'] + 1); if (G['吏治'] != null) G['吏治'] = Math.max(0, G['吏治'] - 1);
+      if (!arr(s.press).some(x => x.kind === '破绽' && x.who === gw && x.state === '临门')) add.push({ id: 'pr' + Date.now().toString(36) + 'g' + add.length, kind: '破绽', who: gw, title: '账上对不上：' + one(g.clue, 20), demand: one(g.clue, 80), hidden: `${gw}${one(g.how, 60)}`, tell: 0, lost: 0, pub: true, ignore: '吏治越来越坏', effects: [], due: ym + 3, state: '临门', at: s.turn });
+      continue; }
+    const cash = s.money && s.money.cash != null ? s.money.cash : null, amt = cash != null ? Math.min(num(g.amount), Math.max(0, cash) * 0.1) : 0; if (!amt) continue;
+    s.money.cash = Math.round((cash - amt) * 100) / 100;
+    const was = arr(s.press).find(x => x.kind === '破绽' && x.who === one(g.who, 10) && x.state === '临门');
+    if (was) { was.lost = Math.round(((was.lost || 0) + amt) * 100) / 100; was.due = ym + 3; }
+    else add.push({ id: 'pr' + Date.now().toString(36) + 'g' + add.length, kind: '破绽', who: one(g.who, 10), title: '账上对不上：' + one(g.clue, 20), demand: one(g.clue, 80), hidden: `${one(g.who, 10)}${one(g.how, 60)}`, tell: 0, lost: Math.round(amt * 100) / 100, ignore: '窟窿越来越大', effects: [], due: ym + 3, state: '临门', at: s.turn });
+  }
+  for (const h of arr(d.hearts).filter(x => x && x.who && x.feel && known.has(one(x.who, 10))).slice(0, 3)) { const v = (s.people || {})[one(h.who, 10)]; const rec = { toward: !one(h.toward, 10) || /^主角$/.test(one(h.toward, 10)) ? p.name : one(h.toward, 10), feel: one(h.feel, 6), why: one(h.why, 50), shows: one(h.shows, 50), ym };
+    if (v) v.feel = rec; else { const m = arr(s.household).find(z => z.name === one(h.who, 10)); if (m) m.feel = rec; }
+    if (rec.toward === p.name) { const t = v || {}; const f0 = num(t.favor) ?? 0, dv = /爱|敬|服|感/.test(rec.feel) ? 10 : /怨|恨|惧|疏|妒/.test(rec.feel) ? -10 : 0; if (v && dv) { v.favor = Math.max(-100, Math.min(100, f0 + dv)); noteFavor(s, one(h.who, 10), f0, v.favor, rec.why); } } }
+  for (const b of arr(d.biz).filter(x => x && x.what && num(x.delta) != null).slice(0, 3)) { if (!s.money || s.money.cash == null) break; const lim = Math.max(50, Math.abs(s.money.cash) * 0.3), dv = Math.max(-lim, Math.min(lim, num(b.delta))); s.money.cash = Math.round((s.money.cash + dv) * 100) / 100; out.push(`${one(b.what, 12)}${dv >= 0 ? '赚了' : '亏了'}${fmtN(Math.abs(dv), u)}（${one(b.why, 30)}）`); }
+  const hm = num(d.harmony); s.home = { harmony: hm == null ? (s.home && s.home.harmony != null ? s.home.harmony : null) : Math.max(0, Math.min(100, hm)), why: one(d.harmonyWhy, 60) || (s.home && s.home.why) || '', ym };
+  s.press = arr(s.press).concat(add).slice(-30); s.homeNews = out; s.homeAt = ym; delete s.hmFail; return add;
+}
+function homeBlock(s) {
+  const L = [], H = s.home; if (H && H.harmony != null) L.push(`家宅和睦 ${H.harmony}${H.why ? '（' + H.why + '）' : ''}`);
+  const hearts = [...livePeople(s).filter(([, v]) => v.feel).map(([k, v]) => [k, v.feel]), ...arr(s.household).filter(m => m.feel && !m.dead).map(m => [m.name, m.feel])].slice(0, 8);
+  if (hearts.length) L.push('情分（心里的，正文只从言行神色里露）：' + hearts.map(([k, f]) => `${k}对${f.toward}${f.feel}（${f.why}；露在外面：${f.shows}）`).join('；'));
+  if (arr(s.homeNews).length) L.push('这个月生意：' + s.homeNews.join('；'));
+  return L.length ? '【家宅与人情（程序记的账；后宅各房的心思见【临门的事】）】' + L.join('\n') : '';
+}
 /** 后果落到账上：国势名目、名声、某人的好感 */
 function pressHit(s, x, scale) {
   const out = [], G = s.gov ? s.gov.stats : null;
   for (const e of arr(x.effects)) { const dv = Math.round(e.delta * (scale || 1) * 10) / 10; if (!dv) continue;
     const fv = String(e.key).match(/^好感[:：](.+)$/);
     if (fv) { const v = s.people && s.people[fv[1].trim()]; if (v) { v.favor = Math.max(-100, Math.min(100, (Number(v.favor) || 0) + dv)); out.push(`${fv[1].trim()}好感${dv > 0 ? '+' : ''}${dv}`); } continue; }
-    if (/名声|声望/.test(e.key) && s.renown != null) { s.renown = Math.max(0, s.renown + dv); out.push(`名声${dv > 0 ? '+' : ''}${dv}`); continue; }
+    if (/名声|声望/.test(e.key) && !(G && G[e.key] != null)) { s.renown = Math.max(0, (s.renown || 0) + dv); out.push(`名声${dv > 0 ? '+' : ''}${dv}`); continue; }
+    if (/^(现钱|家财|银钱|钱)$/.test(e.key) && s.money && s.money.cash != null) { s.money.cash = Math.round((s.money.cash + dv) * 100) / 100; out.push(`现钱${dv > 0 ? '+' : ''}${fmtN(dv, s.money.unit || '')}`); continue; }
+    if (/家宅|和睦/.test(e.key)) { s.home = s.home || { harmony: null }; if (s.home.harmony != null) { s.home.harmony = Math.max(0, Math.min(100, s.home.harmony + dv)); out.push(`家宅和睦${dv > 0 ? '+' : ''}${dv}`); } continue; }
     if (G && G[e.key] != null) { G[e.key] = GOV_PCT.has(e.key) || /民心|治安|吏治|积案|灾情/.test(e.key) ? Math.max(0, Math.min(100, G[e.key] + dv)) : G[e.key] + dv; if (s.gov.scope === 'realm') syncGovRealm(s); out.push(`${e.key}${dv > 0 ? '+' : ''}${dv}`); }
   }
   return out;
@@ -2488,7 +2558,10 @@ function applyPress(s, d) {
   for (const r of arr(d && d.pressResults).slice(0, 6)) { const x = arr(s.press).find(z => z.state === '临门' && r && r.title && (z.title === r.title || String(r.title).includes(z.title.slice(0, 6)) || (z.who && String(r.title).includes(z.who)))); if (!x) continue;
     const res = String(r.result || ''); if (/拖|没办|未办|还在/.test(res)) continue;
     const ok = /了结|妥|成|化解|挡住|应对|办好|摆平/.test(res) && !/砸|败|没/.test(res); x.state = ok ? '了结' : '办砸'; x.result = one(r.why, 60);
-    const hit = ok ? [] : pressHit(s, x, 1); out.push(`「${x.title}」${ok ? '了结' : '办砸了'}${hit.length ? '：' + hit.join('，') : ''}`); }
+    const hit = ok ? [] : pressHit(s, x, 1);
+    if (ok && x.kind === '破绽' && x.lost && s.money && s.money.cash != null) { const back = Math.round(x.lost * 0.5 * 100) / 100; s.money.cash = Math.round((s.money.cash + back) * 100) / 100; hit.push(`查出${x.hidden}，追回${fmtN(back, s.money.unit || '')}`); }
+    out.push(`「${x.title}」${ok ? '了结' : '办砸了'}${hit.length ? '：' + hit.join('，') : ''}`); }
+  for (const x of arr(s.press)) if (x.state === '临门' && ym > x.due && x.kind === '破绽') { x.due = ym + 3; }   // 没查的窟窿还在，贪墨照旧
   for (const x of arr(s.press)) if (x.state === '临门' && ym > x.due) { x.state = '误期'; const hit = pressHit(s, x, 1); out.push(`「${x.title}」没有应对，误了${hit.length ? '：' + hit.join('，') : ''}`); }
   s.pressNews = out; return out;
 }
@@ -2498,13 +2571,13 @@ function pressBlock(s) {
   if (!L.length && !N.length) return '';
   const fresh = L.filter(x => !x.shown), old = L.filter(x => x.shown);
   return '【临门的事（照史书和各人利害推好的，程序记账；不是背景，是主角此刻实打实要面对的）】'
-    + (fresh.length ? '\n这一回必须正面写到（消息、文书、人找上门，照 reach 写怎么到的；不替主角拿主意）：' + fresh.map(x => x.kind === '史事' ? `${x.title}（${x.source}）——${x.reach}；要主角面对：${x.demand}；限${Math.max(0, x.due - ym)}个月` : `${x.who}${x.demand}（面上如此；他背后的打算：${x.hidden || '同面上'}——正文只写面上，背后的只从神色、行迹、风闻里露一点）`).join('；') : '')
-    + (old.length ? '\n还没了结的（照进展写，到期不办就照后果来）：' + old.map(x => `${x.title}（限${Math.max(0, x.due - ym)}个月；误了：${x.ignore}）`).join('；') : '')
+    + (fresh.length ? '\n这一回必须正面写到（消息、文书、人找上门，照 reach 写怎么到的；不替主角拿主意）：' + fresh.map(x => x.kind === '史事' ? `${x.title}（${x.source}）——${x.reach}；要主角面对：${x.demand}；限${Math.max(0, x.due - ym)}个月` : x.kind === '破绽' ? `「${x.title}」账上的破绽：${x.demand}（真相：${x.hidden}；主角不查就看不出，正文只写破绽）` : `「${x.title}」${x.who}${x.demand}（面上如此；他背后的打算：${x.hidden || '同面上'}——正文只写面上，背后的只从神色、行迹、风闻里露一点）`).join('；') : '')
+    + (old.length ? '\n还没了结的（照进展写，到期不办就照后果来；记账报 pressResults 时 title 照「」里的写）：' + old.map(x => `「${x.title}」（限${Math.max(0, x.due - ym)}个月；误了：${x.ignore}）`).join('；') : '')
     + (N.length ? '\n这个月结掉的：' + N.join('；') : '');
 }
 function pressHtml(s) {
-  const L = arr(s.press).filter(x => x.state === '临门'), ym = Math.floor(ymOf(s.clock)); if (!L.length) return '';
-  return `<div class="goalbar press" title="照史书和各人的利害推出来的、这个月落到你头上的事；到期不应对，程序照后果记账">${L.map(x => { const see = x.kind !== '出手' || seeThrough(s, { who: x.who, tell: x.tell }); return `<button class="goal" data-write="${esc((x.kind === '史事' ? '应对' + x.title + '：' : '应对' + x.who + '：'))}" title="${esc((x.kind === '史事' ? (x.reach || '') + '；出处：' + (x.source || '') : (see && x.hidden ? '他背后：' + x.hidden : '他心里怎么想，你看不透')) + (x.ignore ? '；不应对：' + x.ignore : ''))}"><b>${x.kind === '史事' ? '史事' : '动静'}</b>${esc(x.kind === '史事' ? x.title + '——' + x.demand : x.demand.startsWith(x.who) ? x.demand : x.who + x.demand)}<small> 限${Math.max(0, x.due - ym)}月</small></button>`; }).join('')}</div>`;
+  const A = arr(s.press).filter(x => x.state === '临门').sort((a, b) => a.due - b.due), L = A.slice(0, 6), ym = Math.floor(ymOf(s.clock)); if (!L.length) return '';   // 最急的六件摆出来，不把输入框挤下去
+  return `<div class="goalbar press" title="照史书和各人的利害推出来的、这个月落到你头上的事；到期不应对，程序照后果记账">${L.map(x => { const see = x.kind === '史事' || (x.kind !== '破绽' && seeThrough(s, { who: x.who, tell: x.tell })); return `<button class="goal" data-write="${esc(x.kind === '史事' ? '应对' + x.title + '：' : x.kind === '破绽' ? '查账：' + x.demand + '——' : '应对' + x.who + '：')}" title="${esc((x.kind === '史事' ? (x.reach || '') + '；出处：' + (x.source || '') : (see && x.hidden ? '他背后：' + x.hidden : '他心里怎么想，你看不透')) + (x.ignore ? '；不应对：' + x.ignore : ''))}"><b>${x.kind === '史事' ? '史事' : x.kind === '家事' ? '家事' : x.kind === '破绽' ? '破绽' : '动静'}</b>${esc(x.kind === '史事' ? x.title + '——' + x.demand : x.demand.startsWith(x.who) ? x.demand : x.who + x.demand)}<small> 限${Math.max(0, x.due - ym)}月</small></button>`; }).join('')}${A.length > L.length ? `<span class="muted" style="font-size:12px">还有 ${A.length - L.length} 件不那么急</span>` : ''}</div>`;
 }
 /** 差事：接下写进下一步；记账报的 questResults 结掉，过期不办的作废、名声掉一点 */
 function applyQuests(s, d) {
@@ -2957,7 +3030,7 @@ function rulingInput(s, said) {
 ${realmBlock(s) ? realmBlock(s) + '\n' : ''}${arr(s.battles).length ? '【最近打过的仗（照此往下推：败了的兵要收拢、补员，胜了的要守住、要赏）】' + s.battles.slice(-3).map(b => `${b.when}在${b.place}对${b.enemy || '敌'}：${b.outcome || ''}，我死伤${b.deadUs ?? '？'}、敌死伤${b.deadThem ?? '？'}`).join('；') + '\n' : ''}【身边的人（各有盘算）】${P.map(([k, v]) => `${k}（${v.role || ''}${v.age != null ? '，' + v.age + '岁' : ''}，好感${v.favor ?? '?'}${v.personality ? '，' + v.personality : ''}${v.where ? '，在' + v.where : ''}${v.goal ? '；盘算：' + cut(v.goal, 30) : ''}${v.plan ? '；打算：' + cut(v.plan, 30) : ''}）`).join('；') || '无'}${farLine(FAR) ? '\n' + farLine(FAR) : ''}
 ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下去还没办完的】' + s.orders.filter(o => /在办|待办|推迟/.test(o.status)).slice(-6).map(o => `${o.who}：${o.what}`).join('；') + '\n' : ''}${arr(s.gmNotes).length ? '【幕后真相（玩家不知道）】' + s.gmNotes.slice(-8).map(n => cut(n.text, 60)).join('；') + '\n' : ''}${arr(s.summaries).length ? '【最近几回】' + s.summaries.slice(-4).map(x => cut(x.text, 80)).join(' / ') + '\n' : ''}
 【家里人】${arr(s.household).filter(m => !m.dead).map(m => m.relation + m.name + (m.alias ? '（称' + m.alias + '）' : '')).join('、') || '无'}
-${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${factBlock(s) ? factBlock(s) + '\n' : ''}${addrBlock(s) ? addrBlock(s) + '\n' : ''}${skillBlock(s) ? skillBlock(s) + '\n' : ''}${peopleStatBlock(s, said) ? peopleStatBlock(s, said) + '\n' : ''}${hookBlock(s) ? hookBlock(s) + '\n' : ''}${schemeBlock(s) ? schemeBlock(s) + '\n' : ''}${questBlock(s) ? questBlock(s) + '\n' : ''}${pressBlock(s) ? pressBlock(s) + '\n' : ''}${govBlock(s) ? govBlock(s) + '\n' : ''}${affairBlock(s) ? affairBlock(s) + '\n' : ''}${armyBlock(s) ? armyBlock(s) + '\n' : ''}${orgPendingBlock(s) ? orgPendingBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${regimeBlock(s) ? regimeBlock(s) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
+${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${factBlock(s) ? factBlock(s) + '\n' : ''}${addrBlock(s) ? addrBlock(s) + '\n' : ''}${skillBlock(s) ? skillBlock(s) + '\n' : ''}${peopleStatBlock(s, said) ? peopleStatBlock(s, said) + '\n' : ''}${hookBlock(s) ? hookBlock(s) + '\n' : ''}${schemeBlock(s) ? schemeBlock(s) + '\n' : ''}${questBlock(s) ? questBlock(s) + '\n' : ''}${pressBlock(s) ? pressBlock(s) + '\n' : ''}${homeBlock(s) ? homeBlock(s) + '\n' : ''}${govBlock(s) ? govBlock(s) + '\n' : ''}${affairBlock(s) ? affairBlock(s) + '\n' : ''}${armyBlock(s) ? armyBlock(s) + '\n' : ''}${orgPendingBlock(s) ? orgPendingBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${regimeBlock(s) ? regimeBlock(s) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
 ${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}${modulesBlock(said)}
 【玩家这回说】${said}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
@@ -3905,7 +3978,7 @@ ${cut(libFacts(s, ['society']), 600)}
 }
 /* ---------- 方略：玩家提的政治、经济、军事、外交、人事策略——单独一回推演（不和写戏混在一起），
    照此刻的国势、各方、真人的立场和史例，给出能不能办、谁赞成谁反对、花多少、几个月、会带来什么；推行起来以后每个月由程序结算进展和影响，写戏照结算写 ---------- */
-const STRAT_RE = /方略|策略|推行|改革|变法|整顿|新政|改制|联合|结盟|联姻|离间|拉拢|收买|削藩|裁撤|裁军|加税|减税|免税|蠲免|开垦|屯田|兴修|招抚|安抚|征讨|北伐|南征|西征|东征|出兵|讨伐|和亲|议和|称臣|纳贡|迁都|立储|清洗|肃清|弹劾|上疏|奏请|筹饷|练兵|整军|扶植|布局|图谋|笼络|分化|赈济|赈灾|平粜|开海|海禁|盐法|漕运|钱法|铸钱|清丈|摊丁|均田|改土归流|设立|废除|裁汰|重用|起用/;
+const STRAT_RE = /修建|兴建|开凿|疏浚|筑城|修城|筑堤|修桥|开渠|建书院|兴学|办学|刊刻|著书|修史|编纂|改良|研制|仿制|仿造|铸炮|造船|开矿|办厂|方略|策略|推行|改革|变法|整顿|新政|改制|联合|结盟|联姻|离间|拉拢|收买|削藩|裁撤|裁军|加税|减税|免税|蠲免|开垦|屯田|兴修|招抚|安抚|征讨|北伐|南征|西征|东征|出兵|讨伐|和亲|议和|称臣|纳贡|迁都|立储|清洗|肃清|弹劾|上疏|奏请|筹饷|练兵|整军|扶植|布局|图谋|笼络|分化|赈济|赈灾|平粜|开海|海禁|盐法|漕运|钱法|铸钱|清丈|摊丁|均田|改土归流|设立|废除|裁汰|重用|起用/;
 const stratWant = said => { const t = String(said || '').trim(); return t.length >= 8 && STRAT_RE.test(t) && !/^[「“"]/.test(t); };
 function planCtx(s) {
   const p = s.protagonist, c = s.career || {}, G = s.gov, SC = s.org ? orgScope(s) : { lv: isRuler(s) ? 'decree' : 'view' };
@@ -3947,10 +4020,11 @@ ${B.text ? '【史例与时势（博查）】\n' + B.text : ''}
 - feasible：成事的真把握（0–100，算上各人的真实打算）；feasibleSeen：只看各人嘴上的表态，主角会以为有几成把握；
 - cost：要花的钱（${(s.money || {}).unit || '两'}）、粮（石）、几个月见效，other 写别的代价（得罪谁、搭上什么、名声）；
 - steps：一步一步怎么推，第几个月做什么、谁去办、卡在哪（谁会在哪一步使绊子）；
-- effects：推成了会怎样，${keys.length ? `key 用这些名目：${keys.join('、')}（` : '（'}或「声望」「人心」这类），delta 是升降多少，inMonths 是第几个月见效，why 一句；有好有坏都写；
+- effects：推成了会怎样，key 用${keys.length ? `这些名目：${keys.join('、')}，或` : ''}「名声」「现钱」「家宅和睦」「好感:人名」，delta 是升降多少，inMonths 是第几个月见效，why 一句；有好有坏都写；
+- 工程、文化、科技、制度这类：照这个年代的工匠、物料、技艺、学术风气推，那个年代做不出来的东西直说做不到（写清卡在哪），能做的照史例写工期、用工、花费和见效；
 - risks：后患；precedent：历史上谁、何时办过同类的事，结局如何；verdict：一句总评。
 数字照你推的写，不要照抄格式里的空位。
-只输出一个 JSON 对象：{"name":"方略名（四到八字）","kind":"政治/经济/军事/外交/人事","situation":"","morality":"","feasibility":"","can":"","need":"","actors":[{"who":"","stake":"","front":"","says":"","really":"","act":"","tell":null}],"feasible":null,"feasibleSeen":null,"cost":{"money":null,"grain":null,"months":null,"other":""},"steps":[{"m":null,"what":"","who":"","risk":""}],"effects":[{"key":"","delta":null,"inMonths":null,"why":""}],"risks":[""],"precedent":"","verdict":""}`, null, { maxTokens: 6000, temperature: 0.3, kind: '推演', detached: true });
+只输出一个 JSON 对象：{"name":"方略名（四到八字）","kind":"政治/经济/军事/外交/人事/工程/文化/科技/制度","situation":"","morality":"","feasibility":"","can":"","need":"","actors":[{"who":"","stake":"","front":"","says":"","really":"","act":"","tell":null}],"feasible":null,"feasibleSeen":null,"cost":{"money":null,"grain":null,"months":null,"other":""},"steps":[{"m":null,"what":"","who":"","risk":""}],"effects":[{"key":"","delta":null,"inMonths":null,"why":""}],"risks":[""],"precedent":"","verdict":""}`, null, { maxTokens: 6000, temperature: 0.3, kind: '推演', detached: true });
   const d = parseJSON(text); if (!d || !d.name) return null;
   const n = v => { const x = num(v); return x == null ? null : x; }, pc = v => { const x = n(v); return x == null ? null : Math.max(0, Math.min(100, x)); };
   const actors = arr(d.actors).filter(x => x && x.who).slice(0, 8).map(x => ({ who: one(x.who, 16), stake: one(x.stake, 50), front: /反对/.test(x.front || '') ? '反对' : /赞成|支持/.test(x.front || '') ? '赞成' : '观望', says: one(x.says, 60), really: one(x.really, 60), act: one(x.act, 8), tell: pc(x.tell) }));
@@ -3989,6 +4063,7 @@ function planMonthly(s, months) {
         x.applied.push(e.key + e.inMonths);
         const dv = Math.round(e.delta * (e.delta > 0 ? rate : 1) * 10) / 10;   // 推得不顺，好处打折，坏处照来
         if (G && G[e.key] != null) { G[e.key] = GOV_PCT.has(e.key) || /民心|治安|吏治|积案|灾情/.test(e.key) ? Math.max(0, Math.min(100, G[e.key] + dv)) : G[e.key] + dv; if (s.gov.scope === 'realm') syncGovRealm(s); }
+        else pressHit(s, { effects: [{ key: e.key, delta: dv }] }, 1);
         x.log.push(`第${x.month}个月：${e.key}${dv >= 0 ? '+' : ''}${dv}（${e.why}）`); out.push(`方略「${x.name}」见效：${e.key}${dv >= 0 ? '+' : ''}${dv}`);
       }
       const last = Math.max(x.cost.months || 1, ...x.steps.map(z => z.m), ...x.effects.map(z => z.inMonths));
@@ -5173,7 +5248,7 @@ function blocks(s, forStory) {
   instBlocks(s, L, forStory);
   { const fb = factBlock(s); if (fb) L.push(fb); }
   { const ab3 = addrBlock(s); if (ab3) L.push(ab3); }
-  { const sb = skillBlock(s); if (sb) L.push(sb); const psb = peopleStatBlock(s, CUR_SAID); if (psb) L.push(psb); const hkb = hookBlock(s); if (hkb) L.push(hkb); const plb = planBlock(s); if (plb) L.push(plb); const qb = questBlock(s); if (qb) L.push(qb); const prb = pressBlock(s); if (prb) L.push(prb); const scb = schemeBlock(s); if (scb) L.push(scb); if (s.ambition) L.push(`【主角的志向】${s.ambition.key}（${AMBS[s.ambition.key] ? AMBS[s.ambition.key].desc : ''}）——这只是主角心里的盘算，正文不替他去办`); const hh = heirOf(s); if (hh) L.push(`【嗣子】${hh.relation}${hh.name}（${hh.age ?? '?'}岁）${s.heir ? '，主角亲自立的' : ''}`); }
+  { const sb = skillBlock(s); if (sb) L.push(sb); const psb = peopleStatBlock(s, CUR_SAID); if (psb) L.push(psb); const hkb = hookBlock(s); if (hkb) L.push(hkb); const plb = planBlock(s); if (plb) L.push(plb); const qb = questBlock(s); if (qb) L.push(qb); const prb = pressBlock(s); if (prb) L.push(prb); const hmb = homeBlock(s); if (hmb) L.push(hmb); const scb = schemeBlock(s); if (scb) L.push(scb); if (s.ambition) L.push(`【主角的志向】${s.ambition.key}（${AMBS[s.ambition.key] ? AMBS[s.ambition.key].desc : ''}）——这只是主角心里的盘算，正文不替他去办`); const hh = heirOf(s); if (hh) L.push(`【嗣子】${hh.relation}${hh.name}（${hh.age ?? '?'}岁）${s.heir ? '，主角亲自立的' : ''}`); }
   { const gb2 = govBlock(s); if (gb2) L.push(gb2); const ab2 = affairBlock(s); if (ab2) L.push(ab2); const mb = armyBlock(s); if (mb) L.push(mb); }
   { const ob = orgPendingBlock(s); if (ob) L.push(ob); }
   if (s.org && permLevel(s) !== 'view') L.push('【朝局人事（人事树上此刻在任的人；正文里写到这些位子用这些人）】' + s.org.nodes.filter(n => n.status !== '已裁撤').slice(0, forStory ? 14 : 30).map(n => `${n.name}：` + n.posts.slice(0, 4).map(p => `${p.title}${p.holder || '空缺'}`).join('、')).join('；'));
@@ -5678,7 +5753,7 @@ ${text}
 7 历史背景：大势的阶段（前兆、发生、余波）没写错，到了日子的大事没漏；外地的消息按路程到达、风闻和确报分清；玩家自己的事没被硬拽去跟主线挂钩，主角的出身、籍贯、所在没被改去凑大事、没被挪到大事跟前，没有攀附名人（跟主角没来往的真人认得他、来找他、成了他的亲戚故交），没有给有记载的人（主角或真人）添史料没有的身份、官职、交往、事迹（主角亲手改过的除外：本局已经改了的人和事照本局写，不倒回史书原样），没有堆砌事件、派任务、加玩家这一步没牵出来的戏
 8 人物不蠢：身边的人能干，不事事请示、不追问玩家「要不要」「怎么办」；对手聪明，不为了让主角赢而犯傻；人物不善化——该有的私心、贪婪、势利、狠辣照那个年代写，没人说教、劝善、突然良心发现
 9 数目与器物：钱粮、兵力、价格、距离的量级合这个年代；没有这个年代没有的东西、说法
-11 临门的事：材料【临门的事】里「这一回必须正面写到」的每一件都写到了（消息、文书、人找上门），没有被略过或只当背景一笔带过
+11 临门的事：材料【临门的事】里「这一回必须正面写到」的每一件（史事、别人出手、家里的事、账上的破绽）都写到了（消息、文书、人找上门），没有被略过或只当背景一笔带过
 10 有戏而不硬造：玩家这一步有了实在的结果，照常理办得成的没有被硬写成失败、拖着不成（阻力要真实），局面往前走了一步，不是流水账；没有为了热闹塞进来的意外、讨债、上门的麻烦，没有不在场的人无故冒到主角跟前、硬凑的故人重逢，书信征召合主角的身份和路程，没有翻来覆去写同一笔账、同一件事；没有无事硬跳日子、也没有有事硬跳日子
 只输出一个 JSON 对象：{"score":总分,"problems":[{"item":条目编号,"quote":"出问题的那句（原样摘出，三十字以内）","why":"为什么不合理","fix":"应当怎样"}]}。只列确实的毛病，最多六条；没有就给 []。`, null, { maxTokens: 2500, temperature: 0.1, kind: '审读' });
   const r = await Promise.race([job.then(x => parseJSON(x.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }), new Promise(res => setTimeout(() => res(null), 60000 * TSCALE))]);
@@ -7049,7 +7124,9 @@ function openFaceEditor() {
   };
   pane(); draw();
 }
+let PERF = null;
 function render() {
+  if (PERF && BUSY) { const t = Date.now(); if (PHASE !== PERF.cur) { if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); PERF.cur = PHASE; PERF.last = t; } }
   // 页面重画时，玩家正在填的字（Key、型号、要做的事……）和光标不丢
   const keep = {}, ae = document.activeElement, foc = ae && ae.id && /^(INPUT|TEXTAREA)$/.test(ae.tagName) ? ae.id : '';
   let selr = null; if (foc) try { selr = [ae.selectionStart, ae.selectionEnd]; } catch (_) { /* 有的输入框没有光标位置 */ }
@@ -7409,7 +7486,10 @@ function pane(tab) {
     const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionSet(s), FX = n => { const c = chkOf(s, n); return (FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>') + (c ? `<span class="muted" style="font-size:11px" title="${esc(c.why || '')}">${c.real ? '已核：' + esc(c.src) : '已核：查无此人'}</span>` : n === s.protagonist.name ? '' : `<button class="link" style="font-size:11px" data-pchk="${esc(n)}">核查是否真人</button>`); };
     const ID = s.protagonist.ident, identH = ID ? `<div class="h" style="margin-top:6px"><span class="seal">身</span>身份<span class="note">照史料：${esc(ID.source)}</span></div><div class="list"><div>${[['字', ID.zi], ['号', ID.hao], ['籍贯', ID.jiguan], ['出身', ID.chushen], ['功名', ID.gongming], ['爵位', ID.jue]].filter(x => x[1]).map(([k, v]) => `<b>${k}</b> ${esc(v)}`).join('　')}</div>${arr(ID.career).length ? `<div class="muted" style="font-size:12px">履历：${ID.career.map(c => (c.y ? c.y + '年 ' : '') + esc(c.post)).join('；')}</div>` : ''}</div>` : '';
     const famBtn = s.protagonist.real ? `<button class="link" id="bFamRe" ${FAM_P ? 'disabled' : ''}>${FAM_P ? '正在照史料重查家谱、身边人……' : '照史料重查家谱、身边人'}</button>` : '';
-    const famTbl = identH + famBtn + (HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算${s.protagonist.real ? '；真人照史料列全家谱' : ''}${arr(s.famPlan).length ? `；史载还有${s.famPlan.length}个子女在日后出生，到时照记` : ''}</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b>${m.basis ? `<div class="gb"><span class="gr ${m.inferred || m.unver ? 'inf' : 'rec'}">${m.inferred ? '推算' : m.unver ? '史载·网上没核到' : '史载'}</span>${esc(String(m.basis).replace(/^推算[：:]/, ''))}</div>` : ''}</td><td>${m.age != null ? esc(m.age) + '岁' + (m.ageWhy ? `<div class="muted" style="font-size:11px">${esc(m.ageWhy)}</div>` : '') : '<span class="muted">不详</span>'}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(String(m.note || '').replace(/（推算）$/, ''))}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '');
+    const homeH = (() => { const H = s.home, hs = [...livePeople(s).filter(([, v]) => v.feel).map(([k, v]) => [k, v]), ...arr(s.household).filter(m => m.feel && !m.dead).map(m => [m.name, m])].slice(0, 8);
+      if (!(H && H.harmony != null) && !hs.length) return '';
+      return `<div class="pl" style="font-size:13px">${H && H.harmony != null ? `<span>家宅和睦</span><b>${esc(H.harmony)}</b>${H.why ? `<small class="muted">（${esc(H.why)}）</small>` : ''}` : ''}${hs.length ? `<div class="muted" style="font-size:12px">看得出的情分：${hs.map(([k, v]) => `${esc(k)}${seeThrough(s, { who: k, tell: 50 }) ? `对${esc(v.feel.toward)}${esc(v.feel.feel)}` : `——${esc(v.feel.shows || '看不透')}`}`).join('；')}</div>` : ''}</div>`; })();
+    const famTbl = identH + famBtn + homeH + (HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母；生产、病故由程序照日子结算${s.protagonist.real ? '；真人照史料列全家谱' : ''}${arr(s.famPlan).length ? `；史载还有${s.famPlan.length}个子女在日后出生，到时照记` : ''}</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b>${m.basis ? `<div class="gb"><span class="gr ${m.inferred || m.unver ? 'inf' : 'rec'}">${m.inferred ? '推算' : m.unver ? '史载·网上没核到' : '史载'}</span>${esc(String(m.basis).replace(/^推算[：:]/, ''))}</div>` : ''}</td><td>${m.age != null ? esc(m.age) + '岁' + (m.ageWhy ? `<div class="muted" style="font-size:11px">${esc(m.ageWhy)}</div>` : '') : '<span class="muted">不详</span>'}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(String(m.note || '').replace(/（推算）$/, ''))}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '');
     return (ORGMSG && /核查|查无此人|有其人|评定/.test(ORGMSG) ? `<div class="muted" style="margin:4px 0">${esc(ORGMSG)}</div>` : '') + (arr(s.clashLog).some(x => s.turn - x.turn <= 3) ? `<div class="muted" style="margin:4px 0">虚构人物与史书真人重名，已改名：${esc(s.clashLog.filter(x => s.turn - x.turn <= 3).map(x => x.t).join('；'))}</div>` : '') + clanHtml(s) + famTbl + rosterHtml(s) + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
       ${fam.map(m => `<div class="pc">${m.dead || /未取名/.test(m.name) ? '' : `<canvas class="mini" data-face-npc="${esc(m.name)}" width="92" height="110"></canvas>`}<div class="pn"><b>${esc(m.name)}</b>${m.alias ? `<span class="muted">（${esc(m.alias)}）</span>` : ''}${FX(m.name)}<span class="att">${esc(m.relation)}</span></div><div class="pr">${m.age != null ? m.age + '岁' : ''}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
       ${P.map(([k, v]) => `<div class="pc"><canvas class="mini" data-face-npc="${esc(k)}" width="92" height="110"></canvas><div class="pn"><b>${esc(k)}</b>${FX(k)}${relTag(v) ? `<span class="att onpath">${relTag(v)}</span>` : ''}${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
@@ -7583,6 +7663,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
   if (!sentence) { ERRMSG = '先写一句：哪个年代、什么地方、什么人（例如：乾隆年间扬州的盐商）'; render(); return; }
   ERRMSG = ''; STREAM = ''; PHASE = ''; DRAFT_LIVE = ''; if (!have) FEED = [];
   CTL = new AbortController(); TURN = CTL;
+  PERF = { t0: Date.now(), ph: {}, last: Date.now(), cur: '', rw: 0 };
   setBusy(true);
   let st = have || null, looked = null, pre = havePre || null, ledP = null;
   try {
@@ -7754,7 +7835,8 @@ async function afterTurn(s0, d, g, gen = BG_GEN) {
   const step = async (msg, f) => { if (!live() || BG_STOP) return false; BGMSG = msg; BG_STEP = msg; render(); try { await f(); } catch (e) { /* 下回合再做 */ } return live() && !BG_STOP; };
   // 真人主角的家谱、身边人排在最前面（单独的调用）：后面那一长串没做完、玩家又出下一回，也不至于后宅、身边空着
   if (familyDue(s0) && !(await step('照史料查家谱、身边的人', () => familyFix(s0)))) return;
-  if (pressDue(s0) && !(await step('推这个月落到你头上的史事、别人的动静', () => buildPress(s0).catch(e => { s0.prFail = s0.turn; throw e; })))) return;
+  if (arr(s0.polQueue).length && !(await step('推演颁行的国策会怎样落下去', async () => { while (arr(s0.polQueue).length) { const id = s0.polQueue[0], q = arr(s0.polBook).find(x => x.id === id); if (q) { const P = await planAnalyze(s0, `推行国策「${q.name}」：${q.desc}${q.effect ? '（预计：' + q.effect + '）' : ''}`); if (P && P.feasible != null) { const x = planAdopt(s0, { ...P, can: '能做主', name: q.name }); if (x) x.pol = q.id; } } s0.polQueue = s0.polQueue.slice(1); } }))) return;
+  if ((pressDue(s0) || homeDue(s0)) && !(await step('推这个月落到你头上的史事、别人的动静、家里的事', () => Promise.all([pressDue(s0) ? buildPress(s0).catch(e => { s0.prFail = s0.turn; }) : null, homeDue(s0) ? buildHome(s0).catch(e => { s0.hmFail = s0.turn; }) : null])))) return;
   if (agendaDue(s0) && !(await step('理一理这个月手头的事', () => buildAgenda(s0).catch(e => { s0.agFail = s0.turn; throw e; })))) return;
   // 开局查到的资料：开场写完后再慢慢研读成年代志（不挡开场）
   if (s0.estateDue && !(await step('立家底', async () => { try { await buildEstate(s0, s0.estateStory || undefined); } finally { if (!s0.estateDue) delete s0.estateStory; } }))) return;
@@ -7906,7 +7988,8 @@ async function send(said, span, note, resume) {
       const crit = crit0.concat(arr(lg.probs));
       const probs = st.talk ? [] : preFaults.concat(crit, arr(vr.major).map(x => `${x.problem}${x.fix ? '——应当：' + x.fix : ''}`));
       let next = { ...st, text: vr.text, audit: arr(vr.audit).concat(early ? [{ wrong: '（整段改写）', right: '程序查出的毛病', why: '审读' }] : []), verified: true, rewrote: false };
-      if (probs.length) {
+      const fatal = crit.some(x => /^第(1|6|11)条/.test(String(x))) || arr(vr.major).length > 0;   // 程序已照毛病改过一稿的，只有致命的才再改（一回最多改一次稿，不让玩家干等）
+      if (probs.length && (!early || fatal)) {
         PHASE = 'rewrite'; DRAFTN = 0; render();
         try {
           const r3 = await callClaude(storyInput(S, said, span, note, sysR, ruling, { draft: st.text, why: probs.map((x, i) => `${i + 1}. ${x}`).join('\n') }), draftCb, { json: false, temperature: STORY_T, maxTokens: 6000, system: sysR ? storyRules() : '', kind: '改稿' });   // 照问题改稿：不再深度思考，快
@@ -7944,6 +8027,7 @@ async function send(said, span, note, resume) {
       if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
       // 账里哪一项格式怪到程序出错：正文照样留下，这一回标成「账没记上」，可以补记，不让整回作废
       const snap = clone(S);
+      if (PERF) { const t = Date.now(); if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); S.perf = arr(S.perf).concat([{ turn: (S.turn || 0) + 1, secs: Math.round((t - PERF.t0) / 1000), ph: Object.fromEntries(Object.entries(PERF.ph).map(([k, v]) => [k, Math.round(v / 1000)])), rw: (st.rewrote ? 1 : 0) + (early ? 1 : 0) }]).slice(-20); PERF = null; }
       try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said);
         // 常理审查挑出的账上毛病：记完账当场改；程序还能挑出硬伤的，再审一次当场改（不留到下一回）
         if (LOGIC_FIX.length) { applyLogicFixes(S, LOGIC_FIX); LOGIC_FIX = []; }

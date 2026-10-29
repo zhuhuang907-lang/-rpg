@@ -147,6 +147,20 @@ const { chromium } = require('playwright');
     if (!/必须正面写到/.test(r.blk) || !r.ruling) bad('临门的事没交给推演和写正文：' + r.blk.slice(0, 200));
     if (/逼你多认/.test(r.tip)) bad('城府深的人背后打算直接给玩家看了');
     if (r.st[0] !== '了结' || r.st[1] !== '误期' || r.fav !== -20) bad('临门的事了结、误期没照后果记账：' + JSON.stringify(r).slice(0, 300)); }
+  // 后宅、贪墨、情分、生意每月推一回，落到家宅和睦、好感、现钱上；颁行的国策交给方略推演按月结算；没有辖区的人方略也能落到名声上（CLAUDE.md「剧情」细处都要合理模拟）
+  { const r = await p.evaluate(async () => { const pn = S.protagonist.name; S.household = arr(S.household).concat([{ relation: '次子', name: '汪承禄', age: 15 }]); S.people['钱管家'] = { role: '管家', favor: 0, seen: S.turn }; S.money = S.money || {}; S.money.cash = 1000; S.press = []; delete S.homeAt;
+      await buildHome(S); const c1 = S.money.cash, ks = S.press.map(x => x.kind + ':' + x.who), fav = S.people['钱管家'].favor, hm = S.home && S.home.harmony; render(); await new Promise(r => setTimeout(r, 300)); const bar = (document.querySelector('.goalbar.press') || {}).innerText || '';
+      const g = S.press.find(x => x.kind === '破绽'); applyPress(S, { pressResults: [{ title: g.title, result: '了结', why: '查出来了' }] }); const c2 = S.money.cash;
+      const t = JSON.parse(JSON.stringify(S)); t.gov = null; t.renown = 10; t.plans = [{ id: 'q', name: '刊刻家集', state: '推行', month: 0, feasible: 100, steps: [], effects: [{ key: '名声', delta: 6, inMonths: 1, why: '文名' }], cost: { months: 1 }, log: [], done: [], applied: [] }]; planMonthly(t, 1);
+      const o = JSON.parse(JSON.stringify(S)); o.polBook = [{ id: 'p9', name: '清理积欠', desc: '', need: [], state: '' }]; o.org = o.org || { nodes: [], log: [] }; o.polQueue = []; try { applyOrgResults(o, { orgResults: [], policyResults: [{ name: '清理积欠', result: '颁行' }] }); } catch (e) { return { err: String(e) }; }
+      return { c1, c2, ks, fav, hm, bar, ren: t.renown, q: o.polQueue, blk: homeBlock(S) }; });
+    if (r.err) bad('颁行国策出错：' + r.err);
+    if (r.c1 !== 1150 || r.c2 !== 1175) bad('贪墨、生意、追回没落到现钱上：' + JSON.stringify(r).slice(0, 300));
+    if (!r.ks.includes('家事:汪承禄') || !r.ks.includes('破绽:钱管家') || r.ks.some(k => /张不在/.test(k))) bad('后宅的事、账上破绽没记上或收了没列着的人：' + JSON.stringify(r.ks));
+    if (r.fav !== -10 || r.hm !== 62 || !/家宅和睦/.test(r.blk)) bad('情分、家宅和睦没落账：' + JSON.stringify(r).slice(0, 300));
+    if (!/破绽/.test(r.bar) || /虚报/.test(r.bar)) bad('账上破绽没摆出来、或真相直接露给玩家：' + r.bar);
+    if (r.ren !== 16) bad('没有辖区的人推的事没落到名声上：' + r.ren);
+    if (!(r.q || []).includes('p9')) bad('颁行的国策没交给方略推演结算：' + JSON.stringify(r.q)); }
   // 别家的兵数看身份：一方之主照数，小官只知约数，百姓只有风闻（CLAUDE.md「人物」可以有看不到的数据）
   { const z = await p.evaluate(() => { const c = JSON.parse(JSON.stringify(S)); c.idm = ''; c.protagonist.role = '书生'; c.career = {}; c.territory = []; c.forces = []; return [fuzzN(S, 12345, '人'), fuzzN(c, 12345, '人')]; });
     if (/约/.test(z[0]) || !/风闻约/.test(z[1])) bad('别家兵数没照身份分实数、风闻：' + JSON.stringify(z)); }
