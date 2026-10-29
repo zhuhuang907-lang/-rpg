@@ -43,8 +43,11 @@ const { chromium } = require('playwright');
     { const lg = require('fs').readFileSync('bocha.log', 'utf8').split('\n').filter(l => /汪景和/.test(l)).length; if (lg < 15) bad('查家谱、身边人博查用得太少：' + lg + ' 条'); }
     if (!c.ppl.includes('江春') || !c.ppl.includes('程晋芳') || c.ppl.includes('编造部将')) bad('身边的人没照史料列，或收了材料里没有的人：' + JSON.stringify(c));
     if (c.due) bad('家谱查完了还说要查'); }
+  // 照史料生年算的岁数，程序不拿「父母比本人大二十二岁」这种常情去改；家谱查得太少的过两回再查
+  { const a = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.household = [{ relation: '母', name: '吴氏', age: 20, rec: true }]; familyAgeFix(s); const r = { mom: s.household[0].age }; s.protagonist.real = true; s.famRec = FAMV; s.famAt = s.turn - 3; s.famThinTry = 0; r.thin = familyDue(s); return r; });
+    if (a.mom !== 20) bad('照史料的岁数被程序改了：' + JSON.stringify(a)); if (!a.thin) bad('家谱只查到一两个人，也不再查'); }
   // 旧存档（标了查过的老版本）也要照新办法再查一遍
-  if (!(await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.famRec = true; return familyDue(s); }))) bad('旧存档不会照新办法重查家谱');
+  if (!(await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.famRec = 3; return familyDue(s); }))) bad('旧存档不会照新办法重查家谱');
   // 人物页：天下名录（宗室王公、中枢、各地大员），只列有出处的真人
   { await p.evaluate(() => { TAB = 'people'; SIDE_FOLD = false; render(); }); await p.waitForFunction(() => S.roster || S.rosterFail != null, null, { timeout: 60000 }).catch(() => {});
     const r = await p.evaluate(() => { render(); const t = document.querySelector('.roster'); return { txt: t ? t.textContent : '', n: arr(S.roster && S.roster.groups).length }; });

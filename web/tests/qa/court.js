@@ -31,7 +31,7 @@ const { chromium } = require('playwright');
     if (ow.length) bad('不占地盘的势力也画了地盘：' + ow.join()); }
   // 当成一方之主
   await p.evaluate(async () => { S.idm = 'emperor'; S.protagonist.role = '皇帝'; S.dossiers = { ...(S.dossiers || {}), 年羹尧: { real: true, born: 1679, died: 1726 }, 刘统勋: { real: true, born: 1698, died: 1773 }, 傅恒: { real: true, born: 1720, died: 1770 }, 来保: { real: true } }; while (ORGING) await new Promise(r => setTimeout(r, 200)); S.org = null; await buildOrg(S); });
-  const o = await p.evaluate(() => ({ n: S.org && S.org.nodes.length, pols: arr(S.policies).length, pts: S.polPts, fake: S.org && S.org.nodes.some(n => n.posts.some(x => /某/.test(x.holder))) }));
+  const o = await p.evaluate(() => ({ n: S.org && S.org.nodes.length, pols: arr(S.polBook).length, pts: S.polPts, fake: S.org && S.org.nodes.some(n => n.posts.some(x => /某/.test(x.holder))) }));
   if (!o.n || o.pols < 2) bad('人事树、国策书没整理出来：' + JSON.stringify(o));
   if (o.fake) bad('人事树里填了「某」这种编的名字');
   const deep = await p.evaluate(() => ({ max: Math.max(...S.org.nodes.map(n => n.depth || 0)), vac: S.org.nodes.filter(n => n.id !== 'root').some(n => n.posts.some(x => !x.holder)), fz: S.org.nodes.find(n => /保甲/.test(n.name)).posts[0], fs: fictionSet(S).size }));
@@ -42,6 +42,12 @@ const { chromium } = require('playwright');
   await p.click('[data-tab="court"]'); await p.waitForTimeout(500);
   const t0 = await p.evaluate(() => document.querySelector('.side, #side, body').innerText);
   for (const w of ['政治', '经济', '民生', '军事', '人事树', '国策书', '户部', '尚书', '国策点', '线路：', '江都县署', '保正', '虚拟', '扬州营']) if (!t0.includes(w)) bad('朝局页上没有：' + w);
+  // 国策书和「落到你身上的政令」分开存：重整人事树不能把政令冲掉，政令也不能混进国策书
+  { const pc = await p.evaluate(async () => { S.policies = arr(S.policies).concat([{ name: '盐引加课', since: '本年', what: '每引加银', onYou: '多出', perMonth: -3 }]); while (ORGING) await new Promise(r => setTimeout(r, 200)); await buildOrg(S); return { dec: arr(S.policies).some(x => x.name === '盐引加课'), book: arr(S.polBook).length, mixed: arr(S.polBook).some(x => x.name === '盐引加课') }; });
+    if (!pc.dec || !pc.book || pc.mixed) bad('国策书和政令又混在一起了：' + JSON.stringify(pc)); }
+  // 势力页：别家的兵马不算「你的兵马」
+  { const fz = await p.evaluate(() => { const k = S.forces; S.forces = [{ name: '亲军', leader: S.protagonist.name, troops: '3000', at: '京师' }, { name: '准噶尔骑兵', leader: '阿睦尔撒纳', owner: '准噶尔', troops: '20000', at: '伊犁' }]; S.powers = arr(S.powers).concat([{ name: '准噶尔', leader: '阿睦尔撒纳' }]); TAB = 'power'; render(); const t = document.body.innerText; S.forces = k; S.powers = S.powers.filter(x => x.name !== '准噶尔'); TAB = 'court'; render(); return { mine: /你能调的总兵力 3,000人/.test(t), other: /别家的兵马/.test(t) }; });
+    if (!fz.mine || !fz.other) bad('势力页把别家的兵马算成你的：' + JSON.stringify(fz)); }
   // 人事树先填真人：史料里这一年在任的（杨应琚 1757 年陕甘总督）换掉虚构的
   { const fr = await p.evaluate(() => { S.org.nodes.push({ id: 'T1', name: '陕甘总督衙门', tier: '地方', parent: 'root', depth: 1, posts: [{ title: '陕甘总督', holder: '王守成', src: '拟', quota: 1 }] }); orgFillReal(S); const q = S.org.nodes.find(n => n.id === 'T1').posts[0]; return { h: q.holder, src: q.src, fake: fictionSet(S).has(q.holder) }; });
     if (fr.h !== '杨应琚' || fr.fake) bad('史料里有在任的真人，人事树上还是虚构的：' + JSON.stringify(fr)); }
@@ -63,11 +69,11 @@ const { chromium } = require('playwright');
   if (!/下令：任命刘统勋为户部尚书/.test(said)) bad('委任没写进下一步：' + said);
   if (pts1 !== o.pts - 1) bad(`国策点没扣：${o.pts} → ${pts1}`);
   // 颁行国策：有前置的先不能行
-  await p.evaluate(() => { const q = S.policies.find(x => x.id === 'p2'); orgAct(S, 'policy', { pol: q }); });
+  await p.evaluate(() => { const q = S.polBook.find(x => x.id === 'p2'); orgAct(S, 'policy', { pol: q }); });
   if (!/要先推行/.test(await p.evaluate(() => ORGMSG))) bad('有前置的国策没拦下');
   await unfold(); await p.click('[data-org="policy"][data-pol="p1"]'); await p.waitForTimeout(300);
   await p.click('#bSend'); if (!(await idle())) bad('下令那一回卡住');
-  const r = await p.evaluate(() => ({ h: S.org.nodes.find(n => n.id === 'A2').posts[0].holder, pol: S.policies.find(x => x.id === 'p1').state, log: arr(S.org.log).length, pend: arr(S.orgPending).length, pts: S.polPts }));
+  const r = await p.evaluate(() => ({ h: S.org.nodes.find(n => n.id === 'A2').posts[0].holder, pol: S.polBook.find(x => x.id === 'p1').state, log: arr(S.org.log).length, pend: arr(S.orgPending).length, pts: S.polPts }));
   if (r.h !== '刘统勋') bad('记账回报到任了，人事树上没换人：' + JSON.stringify(r));
   if (r.pol !== '已行') bad('国策颁行了，国策书上没标已行：' + JSON.stringify(r));
   if (!r.log) bad('人事与施政记录是空的');
@@ -107,6 +113,16 @@ const { chromium } = require('playwright');
   if (f.live) bad('断了来往的人还在往材料里塞');
   await p.click('[data-tab="people"]'); await p.waitForTimeout(400);
   if (!/断了来往的旧识/.test(await p.evaluate(() => document.body.innerText))) bad('人物页没有「断了来往的旧识」');
+  // 方略：提出政治策略要有推演（能不能办、谁赞成反对、代价、步骤、影响、史例），推行后按月结算落到国势（CLAUDE.md「剧情」方略）
+  { const sw = await p.evaluate(() => [stratWant('推行清丈田亩，查出隐田'), stratWant('去账房看看')]); if (!sw[0] || sw[1]) bad('认不出玩家提的方略：' + JSON.stringify(sw)); }
+  await p.evaluate(() => { TAB = 'board'; render(); document.querySelector('#said').value = '推行清丈田亩，查出隐田，均平赋役'; });
+  await p.click('#bPlan'); await p.waitForFunction(() => !PLAN_P && PLAN_DRAFT, null, { timeout: 60000 }).catch(() => bad('推演按钮没反应'));
+  { const d = await p.evaluate(() => ({ t: (document.querySelector('.plandraft') || {}).innerText || '', n: arr(S.plans).filter(x => x.state === '拟议').length })); if (!/把握约/.test(d.t) || !/刘统勋/.test(d.t) || !/扬州士绅/.test(d.t) || !/张居正/.test(d.t) || !d.n) bad('推演没给出能否、赞成反对、史例：' + JSON.stringify(d).slice(0, 300)); }
+  await p.click('#bSend'); if (!(await idle())) bad('推行方略那一回卡住');
+  { const t = await p.evaluate(() => { const g = S.chat[S.chat.length - 1]; return { card: !!(g.extra && g.extra.plan), live: arr(S.plans).filter(x => x.state === '推行').length, ui: [...document.querySelectorAll('.plan')].some(e => /清丈田亩/.test(e.innerText)) }; });
+    if (!t.card || !t.live || !t.ui) bad('提了方略、这一回没有推演卡或没记下推行：' + JSON.stringify(t)); }
+  { const m = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.gov = { scope: 'local', stats: { 民心: 50, 存银: 1000 } }; s.plans = [{ id: 'x', name: '测', state: '推行', month: 0, feasible: 100, steps: [{ m: 1, what: '派员', who: '' }], effects: [{ key: '民心', delta: 5, inMonths: 2, why: '均平' }], cost: { months: 2 }, log: [], done: [], applied: [] }]; const out = planMonthly(s, 2); return { mx: s.gov.stats['民心'], st: s.plans[0].state, out, blk: planBlock(s) }; });
+    if (m.mx !== 55 || m.st !== '成' || !m.out.length || !/方略/.test(m.blk)) bad('方略按月结算没落到国势上：' + JSON.stringify(m).slice(0, 300)); }
   console.log('COURT', JSON.stringify({ o, r, f }));
   console.log('ERRS', JSON.stringify(errs));
   await b.close(); process.exit(errs.length ? 1 : 0);

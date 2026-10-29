@@ -461,7 +461,7 @@ const routes = {
     const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
     const GOOD = /baike\.baidu|wikipedia|baike\.sogou|ctext|guoxue|gushiwen|zhonghuadiancang|shidianguji|cnki|cass|historychina|zgdsw|dpm\.org|ndlib|chinaknowledge|douban\.com\/note|zhihu/;
     // 一整批最多等 25 秒：每条最多 12 秒，到点还没回的就算没搜到，不让玩家干等
-    const DEADLINE = Date.now() + 16000;
+    const DEADLINE = Date.now() + 32000;   // 一批最多等三十来秒（博查偶尔慢，等不到就白查了）
     // 混合查：先查维基，维基查得到就用；查不到（或维基连不上）再查博查。维基连不上时五分钟内直接走博查
     const race = (p, ms) => Promise.race([p.catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: `超时（${Math.round(ms / 1000)} 秒没回）` }), ms))]);
     const once = async q => {
@@ -470,10 +470,12 @@ const routes = {
       const tag = (xs, src) => (xs || []).map(x => ({ ...x, src }));
       // 分工：大势、制度、史事（isW）维基为主、博查跟上；人物、当年当地博查为主，博查没搜到才问维基。两边同时开查，谁也不等谁
       const isW = WORLD.has(q);
-      const bP = isBocha ? race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(10000, left())) : null;
+      // 博查：慢了、被限流、网络抖了，隔一下再试一次
+      const bOnce = () => race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(18000, left()));
+      const bP = isBocha ? bOnce().then(async b => (!(b.results || []).length && b.error && !/Key|401|403|余额|鉴权/.test(b.error) && left() > 4000) ? (await new Promise(r => setTimeout(r, 1200)), bOnce()) : b) : null;
       const wP = (async () => {
         if (Date.now() - WIKI_DOWN_AT <= 300000) return { results: [] };
-        let w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(6000, left()));
+        let w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(9000, left()));
         if (!(w.results || []).length && !netDown(w.error)) { const ws = await race(search.search(q, { provider: 'wikisource' }), Math.min(4000, left())); if ((ws.results || []).length) w = { ...ws, provider: 'wikisource' }; }
         if (netDown(w.error)) WIKI_DOWN_AT = Date.now();
         return w;
@@ -576,8 +578,10 @@ const routes = {
     const qs = [...new Set((Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean))].slice(0, 24);
     if (!(await bochaOn())) return { ok: true, bochaOn: false, results: [] };
     const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
-    const one = q => Promise.race([search.search(q, { provider: 'bocha', noFallback: true, count: 10 }).catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: '超时' }), 25000))]);
-    const rs = []; for (let i = 0; i < qs.length; i += 6) rs.push(...await Promise.all(qs.slice(i, i + 6).map(one)));
+    const one0 = q => Promise.race([search.search(q, { provider: 'bocha', noFallback: true, count: 10 }).catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: '超时' }), 25000))]);
+    // 慢了、被限流、网络抖了的再试一次；一次只并发四条，免得被博查限流
+    const one = async q => { const r = await one0(q); if ((r.results || []).length || !r.error || /Key|401|403|余额|鉴权/.test(r.error)) return r; await new Promise(z => setTimeout(z, 1500)); return one0(q); };
+    const rs = []; for (let i = 0; i < qs.length; i += 4) rs.push(...await Promise.all(qs.slice(i, i + 4).map(one)));
     return { ok: true, bochaOn: true, results: rs.map((r, i) => { const seen = new Set(); return { q: qs[i], error: r.error || '', items: (r.results || []).filter(h => h && h.title && !FICTION.test(h.title + ' ' + (h.url || '')) && !/古装剧|电视剧|连续剧|网剧|主演|执导|编剧|首播/.test(String(h.snippet || '').slice(0, 120))).filter(h => { const k = String(h.url || h.title).replace(/[?#].*$/, ''); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 10).map(h => ({ title: String(h.title).slice(0, 80), url: String(h.url || ''), snippet: String(h.snippet || '').replace(/\s+/g, ' ').slice(0, 1500) })) }; }) };
   },
   async 'POST /api/person'(body) {
