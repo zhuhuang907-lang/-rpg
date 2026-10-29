@@ -73,6 +73,8 @@ start ai.js && {
   # 账号模式先关着（ACCOUNTS_ON = false），账号检测暂停；重新启用时把下一行的 # 去掉
   # run "网页版账号：名字加密码、不用邮箱手机；各账号的 Key 存档互不相通、密码不对进不去、同名不能再注册、第一个账号接手旧存档" 600 env WEB_URL="http://127.0.0.1:$WEB_PORT/play.html" node webacct.js
 }
+LAT=1 start ai.js && run "照真玩家的玩法连玩六回（假 AI 照真实的慢、读几秒就出下一步）：后台不饿死，天下推演、家底、眼下的事、临门的事都做成" 1700 node realplay.js 6
+stop_all
 if [ -z "${QUICK:-}" ]; then
   start nasty.js && run "捣乱 AI：格式怪、字段类型错、慢、空" 1700 node drive2.js 40 "$GAME_PORT"
   start chaos.js && run "两成出错的 AI 连玩" 1500 node drive.js
