@@ -62,12 +62,34 @@ const { chromium } = require('playwright');
     if (fr.h !== '杨应琚' || fr.fake) bad('史料里有在任的真人，人事树上还是虚构的：' + JSON.stringify(fr)); }
   // 人选只能是开科、招贤来的人、身边的门客幕僚、已在官的人；凭空写个名字不行；开科取的下一回才到；真人照真实处境肯不肯来（王猛不会给别人当官）
   { const tl = await p.evaluate(async () => { const n = S.org.nodes.find(x => x.id === 'A2'); const r = {}; ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: '张三丰' }); r.free = ORGMSG;
-      const got = recruitFake(S, 'exam'); ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: got[0] }); r.wait = ORGMSG; r.got = got.length; r.fake = got.every(x => fictionSet(S).has(x));
+      const got = await recruit(S, 'exam'); ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: got[0] }); r.wait = ORGMSG; r.got = got.length; r.fake = got.filter(x => !talentOf(S, x).real).every(x => fictionSet(S).has(x)); r.real = got.filter(x => talentOf(S, x).real); r.noFake = !got.includes('假进士'); r.cai = (talentOf(S, '蔡以台') || {}).qual || null; r.allQual = got.every(x => talentOf(S, x).qual && talentOf(S, x).qual.max != null);
       S.talent.list.push({ name: '王猛', real: true, from: '查访', where: '长安', situation: '前秦丞相', will: '不肯' }); const w = await willCheck(S, '王猛', '户部尚书'); r.wm = w; return r; });
     if (!/不在人选里/.test(tl.free)) bad('凭空写个名字也能委任：' + tl.free);
     if (tl.got < 3 || !tl.fake) bad('开科取士没来人、或来的人没标虚构：' + JSON.stringify(tl));
     if (!/还在路上/.test(tl.wait)) bad('开科取的人当回就能用：' + tl.wait);
-    if (tl.wm.ok) bad('王猛竟肯来：' + JSON.stringify(tl.wm)); }
+    if (tl.wm.ok) bad('王猛竟肯来：' + JSON.stringify(tl.wm));
+  // 选官之制（CLAUDE.md「人事与职权」出身资格）：开科照这一科真实的进士名录先用真人；人人有出身资格；资格不够不能授官，一方之主再点一次才是特旨破格（多花两点）；现任大员照史料现任品级可以调
+    if (!tl.real.includes('蔡以台') || !tl.noFake || !tl.cai || tl.cai.ch !== '进士' || !tl.allQual) bad('开科没先用这一科真实的进士、或收了材料里没有的人、或人选没有出身资格：' + JSON.stringify(tl).slice(0, 300));
+    const q = await p.evaluate(() => { const n = S.org.nodes.find(x => x.id === 'A2'), r = {};
+      const t = talentList(S).find(x => !x.real && x.qual && x.qual.ch === '进士'); t.arrive = S.turn; r.qual = t.qual;
+      ORGMSG = ''; SPECIAL_ASK = ''; const pts0 = S.polPts; r.l1 = orgAct(S, 'appoint', { node: n, pi: 0, person: t.name }); r.m1 = ORGMSG;
+      r.l2 = orgAct(S, 'appoint', { node: n, pi: 0, person: t.name }); r.pts = pts0 - S.polPts;
+      S.orgPending = arr(S.orgPending).filter(x => x.who !== t.name); n.posts[0].pending = ''; n.posts[0].status = ''; S.polPts = pts0; t.used = false;
+      r.liu = qualOf(S, '刘统勋'); r.liuOk = qualCheck(S, '刘统勋', n, n.posts[0]).ok; return r; });
+    if (!/资格不够/.test(q.m1) || q.l1) bad('三甲进士直接当户部尚书没被拦下：' + JSON.stringify(q).slice(0, 300));
+    if (!/特旨破格任命/.test(q.l2 || '') || q.pts !== 3) bad('一方之主再点一次没成特旨破格、或没多花两点：' + JSON.stringify(q).slice(0, 300));
+    if (!q.liuOk) bad('照史料现任协办大学士的刘统勋调户部尚书被拦了：' + JSON.stringify(q.liu)); }
+  // 本事真起作用（CLAUDE.md「人事与职权」本事与派系）：户部尚书理财高国库涨、操守差腐败涨；没评定本事的不算
+  { const om = await p.evaluate(() => { const c = JSON.parse(JSON.stringify(S)); for (const n of c.org.nodes) for (const q of n.posts) q.attr = null; c.people = {};
+      const n = c.org.nodes.find(x => x.name === '户部'), q = n.posts.find(x => x.title === '尚书'); q.holder = '钱能干'; q.sinceYm = 0;
+      const run = (cai, lian) => { c.people['钱能干'] = cai == null ? {} : { stats: { 理财: { v: cai }, 操守: { v: lian } } }; c.gov = { scope: 'realm', keys: ['国库', '腐败'], stats: { 国库: 1000000, 腐败: 30 }, hist: [] }; officeMonthly(c, 1); return { gk: c.gov.stats['国库'], fb: c.gov.stats['腐败'], news: c.offNews }; };
+      return { a: run(90, 20), b: run(90, 80), z: run(null) }; });
+    if (!(om.a.gk > 1000000) || !(om.a.fb > om.b.fb) || om.z.gk !== 1000000) bad('官员本事没落到国势上、或没评定的也算了：' + JSON.stringify(om).slice(0, 300)); }
+  // 换人有恩怨：被换下的人和他那一派记恨，进派系账（每月推演照此出手）
+  { const fa = await p.evaluate(() => { const n = S.org.nodes.find(x => x.name === '户部'), q = n.posts.find(x => x.title === '侍郎'), keep = q.holder; const old = '旧侍郎甲'; q.holder = old; S.people[old] = { favor: 0, role: '户部侍郎', seen: S.turn };
+      S.factions = arr(S.factions).concat([{ name: '测派', leader: '测首', members: old }]); onAppointed(S, n, q, old, '', '罢免'); const f = S.factions.find(x => x.name === '测派'), r = { fav: S.people[old].favor, log: (arr(S.facLog).slice(-1)[0] || {}).text || '', gr: f.grudge, blk: facBlock(S) };
+      S.factions = S.factions.filter(x => x.name !== '测派'); q.holder = keep; delete S.people[old]; return r; });
+    if (!(fa.fav <= -25) || !fa.gr || !/被换下/.test(fa.log) || !/记着怨/.test(fa.blk)) bad('换人没记恩怨、派系账：' + JSON.stringify(fa).slice(0, 300)); }
   // 死人委任不了
   const unfold = () => p.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; }));
   await unfold(); await p.fill('[data-oin="A2_0"]', '年羹尧'); await p.click('[data-org="appoint"][data-n="A2"][data-p="0"]'); await p.waitForTimeout(300);
@@ -101,6 +123,15 @@ const { chromium } = require('playwright');
     if (sc.staff !== 'hire') bad('知县不能自己辟用吏役：' + JSON.stringify(sc));
     if (sc.zf !== 'none' && sc.zf !== 'propose') bad('知县竟能直接任命县丞：' + JSON.stringify(sc));
     if (!/不归你管/.test(sc.msg)) bad('知县委任户部尚书没拦下：' + sc.msg); }
+  // 知县详请保举县丞：准不准由程序照资格、上司好感、派系定，写进待办给正文照写；记账时照定的落到树上（CLAUDE.md「人事与职权」保举准驳）
+  { const pr = await p.evaluate(() => { const keep = { idm: S.idm, role: S.protagonist.role, career: S.career }; S.idm = 'official'; S.protagonist.role = '江都县知县'; S.career = { office: '江都县知县', rank: '正七品' };
+      const hx = S.org.nodes.find(n => n.name === '江都县署'); hx.posts[0].holder = S.protagonist.name; const zi = hx.posts.findIndex(q => /县丞|主簿/.test(q.title)), r = { zi };
+      if (zi >= 0) { const zf = hx.posts[zi]; if (!zf.rank) zf.rank = '正八品'; const t = { name: '保举测试乙', real: false, from: '科举', qual: { ch: '举人', lv: '', max: 7, txt: '举人' }, jiguan: '浙江', arrive: S.turn, kind: 'exam', y: S.clock.y }; S.talent.list.push(t);
+        ORGMSG = ''; r.line = orgAct(S, 'appoint', { node: hx, pi: zi, person: t.name }); r.msg = ORGMSG; const x = arr(S.orgPending).slice(-1)[0] || {}; r.res = x.res; r.odds = x.odds; r.blk = orgPendingBlock(S);
+        applyOrgResults(S, { orgResults: [] }); r.h = zf.holder; r.st = zf.status; S.talent.list = S.talent.list.filter(z => z.name !== t.name); zf.holder = ''; zf.status = ''; }
+      hx.posts[0].holder = ''; S.idm = keep.idm; S.protagonist.role = keep.role; S.career = keep.career; return r; });
+    if (pr.zi >= 0) { if (!/保举/.test(pr.line || '') || !pr.res || pr.odds == null || !/程序已定/.test(pr.blk)) bad('保举没由程序定准驳：' + JSON.stringify(pr).slice(0, 300));
+      if (pr.res === '准' ? pr.h !== '保举测试乙' : pr.st !== '保举被驳') bad('程序定的准驳没落到人事树上：' + JSON.stringify(pr).slice(0, 300)); } }
   // 逐年核人事：查到调走、有接任真人的就换上，记进人事记录；名册里查定的真人换掉虚构的
   const rf = await p.evaluate(async () => { S.org.checkedY = null; const n = await orgRefresh(S); const jj = S.org.nodes.find(x => x.id === 'A1').posts[0]; return { n, h: jj.holder, log: arr(S.org.log).some(x => /傅恒/.test(x.text) && /来保/.test(x.text)) }; });
   if (rf.h !== '来保' || !rf.log) bad('逐年核人事没把调走的人换掉：' + JSON.stringify(rf));
@@ -164,7 +195,7 @@ const { chromium } = require('playwright');
   // 别家的兵数看身份：一方之主照数，小官只知约数，百姓只有风闻（CLAUDE.md「人物」可以有看不到的数据）
   { const z = await p.evaluate(() => { const c = JSON.parse(JSON.stringify(S)); c.idm = ''; c.protagonist.role = '书生'; c.career = {}; c.territory = []; c.forces = []; return [fuzzN(S, 12345, '人'), fuzzN(c, 12345, '人')]; });
     if (/约/.test(z[0]) || !/风闻约/.test(z[1])) bad('别家兵数没照身份分实数、风闻：' + JSON.stringify(z)); }
-  { const m = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.gov = { scope: 'local', stats: { 民心: 50, 存银: 1000 } }; s.plans = [{ id: 'x', name: '测', state: '推行', month: 0, feasible: 100, steps: [{ m: 1, what: '派员', who: '' }], effects: [{ key: '民心', delta: 5, inMonths: 2, why: '均平' }], cost: { months: 2 }, log: [], done: [], applied: [] }]; const out = planMonthly(s, 2); return { mx: s.gov.stats['民心'], st: s.plans[0].state, out, blk: planBlock(s) }; });
+  { const m = await p.evaluate(() => { const R0 = Math.random; Math.random = () => 0.5; const s = JSON.parse(JSON.stringify(S)); s.gov = { scope: 'local', stats: { 民心: 50, 存银: 1000 } }; s.plans = [{ id: 'x', name: '测', state: '推行', month: 0, feasible: 100, steps: [{ m: 1, what: '派员', who: '' }], effects: [{ key: '民心', delta: 5, inMonths: 2, why: '均平' }], cost: { months: 2 }, log: [], done: [], applied: [] }]; const out = planMonthly(s, 2); Math.random = R0; return { mx: s.gov.stats['民心'], st: s.plans[0].state, out, blk: planBlock(s) }; });
     if (m.mx !== 55 || m.st !== '成' || !m.out.length || !/方略/.test(m.blk)) bad('方略按月结算没落到国势上：' + JSON.stringify(m).slice(0, 300)); }
   console.log('COURT', JSON.stringify({ o, r, f }));
   console.log('ERRS', JSON.stringify(errs));
