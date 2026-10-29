@@ -106,6 +106,9 @@ const checks = [
   ['余额不足不算 Key 坏、存好的 Key 不让重填', /hrpg:dspoor/.test(src) && /HTTP 40\[13\]/.test(src) && /Key 已存好/.test(src)],
   ['平常日子不空：够得着的人和此地真有的机会给出线头', /但平常日子不空/.test(rules)],
   ['年龄不瞎编：给模型看的 JSON 格式里不放示例岁数（模型会照抄三十、五十）；真人照生年算，推的写依据，推不出写 null；照史料记的岁数程序不改', !/"age":\s*(?:[1-9]\d|\d)\b/.test(src) && /bornWhy/.test(src) && /照史料生年算的岁数不动/.test(src) && /不要随手给三十、五十/.test(src)],
+  ['推演要像真的（CLAUDE.md「剧情」推演要像真的）：方略推演照局势、时论（当代道德）、可行性、各人利害；各人嘴上说的和心里想的分开写；每一回推演也写旁人不一定说真话', /situation：眼下的局势/.test(src) && /morality：当代的道德、礼法/.test(src) && /really 他心里真正的打算/.test(src) && /feasibleSeen/.test(src) && /旁人当面说的不一定是真话/.test(src) && /function seeThrough\(s, a\)/.test(src)],
+  ['看得到多少看身份、数据不由程序填默认（CLAUDE.md「人物」看得到多少看身份、数据都由 DeepSeek 照史料推）', /function fuzzN\(s, v, unit\)/.test(src) && /function seeLv\(s\)/.test(src) && !/"feasible":\s*\d/.test(src) && !/"sat":\s*\d/.test(src) && !/num\(x\.sat\) \?\? 50/.test(src) && !/n\(d\.feasible\) \?\? 50/.test(src)],
+  ['人事树缩短、写管谁、真人优先查不到才虚构（CLAUDE.md「人事与职权」）', /async function orgSeekReal\(s, nodes\)/.test(src) && /"manage":/.test(src) && /其余 \$\{ks\.filter/.test(src) && /十五到三十个衙署/.test(src) && !/四十到九十个衙署/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
