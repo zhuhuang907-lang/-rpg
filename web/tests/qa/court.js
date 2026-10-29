@@ -100,6 +100,17 @@ const { chromium } = require('playwright');
       c.polPts = 5; await recruit(c, 'exam'); a.pts = c.polPts; a.en = c.talent.list.filter(t => /恩科/.test(t.from || '')).length; return a; });
     if (!v.due || !v.real.includes('蔡以台') || v.nf || !v.done || !/殿试取中/.test(v.news || '')) bad('到了殿试的日子没照史书开科、没记上真实进士：' + JSON.stringify(v).slice(0, 300));
     if (v.pts !== 2 || !v.en) bad('恩科没花三点、或没来人：' + JSON.stringify(v).slice(0, 300)); }
+  // 军务真能打仗（CLAUDE.md「舆图」行军交战）：出征记成行军，照日子走，到了照守军结算一仗；不知守军的派探报再打；敌军来攻也结算
+  { const v = await p.evaluate(async () => { const c = JSON.parse(JSON.stringify(S)), me = c.protagonist.name; c.battles = []; c.territory = [];
+      c.forces = [{ name: '亲军', leader: me, troops: 3000, at: '江宁府', quality: '中', grain: 100000, morale: 60 }, { name: '测敌守军', owner: '测敌', leader: '敌首', at: '扬州府', troops: 1000, quality: '弱' }];
+      c.powers = [{ name: '测敌', leader: '敌首', seat: '扬州府' }, { name: '测二', leader: '二首', seat: '镇江府' }];
+      c.campaigns = [{ force: '亲军', mode: '攻', target: '扬州府', from: '江宁府', li: 120, turn: c.turn - 1, state: '待发' }];
+      const a0 = campaignTick(c, 0), st0 = c.campaigns[0].state, a1 = campaignTick(c, 10), r = { st0, a1, st1: c.campaigns[0].state, nb: c.battles.length, en: c.forces[1].troops };
+      c.campaigns = [{ force: '亲军', mode: '攻', target: '镇江府', from: c.forces[0].at, li: 60, turn: c.turn - 1, state: '待发' }]; campaignTick(c, 0); campaignTick(c, 5); r.st2 = c.campaigns[0].state; await campScout(c); r.st3 = c.campaigns[0].state; r.nb2 = c.battles.length;
+      c.forces[0].at = '江宁府'; c.forces.push({ name: '来犯军', owner: '测敌', at: '江宁府', status: '进犯', troops: 500, quality: '弱' }); const a3 = campaignTick(c, 1); r.atk = a3.some(t => /来攻/.test(t)); r.nb3 = c.battles.length; r.blk = campBlock(c); return r; });
+    if (v.st0 !== '行军' || v.nb !== 1 || !v.a1.some(t => /攻扬州府/.test(t)) || !(v.en < 1000)) bad('出征没照日子走到、没结算一仗：' + JSON.stringify(v).slice(0, 400));
+    if (v.st2 !== '待探报' || v.nb2 !== 2 || !/得手|败回/.test(v.st3)) bad('不知守军没派探报、或探报回来没打：' + JSON.stringify(v).slice(0, 400));
+    if (!v.atk || v.nb3 !== 3 || !/军报/.test(v.blk)) bad('敌军来攻没结算、或军报没进写戏材料：' + JSON.stringify(v).slice(0, 400)); }
   // 本事真起作用（CLAUDE.md「人事与职权」本事与派系）：户部尚书理财高国库涨、操守差腐败涨；没评定本事的不算
   { const om = await p.evaluate(() => { const c = JSON.parse(JSON.stringify(S)); for (const n of c.org.nodes) for (const q of n.posts) q.attr = null; c.people = {};
       const n = c.org.nodes.find(x => x.name === '户部'), q = n.posts.find(x => x.title === '尚书'); q.holder = '钱能干'; q.sinceYm = 0;
