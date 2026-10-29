@@ -109,6 +109,7 @@ const checks = [
   ['推演要像真的（CLAUDE.md「剧情」推演要像真的）：方略推演照局势、时论（当代道德）、可行性、各人利害；各人嘴上说的和心里想的分开写；每一回推演也写旁人不一定说真话', /situation：眼下的局势/.test(src) && /morality：当代的道德、礼法/.test(src) && /really 他心里真正的打算/.test(src) && /feasibleSeen/.test(src) && /旁人当面说的不一定是真话/.test(src) && /function seeThrough\(s, a\)/.test(src)],
   ['看得到多少看身份、数据不由程序填默认（CLAUDE.md「人物」看得到多少看身份、数据都由 DeepSeek 照史料推）', /function fuzzN\(s, v, unit\)/.test(src) && /function seeLv\(s\)/.test(src) && !/"feasible":\s*\d/.test(src) && !/"sat":\s*\d/.test(src) && !/num\(x\.sat\) \?\? 50/.test(src) && !/n\(d\.feasible\) \?\? 50/.test(src)],
   ['人事树缩短、写管谁、真人优先查不到才虚构（CLAUDE.md「人事与职权」）', /async function orgSeekReal\(s, nodes\)/.test(src) && /"manage":/.test(src) && /其余 \$\{ks\.filter/.test(src) && /十五到三十个衙署/.test(src) && !/四十到九十个衙署/.test(src)],
+  ['史事要临门、功能要有后果（CLAUDE.md「剧情」史事要临门）：每月单独深度推演史书大事怎么落到主角头上、身边的人怎么出手；正文必须写到（审稿第 11 条）；记账报 pressResults，误期照后果落账', /async function buildPress\(s\)/.test(src) && /function applyPress\(s, d\)/.test(src) && /"pressResults":/.test(src) && /11 临门的事/.test(src) && /\+x\.item === 11/.test(src) && /pressDue\(s0\)/.test(src) && /这一回必须正面写到/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

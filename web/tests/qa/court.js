@@ -136,6 +136,17 @@ const { chromium } = require('playwright');
     if (/暗中拖延/.test(d.t)) bad('城府深的人心里话被直接摆给玩家看了'); }
   { const f = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.gov = null; const R = Math.random; Math.random = () => 0.1; const mk = bad => ({ id: 'y', name: '测二', state: '推行', month: 0, feasible: 20, actors: bad ? [{ who: '户房书吏', act: '阳奉阴违' }] : [], steps: [{ m: 1, what: '清丈', who: '户房书吏' }], effects: [], cost: { months: 1 }, log: [], done: [], applied: [] }); s.plans = [mk(false)]; planMonthly(s, 1); const a = s.plans[0].done[0].ok; s.plans = [mk(true)]; planMonthly(s, 1); const b = s.plans[0].done[0].ok; Math.random = R; return { a, b, nf: planAdopt(s, { can: '能做主', feasible: null, cost: {} }) }; });
     if (!f.a || f.b || f.nf) bad('阳奉阴违的人办的那一步没有更难、或没推出把握也推行了：' + JSON.stringify(f)); }
+  // 临门的事：史书上这个月真发生的大事要实打实落到主角头上、身边的人照利害出手；正文必须写到；到期不应对照后果记账（CLAUDE.md「剧情」史事要临门、功能要有后果）
+  { const r = await p.evaluate(async () => { S.press = []; delete S.pressAt; S.people = S.people || {}; S.people['高恒'] = { role: '两淮盐政', favor: 0, seen: S.turn }; const add = await buildPress(S); render(); await new Promise(r => setTimeout(r, 300));
+      const bar = (document.querySelector('.goalbar.press') || {}).innerText || '', blk = pressBlock(S), tip = [...document.querySelectorAll('.goalbar.press .goal')].map(b => b.title).join('|');
+      const hg = S.press.find(x => x.who === '高恒'), sb = S.press.find(x => x.kind === '史事'); const ym = Math.floor(ymOf(S.clock));
+      const r1 = applyPress(S, { pressResults: [{ title: sb.title, result: '了结', why: '认了报效' }] }); hg.due = ym - 1; const r2 = applyPress(S, {});
+      return { n: add.length, fake: S.press.some(x => /祥瑞/.test(x.title)), bar, blk, tip, st: [sb.state, hg.state], fav: S.people['高恒'].favor, r1, r2, ruling: rulingInput(S, '去盐政衙门').includes('临门的事') }; });
+    if (r.n !== 2 || r.fake) bad('临门的事没推出来、或没出处的史事也收了：' + JSON.stringify(r).slice(0, 300));
+    if (!/南巡/.test(r.bar) || !/高恒/.test(r.bar) || !/限/.test(r.bar)) bad('输入框上没摆临门的事：' + r.bar);
+    if (!/必须正面写到/.test(r.blk) || !r.ruling) bad('临门的事没交给推演和写正文：' + r.blk.slice(0, 200));
+    if (/逼你多认/.test(r.tip)) bad('城府深的人背后打算直接给玩家看了');
+    if (r.st[0] !== '了结' || r.st[1] !== '误期' || r.fav !== -20) bad('临门的事了结、误期没照后果记账：' + JSON.stringify(r).slice(0, 300)); }
   // 别家的兵数看身份：一方之主照数，小官只知约数，百姓只有风闻（CLAUDE.md「人物」可以有看不到的数据）
   { const z = await p.evaluate(() => { const c = JSON.parse(JSON.stringify(S)); c.idm = ''; c.protagonist.role = '书生'; c.career = {}; c.territory = []; c.forces = []; return [fuzzN(S, 12345, '人'), fuzzN(c, 12345, '人')]; });
     if (/约/.test(z[0]) || !/风闻约/.test(z[1])) bad('别家兵数没照身份分实数、风闻：' + JSON.stringify(z)); }
