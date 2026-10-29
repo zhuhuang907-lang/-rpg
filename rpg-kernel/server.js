@@ -245,6 +245,9 @@ async function chgisGet(id) {
     try { fs.writeFileSync(cf, b); } catch (_) { /* 存不下就算了 */ } return { buf: b };
   } catch (e) { return { why: String(e && e.message || e).slice(0, 120) }; }
 }
+// 博查全局限流：后台几件活（家谱、临门、人事树……）一起查时，加起来也只同时搜六条，免得被博查限流
+let BOCHA_N = 0; const BOCHA_Q = [];
+const bochaSlot = async fn => { if (BOCHA_N >= 6) await new Promise(r => BOCHA_Q.push(r)); BOCHA_N++; try { return await fn(); } finally { BOCHA_N--; const nx = BOCHA_Q.shift(); if (nx) nx(); } };
 const routes = {
   /* ---- 一句话开局 ---- */
   async 'POST /api/quick-start'(body) {
@@ -578,7 +581,7 @@ const routes = {
     const qs = [...new Set((Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean))].slice(0, 24);
     if (!(await bochaOn())) return { ok: true, bochaOn: false, results: [] };
     const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
-    const one0 = q => Promise.race([search.search(q, { provider: 'bocha', noFallback: true, count: 10 }).catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: '超时' }), 25000))]);
+    const one0 = q => Promise.race([bochaSlot(() => search.search(q, { provider: 'bocha', noFallback: true, count: 10 })).catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: '超时' }), 25000))]);
     // 慢了、被限流、网络抖了的再试一次；一次只并发四条，免得被博查限流
     const one = async q => { const r = await one0(q); if ((r.results || []).length || !r.error || /Key|401|403|余额|鉴权/.test(r.error)) return r; await new Promise(z => setTimeout(z, 1500)); return one0(q); };
     const rs = []; for (let i = 0; i < qs.length; i += 4) rs.push(...await Promise.all(qs.slice(i, i + 4).map(one)));

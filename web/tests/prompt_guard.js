@@ -24,7 +24,7 @@ const checks = [
   ['不给玩家看将来的史事', !/<span class="seal">后<\/span>将要发生/.test(src)],
   ['开局立家业（后台照开场立）', /s\.estateDue = true; s\.estateStory = /.test(src) && /buildEstate\(s0, s0\.estateStory/.test(src) && /const cashCap = /.test(src)],
   // 一回合别再一步接一步地干等：后台活最多等三秒；审读、核实、记账一起做；整段重写最多一次
-  ['回合不干等：后台最多等不到一秒；程序挑出的毛病当场改稿、不等审读；审校审读走快型号', /Date\.now\(\) - t0 < 800/.test(src) && /let early = false/.test(src) && /\^\(检索\|核任期\|研读\|审校\|审读\)\$/.test(src) && !/Date\.now\(\) - t0 < 20000/.test(src) && /const critP = par \? critic\(\) : null/.test(src) && /function within\(/.test(src) && !/verifyText\(S, said, st\.text, rewrite\)/.test(src)],
+  ['回合不干等：不等后台（后台的活照做）；程序挑出的毛病和核实、审读的合在一起只改一次稿；审校审读走快型号', /后台的活照做，不挡玩家/.test(src) && !/Date\.now\(\) - t0 < 800/.test(src) && /let early = false/.test(src) && /程序挑出的毛病不再先单改一稿/.test(src) && !/const r0 = await callClaude\(storyInput/.test(src) && /\^\(检索\|核任期\|研读\|审校\|审读\)\$/.test(src) && !/Date\.now\(\) - t0 < 20000/.test(src) && /const critP = par \? critic\(\) : null/.test(src) && /function within\(/.test(src) && !/verifyText\(S, said, st\.text, rewrite\)/.test(src)],
   ['没有自家兵马也能打仗（随军、守城、统带朝廷的兵）', /ourTroops/.test(src) && /virtual: true/.test(src)],
   ['统带的兵也记进兵马账、编制照本朝', /主角统带、管着的兵/.test(src) && /function unitsText/.test(src) && /unitsBlock\(s\)/.test(src)],
   ['离谱的数标出来交账房改', /function dataDoubts/.test(src) && /账上这些数不合史实/.test(src)],
@@ -112,7 +112,8 @@ const checks = [
   ['史事要临门、功能要有后果（CLAUDE.md「剧情」史事要临门）：每月单独深度推演史书大事怎么落到主角头上、身边的人怎么出手；正文必须写到（审稿第 11 条）；记账报 pressResults，误期照后果落账', /async function buildPress\(s\)/.test(src) && /function applyPress\(s, d\)/.test(src) && /"pressResults":/.test(src) && /11 临门的事/.test(src) && /\+x\.item === 11/.test(src) && /pressDue\(s0\)/.test(src) && /这一回必须正面写到/.test(src)],
   ['细处都要合理模拟（CLAUDE.md「剧情」后宅人情贪墨生意）：每月单独推后宅各房心思、贪墨、情分、生意，落到家宅和睦、好感、现钱；颁行的国策交方略推演结算；国势险情交临门推演；工程文化科技制度也推', /async function buildHome\(s\)/.test(src) && /function homeBlock\(s\)/.test(src) && /function crisisText\(s\)/.test(src) && /polQueue/.test(src) && /工程、文化、科技、制度这类/.test(src) && /kind === '破绽'/.test(src)],
   ['衙门里的人贪的是公帑（落到存银国库、腐败吏治），家里的人贪的是现钱；阶层极不满交临门推演出后果（CLAUDE.md「剧情」细处都要合理模拟）', /const gw = one\(g\.who, 10\), pv = /.test(src) && /pub = s\.gov && \(orgHolders/.test(src) && /极为不满/.test(src)],
-  ['不卡顿、推理够深（CLAUDE.md「发布与仓库」卡顿）：一回最多改一次稿（致命毛病除外）；每回记下各阶段用时进问题报告；方略、临门、家宅、天下推演都深度思考', /PERF = \{ t0: Date\.now\(\)/.test(src) && /最近几回用时/.test(src) && /!early \|\| fatal/.test(src) && /kind === '推演' && !\(extra && extra\.thinking === false\)/.test(src)],
+  ['后台不饿死（CLAUDE.md「发布与仓库」后台不饿死）：后台的活排成单子三件一起做，玩家出下一回也照做、不从头来；有先后的等前头；记账前只等和记账写同一处的（最多十五秒）；博查全局同时最多六条', /function bgJobs\(s0, d, g\)/.test(src) && /await Promise\.all\(\[worker\(\), worker\(\), worker\(\)\]\)/.test(src) && /const bgExWait = /.test(src) && /BG_AGAIN = true/.test(src) && /const bochaSlot = /.test(fs.readFileSync(require('path').join(__dirname, '..', '..', 'rpg-kernel', 'server.js'), 'utf8'))],
+  ['不卡顿、推理够深（CLAUDE.md「发布与仓库」卡顿）：一回最多改一次稿（程序、核实、审读挑的毛病合在一起改）；每回记下各阶段用时进问题报告；方略、临门、家宅、天下推演都深度思考', /PERF = \{ t0: Date\.now\(\)/.test(src) && /最近几回用时/.test(src) && /!early \|\| fatal/.test(src) && /kind === '推演' && !\(extra && extra\.thinking === false\)/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

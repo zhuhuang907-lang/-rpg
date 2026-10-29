@@ -1625,7 +1625,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261029030236';
+const BUILD = '20261029043810';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -6111,7 +6111,7 @@ function needTick(s, d) {
   if (!last) return s.turn >= 1;
   if (ymOf(s.clock) - last.ym >= 2) return 'time';
   if (s.turn - last.turn >= 3) return 'turns';
-  if (arr(d && d.historyChanges).length || s.fateTick) { s.fateTick = false; return 'history'; }
+  if (arr(d && d.historyChanges).length || s.fateTick) return 'history';   // 只看不改：后台排活时会问好几遍；fateTick 在真推演时才清
   if (influencePending(s).length) return 'influence';
   if (d && String(d.worldShift || '').trim().length > 3) return 'shift';
   if (arr(w.upcoming).length < 4 && s.turn - last.turn >= 3) return 'few';
@@ -8920,70 +8920,94 @@ let BG = null, BGMSG = '', BGWAIT = false, STOP_PENDING = false;
 let BG_STOP = false, BG_STEP = '', BG_TAIL = null, BG_FOR = null;
 let BG_GEN = 0;
 function runBg(fn) {
+  if (BG && BG_FOR === S && BG_LIVE === S && !BG_STOP) { fn(); return; }   // 还在做：交给正在做的那一摊
   BG_STOP = false; BG_FOR = S;
   const gen = ++BG_GEN;
   const me = (async () => { await null; try { await fn(gen); } catch (_) { /* 后台出错下回再做 */ } finally { if (BG === me) { BG = null; BGMSG = ''; BG_STEP = ''; } render(); } })();
   BG = me;
 }
 /** 写完一回之后：整理较早的章节、推演天下、自建史料、本地志、县级地图、本朝官制。s0 不再是当前存档（换局、重写了）就不存 */
-async function afterTurn(s0, d, g, gen = BG_GEN) {
-  const live = () => S === s0 && gen === BG_GEN;   // 新的一回又起了后台活：这条旧的就停
-  // 玩家等不及了（BG_STOP）就不再开新的一步；没做完的下一回合再做
-  const step = async (msg, f) => { if (!live() || BG_STOP) return false; BGMSG = msg; BG_STEP = msg; render(); try { await f(); } catch (e) { /* 下回合再做 */ } return live() && !BG_STOP; };
-  // 真人主角的家谱、身边人排在最前面（单独的调用）：后面那一长串没做完、玩家又出下一回，也不至于后宅、身边空着
-  if (familyDue(s0) && !(await step('照史料查家谱、身边的人', () => familyFix(s0)))) return;
-  if (arr(s0.polQueue).length && !(await step('推演颁行的国策会怎样落下去', async () => { while (arr(s0.polQueue).length) { const id = s0.polQueue[0], q = arr(s0.polBook).find(x => x.id === id); if (q) { const P = await planAnalyze(s0, `推行国策「${q.name}」：${q.desc}${q.effect ? '（预计：' + q.effect + '）' : ''}`); if (P && P.feasible != null) { const x = planAdopt(s0, { ...P, can: '能做主', name: q.name }); if (x) x.pol = q.id; } } s0.polQueue = s0.polQueue.slice(1); } }))) return;
-  if ((pressDue(s0) || homeDue(s0)) && !(await step('推这个月落到你头上的史事、别人的动静、家里的事', () => Promise.all([pressDue(s0) ? buildPress(s0).catch(e => { s0.prFail = s0.turn; }) : null, homeDue(s0) ? buildHome(s0).catch(e => { s0.hmFail = s0.turn; }) : null])))) return;
-  if (agendaDue(s0) && !(await step('理一理这个月手头的事', () => buildAgenda(s0).catch(e => { s0.agFail = s0.turn; throw e; })))) return;
-  // 开局查到的资料：开场写完后再慢慢研读成年代志（不挡开场）
-  if (s0.estateDue && !(await step('立家底', async () => { try { await buildEstate(s0, s0.estateStory || undefined); } finally { if (!s0.estateDue) delete s0.estateStory; } }))) return;
-  if (!d && arr(s0.research).length && arr(s0.almanac).length < 5 && !(await step('研读开局查到的资料，整理成年代志', () => digestResearch(s0)))) return;
-  if (arr(s0.summaries).length > 60 && !(await step('整理较早的经过', () => compactMemory(s0)))) return;
-  if (packNeed(s0) && !(await step('联网整理这几年的史料', () => ensureHistPack(s0)))) return;
-  if (syncNeed(s0) && !(await step('按月联网同步此刻前后的史事', () => ensureSync(s0)))) return;
-  if (d && SETTINGS.world !== false && needTick(s0, d) && !(await step('推演天下大势', async () => { const r = await worldTick(s0); if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }))) return;
-  if (needGaz(s0) && !(await step('查这地方此时的样子（本地志）', () => buildGazetteer(s0)))) return;
-  if (admDue(s0) && !(await step('联网查这一年的政区（政权、省、府州，本省到县）', () => buildAdmin(s0).catch(e => { s0.admFail = s0.turn; throw e; })))) return;
-  if (s0.estateDue && !(await step('照新身份重立家底', () => buildEstate(s0)))) return;
-  if (canSearch() && officialsDue(s0) && !(await step('趁空查这地方此时在任的官员', () => ensureOfficials(s0).catch(e => { s0.offFail = s0.turn; throw e; })))) return;   // 玩家读这一回、想下一步的时候先查好，下一回不用等
-  if (orgDue(s0) && !(await step('联网整理人事树和国策书', () => buildOrg(s0)))) return;
-  if (orgRefreshDue(s0) && !(await step('逐年核人事树上的人（有没有调走、病故、接任）', () => orgRefresh(s0).catch(e => { s0.orgRefFail = s0.turn; throw e; })))) return;
-  if (statsDue(s0) && !(await step('请 DeepSeek 照史料评定这几回出场人物的各项', () => judgeDue(s0).catch(e => { s0.statFail = s0.turn; throw e; })))) return;
-  if (clashDue(s0) && !(await step('查虚构人物有没有和史书真人重名', () => fictionClash(s0)))) return;
-  if (sbDue(s0) && !(await step('照出身定属性和本事', () => buildSkills(s0).catch(e => { s0.sbFail = s0.turn; throw e; })))) return;
-  if (placeDue(s0) && !(await step('打听此地的行情、差事、能招的人', () => buildLocal(s0).catch(e => { s0.localFail = s0.turn; throw e; })))) return;
-  if (logicDue(s0) && !(await step('通读账册，挑不合常理、前后矛盾的地方', () => logicAudit(s0).catch(e => { s0.logicFail = s0.turn; throw e; })))) return;
-  if (govDue(s0) && !(await step('照史料定国势、阶层', () => buildGov(s0).catch(e => { s0.govFail = s0.turn; throw e; })))) return;
-  if (SETTINGS.hooks !== false && hooksDue(s0) && !(await step('照此时此地的实情备几件会找上门的事', () => buildHooks(s0).catch(e => { s0.hookFail = s0.turn; throw e; })))) return;
-  if (affairDue(s0) && !(await step('拟这个月的时政', () => buildAffairs(s0).catch(e => { s0.affFail = s0.turn; throw e; })))) return;
-  if (s0.org && courtiers(s0).some(c => !c.attr) && !(await step('照史料定官员的派系和本事', () => buildOfficers(s0)))) return;
-  if (utDue(s0) && !(await step('照本朝兵制核定兵种', () => buildUnitTypes(s0).catch(e => { s0.utFail = s0.turn; throw e; })))) return;
-  if (factDue(s0) && !(await step('提前梳理这一年此地的史实和数目', () => buildFacts(s0).catch(e => { s0.factFail = s0.turn; throw e; })))) return;
-  if (promoDue(s0, '') && !(await step('联网查本朝升迁之制', () => ensurePromo(s0).catch(e => { s0.promoFail = s0.turn; throw e; })))) return;
-  if (needGeo(s0) && !(await step('查历史地名库、画县级地图', () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties)))) return;
-  if (live()) { BGMSG = '存档'; try { await store.save(s0); } catch (_) { /* 下回再存 */ } }
-  if (live() && !s0.inst) buildInst(s0);
+/** 后台的活：照轻重排好的单子。不再是一长串一条条做、玩家一出手就停、下回又从头来（那样排在后面的天下推演、家底、本地志、眼下的事永远轮不到）；
+ *  现在三条一起做，玩家出下一回也照做；排在前头的先做，有先后的（查完官员才整人事树）等前头的做完。ex：和记账写同一处的，记账前等它（最多十五秒） */
+function bgJobs(s0, d, g) {
+  return [
+    { id: 'fam', msg: '照史料查家谱、身边的人', due: () => familyDue(s0), run: () => familyFix(s0), ex: true },
+    { id: 'pol', msg: '推演颁行的国策会怎样落下去', due: () => arr(s0.polQueue).length, run: async () => { while (arr(s0.polQueue).length) { const id = s0.polQueue[0], q = arr(s0.polBook).find(x => x.id === id); if (q) { const P = await planAnalyze(s0, `推行国策「${q.name}」：${q.desc}${q.effect ? '（预计：' + q.effect + '）' : ''}`); if (P && P.feasible != null) { const x = planAdopt(s0, { ...P, can: '能做主', name: q.name }); if (x) x.pol = q.id; } } s0.polQueue = s0.polQueue.slice(1); } } },
+    { id: 'press', msg: '推这个月落到你头上的史事、别人的动静、家里的事', due: () => (pressDue(s0) || homeDue(s0)), run: () => Promise.all([pressDue(s0) ? buildPress(s0).catch(e => { s0.prFail = s0.turn; }) : null, homeDue(s0) ? buildHome(s0).catch(e => { s0.hmFail = s0.turn; }) : null]), needs: ['fam'] },
+    { id: 'agenda', msg: '理一理这个月手头的事', due: () => agendaDue(s0), run: () => buildAgenda(s0).catch(e => { s0.agFail = s0.turn; throw e; }), needs: ['press'] },
+    { id: 'estate', msg: '立家底', due: () => s0.estateDue, run: async () => { try { await buildEstate(s0, s0.estateStory || undefined); } finally { if (!s0.estateDue) delete s0.estateStory; } }, ex: true },
+    { id: 'digest', msg: '研读开局查到的资料，整理成年代志', due: () => !d && arr(s0.research).length && arr(s0.almanac).length < 5, run: () => digestResearch(s0) },
+    { id: 'compact', msg: '整理较早的经过', due: () => arr(s0.summaries).length > 60, run: () => compactMemory(s0) },
+    { id: 'pack', msg: '联网整理这几年的史料', due: () => packNeed(s0), run: () => ensureHistPack(s0) },
+    { id: 'sync', msg: '按月联网同步此刻前后的史事', due: () => syncNeed(s0), run: () => ensureSync(s0) },
+    { id: 'world', msg: '推演天下大势', due: () => d && SETTINGS.world !== false && needTick(s0, d), run: async () => { s0.fateTick = false; const r = await worldTick(s0); if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }, ex: true, needs: ['sync', 'pack'] },
+    { id: 'gaz', msg: '查这地方此时的样子（本地志）', due: () => needGaz(s0), run: () => buildGazetteer(s0) },
+    { id: 'adm', msg: '联网查这一年的政区（政权、省、府州，本省到县）', due: () => admDue(s0), run: () => buildAdmin(s0).catch(e => { s0.admFail = s0.turn; throw e; }) },
+    { id: 'estate2', msg: '照新身份重立家底', due: () => s0.estateDue, run: () => buildEstate(s0), ex: true, needs: ['estate'] },
+    { id: 'off', msg: '趁空查这地方此时在任的官员', due: () => canSearch() && officialsDue(s0), run: () => ensureOfficials(s0).catch(e => { s0.offFail = s0.turn; throw e; }) },   // 玩家读这一回、想下一步的时候先查好，下一回不用等
+    { id: 'org', msg: '联网整理人事树和国策书', due: () => orgDue(s0), run: () => buildOrg(s0), needs: ['off'] },
+    { id: 'orgref', msg: '逐年核人事树上的人（有没有调走、病故、接任）', due: () => orgRefreshDue(s0), run: () => orgRefresh(s0).catch(e => { s0.orgRefFail = s0.turn; throw e; }), needs: ['org'] },
+    { id: 'stats', msg: '请 DeepSeek 照史料评定这几回出场人物的各项', due: () => statsDue(s0), run: () => judgeDue(s0).catch(e => { s0.statFail = s0.turn; throw e; }) },
+    { id: 'clash', msg: '查虚构人物有没有和史书真人重名', due: () => clashDue(s0), run: () => fictionClash(s0) },
+    { id: 'skills', msg: '照出身定属性和本事', due: () => sbDue(s0), run: () => buildSkills(s0).catch(e => { s0.sbFail = s0.turn; throw e; }), ex: true },
+    { id: 'local', msg: '打听此地的行情、差事、能招的人', due: () => placeDue(s0), run: () => buildLocal(s0).catch(e => { s0.localFail = s0.turn; throw e; }), ex: true },
+    { id: 'logic', msg: '通读账册，挑不合常理、前后矛盾的地方', due: () => logicDue(s0), run: () => logicAudit(s0).catch(e => { s0.logicFail = s0.turn; throw e; }), ex: true },
+    { id: 'gov', msg: '照史料定国势、阶层', due: () => govDue(s0), run: () => buildGov(s0).catch(e => { s0.govFail = s0.turn; throw e; }), ex: true },
+    { id: 'hooks', msg: '照此时此地的实情备几件会找上门的事', due: () => SETTINGS.hooks !== false && hooksDue(s0), run: () => buildHooks(s0).catch(e => { s0.hookFail = s0.turn; throw e; }) },
+    { id: 'affairs', msg: '拟这个月的时政', due: () => affairDue(s0), run: () => buildAffairs(s0).catch(e => { s0.affFail = s0.turn; throw e; }), needs: ['gov'] },
+    { id: 'officers', msg: '照史料定官员的派系和本事', due: () => s0.org && courtiers(s0).some(c => !c.attr), run: () => buildOfficers(s0), needs: ['org'] },
+    { id: 'ut', msg: '照本朝兵制核定兵种', due: () => utDue(s0), run: () => buildUnitTypes(s0).catch(e => { s0.utFail = s0.turn; throw e; }) },
+    { id: 'facts', msg: '提前梳理这一年此地的史实和数目', due: () => factDue(s0), run: () => buildFacts(s0).catch(e => { s0.factFail = s0.turn; throw e; }) },
+    { id: 'promo', msg: '联网查本朝升迁之制', due: () => promoDue(s0, ''), run: () => ensurePromo(s0).catch(e => { s0.promoFail = s0.turn; throw e; }) },
+    { id: 'geo', msg: '查历史地名库、画县级地图', due: () => needGeo(s0), run: () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties), needs: ['gaz'] },
+  ];
+}
+let BG_CTX = null, BG_AGAIN = false;
+const BG_RUN = new Map();
+const bgExWait = () => { const L = [...BG_RUN.values()].filter(x => x.ex).map(x => x.p); return L.length ? within(Promise.all(L), 15000) : Promise.resolve(); };
+const bgMsgNow = () => { BGMSG = [...BG_RUN.values()].map(x => x.msg).join('；'); BG_STEP = BGMSG; };
+let BG_LIVE = null;
+async function afterTurn(s0, d, g) {
+  if (BG_LIVE === s0 && !BG_STOP) { BG_CTX = { s0, d, g }; BG_AGAIN = true; return; }   // 后台还在做：把这一回记的账交给它，做完手上的再从头看一遍还有什么该做
+  BG_LIVE = s0; BG_CTX = { s0, d, g }; BG_AGAIN = false;
+  try { await afterTurnPool(s0); } finally { if (BG_LIVE === s0) BG_LIVE = null; }
+}
+async function afterTurnPool(s0) {
+  const live = () => S === s0 && !BG_STOP;
+  const tried = new Set();
+  const due = j => { try { return !!j.due(); } catch (_) { return false; } };
+  // 有先后的：前头那件还在做、或者该做还没轮到，就先不挑它
+  const blocked = (j, L) => arr(j.needs).some(n => { if (BG_RUN.has(n)) return true; const x = L.find(y => y.id === n); return !!x && !tried.has(n) && due(x); });
+  const pick = () => { const L = bgJobs(s0, BG_CTX.d, BG_CTX.g); return L.find(j => !tried.has(j.id) && !BG_RUN.has(j.id) && due(j) && !blocked(j, L)); };
+  const worker = async () => {
+    for (;;) {
+      if (!live()) return;
+      const j = pick();
+      if (!j) { if (BG_AGAIN && !BG_RUN.size) { BG_AGAIN = false; tried.clear(); continue; } if (BG_RUN.size) { await Promise.race([...BG_RUN.values()].map(x => x.p)); await new Promise(r => setTimeout(r, 50)); continue; } return; }
+      tried.add(j.id);
+      const pr = (async () => { try { await j.run(); } catch (_) { /* 下回合再做 */ } })();
+      BG_RUN.set(j.id, { p: pr, msg: j.msg, ex: !!j.ex }); bgMsgNow(); render();
+      await pr; BG_RUN.delete(j.id); bgMsgNow();
+      if (S === s0 && !BUSY) { try { await store.save(s0); } catch (_) { /* 下回再存 */ } }
+      render();
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  if (S === s0) { BGMSG = '存档'; try { await store.save(s0); } catch (_) { /* 下回再存 */ } }
+  if (S === s0 && !BG_STOP && !s0.inst) buildInst(s0);
 }
 /** 一回合：先写正文（边写边显示），再交给账房记账核史实。账没记上，正文也留下，可以补记 */
 async function send(said, span, note, resume) {
   if (BUSY || !S) return;
   EDITING = false;
-  if (BG) {   // 上一回的后台活还没完：等它做完再开始（不然两边同时改存档）
-    BUSY = true; BGWAIT = true; PENDING_SAID = String(said || '').trim(); render();
-    // 最多等三秒：后台没做完的那一步自己在后头做完（结果照样记上），没开始的留到下一回；玩家不用干等
-    const t0 = Date.now();
-    while (BG && Date.now() - t0 < 800) await new Promise(r => setTimeout(r, 100));
-    if (BG) { BG_STOP = true; if (BG_FOR === S) BG_TAIL = BG; }   // 还在做的那一步放它做完，但记账之前要等它收尾，免得两边同时改存档、后写的冲掉先写的
-    BUSY = false; BGWAIT = false;
-    if (STOP_PENDING) { STOP_PENDING = false; PENDING_SAID = ''; if (resume && resume.orig) S = resume.orig; render(); const el = $('#said'); if (el) el.value = String(said || ''); return; }
-    if (!S) return;
-  }
+  // 后台的活照做，不挡玩家；记账前只等和记账写同一处的那几件（最多十五秒）
   ERRMSG = ''; STREAM = ''; PHASE = ''; DRAFT_LIVE = ''; PENDING_SAID = String(said || '').trim(); CUR_SAID = String(said || ''); FEED = []; if (S && S.clock && SETTINGS.hooks !== false) { const hk = pickHook(S, said); S.hookNow = hk || null; }
   const orig = resume && resume.orig;
   LAST_ACTION = () => { if (orig) S = restorePrev(orig); send(said, span, note, resume && (resume.story || orig) ? { story: resume.story, orig, ruling: resume.ruling, fix: resume.fix } : undefined); };
   const before = clone(S); before.prev = null;
   if ($('#said')) $('#said').value = '';
   CTL = new AbortController(); TURN = CTL;
+  PERF = { t0: Date.now(), ph: {}, last: Date.now(), cur: '', rw: 0 };
   setBusy(true);
   const pend = o => lsSet('hrpg:pending', JSON.stringify({ saveId: S.id, said, span, note, at: Date.now(), baseTurn: S.turn, baseChat: S.chat.length, baseSig: chatSig(S), redo: !!orig, ...o }));
   if (!(resume && (resume.job || resume.story))) pend({});   // 一开始就记下：查资料那半分钟里刷新了，玩家写的话也不丢
@@ -9061,19 +9085,11 @@ async function send(said, span, note, resume) {
     const startLedger = () => { ledgerP = ledgerFor(st.text, st.hidden); ledgerP.catch(() => { /* 下面 await 时再处理 */ }); };
     // 程序挑出的毛病（改了命令、改了原话、人名地名、升迁越级……）当场就知道：不等审读、核实，马上照改一稿；改好的再去核实、审读、记账
     let early = false;
-    if (!st.verified && !(resume && resume.story) && !st.talk && preFaults.length) {
-      PHASE = 'rewrite'; DRAFTN = 0; render();
-      try {
-        const sys0 = DSM();
-        const r0 = await callClaude(storyInput(S, said, span, note, sys0, ruling, { draft: st.text, why: preFaults.map((x, i) => `${i + 1}. ${x}`).join('\n') }), draftCb, { json: false, temperature: STORY_T, maxTokens: 6000, system: sys0 ? storyRules() : '', kind: '改稿' });
-        const t0 = splitStory(r0.text);
-        if (t0.text && t0.text.length > 200 && !t0.talk) { st = { ...st, text: t0.text, hidden: t0.hidden || st.hidden }; early = true; const left = draftFaults(S, said, st.text, span); if (left.length) noteErr('改稿后仍有', left.map(f => f.slice(0, 40)).join(' / '), { said: cut(said, 60) }); preFaults = []; }
-      } catch (e) { if (e && e.code === 'cancelled') throw e; }
-    }
+    // 程序挑出的毛病不再先单改一稿：和核实、审读挑出的合在一起，只改一次稿（以前常常改两遍，每回多等一两分钟）
     if (!st.verified && !(resume && resume.story)) {
       const sysR = DSM(), par = DSM();
       PHASE = 'verify'; render();
-      if (par && !st.talk) startLedger();
+      if (par && !st.talk && !preFaults.length) startLedger();   // 已经知道要改稿的，账照改好的稿记，不先记一遍初稿
       const critic = () => !st.talk && SETTINGS.critic !== false ? storyCritic(S, said, st.text).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
       const critP = par ? critic() : null; if (critP) critP.catch(() => { /* 停下了：下面 await 时再处理 */ });
       // 常理审查：每回合当场审（对着整本账读这一回的正文），正文的毛病和审读的一起改，账的毛病记账后当场改
@@ -9105,7 +9121,7 @@ async function send(said, span, note, resume) {
     PHASE = 'verify'; render();
     if (st.talk) {
       lsSet('hrpg:pending', null);
-      if (BG_TAIL) { const t = BG_TAIL; BG_TAIL = null; await within(t, 30000); }
+      await bgExWait();
       applyReply(S, { reply: cleanTalk(st.text), mode: 'talk' }, said); PENDING_SAID = ''; S.mainNow = null;
       if (FEED.length) { const g1 = S.chat[S.chat.length - 1]; g1.extra = Object.assign(g1.extra || {}, { refs: FEED.slice(-16).map(f => ({ t: f.t, site: f.site, u: f.u })) }); }
       if (arr(st.audit).length) { const g0 = S.chat[S.chat.length - 1]; g0.audit = st.audit; }
@@ -9113,7 +9129,7 @@ async function send(said, span, note, resume) {
       if (!ledgerP || st.rewrote) startLedger();
       STREAM = st.text; PHASE = 'ledger'; render();
       let d = await ledgerP;
-      if (BG_TAIL) { const t = BG_TAIL; BG_TAIL = null; PHASE = 'ledger'; await within(t, 30000); }   // 上一回后台没收尾的那一步（立家底、推演天下……）先落定，再记这一回的账
+      await bgExWait();   // 后台正在改家谱、家底、国势、天下的，先等它落定（最多十五秒），再记这一回的账
       // 账是照初稿记的：核实时改掉的字，账里也照改（人名、官名、地名不能一处对一处错）
       if (d && arr(st.audit).length) d = auditSweep(d, st.audit);
       if (arr(st.audit).length) for (const k of ['people', 'canon', 'gmNotes', 'estate', 'chronicle', 'summaries', 'orders', 'deeds', 'goals', 'places']) if (S[k]) S[k] = auditSweep(S[k], st.audit);
