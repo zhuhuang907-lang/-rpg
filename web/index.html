@@ -1625,7 +1625,7 @@ function ledgerRules() {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261029053532';
+const BUILD = '20261029185649';
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -2508,7 +2508,7 @@ ${officialsBlock(s)}
       for (const [i, n] of d.nodes.filter(x => x && x.name).slice(0, 120).entries()) {
         const par = String(n.parent || '').trim(), pid = !par || /^ROOT$/i.test(par) ? 'root' : keyId[P + ':' + o(par, 20)] || 'root';
         nodes.push({ id: P + (i + 1), name: o(n.name, 24), tier: TIER[P], level: o(n.level, 12), parent: pid, duty: o(n.duty, 60), path: !!n.path, src: '史',
-          posts: arr(n.posts).filter(x => x && x.title).slice(0, 16).map(x => { const h0 = arr(x.holders).map(h => o(h, 10)).filter(h => h && h.length >= 2 && !/空|无|缺|不详|某/.test(h)), hs = h0.filter(h => realOrBlank(s, h)); return { title: o(x.title, 16), rank: o(x.rank, 10), quota: Math.max(1, Math.min(9999, num(x.quota) || 1)), holder: hs[0] || '', others: hs.slice(1, 4), status: '', cand: hs.length ? [] : h0.slice(0, 2), manage: o(x.manage, 60) }; }) });
+          posts: arr(n.posts).filter(x => x && x.title).slice(0, 16).map(x => { const h0 = arr(x.holders).map(h => o(h, 10)).filter(h => h && h.length >= 2 && !/空|无|缺|不详|某/.test(h)), hs = h0.filter(h => realOrBlank(s, h)); return { title: o(x.title, 16), rank: o(x.rank, 10), quota: Math.max(1, Math.min(9999, num(x.quota) || 1)), holder: hs[0] || '', others: hs.slice(1, 4), status: '', cand: h0.filter(h => !hs.includes(h)).slice(0, 3), manage: o(x.manage, 60) }; }) });
       }
     });
     if (nodes.length < 6) throw { code: 'bad_json' };
@@ -2518,9 +2518,12 @@ ${officialsBlock(s)}
     // 名册里查定的本地官员并进来
     for (const ofc of officialsHere(s)) for (const n of nodes) for (const q of n.posts) if (!q.holder && ofc.name && n.path && (String(ofc.post).includes(q.title) || q.title.includes(String(ofc.post)))) { q.holder = ofc.name; q.src = ofc.src; }
     // 照史料填真人：DeepSeek 报了名字、我们还没核实的，用博查核（名字和官名都在资料里才算）
-    { const C = []; for (const n of nodes) for (const q of n.posts) if (!q.holder && arr(q.cand).length) C.push({ n, q, h: q.cand[0] });
-      if (C.length) { const B = await bochaDeep(s, C.slice(0, 16).map(x => `${x.h} ${x.q.title}`), 60), hay = B.items.map(i => `${i.title} ${i.snippet}`).join('\n');
-        for (const x of C.slice(0, 16)) if (hay.includes(x.h) && hay.includes(x.q.title)) { x.q.holder = x.h; x.q.src = '博查'; } }
+    { const C = []; for (const n of nodes) for (const q of n.posts) if (!q.holder) for (const h of arr(q.cand)) C.push({ n, q, h });
+      // 要紧的位子先核；一批二十四条，最多三批（七十二个名字）；同一条资料里名字和官名（或衙门名）都有才算
+      const imp = x => ((x.n.depth || 0) <= 2 || x.n.path ? 0 : 1); C.sort((a, b) => imp(a) - imp(b));
+      for (let k = 0; k < Math.min(C.length, 72); k += 24) { const P = C.slice(k, k + 24); const B = await bochaDeep(s, P.map(x => `${x.h} ${x.q.title}`), 80);
+        for (const x of P) { if (x.q.holder) continue; const stem = x.n.name.replace(/(衙门|衙署|公署|署)$/, '').slice(0, 4); const hit = B.items.find(i => { const t = `${i.title} ${i.snippet}`; return t.includes(x.h) && (t.includes(x.q.title) || (stem.length >= 2 && t.includes(stem))); });
+          if (hit) { x.q.holder = x.h; x.q.src = hit.ds ? 'DeepSeek检索' : '博查'; } } }
       for (const n of nodes) for (const q of n.posts) delete q.cand; }
     { const keep = s.org; s.org = { nodes, log: arr(keep && keep.log) }; orgFillReal(s); const lg = s.org.log; s.org = keep; nodes.logTmp = lg; }
     try { await orgSeekReal(s, nodes); } catch (e) { if (e && e.code === 'cancelled') throw e; }
@@ -2554,19 +2557,105 @@ ${officialsBlock(s)}
 async function orgSeekReal(s, nodes) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '', byId = Object.fromEntries(nodes.map(n => [n.id, n]));
   const me = nodes.find(n => n.posts.some(q => q.holder === s.protagonist.name)) || nodes.filter(n => n.path && n.id !== 'root').sort((a, b) => (b.depth || 0) - (a.depth || 0))[0];
-  const want = []; for (const n of nodes) { if (n.id === 'root') continue; const near = (n.depth || 0) <= 2 || n.path || (me && n.parent === me.id); if (!near) continue; for (const q of n.posts) if (!q.holder && !STAFF_RE.test(n.name + q.title)) want.push({ n, q }); }
-  const pick = want.sort((a, b) => (b.n.path ? 1 : 0) - (a.n.path ? 1 : 0) || (a.n.depth || 0) - (b.n.depth || 0)).slice(0, 12); if (!pick.length) return 0;
-  const B = await bochaDeep(s, pick.flatMap(x => [`${yl} ${x.n.name} ${x.q.title}`, `${y}年 ${pol} ${x.q.title} ${x.n.name.replace(/(衙门|衙署)$/, '')} 任`]), 60);
+  const want = []; for (const n of nodes) { if (n.id === 'root') continue; const near = (n.depth || 0) <= 2 || n.path || (me && n.parent === me.id); n.posts.forEach((q, i) => { if (q.holder || STAFF_RE.test(n.name + q.title)) return; if (near || ((n.depth || 0) <= 3 && i === 0)) want.push({ n, q, near }); }); }
+  const pick = want.sort((a, b) => (b.near ? 1 : 0) - (a.near ? 1 : 0) || (b.n.path ? 1 : 0) - (a.n.path ? 1 : 0) || (a.n.depth || 0) - (b.n.depth || 0)).slice(0, 36); if (!pick.length) return 0;
+  const QS = pick.flatMap(x => [`${yl} ${x.n.name} ${x.q.title}`, `${y}年 ${pol} ${x.q.title} ${x.n.name.replace(/(衙门|衙署)$/, '')} 任`]), B = { items: [], text: '' };
+  for (let k = 0; k < QS.length; k += 24) { const b = await bochaDeep(s, QS.slice(k, k + 24), 80); B.items.push(...b.items); }
   if (!B.items.length) return 0;
   const hay = B.items.map(i => `${i.title} ${i.snippet}`).join('\n');
   const { text } = await callClaude(`下面是搜到的资料。替一局历史游戏认出${yl}（公元${y}年，${pol}）这些职位上在任的真人：只认资料里写明此时在这个职位（或署理、兼任）的人；资料里说的是别的年份、别的地方、同名的别人的不算；资料里没有就写空，不猜、不编。
 【职位】\n${pick.map((x, i) => `${i + 1}. ${x.n.name}${x.q.title}`).join('\n')}
-【资料】\n${B.items.slice(0, 50).map(i => `· ${i.ds ? '〔DeepSeek〕' : '〔博查〕'}${i.title}：${cut(i.snippet, 400)}`).join('\n')}
-只输出一个 JSON 对象：{"fills":[{"i":1,"name":"","why":"资料里哪句话"}]}`, null, { maxTokens: 2000, temperature: 0, kind: '研读', detached: true, thinking: false });
+【资料】\n${B.items.slice(0, 90).map(i => `· ${i.ds ? '〔DeepSeek〕' : '〔博查〕'}${i.title}：${cut(i.snippet, 400)}`).join('\n')}
+只输出一个 JSON 对象：{"fills":[{"i":1,"name":"","why":"资料里哪句话"}]}`, null, { maxTokens: 4000, temperature: 0, kind: '研读', detached: true, thinking: false });
   const d = parseJSON(text); let k = 0; const used = new Set(nodes.flatMap(n => n.posts.map(q => q.holder)).filter(Boolean));
   for (const f of arr(d && d.fills)) { const x = pick[(num(f && f.i) || 0) - 1], nm = one(f && f.name, 8); if (!x || !nm || nm.length < 2 || /某|不详|空|无/.test(nm) || !hay.includes(nm) || used.has(nm) || nm === s.protagonist.name) continue;
     x.q.holder = nm; x.q.src = B.items.some(i => !i.ds && `${i.title} ${i.snippet}`.includes(nm)) ? '博查' : 'DeepSeek检索'; used.add(nm); k++; }
   return k;
+}
+/** 人事树上、人物里的真人，照史料整理历任官职（带年份、月份），存进档案；随着时间推进程序照此调动 */
+const careerDue = s => s && s.org && !(s.carFail != null && s.turn - s.carFail < 2) && careerPick(s).length > 0;
+function careerPick(s) {
+  const R = realNameSet(s), F = fictionSet(s), L = [];
+  for (const n of arr(s.org && s.org.nodes)) for (const q of n.posts) { const h = q.holder; if (!h || h === s.protagonist.name || F.has(h) || q.src === '拟' || L.includes(h)) continue; const d = (s.dossiers || {})[h]; if (d && d.careerQ) continue; if (R.has(h) || /博查|史|名录|DeepSeek/.test(q.src || '')) L.push(h); }
+  return L.slice(0, 10);
+}
+async function careerFill(s) {
+  const L = careerPick(s); if (!L.length) return 0; const y = s.clock.y, pol = s.place.polity || '';
+  const B = await bochaDeep(s, L.flatMap(n => [`${n} 历任`, `${n} 生平 官职 升任 调任`]), 120);
+  const hay = B.items.map(i => `${i.title} ${i.snippet}`).join('\n');
+  s.dossiers = s.dossiers || {}; for (const n of L) s.dossiers[n] = Object.assign(s.dossiers[n] || {}, { careerQ: true });
+  if (!B.text) { s.carFail = s.turn; return 0; }
+  const { text } = await callClaude(`下面是搜到的资料。替一局历史游戏整理这几位${pol}官员的历任官职：每一条写年份（公元）、资料写了月份的写月份、官职（带衙门）；只照资料里写明的，资料里说的是同名的别人的不算；没写年份的不列。
+【人】${L.join('、')}
+${B.text}
+只输出一个 JSON 对象：{"people":[{"name":"","career":[{"y":null,"m":null,"post":"","source":"资料里哪句"}],"died":null}]}`, null, { maxTokens: 5000, temperature: 0, kind: '研读', detached: true, thinking: false });
+  const d = parseJSON(text); let k = 0;
+  for (const x of arr(d && d.people)) { const n = one(x && x.name, 10); if (!L.includes(n) || !hay.includes(n)) continue;
+    const car = arr(x.career).map(c => ({ y: num(c && c.y), m: num(c && c.m), post: one(c && c.post, 40), src: one(c && c.source, 40) })).filter(c => c.y != null && c.post && c.y > 0 && c.y < 2000).sort((a, b) => a.y - b.y || (a.m || 0) - (b.m || 0)).slice(0, 30);
+    const D = s.dossiers[n]; if (car.length) { D.career = car; D.real = true; k++; } const dd = num(x.died); if (dd != null && D.died == null && hay.includes(String(dd))) D.died = dd; }
+  return k;
+}
+/** 树上和名册里对得上这个官名的位子（照衙门名、官名打分） */
+function matchPost(s, postTxt) {
+  const t = String(postTxt || ''); let best = null, bs = 0;
+  for (const seg of t.split(/[→，,、；;]+/).filter(Boolean).slice(-2)) for (const n of arr(s.org && s.org.nodes)) for (const q of n.posts) {
+    if (!q.title || q.title.length < 2 || !seg.includes(q.title)) continue;
+    const stem = n.name.replace(/(衙门|衙署|府署|公署|署|司|院|部|寺|监|处|府|厅)$/, ''), sc = (seg.includes(n.name) ? 3 : 0) + (stem.length >= 2 && seg.includes(stem.slice(0, 2)) ? 2 : 0) + q.title.length / 10;
+    if (sc > bs) { bs = sc; best = [n, q]; } }
+  return bs >= 2 ? best : null;
+}
+/** 时间走到了：照档案里的履历（和内置史料的任职），真人该升该调的照史书调；玩家自己任命的位子不动（本局已改，记一笔） */
+function histTick(s) {
+  if (!s.org) return []; const ym = Math.floor(ymOf(s.clock)), out = [];
+  const P = []; for (const [n, d] of Object.entries(s.dossiers || {})) if (d && arr(d.career).length && !(d.died != null && d.died < s.clock.y)) P.push([n, d.career]);
+  for (const h of histFor(s.clock.y, s)) for (const f of arr(h.figures)) if (f && f.name && !P.some(x => x[0] === f.name) && arr(f.posts).length && !(f.died != null && f.died < s.clock.y)) P.push([f.name, arr(f.posts).map(ps => ({ y: ps[0], m: null, post: String(ps[2]).replace(/^.*→/, '') }))]);
+  s.carApplied = s.carApplied || {};
+  for (const [who, car] of P) {
+    const now = car.filter(c => c.y * 12 + (c.m || 1) <= ym).slice(-1)[0]; if (!now) continue;
+    const key = now.y + '|' + (now.m || 0) + '|' + now.post; if (s.carApplied[who] === key) continue;
+    const tgt = matchPost(s, now.post), cur = findPost(s, who);
+    if (tgt && tgt[1] === cur) { s.carApplied[who] = key; continue; }
+    if (cur && cur.byPlayer) { s.carApplied[who] = key; out.push(`照史书${who}这时该任${now.post}，本局他是你任命的，史事已改`); continue; }   // 你任命的人照你的来
+    if (!tgt && cur) { const n0 = postNodeOf(s, cur), stem = n0 ? n0.name.replace(/(衙门|衙署|府署|公署|署|司|院|部|寺|监|处|府|厅)$/, '').slice(0, 2) : ''; if (now.post.includes(cur.title) || (stem.length >= 2 && now.post.includes(stem))) { s.carApplied[who] = key; continue; } }   // 史料的说法和树上的官名对不上，但说的还是这个衙门（首席军机、军机大臣）：不动
+    if (!tgt && !cur) continue;   // 树上没这个人、也没这个位子：不管
+    s.carApplied[who] = key;
+    if (tgt) { const [n, q] = tgt; if (q.byPlayer && q.holder && q.holder !== who) { out.push(`照史书${who}这时该任${n.name}${q.title}，本局这个位子是你任命的${q.holder}，史事已改`); continue; }
+      const old = q.holder; if (cur) { cur.holder = ''; cur.src = ''; }
+      if ((q.quota || 1) > 1 && old && old !== who) { q.others = arr(q.others).filter(h => h !== who).concat([who]).slice(-6); out.push(`照史书：${who}任${n.name}${q.title}（${now.y}年${now.m ? now.m + '月' : ''}）`); continue; }   // 员额不止一个的（军机大臣、侍郎）：添进同僚，不挤掉原来的人
+      q.holder = who; q.src = '史书'; q.sinceYm = ym; const t = `照史书：${who}${cur ? '由' + (postNodeOf(s, cur) || {}).name + cur.title : ''}任${n.name}${q.title}${old && old !== who ? '（' + old + '去职）' : ''}（${now.y}年${now.m ? now.m + '月' : ''}）`; out.push(t); }
+    else if (cur) { const n0 = postNodeOf(s, cur); cur.holder = ''; cur.src = ''; out.push(`照史书：${who}离${n0 ? n0.name : ''}${cur.title}，改任${now.post}（${now.y}年）`); }
+  }
+  if (out.length) s.org.log = arr(s.org.log).concat(out.map(t => ({ turn: s.turn, when: timeText(s.clock), text: t }))).slice(-60);
+  return out;
+}
+/* ---------- 科举、察举照史书的日子自己举行：到了殿试的月份，照博查查这一科真实的进士名录，记进人选和天下（查不到真人的才补虚构的） ---------- */
+function examSched(y) {
+  if (y >= 1385 && y <= 1904) return y % 3 === 2 ? (y >= 1644 ? 4 : 3) : 0;   // 明清会试、殿试在丑辰未戌年，清四月、明三月殿试
+  if (y >= 1315 && y <= 1367) return (y - 1315) % 3 === 0 ? 3 : 0;
+  if (y >= 1067 && y <= 1279) return (y - 1067) % 3 === 0 ? 3 : 0;
+  if (y >= 622 && y <= 1066) return 2;   // 唐五代宋初每年春闱
+  if (y >= -134 && y <= 219) return 11;   // 两汉岁举孝廉，年终上计时
+  return 0;
+}
+const examDue = s => s && s.clock && s.turn >= 1 && examSched(s.clock.y) && s.clock.m >= examSched(s.clock.y) && !arr(s.examDone).includes(s.clock.y) && !(s.exFail != null && s.turn - s.exFail < 2);
+/** 查某一年这一科的真实进士（名字必须在搜到的材料里） */
+async function examReal(s, y) {
+  const yl = y === s.clock.y ? (s.clock.yearLabel || y + '年') : y + '年';
+  const B = await bochaDeep(s, [`${yl} 进士`, `${y}年 进士 名录`, `${yl} 殿试 状元 榜眼 探花`, `${yl}科 进士 籍贯`, `${yl} 会试 总裁`, `${yl} 会试 主考`, `${yl} 二甲 进士`, `${yl} 三甲 进士`, `${y}年 登进士第`, `${y}年 中进士`], 60).catch(e => { if (e && e.code === 'cancelled') throw e; return { items: [], text: '' }; });
+  const hay = arr(B.items).map(i => `${i.title} ${i.snippet}`).join('\n'); if (!B.text) return { list: [], zs: [] };
+  const { text } = await callClaude(`下面是搜到的资料。替一局历史游戏认出${yl}（公元${y}年）这一科殿试取中的进士（只认资料里写明是这一科的；别的科、同名的别人不算），以及这一科会试的总裁、主考（座师）。资料里没有就写空，不猜、不编。
+${B.text}
+只输出一个 JSON 对象：{"jinshi":[{"name":"","jia":"一甲/二甲/三甲","ming":"名次或状元榜眼探花","jiguan":"籍贯","source":"资料里哪句"}],"zuoshi":[""]}`, null, { maxTokens: 4000, temperature: 0, kind: '研读', detached: true, thinking: false });
+  const d = parseJSON(text);
+  return { list: arr(d && d.jinshi).map(x => ({ name: one(x && x.name, 8), jia: one(x && x.jia, 4), ming: one(x && x.ming, 6), jiguan: one(x && x.jiguan, 10), src: one(x && x.source, 50) })).filter(x => x.name && x.name.length >= 2 && !/某/.test(x.name) && hay.includes(x.name)), zs: arr(d && d.zuoshi).map(x => one(x, 8)).filter(n => n && n.length >= 2 && hay.includes(n)) };
+}
+async function examTick(s) {
+  const y = s.clock.y; s.examDone = arr(s.examDone).concat([y]).slice(-30);
+  if (y < 589 && !isRuler(s)) return 0;   // 察举、中正：举上来的人只有朝廷用得上，不是一方之主的不往人选里塞
+  if (y >= 589) { const r = await recruit(s, 'exam', { auto: true }); const L = r.map(n => talentOf(s, n)).filter(Boolean);
+    const msg = `${s.clock.yearLabel || y + '年'}殿试取中：${L.filter(t => t.real).map(t => t.name + (t.qual && t.qual.lv ? '（' + t.qual.lv + '）' : '')).join('、') || '（史料里查不到这一科的名录）'}${L.some(t => !t.real) ? '；另有同科' + L.filter(t => !t.real).map(t => t.name).join('、') + '（虚构）' : ''}`;
+    s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: '朝廷', what: msg }]); s.examNews = msg; return L.length; }
+  const r = await recruit(s, 'exam', { auto: true }); s.examNews = `本年郡国岁举：${r.join('、')}`; return r.length;
 }
 /** 人事树逐年核一遍（规矩和本地官员名册一样）：真人在任的，查有没有调走、升迁、丁忧、致仕、病故、别人接任——资料里没有这些记录就仍在任；
  *  年过七十照例致仕；离任了有查到的接任真人就换上，没有就起虚构的名字（标虚拟）等下回再查；名册里查定的真人并到树上换掉虚构的 */
@@ -3078,7 +3167,7 @@ async function judgePeople(s, names) {
   const { text } = await callClaude(`你是熟读正史、方志、笔记的史家，替一局历史游戏评定人物的各项（${PSTATS.join('、')}）。此刻：${timeText(s.clock)}，主角${s.protagonist.name}（${s.protagonist.role}）。
 ${STAT_SCALE}
 - 史书真人：照下面的资料和你确知的史书记载评（他打过什么仗、办过什么事、史家怎么评他），依据写具体史事；资料和史书都没提的那项，照他的出身、官职、年纪按常情推，依据前面写「推：」。
-- 虚构人物：照身份常情评（商人理财、交际高些，武艺多半平常），不往高处抬，依据都写「推：」。
+- 虚构人物：照身份常情评（商人理财、交际高些，武艺多半平常），不往高处抬，依据都写「推：」；人选里的虚构进士、孝廉，拿这一年真实的同科、同僚比着评——多数中平，个别中上，不会个个都是一代名臣。
 - 每个人另给一句总评（他是什么样的人、长处短处）。
 ${found}
 ${L.map(info).join('\n')}
@@ -5082,7 +5171,7 @@ function abil(s, who, k) {
 }
 /** 任上的人换了：被换下的记恨（连他那一派），被提拔的记恩；记进派系账，每月推演照此出手 */
 function onAppointed(s, n, p, old, who, how) {
-  const ym = Math.floor(ymOf(s.clock)), when = timeText(s.clock); p.sinceYm = ym; p.since = s.clock.y;
+  const ym = Math.floor(ymOf(s.clock)), when = timeText(s.clock); p.sinceYm = ym; p.since = s.clock.y; p.byPlayer = !!who && /任命|特旨|辟用|保举/.test(how || '');
   const t = talentOf(s, who); if (t) { t.used = true; s.people = s.people || {}; const v = s.people[who] || (s.people[who] = { role: n.name + p.title, seen: s.turn, tie: '属下', real: !!t.real });
     if (t.stats && !v.stats) { v.stats = t.stats; v.statSum = t.statSum; v.statReal = !!t.real; } if (t.faction && !v.faction) v.faction = t.faction; if (t.qual && !v.qual) v.qual = t.qual; }
   if (who && t && t.stats) p.attr = { faction: t.faction || '', zheng: (t.stats['理政'] || {}).v, jun: (t.stats['统兵'] || {}).v, cai: (t.stats['理财'] || {}).v, zhong: (t.stats['忠诚'] || {}).v, lian: (t.stats['操守'] || {}).v, basis: t.statSum || '', fake: !t.real };
@@ -5193,7 +5282,7 @@ function examYear(y) { if (y >= 1385) return y % 3 === 2; if (y >= 1315 && y <= 
 function recruitKinds(s, SC) {
   const y = s.clock.y, ruler = SC && SC.lv === 'decree', off = String((s.career || {}).office || '') + String(s.protagonist.role || ''), K = [];
   if (ruler) {
-    if (y >= 589) K.push(['exam', examYear(y) ? '开科取士（今年是大比之年）' : '下旨开恩科（不是大比之年，花三点国策点）']);
+    if (y >= 589) K.push(['exam', examYear(y) && !arr(s.examDone).includes(y) ? '照例开科取士（今年是大比之年）' : '下旨开恩科（花三点国策点；史书上下一科的人可能提前取中）']);
     else if (y >= 220) K.push(['exam', '令中正品评人物，定乡品']);
     else K.push(['exam', '令郡国举孝廉、州举茂才']);
     K.push(['call', y < 589 || !examYear(y) ? '征辟、招贤' : '张榜招贤（征辟布衣）']);
@@ -5206,7 +5295,8 @@ function recruitKinds(s, SC) {
 const PROVS_QING = ['直隶', '江苏', '安徽', '浙江', '江西', '福建', '湖北', '湖南', '河南', '山东', '山西', '陕西', '甘肃', '四川', '广东', '广西', '云南', '贵州'];
 /** 招人：开科（先照博查查这一科真实的进士名录，查到的用真人，不够的才补虚构的）、举孝廉、中正品第、招贤、延请幕友、招募吏役；
  *  每人都有出身资格、籍贯、派系渊源（座师、举主），本事由 DeepSeek 照史料（真人）或出身（虚构的，标「推」）评定；下一回才到 */
-async function recruit(s, kind) {
+async function recruit(s, kind, opt) {
+  opt = opt || {};
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', E = selEra(y), pol = s.place.polity || '', here = geoCenter(s), p = s.protagonist;
   const L = talentList(s), used = new Set([...Object.keys(s.people || {}), ...L.map(t => t.name), ...orgHolders(s), p.name]), out = [];
   const SUR = '王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾萧田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦方白邹孟熊秦邱江尹薛段雷侯龙史陶黎贺顾毛郝龚邵万钱严';
@@ -5215,22 +5305,17 @@ async function recruit(s, kind) {
   const qual = (k, lv, txt) => { const c = E.ch[k]; return c ? { ch: k, lv: lv || '', max: c[0], txt: txt || c[1] } : null; };
   const provs = arr(s.admin && s.admin.units).filter(u => u.lv === 1).map(u => u.n).slice(0, 20); const PV = provs.length ? provs : PROVS_QING;
   if (kind === 'exam' && y >= 589) {
-    if (!examYear(y)) { if ((s.polPts || 0) < 3) throw new Error('开恩科要三点国策点'); s.polPts -= 3; }
-    const real = examYear(y) && s.lastExamY !== y;   // 照史书这一年本来就有这一科：先查真实的进士名录
-    let zs = [];
-    if (real) {
-      const B = await bochaDeep(s, [`${yl} 进士`, `${y}年 进士 名录`, `${yl} 殿试 状元 榜眼 探花`, `${yl}科 进士 籍贯`, `${yl} 会试 总裁`, `${yl} 会试 主考`, `${yl} 二甲 进士`, `${yl} 三甲 进士`], 40).catch(e => { if (e && e.code === 'cancelled') throw e; return { items: [], text: '' }; });
-      const hay = arr(B.items).map(i => `${i.title} ${i.snippet}`).join('\n');
-      if (B.text) { try { const { text } = await callClaude(`下面是搜到的资料。替一局历史游戏认出${yl}（公元${y}年）这一科殿试取中的进士（只认资料里写明是这一科的；别的科、同名的别人不算），以及这一科会试的总裁、主考（座师）。资料里没有就写空，不猜、不编。
-${B.text}
-只输出一个 JSON 对象：{"jinshi":[{"name":"","jia":"一甲/二甲/三甲","ming":"名次或状元榜眼探花","jiguan":"籍贯","source":"资料里哪句"}],"zuoshi":[""]}`, null, { maxTokens: 3000, temperature: 0, kind: '研读', detached: true, thinking: false });
-        const d = parseJSON(text); zs = arr(d && d.zuoshi).map(x => one(x, 8)).filter(n => n && n.length >= 2 && hay.includes(n));
-        for (const x of arr(d && d.jinshi).slice(0, 8)) { const nm = one(x && x.name, 8); if (!nm || nm.length < 2 || taken.has(nm) || !hay.includes(nm) || /某/.test(nm)) continue; used.add(nm); taken.add(nm);
-          const r = { name: nm, real: true, kind, y, arrive: s.turn + 1, from: '科举', qual: qual('进士', one(x.jia, 4), `${yl}进士${one(x.jia, 4)}${x.ming ? '（' + one(x.ming, 6) + '）' : ''}`), jiguan: one(x.jiguan, 10), basis: one(x.source, 50), will: '肯', why: '新科进士，候吏部铨选', where: '京师', zuoshi: zs.join('、') }; L.push(r); out.push(r); } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
-      s.lastExamY = y;
-    }
-    for (let k = out.length; k < 6; k++) { const jia = k === 0 && !out.some(t => /一甲/.test(t.qual && t.qual.lv)) ? '二甲' : k < 3 ? '二甲' : '三甲'; fake(k, { from: real ? '科举' : '恩科', qual: qual('进士', jia, `${real ? yl : yl + '恩科'}进士${jia}`), jiguan: PV[(y + k * 7 + s.turn) % PV.length], situation: '新科进士，候铨', zuoshi: zs.join('、') }); }
-    if (zs.length) for (const r of out) { const f = facOf(s, zs[0]); if (f) r.faction = f; r.tieNote = '座师' + zs[0]; }
+    const regular = examYear(y) && !arr(s.examDone).includes(y) || opt.auto;   // 照史书这一年本来就有这一科（自己到了日子、或一方之主照例开科）
+    if (!regular) { if ((s.polPts || 0) < 3) throw new Error('今年的大比已经开过了（或不是大比之年），开恩科要三点国策点'); s.polPts -= 3; }
+    let R = { list: [], zs: [] }, early = false;
+    if (regular) R = await examReal(s, y);
+    else { let ny = y + 1; while (ny < y + 4 && !examSched(ny)) ny++; R = await examReal(s, ny); early = true; R.list = R.list.slice(0, 3); R.ny = ny; }   // 恩科：史书上下一科的人，有几个可能提前取中
+    for (const x of R.list.slice(0, 10)) { if (taken.has(x.name)) continue; used.add(x.name); taken.add(x.name);
+      const r = { name: x.name, real: true, kind, y, arrive: s.turn + (opt.auto ? 0 : 1), from: early ? '恩科（史书上是' + R.ny + '年进士，这一局提前取中）' : '科举（照史书）', qual: qual('进士', x.jia, `${early ? '恩科' : (s.clock.yearLabel || y + '年')}进士${x.jia}${x.ming ? '（' + x.ming + '）' : ''}`), jiguan: x.jiguan, basis: x.src, will: '肯', why: '新科进士，候吏部铨选', where: '京师', zuoshi: R.zs.join('、') }; L.push(r); out.push(r); }
+    if (regular) s.examDone = arr(s.examDone).concat(arr(s.examDone).includes(y) ? [] : [y]).slice(-30);
+    const nFake = early ? 4 : out.length >= 3 ? 2 : 6 - out.length;
+    for (let k = 0; k < nFake; k++) { const jia = early && k === 0 ? '二甲' : k < 2 ? '二甲' : '三甲'; fake(k, { from: early ? '恩科' : '科举（同科，虚构）', arrive: s.turn + (opt.auto ? 0 : 1), qual: qual('进士', jia, `${early ? '恩科' : (s.clock.yearLabel || y + '年')}进士${jia}`), jiguan: PV[(y + k * 7 + s.turn) % PV.length], situation: '新科进士，候铨', zuoshi: R.zs.join('、') }); }
+    if (R.zs.length) for (const r of out) { const f = facOf(s, R.zs[0]); if (f) r.faction = f; r.tieNote = '座师' + R.zs[0]; }
   } else if (kind === 'exam' && y >= 220) {
     for (let k = 0; k < 5; k++) { const lv = [2, 3, 3, 5, 6][k], hi = lv <= 2; fake(k, { from: '中正品第', qual: { ch: '乡品', lv, max: Math.min(9.5, lv + 4), txt: `中正定乡品${'一二三四五六七八九'[lv - 1]}品${hi ? '（上品，士族）' : '（寒门）'}` }, situation: hi ? '士族子弟' : '寒门' }); }
   } else if (kind === 'exam' || kind === 'xiaolian') {
@@ -7746,6 +7831,7 @@ function realAll(s) {
   return R;
 }
 /** 联网看这个名字是不是历史上的名人（任何朝代；现代人同名不算）——人物只问博查（维基只查天下大势） */
+const clashHit = (name, items) => arr(items).find(x => !x.ds && String(x.title).includes(name) && !/中华人民共和国|演员|歌手|运动员|足球|网络|电视剧|小说|游戏|动画|公司|教授|博士/.test(String(x.title + x.snippet).slice(0, 200)) && /朝|代|年号|进士|举人|官|帝|王|将|诗|字|号|生于|卒于|[（(]\d{2,4}年?[—–-]/.test(String(x.snippet).slice(0, 300)));
 async function clashNet(name) {
   if (!canSearch() || name.length < 2) return null;
   let B = null; try { B = await within(bochaDeep(null, [name, `${name} 历史人物`, `${name} 生平`], 12), 30000, null); } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
@@ -7778,11 +7864,15 @@ async function fictionClash(s) {
   // 虚构主角的家里人一定是虚构的：名字撞了名人也算重名（不能当成那位名人）
   s.clashOK = s.clashOK || {}; const R = realAll(s), famF = s.protagonist && !s.protagonist.real ? arr(s.household).map(m => m && m.name).filter(Boolean).concat([s.protagonist.name]) : [];
   const RN = realNameSet(s);   // 本局已认作真人的（名册里的真官员、档案里的真人、玩家委任的真人）不改名
-  const F = [...new Set([...[...fictionSet(s)].filter(n => !RN.has(n)), ...famF])].filter(n => !(s.protagonist && s.protagonist.userNamed && n === s.protagonist.name)).filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 40), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
-  let net = 0;
+  // 程序自己起的虚构名字（人事树上标虚拟的、人选里虚构的、名册里拟的）撞了史书真人，一律改名，不能因为名字像真人就当成真人留着
+  const FS = new Set(); for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.src === '拟' && p.holder) FS.add(p.holder); for (const t of arr(s.talent && s.talent.list)) if (t && !t.real) FS.add(t.name); for (const o of arr(s.offices)) if (o && o.src === '拟' && o.name) FS.add(o.name);
+  const F = [...new Set([...[...fictionSet(s)].filter(n => !RN.has(n) || FS.has(n)), ...famF])].filter(n => !(s.protagonist && s.protagonist.userNamed && n === s.protagonist.name)).filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 120), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
+  // 一批二十四个名字一起查（每个名字直接搜，看有没有同名的史书人物）
+  const NB = {}, toNet = F.filter(n => !R.has(n)).slice(0, 96);   // 一次最多查九十六个，没轮到的下回接着查
+  if (canSearch()) for (let k = 0; k < toNet.length; k += 24) { const P = toNet.slice(k, k + 24); try { const B = await within(bochaDeep(s, P, 300), 60000, null); if (!B) continue; for (const n of P) { const h = clashHit(n, arr(B.items).filter(i => i.q === n || String(i.title).includes(n))); NB[n] = h ? `${n}：${cut(h.snippet, 60)}（博查）` : ''; } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
   for (const n of F) {
     let why = R.has(n) ? `${n}是史书上的真人（内置史料）` : null;
-    let looked = false; if (!why && net < 3 && canSearch()) { net++; looked = true; why = await clashNet(n); }
+    let looked = n in NB; if (!why && looked) why = NB[n] || null;
     if (!why) { if (!looked && canSearch()) continue; s.clashOK[n] = 1; continue; }   // 这回没轮到联网查的，下回再查
     const m = arr(s.household).find(x => x.name === n), p = (s.people || {})[n] || {};
     const female = /女|妻|妾|母|姐|妹|婢|娘|氏|姑|嫂/.test(`${(m || {}).relation || ''}${p.role || ''}${p.gender || ''}${s.protagonist.name === n ? s.protagonist.gender : ''}`);
@@ -8263,7 +8353,7 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d), officeMonthly(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d), histTick(s), officeMonthly(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
       if (!s.yearSnap) s.yearSnap = yearSnap(s);
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
@@ -9189,6 +9279,8 @@ function bgJobs(s0, d, g) {
     { id: 'orgref', msg: '逐年核人事树上的人（有没有调走、病故、接任）', due: () => orgRefreshDue(s0), run: () => orgRefresh(s0).catch(e => { s0.orgRefFail = s0.turn; throw e; }), needs: ['org'] },
     { id: 'stats', msg: '请 DeepSeek 照史料评定这几回出场人物的各项', due: () => statsDue(s0), run: () => judgeDue(s0).catch(e => { s0.statFail = s0.turn; throw e; }) },
     { id: 'clash', msg: '查虚构人物有没有和史书真人重名', due: () => clashDue(s0), run: () => fictionClash(s0) },
+    { id: 'career', msg: '照史料查人事树上真人的历任官职', due: () => careerDue(s0), run: () => careerFill(s0).catch(e => { s0.carFail = s0.turn; throw e; }), needs: ['org'] },
+    { id: 'exam', msg: '照史书举行这一科、查真实的进士名录', due: () => examDue(s0), run: () => examTick(s0).catch(e => { s0.exFail = s0.turn; throw e; }) },
     { id: 'skills', msg: '照出身定属性和本事', due: () => sbDue(s0), run: () => buildSkills(s0).catch(e => { s0.sbFail = s0.turn; throw e; }), ex: true },
     { id: 'local', msg: '打听此地的行情、差事、能招的人', due: () => placeDue(s0), run: () => buildLocal(s0).catch(e => { s0.localFail = s0.turn; throw e; }), ex: true },
     { id: 'logic', msg: '通读账册，挑不合常理、前后矛盾的地方', due: () => logicDue(s0), run: () => logicAudit(s0).catch(e => { s0.logicFail = s0.turn; throw e; }), ex: true },

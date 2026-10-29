@@ -62,6 +62,7 @@ const { chromium } = require('playwright');
     if (fr.h !== '杨应琚' || fr.fake) bad('史料里有在任的真人，人事树上还是虚构的：' + JSON.stringify(fr)); }
   // 人选只能是开科、招贤来的人、身边的门客幕僚、已在官的人；凭空写个名字不行；开科取的下一回才到；真人照真实处境肯不肯来（王猛不会给别人当官）
   { const tl = await p.evaluate(async () => { const n = S.org.nodes.find(x => x.id === 'A2'); const r = {}; ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: '张三丰' }); r.free = ORGMSG;
+      S.examDone = []; S.talent = { y: S.clock.y, list: arr(S.talent && S.talent.list).filter(t => t.name !== '蔡以台') }; S.polPts = Math.max(S.polPts || 0, 6);
       const got = await recruit(S, 'exam'); ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: got[0] }); r.wait = ORGMSG; r.got = got.length; r.fake = got.filter(x => !talentOf(S, x).real).every(x => fictionSet(S).has(x)); r.real = got.filter(x => talentOf(S, x).real); r.noFake = !got.includes('假进士'); r.cai = (talentOf(S, '蔡以台') || {}).qual || null; r.allQual = got.every(x => talentOf(S, x).qual && talentOf(S, x).qual.max != null);
       S.talent.list.push({ name: '王猛', real: true, from: '查访', where: '长安', situation: '前秦丞相', will: '不肯' }); const w = await willCheck(S, '王猛', '户部尚书'); r.wm = w; return r; });
     if (!/不在人选里/.test(tl.free)) bad('凭空写个名字也能委任：' + tl.free);
@@ -79,6 +80,26 @@ const { chromium } = require('playwright');
     if (!/资格不够/.test(q.m1) || q.l1) bad('三甲进士直接当户部尚书没被拦下：' + JSON.stringify(q).slice(0, 300));
     if (!/特旨破格任命/.test(q.l2 || '') || q.pts !== 3) bad('一方之主再点一次没成特旨破格、或没多花两点：' + JSON.stringify(q).slice(0, 300));
     if (!q.liuOk) bad('照史料现任协办大学士的刘统勋调户部尚书被拦了：' + JSON.stringify(q.liu)); }
+  // 真人优先（CLAUDE.md「人事与职权」真人优先）：DeepSeek 报的名字一个都不先扔，全部拿博查核，核得上的用真人
+  { const v = await p.evaluate(() => { const q = S.org.nodes.find(n => n.name === '户部').posts.find(x => x.title === '侍郎'); return { h: q.holder, src: q.src }; });
+    if (v.h !== '钱维城' || v.src !== '博查') bad('DeepSeek 报的真人没拿博查核、当场换成了虚构的：' + JSON.stringify(v)); }
+  // 虚构的不许和史书人物同名：一批联网查，撞了就改名（以前一次只查三个）
+  { const v = await p.evaluate(async () => { const n = S.org.nodes.find(x => x.name === '户部'); n.posts.push({ title: '笔帖式', rank: '', quota: 1, holder: '王守仁', src: '拟' }); S.clashOK = {}; await fictionClash(S); const h = n.posts[n.posts.length - 1].holder; n.posts.pop(); return h; });
+    if (v === '王守仁') bad('虚构的官员和王守仁同名没改'); }
+  // 时间走到了照史书调人（CLAUDE.md「人事与职权」照史书调动）：履历里这个月升户部尚书，树上就到那个位子；你自己任命的位子不动
+  { const v = await p.evaluate(() => { const c = JSON.parse(JSON.stringify(S)), y = c.clock.y, m = c.clock.m; const n = c.org.nodes.find(x => x.name === '户部'), sh = n.posts.find(x => x.title === '尚书'), sl = n.posts.find(x => x.title === '侍郎');
+      sl.holder = '测官甲'; sl.quota = 1; sh.holder = '旧尚书乙'; sh.quota = 1; sh.byPlayer = false; c.dossiers = c.dossiers || {}; c.dossiers['测官甲'] = { real: true, careerQ: true, career: [{ y: y - 2, post: '户部侍郎' }, { y, m, post: '户部尚书' }] }; c.carApplied = {};
+      const out = histTick(c); const a = { sh: sh.holder, sl: sl.holder, out };
+      const c2 = JSON.parse(JSON.stringify(S)), n2 = c2.org.nodes.find(x => x.name === '户部'), sh2 = n2.posts.find(x => x.title === '尚书'), sl2 = n2.posts.find(x => x.title === '侍郎'); sl2.holder = '测官甲'; sh2.holder = '你任的人'; sh2.quota = 1; sh2.byPlayer = true; c2.dossiers = { 测官甲: { real: true, career: [{ y, m, post: '户部尚书' }] } }; c2.carApplied = {};
+      const o2 = histTick(c2); a.kept = sh2.holder; a.o2 = o2; return a; });
+    if (v.sh !== '测官甲' || v.sl === '测官甲' || !v.out.some(t => /照史书/.test(t))) bad('履历里到了日子，人事树没照史书调：' + JSON.stringify(v).slice(0, 300));
+    if (v.kept !== '你任的人' || !v.o2.some(t => /史事已改/.test(t))) bad('照史书调人把你任命的人挤掉了：' + JSON.stringify(v).slice(0, 300)); }
+  // 科举照史书的日子自己举行：乾隆二十二年四月殿试，到了就照真实名录记进人选；恩科花三点，下一科的真人可能提前取中
+  { const v = await p.evaluate(async () => { const c = JSON.parse(JSON.stringify(S)); c.clock.m = 4; c.examDone = []; c.talent = { y: c.clock.y, list: arr(c.talent && c.talent.list).filter(t => t.name !== '蔡以台') }; const due = examDue(c); await examTick(c);
+      const L = c.talent.list.filter(t => t.y === c.clock.y && /科举/.test(t.from || '')); const a = { due, real: L.filter(t => t.real).map(t => t.name), fake: L.filter(t => !t.real).length, nf: L.some(t => t.name === '假进士'), news: c.examNews, done: c.examDone.includes(c.clock.y) };
+      c.polPts = 5; await recruit(c, 'exam'); a.pts = c.polPts; a.en = c.talent.list.filter(t => /恩科/.test(t.from || '')).length; return a; });
+    if (!v.due || !v.real.includes('蔡以台') || v.nf || !v.done || !/殿试取中/.test(v.news || '')) bad('到了殿试的日子没照史书开科、没记上真实进士：' + JSON.stringify(v).slice(0, 300));
+    if (v.pts !== 2 || !v.en) bad('恩科没花三点、或没来人：' + JSON.stringify(v).slice(0, 300)); }
   // 本事真起作用（CLAUDE.md「人事与职权」本事与派系）：户部尚书理财高国库涨、操守差腐败涨；没评定本事的不算
   { const om = await p.evaluate(() => { const c = JSON.parse(JSON.stringify(S)); for (const n of c.org.nodes) for (const q of n.posts) q.attr = null; c.people = {};
       const n = c.org.nodes.find(x => x.name === '户部'), q = n.posts.find(x => x.title === '尚书'); q.holder = '钱能干'; q.sinceYm = 0;
