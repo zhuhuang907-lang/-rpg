@@ -30,10 +30,14 @@ const { chromium } = require('playwright');
   { const ow = await p.evaluate(() => { const k = S.powers; S.powers = [{ name: '两江督标', leader: '尹继善', seat: '江宁府', land: '苏州府' }]; const m = mapOwners(S); S.powers = k; return [...m.keys()]; });
     if (ow.length) bad('不占地盘的势力也画了地盘：' + ow.join()); }
   // 当成一方之主
+  await p.evaluate(async () => { await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); SEARCH_OFF = ''; SEARCH_DOWN = 0; });
   await p.evaluate(async () => { S.idm = 'emperor'; S.protagonist.role = '皇帝'; S.dossiers = { ...(S.dossiers || {}), 年羹尧: { real: true, born: 1679, died: 1726 }, 刘统勋: { real: true, born: 1698, died: 1773 }, 傅恒: { real: true, born: 1720, died: 1770 }, 来保: { real: true } }; while (ORGING) await new Promise(r => setTimeout(r, 200)); S.org = null; await buildOrg(S); });
   const o = await p.evaluate(() => ({ n: S.org && S.org.nodes.length, pols: arr(S.polBook).length, pts: S.polPts, fake: S.org && S.org.nodes.some(n => n.posts.some(x => /某/.test(x.holder))) }));
   if (!o.n || o.pols < 2) bad('人事树、国策书没整理出来：' + JSON.stringify(o));
   if (o.fake) bad('人事树里填了「某」这种编的名字');
+  // 人事树真人优先：要紧位子空着的，先大量博查、DeepSeek 只从材料里认人；材料里没有的名字（钱不存）不收（CLAUDE.md「人事与职权」人事树先填真人）
+  { const r = await p.evaluate(() => { const q = S.org.nodes.find(n => n.name === '户部').posts.find(x => x.title === '尚书'); return { h: q.holder, src: q.src, fake: S.org.nodes.some(n => n.posts.some(x => x.holder === '钱不存' || arr(x.others).includes('钱不存'))), mg: S.org.nodes.some(n => n.posts.some(x => x.manage !== undefined)) }; });
+    if (r.h !== '蒋溥' || r.src !== '博查') bad('户部尚书空着时没有用博查找真人：' + JSON.stringify(r)); if (r.fake) bad('材料里没有的名字被填进人事树'); }
   const deep = await p.evaluate(() => ({ max: Math.max(...S.org.nodes.map(n => n.depth || 0)), vac: S.org.nodes.filter(n => n.id !== 'root').some(n => n.posts.some(x => !x.holder)), fz: S.org.nodes.find(n => /保甲/.test(n.name)).posts[0], fs: fictionSet(S).size }));
   if (deep.max < 4) bad('人事树没有一路通到基层：最深 ' + deep.max + ' 层');
   if (deep.vac) bad('还有空着没起名的位子');
@@ -42,6 +46,11 @@ const { chromium } = require('playwright');
   await p.click('[data-tab="court"]'); await p.waitForTimeout(500);
   const t0 = await p.evaluate(() => document.querySelector('.side, #side, body').innerText);
   for (const w of ['政治', '经济', '民生', '军事', '人事树', '国策书', '户部', '尚书', '国策点', '线路：', '江都县署', '保正', '虚拟', '扬州营']) if (!t0.includes(w)) bad('朝局页上没有：' + w);
+  // 人事树不铺得老长：只摊开中枢最上两层、你这一路、你管得到的；每个官写「管」谁；离你远的收进「其余」（CLAUDE.md「人事与职权」人事树缩短）
+  { await p.evaluate(() => { S.org.nodes.push({ id: 'Z9', name: '远处某司', tier: '中枢', parent: S.org.nodes.find(n => n.name === '江南清吏司').id, depth: 3, posts: [{ title: '主事', holder: '王守成', src: '拟', quota: 1 }] }); render(); }); await p.waitForTimeout(600);
+    const v = await p.evaluate(() => { const t = document.querySelector('.side, #side, body').innerText; const f = [...document.querySelectorAll('details.ofold')].map(d => d.querySelector('summary').textContent + (d.open ? '|open' : '')); return { t: /职权/.test(t) && /管：/.test(t), f, has: !!document.body.innerHTML.includes('远处某司') }; });
+    if (!v.t || !v.f.some(x => /其余/.test(x) && !/open/.test(x))) bad('人事树没写职权管谁、离得远的没收起：' + JSON.stringify(v));
+    await p.evaluate(() => { S.org.nodes = S.org.nodes.filter(n => n.id !== 'Z9'); }); }
   // 国策书和「落到你身上的政令」分开存：重整人事树不能把政令冲掉，政令也不能混进国策书
   { const pc = await p.evaluate(async () => { S.policies = arr(S.policies).concat([{ name: '盐引加课', since: '本年', what: '每引加银', onYou: '多出', perMonth: -3 }]); while (ORGING) await new Promise(r => setTimeout(r, 200)); await buildOrg(S); return { dec: arr(S.policies).some(x => x.name === '盐引加课'), book: arr(S.polBook).length, mixed: arr(S.polBook).some(x => x.name === '盐引加课') }; });
     if (!pc.dec || !pc.book || pc.mixed) bad('国策书和政令又混在一起了：' + JSON.stringify(pc)); }
@@ -121,6 +130,15 @@ const { chromium } = require('playwright');
   await p.click('#bSend'); if (!(await idle())) bad('推行方略那一回卡住');
   { const t = await p.evaluate(() => { const g = S.chat[S.chat.length - 1]; return { card: !!(g.extra && g.extra.plan), live: arr(S.plans).filter(x => x.state === '推行').length, ui: [...document.querySelectorAll('.plan')].some(e => /清丈田亩/.test(e.innerText)) }; });
     if (!t.card || !t.live || !t.ui) bad('提了方略、这一回没有推演卡或没记下推行：' + JSON.stringify(t)); }
+  // 推演照局势、利害、当代道德、可行性；各人嘴上说的不一定是心里想的：心腹看得穿，城府深的看不透（看个人等级）；推行时阳奉阴违的人办的那一步更难成（CLAUDE.md「剧情」方略要有推演）
+  { const d = await p.evaluate(() => { const t = [...document.querySelectorAll('.plan')].map(e => e.innerText).join('\n'); return { t, see: seeLv(S) }; });
+    for (const w of ['局势', '时论', '可行', '户房书吏', '小的一定尽力', '看不透', '心里：真心支持', '照各人表态看，把握约']) if (!d.t.includes(w)) bad('推演卡上没有：' + w + ' ' + d.t.slice(0, 300));
+    if (/暗中拖延/.test(d.t)) bad('城府深的人心里话被直接摆给玩家看了'); }
+  { const f = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.gov = null; const R = Math.random; Math.random = () => 0.1; const mk = bad => ({ id: 'y', name: '测二', state: '推行', month: 0, feasible: 20, actors: bad ? [{ who: '户房书吏', act: '阳奉阴违' }] : [], steps: [{ m: 1, what: '清丈', who: '户房书吏' }], effects: [], cost: { months: 1 }, log: [], done: [], applied: [] }); s.plans = [mk(false)]; planMonthly(s, 1); const a = s.plans[0].done[0].ok; s.plans = [mk(true)]; planMonthly(s, 1); const b = s.plans[0].done[0].ok; Math.random = R; return { a, b, nf: planAdopt(s, { can: '能做主', feasible: null, cost: {} }) }; });
+    if (!f.a || f.b || f.nf) bad('阳奉阴违的人办的那一步没有更难、或没推出把握也推行了：' + JSON.stringify(f)); }
+  // 别家的兵数看身份：一方之主照数，小官只知约数，百姓只有风闻（CLAUDE.md「人物」可以有看不到的数据）
+  { const z = await p.evaluate(() => { const c = JSON.parse(JSON.stringify(S)); c.idm = ''; c.protagonist.role = '书生'; c.career = {}; c.territory = []; c.forces = []; return [fuzzN(S, 12345, '人'), fuzzN(c, 12345, '人')]; });
+    if (/约/.test(z[0]) || !/风闻约/.test(z[1])) bad('别家兵数没照身份分实数、风闻：' + JSON.stringify(z)); }
   { const m = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.gov = { scope: 'local', stats: { 民心: 50, 存银: 1000 } }; s.plans = [{ id: 'x', name: '测', state: '推行', month: 0, feasible: 100, steps: [{ m: 1, what: '派员', who: '' }], effects: [{ key: '民心', delta: 5, inMonths: 2, why: '均平' }], cost: { months: 2 }, log: [], done: [], applied: [] }]; const out = planMonthly(s, 2); return { mx: s.gov.stats['民心'], st: s.plans[0].state, out, blk: planBlock(s) }; });
     if (m.mx !== 55 || m.st !== '成' || !m.out.length || !/方略/.test(m.blk)) bad('方略按月结算没落到国势上：' + JSON.stringify(m).slice(0, 300)); }
   console.log('COURT', JSON.stringify({ o, r, f }));
