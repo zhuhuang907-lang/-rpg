@@ -78,6 +78,8 @@ function answer(p, last, json) {
     if (nm) return JSON.stringify({ ...base, name: nm, real: !fake && (wantReal || nm !== '汪景和'), role: '扬州盐商' });
     if (/知府/.test(head)) return JSON.stringify({ ...base, name: '假知府', real: true, role: '扬州知府' });
     return JSON.stringify({ ...base, name: '卢见曾', real: true, role: '两淮盐运使', age: 68 }); }
+  // 方略推演
+  if (p.includes('替一局历史游戏推演主角提出的方略')) { fs.appendFileSync('plan.log', 'x\n'); return JSON.stringify({ name: '清丈田亩', kind: '经济', can: '能做主', need: '', feasible: 60, support: [{ who: '刘统勋', why: '主张整顿赋役' }], oppose: [{ who: '扬州士绅', why: '隐田要被查出' }], cost: { money: 3000, grain: 0, months: 3, other: '得罪地方士绅' }, steps: [{ m: 1, what: '派员清丈', who: '户房', risk: '士绅阻挠' }, { m: 2, what: '造册', who: '书吏', risk: '' }], effects: [{ key: '民心', delta: 5, inMonths: 2, why: '赋役均平' }, { key: '国库', delta: 2000, inMonths: 3, why: '隐田入册' }], risks: ['士绅串联上告'], precedent: '明张居正万历九年清丈，田亩大增，然身后遭清算', verdict: '可行，须防士绅' }); }
   // 真人肯不肯来：王猛（已委身前秦苻坚）不肯，其余肯
   if (p.includes('照他这一年的真实遭遇和心态判断他肯不肯来')) return JSON.stringify(/史书真人王猛/.test(p) ? { ok: false, why: '王猛此时为前秦苻坚所倚重，不会改投' } : { ok: true, why: '闲居待用' });
   // 这个月手头的事
@@ -119,7 +121,10 @@ function answer(p, last, json) {
   if (p.includes('召见臣下商议')) { const names = [...p.matchAll(/^\d+\. (\S+?)，/gm)].map(x => x[1]); return JSON.stringify({ replies: names.map(n => ({ name: n, say: n + '奏：臣以为当先开仓赈济，再图根本。', plan: '开仓放赈，蠲免本年钱粮', hidden: '想借此邀名' })) }); }
   if (p.includes('评定人物的各项')) { fs.appendFileSync('judge.log', 'x\n'); const names = [...p.matchAll(/^· (\S+?)：(史书真人|虚构人物)/gm)].map(m => m[1]); return JSON.stringify({ people: names.map((n, i) => ({ name: n, stats: { 武艺: { v: 30 + i, why: '推：文官' }, 统兵: { v: 40, why: '推' }, 谋略: { v: 60, why: '据史：善谋' }, 理政: { v: 70, why: '据史：历任要职' }, 理财: { v: 55, why: '推' }, 文墨: { v: 65, why: '进士出身' }, 交际: { v: 50, why: '推' }, 忠诚: { v: 50, why: '推：初识' }, 操守: { v: 60, why: '推' } }, summary: n + '：老成练达，长于政务' })) }); }
   if (p.includes('精通历代兵制')) { const ask = [...p.matchAll(/^\d+\. (\S+?)：/gm)].map(x => x[1]); const L = ask.length ? ask : ['绿营步兵', '绿营马兵', '八旗马甲']; return JSON.stringify({ types: L.map((n, i) => ({ name: n, desc: '测试兵种', size: 500, atk: 40 + i * 10, def: 50, shock: 30 + i * 10, org: 50, mob: 40 + i * 5, pay: 1.5 + i, grain: 0.5, months: 3, basis: i === 0 ? '据内置制度库·兵制' : '', judge: '测试' })) }); }
-  if (p.includes('只照上面查到的资料和你确知的正史、方志明文记载')) { const y = +((p.match(/公元(\d+)年/) || [])[1] || 1757); return JSON.stringify({ ident: { zi: '景和', hao: '松溪', jiguan: '徽州歙县', chushen: '歙县汪氏盐商', gongming: '监生', jue: '', career: [{ y: 1740, post: '两淮总商' }], source: '《两淮盐法志》卷四十六' }, family: [{ relation: '子', name: '汪承裕', born: y - 16, died: null, source: '《两淮盐法志》汪氏条' }, { relation: '妻', name: '程婉贞', born: null, source: '推：常情' }, { relation: '母', name: '吴氏', born: null, source: '《歙县志》列女传：汪某妻吴氏' }, { relation: '祖父', name: '汪廷璋', born: y - 80, died: y - 20, source: '《歙县志》' }, { relation: '四子', name: '汪承禧', born: y + 2, died: null, mother: '吴氏', source: '《汪氏族谱》' }, { relation: '兄', name: '汪景明', born: y - 45, source: '百度百科' }, { relation: '次子', name: '汪假人', born: y - 10, source: '《歙县志》' }] }); }
+  if (p.includes('只照上面的资料和你确知的正史明文记载整理')) { const y = +((p.match(/公元(\d+)年/) || [])[1] || 1757);
+    if (p.includes('整理两样：一、他的身份')) return JSON.stringify({ ident: { zi: '景和', hao: '松溪', jiguan: '徽州歙县', chushen: '歙县汪氏盐商', gongming: '监生', jue: '', career: [{ y: 1740, post: '两淮总商' }], source: '《两淮盐法志》卷四十六' }, family: [{ relation: '母', name: '吴氏', born: null, source: '《歙县志》列女传：汪某妻吴氏' }, { relation: '祖父', name: '汪廷璋', born: y - 80, died: y - 20, source: '《歙县志》' }, { relation: '兄', name: '汪景明', born: y - 45, source: '百度百科' }, { relation: '弟', name: '汪假人', born: y - 30, source: '《歙县志》' }] });
+    if (p.includes('整理他的妻妾')) return JSON.stringify({ family: [{ relation: '子', name: '汪承裕', born: y - 16, died: null, source: '《两淮盐法志》汪氏条' }, { relation: '妻', name: '程婉贞', born: null, source: '推：常情' }, { relation: '四子', name: '汪承禧', born: y + 2, died: null, mother: '吴氏', source: '《汪氏族谱》' }] });
+    return JSON.stringify({ family: [] }); }
   if (p.includes('列出这一年在他身边、和他有往来的人')) return JSON.stringify({ people: [{ name: '江春', tie: '同僚', role: '两淮总商', where: '扬州', source: '《扬州画舫录》' }, { name: '程晋芳', tie: '幕僚', role: '幕客', where: '扬州', source: '《清史稿·程晋芳传》' }, { name: '编造部将', tie: '部将', role: '把总', where: '扬州', source: '《清史稿》' }] });
   if (p.includes('替一局历史游戏开一份「天下名录」')) return JSON.stringify({ groups: [{ name: '宗室王公', people: [{ name: '爱新觉罗·允禄', post: '庄亲王', since: 1723, note: '康熙帝第十六子', source: '《清史稿·诸王传》' }] }, { name: '中枢', people: [{ name: '傅恒', post: '保和殿大学士、领班军机大臣', since: 1749, source: '《清史稿·傅恒传》' }, { name: '某大臣', post: '尚书', source: '推算' }, { name: '编造大员', post: '户部尚书', source: '《清史稿》' }] }, { name: '地方大员', people: [{ name: '尹继善', post: '两江总督', since: 1753, source: '《清史稿·尹继善传》' }] }] });
   if (p.includes('这样的人在这个年代不可能没有')) { fs.appendFileSync('family.log', 'x\n'); return JSON.stringify({ add: [{ relation: '正室', name: '程氏婉贞', age: 25, note: '歙县程姓大族之女', basis: '推算：徽州大族多与同乡联姻' }, { relation: '妾', name: '柳氏素娥', age: 19, note: '扬州贫家女', basis: '推算：殷实人家多纳妾' }, { relation: '嫡子', name: '汪承某', age: 6, mother: '程氏婉贞', basis: '推算' }, { relation: '管家', name: '汪福', age: 50, basis: '推算：大户有管家' }], single: false }); }
@@ -139,6 +144,7 @@ function answer(p, last, json) {
   if (p.includes('照规则写正文')) { fs.appendFileSync('dir.log', JSON.stringify({ seed: /这一回的历史主线/.test(p), ban: /不许再写的题材/.test(p), redo: p.includes('上一稿的毛病') }) + '\n'); if (!p.includes('上一稿的毛病') && !p.includes('戏外：') && Math.random() < 0.6) return PAS[pi++ % PAS.length] + '\n程立德躬身请示：「此事如何是好，还请老爷示下。」账房又来请示，问怎么办才好，盘账盘到半夜。'; }
   return story(/戏外|多少|几天/.test(last) && chance(0.7));
 }
+var BOCHA_N = 0;
 http.createServer((req, res) => {
   let b = ''; req.on('data', c => b += c); req.on('end', async () => {
     if (process.env.SLOW && (req.url.startsWith('/w/api.php') || req.url.startsWith('/search'))) await new Promise(r => setTimeout(r, 30000));
@@ -179,6 +185,8 @@ http.createServer((req, res) => {
     // 试 Key：sk-bad 开头的当成无效 Key；博查：bk-bad 开头的无效（博查无效时 HTTP 照样 200，错在 code 里）
     if (/Bearer sk-bad/.test(req.headers.authorization || '') && !req.url.startsWith('/v1/web-search')) { res.writeHead(401, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"Authentication Fails"}}'); }
     // 博查：搜汪景和（测试用真人）给出他的家谱、身边人的资料（家谱、身边人只靠博查，不问维基）
+    // 博查偶尔抽风（每五次有一次 503）：程序要自己重试，不能就此报错、关掉搜索
+    if (req.url.startsWith('/v1/web-search') && !/Bearer bk-bad/.test(req.headers.authorization || '') && (BOCHA_N = (typeof BOCHA_N === 'number' ? BOCHA_N : 0) + 1) % 5 === 0) { res.writeHead(503, { 'content-type': 'application/json' }); return res.end('{"code":503,"message":"busy"}'); }
     if (req.url.startsWith('/v1/web-search') && !/Bearer bk-bad/.test(req.headers.authorization || '')) { { let q = ''; try { q = JSON.parse(b).query || ''; } catch (_) {} fs.appendFileSync('bocha.log', (req.headers.authorization || '') + ' ' + q + '\n');
       res.writeHead(200, { 'content-type': 'application/json' });
       { const nm = ['江春', '卢见曾', '高恒'].find(n => q.includes(n)); if (nm) return res.end(JSON.stringify({ code: 200, data: { webPages: { value: [{ name: nm + ' - 百度百科', url: 'https://baike.baidu.com/item/' + nm, summary: nm + '，清代乾隆年间人，生于康熙末年，官至两淮。' }] } } })); }

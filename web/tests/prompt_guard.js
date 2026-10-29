@@ -105,6 +105,7 @@ const checks = [
   ['开局：玩家说的地方身份照办、真人所在要有史料依据否则回籍贯', /sentencePlace/.test(src) && /whereBasis/.test(src) && /主线\|大事\|焦点\|热闹\|方便\|靠近\|剧情\|有戏/.test(src)],
   ['余额不足不算 Key 坏、存好的 Key 不让重填', /hrpg:dspoor/.test(src) && /HTTP 40\[13\]/.test(src) && /Key 已存好/.test(src)],
   ['平常日子不空：够得着的人和此地真有的机会给出线头', /但平常日子不空/.test(rules)],
+  ['年龄不瞎编：给模型看的 JSON 格式里不放示例岁数（模型会照抄三十、五十）；真人照生年算，推的写依据，推不出写 null；照史料记的岁数程序不改', !/"age":\s*(?:[1-9]\d|\d)\b/.test(src) && /bornWhy/.test(src) && /照史料生年算的岁数不动/.test(src) && /不要随手给三十、五十/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
