@@ -5,7 +5,8 @@ const { chromium } = require('playwright');
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message)); const bad = m => errs.push(m);
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(s => { localStorage.clear(); localStorage.setItem('hrpg:tscale', s); }, String(0.1 * Number(process.env.LAT || 1))); await p.reload(); await p.waitForTimeout(1500);
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart'); await p.waitForSelector('#said', { timeout: 300000 }); await p.waitForFunction(() => !BUSY, null, { timeout: 300000 });
-  await p.fill('#said', '去仪征看看盐栈'); await p.click('#bSend');
+  // 用要紧的一步（走全套：写稿、综合审稿、记账）；家常的一步走快路、没有单独的核对，由 light.js 测
+  await p.fill('#said', '去仪征盐栈查账，追问那二百引盐的去向，要掌柜当面对质'); await p.click('#bSend');
   let sawDraft = false, sawVerify = false, leak = false;
   for (let i = 0; i < 400; i++) {
     const st = await p.evaluate(() => ({ busy: BUSY, ph: PHASE, live: (document.querySelector('#draftLive') || {}).innerText || '' }));
