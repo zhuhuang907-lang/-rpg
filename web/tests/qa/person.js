@@ -32,7 +32,7 @@ const { chromium } = require('playwright');
   const d2 = await p.evaluate(() => S ? { name: S.protagonist.name, real: S.protagonist.real } : { err: ERRMSG }); if (d2.real !== true) bad('没选虚构却开出了虚构主角：' + JSON.stringify(d2));
   // 五、人物页「核查是否真人」
   await p.evaluate(() => { S.people['高恒'] = { role: '两淮盐政', favor: 0, seen: S.turn }; S.people['钱无有'] = { role: '盐商', favor: 0, seen: S.turn }; delete (S.dossiers || {})['高恒']; TAB = 'people'; SIDE_FOLD = false; ORGMSG = ''; render(); });
-  for (const n of ['高恒', '钱无有']) { const bt = await p.$(`[data-pchk="${n}"]`); if (!bt) { bad('人物页没有核查按钮：' + n); continue; } await bt.click(); await p.waitForFunction(n => /已核/.test([...document.querySelectorAll('.pc')].find(x => x.innerText.includes(n))?.innerText || ''), n, { timeout: 60000 }).catch(() => bad('核查没出结果：' + n)); }
+  for (const n of ['高恒', '钱无有']) { const bt = await p.$(`[data-pchk="${n}"]`); if (!bt) { bad('人物页没有核查按钮：' + n); continue; } await p.click(`[data-pchk="${n}"]`); /* 按选择器点：后台活重画页面时，先拿到的按钮会失效 */ await p.waitForFunction(n => /已核/.test([...document.querySelectorAll('.pc')].find(x => x.innerText.includes(n))?.innerText || ''), n, { timeout: 60000 }).catch(() => bad('核查没出结果：' + n)); }
   const e = await p.evaluate(() => ({ g: chkOf(S, '高恒'), q: chkOf(S, '钱无有'), fq: fictionSet(S).has('钱无有'), fg: fictionSet(S).has('高恒'), msg: ORGMSG }));
   if (!e.g || !e.g.real || e.fg) bad('高恒应是真人：' + JSON.stringify(e).slice(0, 300));
   if (!e.q || e.q.real || !e.fq) bad('钱无有应查无此人、标虚拟：' + JSON.stringify(e).slice(0, 300));

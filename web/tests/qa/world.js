@@ -47,6 +47,22 @@ const path = require('path');
     st = mk({ idm: 'official', protagonist: { name: '甲', role: '江都县知县' }, career: { office: '江都县知县' }, gov: { scope: 'local', keys: LOCAL_KEYS, stats: { 治安: 60 }, hist: [] } });
     localImpact(st, { where: '苏州府吴县', kind: '治安' }, '吴县盗案'); if (st.gov.stats.治安 !== 60) bad.push('别县出事落到了自己辖区');
     localImpact(st, { where: '江都县', kind: '治安' }, '江都盗案'); if (st.gov.stats.治安 !== 57) bad.push('本县出事没落到治安上');
+    // 别家之间交兵：两家兵数都在账上才照打仗规矩结算，折损落到两家；有一家兵数不详的不编
+    st = mk({ powers: [{ name: '白莲教众', leader: '王聪儿', troops: '20000', seat: '襄阳' }, { name: '襄阳清军', leader: '永保', troops: '8000', seat: '襄阳府' }, { name: '无名股匪', leader: '刘六', troops: '' }], people: {} });
+    applyNpcMoves(st, [{ name: '王聪儿', op: '出兵', with: '襄阳清军', did: '攻襄阳', cause: '聚众已多', open: true }, { name: '刘六', op: '出兵', with: '襄阳清军', did: '抢掠', cause: '缺粮', open: true }]);
+    { const A = st.powers[0], B = st.powers[1]; if (!(Number(A.troops) < 20000 && Number(B.troops) < 8000) || !arr(st.clashLog).length || !arr(st.world.events).some(e => /白莲教众攻襄阳清军/.test(e.text))) bad.push('别家交兵没照规矩结算或没进天下大事：' + JSON.stringify([A, B, st.clashLog]));
+      if (arr(st.clashLog).length !== 1) bad.push('兵数不详的一家也结算了'); }
+    // 钱粮：别家组织进公库、没组织的进家资；原本不详的要写怎么来的才立数；一个月最多动一半
+    st = mk({ people: { 韩掌柜: { role: '盐商', tie: '同行', seen: 7 }, 梁大: { role: '寨主', seen: 7 } }, orgs: [{ id: 'o5', name: '梁家寨', kind: '山寨', head: '梁大', members: [], count: 200, cash: 100 }] });
+    applyNpcMoves(st, [{ name: '韩掌柜', op: '经营', did: '贩盐到汉口', cause: '汉口盐价高', res: { cash: 800 } }, { name: '梁大', op: '经营', did: '劫了一支商队', cause: '劫商队', res: { cash: 5000 } }]);
+    if (st.people.韩掌柜.wealth !== 800 || !/推/.test(st.people.韩掌柜.wealthBasis) || st.orgs[0].cash !== 150) bad.push('同行家资、别家公库没照规矩记：' + JSON.stringify([st.people.韩掌柜, st.orgs[0].cash]));
+    applyNpcMoves(st, [{ name: '韩掌柜', op: '经营', did: '又贩了一趟', res: { cash: 300 } }]); if (st.people.韩掌柜.wealth !== 800) bad.push('没写来由的钱也记了');
+    // 时代不对的东西程序挑出来（玩家自己说起的不算）
+    st = mk({ clock: { y: 1813, m: 3, d: 1, yearLabel: '嘉庆十八年' } });
+    { const f1 = draftFaults(st, '派人去梁家寨', '他让人发了一封电报到梁家寨。', ''), f2 = draftFaults(st, '用电报通知梁家寨', '众人面面相觑，谁也没听说过什么电报。', '');
+      if (!f1.some(x => /电报/.test(x))) bad.push('嘉庆年间正文里出现电报，程序没挑出来'); if (f2.some(x => /电报/.test(x))) bad.push('玩家自己说的电报，正文写「没有」也被当成错'); }
+    // 版本号：三个版本同一串，存档记下是哪一版
+    if (!/Game \d+\.\d+\.\d+ · 身份 V2 · 材料 V2 · 审稿 V2 · 自家势力 V1 · 世界 V2/.test(versionLine()) || mk({}).gameVer !== VERSIONS.game) bad.push('版本号没写全或存档没记版本');
     // 检索词并成一批：几处同时要查的，凑在一起问
     const calls = []; const orig = callClaude; callClaude = async (prompt) => { calls.push((prompt.match(/^\d+\. /gm) || []).length); return { text: JSON.stringify({ results: [] }) }; };
     try { await Promise.all([dsLookup(['甲 一', '甲 二']), dsLookup(['乙 一', '乙 二', '乙 三']), dsLookup(['丙 一']), dsLookup(['甲 一'])]); } finally { callClaude = orig; }

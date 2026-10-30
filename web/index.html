@@ -1641,7 +1641,10 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261030052137';
+const BUILD = '20261030062052';
+/** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
+const VERSIONS = { game: '0.4.0', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', world: 'V2', save: '兼容（旧档读得进）' };
+const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 存档 ${VERSIONS.save}`;
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
 const DSM = () => MODE === 'local' || MODE === 'web';
@@ -2048,6 +2051,7 @@ function shrink(s) {
 }
 /** 第一版存档（按回合记的 log）转成对话 */
 function migrate(s) {
+  if (s && typeof s === 'object') s.gameVer = VERSIONS.game;   // 存档里记下是哪一版写的
   // 统一身份以后，旧存档里被「总兵、都督」字样误当成一方之主的：国势（国库、内帑那一套）收回，下一回照真身份重整
   try { if (s && s.gov && s.gov.scope && s.protagonist && s.gov.scope !== govScope(s)) { s.govOld = s.gov; s.gov = null; } } catch (_) { /* 旧档缺字段 */ }
   if (s && s.people) for (const v of Object.values(s.people)) if (v && !v.pid) v.pid = 'p' + (s.pidSeq = (num(s.pidSeq) || 0) + 1);   // 人物稳定编号：改名（renameEverywhere 把整条搬过去）编号不变
@@ -4527,7 +4531,6 @@ function rulingInput(s, said) {
 推的是玩家原样这一步：主角自己的身体、言语、决定百分之百归玩家——走、跑、打、骂、说、写、买、卖、送礼、动手、逃，都照办，不写「办不到」、不改写成别的做法、不替他打折扣；只有身体客观上做不到的（飞、一日千里、隔空取物）才写卡在哪、照样去做会怎样。这一步莽撞、犯忌，就照原样推出它的后果。
 原则：不说教、不替玩家改主意、不为了制造难度而设卡；含糊的地方照常理补全，不追问；命令要经人传达执行，远处的事有消息往返的时日。「办不到」只用在客观上做不到的事（人不在此地、物理上不可能、手里根本没有那个权或那笔钱）；别人不肯、制度不许、有风险，都不是「办不到」，而是「有代价」：照样能去做，写清代价和后果。
 
-【此刻】${timeText(s.clock)}，${s.place.full}（${s.place.polity || ''}）
 【主角】${p.name}，${p.gender ? p.gender + '，' : ''}${p.age != null ? p.age + '岁，' : ''}${p.role}${c.office ? '；官职：' + c.office + (c.rank ? '（' + c.rank + '）' : '') + (c.powers ? '，职权：' + c.powers : '') : ''}${Object.keys(s.status || {}).length ? '；名位：' + Object.entries(s.status).map(([k, v]) => k + v).join('，') : ''}
 ${cardBlock(s)}
 【钱粮】现钱 ${mo.cash == null ? '未定' : fmtN(mo.cash, u)}；产业：${arr((s.estate || {}).assets).map(a => a.name + (a.qty ? a.qty : '')).join('、') || '无'}；每月净得 ${fmtN(arr((s.estate || {}).income).reduce((a, x) => a + (N0(x.amount) || 0), 0) - arr((s.estate || {}).expense).reduce((a, x) => a + (N0(x.amount) || 0), 0), u)}
@@ -6568,7 +6571,7 @@ function officialsBlock(s) {
   return `【本地官员名册（此刻在任；写到这些职位上的人一律用这些名字，不改名、不另起一个、不写「某」；名册里没有的职位，照常理起一个合乎时代的全名）】\n` + L.map(o => `${o.post}（${o.place}）：${o.name}${o.rank ? '，本官' + o.rank : ''}${o.superior ? '，上司' + o.superior : ''}${o.since ? '，' + o.since + '到任' : ''}${o.until ? '，' + o.until + '离任' : ''}${o.src === '推断' ? '［据任期推断' + (o.basis ? '：' + o.basis : '') + '］' : o.src === '拟' ? '［史料无考，拟］' : ''}${o.note ? '；' + o.note : ''}`).join('\n');
 }
 /** 要不要（重）查：此地没有名册、名册里有人任期已满、或隔了一年没核过 */
-const officialsDue = s => s && s.clock && !(s.offFail != null && s.turn - s.offFail < 4) && (!officialsHere(s).length || officialsHere(s).some(o => o.src === '拟' && s.turn - (o.at || 0) <= 1) || s.offAt !== geoCenter(s) + '|' + s.clock.y || arr(s.offices).some(o => ofHere(s, o) && ofEnd(o) != null && ofEnd(o) < ymOf(s.clock) && !s.offices.some(e => e !== o && e.post === o.post && geoStem(e.place) === geoStem(o.place) && ofNow(s, e))));   // 有人任满、还没定接任的
+const officialsDue = s => s && s.clock && !(s.offFail != null && s.turn - s.offFail < 4) && (!officialsHere(s).length || officialsHere(s).some(o => o.src === '拟' && s.turn - (o.at || 0) === 1 && !(num(s.offRanAt) > (o.at || 0))) || s.offAt !== geoCenter(s) + '|' + s.clock.y || arr(s.offices).some(o => ofHere(s, o) && ofEnd(o) != null && ofEnd(o) < ymOf(s.clock) && !s.offices.some(e => e !== o && e.post === o.post && geoStem(e.place) === geoStem(o.place) && ofNow(s, e))));   // 有人任满、还没定接任的
 /** 把新定的人并进名册：同一地方同一职位任期重叠的，名次高的（史料>推断>拟）且旧的还没在正文里出过场才替换；一个人不同时在两处任职 */
 function mergeOffices(s, list, src0) {
   s.offices = arr(s.offices);
@@ -6625,6 +6628,7 @@ ${R.length ? '【联网查到的资料】\n' + R.map(x => `· 查「${x.q}」：
   return changed;
 }
 async function ensureOfficials0(s) {
+  s.offRanAt = s.turn;   // 查完留下的「拟」只在下一回再找一次真人，不在同一回里反复重查
   try { await verifyTenures(s); } catch (e) { if (e && e.code === 'cancelled') throw e; }
   const pl = String(geoCenter(s) || ''), y = s.clock.y, yl = s.clock.yearLabel || (y + '年'), pol = s.place.polity || '';
   const fu = (pl.match(/[^省道路\s]{2,4}(府|州|郡)/) || [''])[0], xian = (pl.match(/[^府州郡\s]{2,4}(县|縣)/) || [''])[0], top = fu || pl;
@@ -6935,7 +6939,15 @@ function applyNpcMoves(s, list) {
     if (dT && cause) { const pw = arr(s.powers).find(p => p && p.leader === name), og = orgsLive(s).find(o => o.head === name && !orgMine(s, o)), fc = arr(s.forces).find(f => f && f.leader === name && !myForce(s, f));
       const tgt = pw ? ['势力', pw, 'troops'] : og ? ['组织', og, 'count'] : fc ? ['兵马', fc, 'troops'] : null;
       if (tgt) { const cur = N0(tgt[1][tgt[2]]); if (cur != null) { const cap = Math.max(50, Math.round(cur * (dT > 0 ? 0.2 : 0.5))), d1 = Math.max(-cap, Math.min(cap, Math.round(dT))), nv = Math.max(0, cur + d1); tgt[1][tgt[2]] = String(nv); done.push(`${tgt[0]}兵 ${cur} → ${nv}${Math.abs(dT) > cap ? '（报的' + dT + '超出一个月够得着的，照上限）' : ''}`); } else done.push('兵数原本不详，增减不记'); } }
-    if (op === '出兵' && m0.with) { const pw = arr(s.powers).find(p => p && p.leader === name); if (pw) { pw.note = one(`与${m0.with}交兵（${when}）`, 60); done.push('交兵：伤亡等下回照战况推，不先编'); } }
+    // 钱粮：他领着的别家组织进公库；没有组织的记在本人家资上。原有数一个月最多动一半；原本不详的，要写明怎么来的才立个数（标「推」）
+    for (const [rk, lab] of [['cash', '钱'], ['grain', '粮']]) { const dv = num(m0.res && m0.res[rk]); if (!dv || !cause) continue;
+      const og = orgsLive(s).find(o => o.head === name && !orgMine(s, o)), tgt = og ? og : rk === 'cash' && v ? v : null, key = og ? rk : 'wealth'; if (!tgt) continue;
+      const cur = N0(tgt[key]);
+      if (cur == null) { if (dv > 0) { tgt[key] = dv; tgt[key + 'Basis'] = '推：' + cause; done.push(`${og ? og.name + '公库' : '家资'}${lab}立为${dv}（推：${cause}）`); } continue; }
+      const cap = Math.max(1, Math.abs(cur) * 0.5), d1 = Math.max(-cap, Math.min(cap, dv)); tgt[key] = Math.max(0, Math.round(cur + d1)); done.push(`${og ? og.name + '公库' : '家资'}${lab} ${cur} → ${tgt[key]}${Math.abs(dv) > cap ? '（超出一个月的上限，照上限）' : ''}`); }
+    if (op === '出兵' && m0.with) { const pw = arr(s.powers).find(p => p && p.leader === name), w = String(m0.with), tg = arr(s.powers).find(p => p && p !== pw && (p.name === w || p.leader === w || (p.name && w.includes(p.name))));
+      if (pw && tg) { const r = powerClash(s, pw, tg, cause); done.push(r.text); if (r.settled) arr(s.world && s.world.events).push({ y: s.clock.y, m: s.clock.m, text: one(r.text, 100), where: one(tg.seat || '', 20), scope: '地方', key: 'c' + s.turn + ':' + pw.name, changed: true, outside: true }); }
+      else if (pw) { pw.note = one(`与${m0.with}交兵（${when}）`, 60); done.push('对手不在账上，胜负伤亡没有结算'); } }
     s.npcLog = arr(s.npcLog).concat([{ turn: s.turn, ym, when, name, op, did, cause, open: m0.open === true, done }]).slice(-80);
     if (m0.open === true || /迁|升迁|罢官|致仕|病故|出兵/.test(op)) s.chronicle.push({ turn: s.turn, when, who: name, what: did });
     else s.gmNotes = arr(s.gmNotes).concat([{ turn: s.turn, text: `暗中：${name}${did}${cause ? '（' + cause + '）' : ''}` }]).slice(-40);   // 暗地里的事主角看不到，写正文的知道，到了时候才露
@@ -6985,7 +6997,7 @@ ${arr(s.history).map(h => `· ${h.event} → ${h.now}（因${h.cause}）`).join(
 ${shifts || '无'}
 【已有的连锁变化】
 ${arr(w.ripples).slice(-10).map(r => `· ${r.cause} → ${r.effect}`).join('\n') || '无'}
-【身边的人（这次要推的要紧人物；各人原有的打算照旧，变了才写新的）】${npcPick(s, 12).map(([k, v]) => `${k}（${v.role || ''}${v.where ? '，在' + v.where : ''}${v.age != null ? '，' + v.age + '岁' : ''}，对主角${v.attitude || (v.favor != null ? '好感' + v.favor : '?')}${v.goal ? '，盘算' + v.goal : ''}${v.plan ? '，打算' + v.plan : ''}${v.ties && Object.keys(v.ties).length ? '，和' + Object.entries(v.ties).slice(0, 3).map(([a, b]) => a + b).join('、') : ''}${arr(v.traits).length ? '，' + v.traits.join('、') : ''}）`).join('；') || '无'}${orgsLive(s).filter(o => !orgMine(s, o)).length ? '\n【地方上别家的组织】' + orgsLive(s).filter(o => !orgMine(s, o)).slice(0, 6).map(o => `${o.name}（${o.kind}，头领${o.head || '?'}${N0(o.count) ? '，' + o.count + '人' : ''}${o.seat ? '，在' + o.seat : ''}）`).join('；') : ''}
+【身边的人（这次要推的要紧人物；各人原有的打算照旧，变了才写新的）】${npcPick(s, 12).map(([k, v]) => `${k}（${v.role || ''}${v.where ? '，在' + v.where : ''}${v.age != null ? '，' + v.age + '岁' : ''}，对主角${v.attitude || (v.favor != null ? '好感' + v.favor : '?')}${v.goal ? '，盘算' + v.goal : ''}${v.plan ? '，打算' + v.plan : ''}${v.ties && Object.keys(v.ties).length ? '，和' + Object.entries(v.ties).slice(0, 3).map(([a, b]) => a + b).join('、') : ''}${arr(v.traits).length ? '，' + v.traits.join('、') : ''}${N0(v.wealth) != null ? '，家资约' + v.wealth : ''}）`).join('；') || '无'}${orgsLive(s).filter(o => !orgMine(s, o)).length ? '\n【地方上别家的组织】' + orgsLive(s).filter(o => !orgMine(s, o)).slice(0, 6).map(o => `${o.name}（${o.kind}，头领${o.head || '?'}${N0(o.count) ? '，' + o.count + '人' : ''}${o.seat ? '，在' + o.seat : ''}${N0(o.cash) != null ? '，公库钱' + o.cash : ''}${N0(o.grain) != null ? '，粮' + o.grain : ''}）`).join('；') : ''}
 【各方势力】${arr(s.powers).map(x => `${x.name}（${x.leader || ''}，据${x.seat || ''}，兵${x.troops || '？'}，${x.note || ''}）`).join('；') || '无'}
 ${arr(s.territory).length ? '【主角的地盘】' + s.territory.map(x => `${x.place}（户${x.pop || '？'}，兵${x.troops || '？'}）`).join('；') + '\n' : ''}${arr(s.forces).length ? '【主角的兵马】' + s.forces.map(x => `${x.name}（${x.troops || '？'}人，在${x.at || '？'}）`).join('；') + '\n' : ''}【要紧人物（上次记的）】${arr(s.figures).map(f => `${f.name}（${f.post || ''}${f.alive === false ? '，已故' : ''}）`).join('；') || '无'}
 ${researchBlock(s)}
@@ -6997,13 +7009,13 @@ ${arr(s.summaries).slice(-8).map(x => `第${x.turn}回合（${x.when}）：${x.t
 - upcoming：${hasHist(s) ? '只列本局与史书不同的：带 key 的史事在本局改了样子、时间、结局，就写 key 与改后的样子，status「已变」；在本局不会发生了，status「取消」；因本局的变化新冒出来的事，不写 key，status「新出」。why 写清因果链（因为什么 → 所以）。没有动到的史事不要列——它们照史书发生。' : '从此刻起之后约五年里将要发生的大事，最多十六条（史书确有的才列，拿不准的不列，不凑数），按时间先后。照史书的 status 写「照史」，why 写一句史书依据；因本局变化而改了样子、时间、结局的写「已变」，新冒出来的写「新出」，why 写清因果链（因为什么 → 所以）。'}
 - figures：${hasHist(s) ? '内置史料里的真人，只列在本局与史料不同的（提前死了、没死、官职变了），以及史料之外但与主角相关的人物；' : '与主角和此时局面最相关的真实人物（最多十六个；只列史书上确有其人、此时确实在世的，官职拿不准的写「待考」）：'}此时的官职或身份、年龄、所在、对朝局或对主角的态度、生死（alive）；按史实，被本局改变的照本局。
 - ripples：这次推演新看出来的、由主角的作为引起的连锁变化（cause 是主角的哪件事或本局的哪个变化，effect 是它波及了什么，when 是什么时候显现）；没有就给 []。
-- npcMoves：主角身边与相关的要紧人物（【身边的人】里的、各方势力的头领、别家组织的头领、真人里与主角有关的）在这段时间里不靠主角、照自己的身份、所在、手里的资源、关系和利害做了什么（有就写，没有就空，不必凑人数——多数人这段日子只是照常过日子；他们做的事不会自己找到主角身上；只写他们够得着、合乎身份权限、交通和时日的事；他们只知道自己能知道的；不凭空得兵马、钱财、官职、地盘）。op 只用：迁（换了住处、赴任，写 where）、结交、结怨、投靠（写 with）、升迁、失势、罢官、致仕（写 role 新身份）、病故（写死因，年老、疫病、战殁、刑戮才写）、经营、求学、谋职、招兵、出兵（写 with 打谁）、举荐、弹劾（写 with）、其他；res 是他手里兵马或钱粮的增减（照他够得着的来源写 troops、cash，写在 cause 里怎么来的；没有就不写）；open：这事外人看得见（赴任、病故、出兵、罢官这类）写 true，暗地里的（结交、盘算、私下投靠）写 false。
+- npcMoves：主角身边与相关的要紧人物（【身边的人】里的、各方势力的头领、别家组织的头领、真人里与主角有关的）在这段时间里不靠主角、照自己的身份、所在、手里的资源、关系和利害做了什么（有就写，没有就空，不必凑人数——多数人这段日子只是照常过日子；他们做的事不会自己找到主角身上；只写他们够得着、合乎身份权限、交通和时日的事；他们只知道自己能知道的；不凭空得兵马、钱财、官职、地盘）。op 只用：迁（换了住处、赴任，写 where）、结交、结怨、投靠（写 with）、升迁、失势、罢官、致仕（写 role 新身份）、病故（写死因，年老、疫病、战殁、刑戮才写）、经营、求学、谋职、招兵、出兵（写 with 打谁）、举荐、弹劾（写 with）、其他；res 是他手里兵马或钱粮的增减（照他够得着的来源和当时的行情写 troops、cash、grain，cash 用本局的钱的单位；他领着组织的记进组织公库，没有的记在他家资上；写在 cause 里怎么来的；没有就不写）；open：这事外人看得见（赴任、病故、出兵、罢官这类）写 true，暗地里的（结交、盘算、私下投靠）写 false。
 - factions：朝中与地方的派系、利益集团（最多八个，照真实情形、史书有记载的写，拿不准的不列；议题不同可以重新组合，不必非忠即奸），各自的头面人物、成员、诉求、对主角的态度、实力与近来的动作。
 - upcoming 里每条可加 needs：它要发生需要的前提（谁在位、谁活着、哪里缺粮、谁掌兵……）；前提已经没了的事要标「取消」或「已变」。
 - powers：各方势力此刻的样子（最多八个，整组给出，照史书），没有变化可以省略。
 - outside：从上次推演到现在，主角不在场的地方照史书与因果发生的具体的事（零到四条：只写史书确有的、或主角的作为顺着因果引出的；史书没记、本局又没有因的不编，没有就 []）：谁、在哪（写当时的州县或京城名）、做了什么、kind（治安/灾害/商事/冲突/人事/其他）、cause（因为什么）；年月写在这段日子里，不写将来的事；与 upcoming 里史书原有的条目不重复。
 只输出一个 JSON 对象，不加代码块：
-{"overview":"","upcoming":[{"key":"","y":0,"m":0,"text":"","status":"照史/已变/取消/新出","why":"","needs":""}],"figures":[{"name":"","post":"","age":null,"where":"","stance":"","alive":true,"note":""}],"ripples":[{"cause":"","effect":"","when":""}],"outside":[{"y":0,"m":0,"where":"","text":"","kind":"","cause":""}],"npcMoves":[{"name":"","op":"","did":"这段时间里他照自己的盘算做了什么","why":"","cause":"","where":"","with":"","role":"","res":{"troops":null,"cash":null},"open":false,"plan":"他接下来的打算（没变就不写）"}],"factions":[{"name":"派系或利益集团","leader":"","members":"要紧成员","aims":"他们要什么","stance":"对主角","strength":"强/中/弱","note":"近来的动作"}],"powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}]}`;
+{"overview":"","upcoming":[{"key":"","y":0,"m":0,"text":"","status":"照史/已变/取消/新出","why":"","needs":""}],"figures":[{"name":"","post":"","age":null,"where":"","stance":"","alive":true,"note":""}],"ripples":[{"cause":"","effect":"","when":""}],"outside":[{"y":0,"m":0,"where":"","text":"","kind":"","cause":""}],"npcMoves":[{"name":"","op":"","did":"这段时间里他照自己的盘算做了什么","why":"","cause":"","where":"","with":"","role":"","res":{"troops":null,"cash":null,"grain":null},"open":false,"plan":"他接下来的打算（没变就不写）"}],"factions":[{"name":"派系或利益集团","leader":"","members":"要紧成员","aims":"他们要什么","stance":"对主角","strength":"强/中/弱","note":"近来的动作"}],"powers":[{"name":"","leader":"","seat":"","land":"","troops":"","stance":"对主角的态度","note":""}]}`;
 }
 /** 推演一次：成功就替换将来的史线、人物、大势，并把有变化的列出来 */
 /* ========== 玩家对历史的影响：每回记下主角的作为碰到了哪件大事的哪个条件、分量多重；程序按主角的身份折算、累计，到了门槛才让天下推演改写那件事 ========== */
@@ -7549,6 +7561,28 @@ const unitsBlock = s => `【本朝军制编制（兵马数目照此，不凭空�
 
 /* ========== 打仗：胜负和伤亡由程序按兵力、精粗、粮草、地形、奇袭结算，正文照结果写，账上的兵马照结算改 ========== */
 function seeded(n) { let x = Math.sin(n * 9301 + 49297) * 233280; return x - Math.floor(x); }
+/** 一仗的胜负与双方折损比例：照双方战力比（已算兵力、精粗、粮草、地形、奇袭）加一点天时运气；主角的仗和别家之间的仗都照这个算 */
+function clashCore(pu, pt, roll) {
+  const r = pu / pt, pWin = r * r / (1 + r * r), score = pWin + (roll - 0.5) * 0.35;   // 天时运气：同样的兵力也不一定同样的结果
+  const outcome = score > 0.78 ? '大胜' : score > 0.55 ? '小胜' : score > 0.45 ? '相持' : score > 0.22 ? '小败' : '大败';
+  return { pWin, outcome, lossUs: { 大胜: 0.05, 小胜: 0.11, 相持: 0.15, 小败: 0.24, 大败: 0.45 }[outcome] * (0.8 + roll * 0.4), lossThem: { 大胜: 0.45, 小胜: 0.22, 相持: 0.14, 小败: 0.09, 大败: 0.05 }[outcome] * (0.8 + (1 - roll) * 0.4) };
+}
+/** 别家之间交兵：两边兵数都在账上才结算（不知道的不编），攻方打对方的地面、守方占地利；折损落到两家的兵数上，攻方大胜记得了对方据地，写进天下大事和军报 */
+function powerClash(s, A, B, why) {
+  const a = N0(A.troops), b = N0(B.troops), when = timeText(s.clock);
+  if (!a || !b) return { text: `${A.name}与${B.name}交兵（兵数不详，胜负伤亡没有结算）`, settled: false };
+  const Q = q => /精/.test(q || '') ? 1.3 : /弱|疲|新|乌合/.test(q || '') ? 0.7 : 1;
+  const pu = Math.pow(a, 0.85) * Q(A.quality), pt = Math.pow(b, 0.85) * Q(B.quality) * 1.5;
+  const R = clashCore(pu, pt, seeded((s.turn || 0) * 17 + a % 991 + b % 997 + String(A.name).length * 13));
+  const dA = Math.round(a * R.lossUs), dB = Math.round(b * R.lossThem);
+  A.troops = String(a - dA); B.troops = String(b - dB);
+  const took = R.outcome === '大胜' && B.seat ? one(B.seat, 20) : '';
+  A.note = one(`${when}攻${B.name}${R.outcome}${took ? '，取' + took : ''}`, 60); B.note = one(`${when}遭${A.name}攻，${({ 大胜: '大败', 小胜: '小败', 相持: '相持', 小败: '小胜', 大败: '大胜' })[R.outcome]}`, 60);
+  if (took) { A.land = one([A.land, took].filter(Boolean).join('、'), 60); B.land = one(String(B.land || '').split(/[、，,]/).filter(x => x && !samePlace(x, took)).join('、'), 60); }
+  const text = `${A.name}攻${B.name}：${R.outcome}（照两家兵数结算，${A.name}折损${dA}、${B.name}折损${dB}${took ? '，' + A.name + '取' + took : ''}）`;
+  s.clashLog = arr(s.clashLog).concat([{ turn: s.turn, when, a: A.name, b: B.name, outcome: R.outcome, dA, dB, took, why: one(why, 40) }]).slice(-30);
+  return { text, settled: true };
+}
 function resolveBattle(s, b) {
   if (!b || !N0(b.enemyTroops)) return null;
   // 推演没点名自家兵马、却给了我方人数（守城、随军、被卷进来）：这一仗不动主角名下的兵；都没给，才算主角全部兵马上阵
@@ -7568,11 +7602,7 @@ function resolveBattle(s, b) {
   let pu = Math.pow(engU, 0.85) * ourQ * supplyUs, pt = Math.pow(engT, 0.85) * Q(b.enemyQuality) * supplyThem;
   if (b.attacker === '我') pt *= defBonus; else pu *= defBonus;
   if (b.surprise) { if (b.attacker === '我') pu *= 1.4; else pt *= 1.4; }
-  const r = pu / pt, roll = seeded((s.turn || 0) * 31 + ours % 997 + N0(b.enemyTroops) % 991);
-  const pWin = r * r / (1 + r * r), luck = roll - 0.5;
-  const score = pWin + luck * 0.35;   // 天时运气：同样的兵力也不一定同样的结果
-  const outcome = score > 0.78 ? '大胜' : score > 0.55 ? '小胜' : score > 0.45 ? '相持' : score > 0.22 ? '小败' : '大败';
-  const lossUs = { 大胜: 0.05, 小胜: 0.11, 相持: 0.15, 小败: 0.24, 大败: 0.45 }[outcome] * (0.8 + roll * 0.4), lossThem = { 大胜: 0.45, 小胜: 0.22, 相持: 0.14, 小败: 0.09, 大败: 0.05 }[outcome] * (0.8 + (1 - roll) * 0.4);
+  const { pWin, outcome, lossUs, lossThem } = clashCore(pu, pt, seeded((s.turn || 0) * 31 + ours % 997 + N0(b.enemyTroops) % 991));
   const deadUs = Math.round(ours * lossUs), deadThem = Math.round(N0(b.enemyTroops) * lossThem);
   const take = b.attacker === '我' && /大胜|小胜/.test(outcome) && b.place ? b.place : '';
   const lose = b.attacker === '敌' && /大败/.test(outcome) && b.place ? b.place : '';
@@ -7907,7 +7937,7 @@ function draftFaults(s, said, text, span) {
   if (own > Math.max(gave ? 1 : 0, Math.ceil(gave / 2))) out.push(`替主角说了玩家没说的话（${own} 处主角台词）：主角只说玩家给的话；对方说完、轮到主角开口就停，不替主角回答`);
   // 玩家说「带大家走」「号召众人」，正文就让一大群人跟上：玩家宣布的结果被当真了
   if (/带(着)?(大家|众人|人|他们)|号召|振臂|让(大家|众人).{0,4}(跟|走)|煽动/.test(said || '') && /(几|数|三四|上|成|近)(十|百|千)(个)?人.{0,8}(跟着|跟上|随着|随你|涌|响应)|一呼百应|应者云集|纷纷跟/.test(text)) out.push('玩家说要带动众人，正文就让一大群人跟上了：先写第一步和各人的真实反应——多数人有顾虑不会跟，跟不跟由他们的利害决定');
-  const ana = anachronisms(s, text);
+  const ana = anachronisms(s, text).filter(x => !String(said || '').includes(x.split('（')[0]));   // 玩家自己说起的（要发电报），正文写「这时没有」会带出这个词，不算错
   if (ana.length) out.push(`时代错位：${ana.join('、')}——换成本朝的说法`);
   const pe = placeEraFaults(s, text);
   if (pe.length) out.push(`地名不是这一年的：${pe.join('；')}——照【县级地理】用这一年的名称`);
@@ -8012,7 +8042,8 @@ function pickModules(said, ruling) {
 }
 const modulesBlock = (said, ruling) => { const ks = pickModules(said, ruling); return [MOD_CARDS.通用, MOD_CARDS.伦理, ...ks.map(k => MOD_CARDS[k]), ks.includes('战争') && typeof S !== 'undefined' && S && S.clock ? unitsBlock(S) : ''].filter(Boolean).join('\n'); };
 /** 时代错位：后世才有的名目、作物、官名写进了早先的年代 */
-const ANACHRO = [[/鸟铳|鸟枪/, 1548, '鸟铳是1548年以后才有'], [/佛郎机/, 1520, '佛郎机炮1520年代才传入'], [/红夷大炮|红衣大炮/, 1620, '红夷大炮1620年代后才有'], [/手枪|步枪|左轮|来复枪|洋枪/, 1840, '是近代的火器'], [/火铳/, 1270, '火铳元代才有'], [/镖局/, 1500, '镖局盛于明后期以后'], [/天地会/, 1760, '天地会乾隆年间才有'], [/厘金/, 1853, '厘金咸丰以后才有'], [/票号/, 1820, '票号道光年间才兴起'], [/冰敬|炭敬|别敬/, 1644, '清代官场的叫法'], [/养廉银/, 1723, '雍正以后才有'], [/军机处|军机大臣/, 1729, '雍正以后才有'], [/锦衣卫/, 1382, '明代才有'], [/东厂/, 1420, '明永乐以后才有'], [/巡抚/, 1430, '明代以后的官名'], [/布政使/, 1376, '明清的官名'], [/内阁大学士|内阁首辅/, 1402, '明代以后'], [/玉米|苞谷/, 1531, '明中叶以后才传入'], [/番薯|红薯|地瓜/, 1593, '明万历以后才传入'], [/辣椒/, 1591, '明万历以后才传入'], [/马铃薯|土豆/, 1650, '明末清初以后才传入'], [/烟草|旱烟|抽烟|吸烟/, 1570, '明后期才传入'], [/鸦片/, 1620, '明末以后'], [/知县/, 960, '宋代以后才叫知县，之前是县令'], [/知府/, 990, '宋代以后才叫知府'], [/状元/, 622, '唐代以后才有'], [/进士/, 605, '隋代以后才有'], [/银票/, 1700, '清代以后'], [/三饷|辽饷|剿饷|练饷/, 1618, '明末才有']];
+const ANACHRO = [[/电报|电线|拍电/, 1871, '电报是1871年以后才有'], [/电灯/, 1879, '电灯是1879年以后才有'], [/电话/, 1881, '电话是1881年以后才有'], [/火车|铁路|铁轨/, 1876, '火车、铁路是1876年以后才有'], [/铁甲舰|铁甲船|兵轮/, 1859, '铁甲舰是1859年以后才有'], [/轮船|火轮船/, 1835, '轮船是1830年代以后才到中国'], [/照相|相片/, 1844, '照相是1844年以后才传入'], [/洋火|火柴/, 1860, '火柴是1860年代以后才有'], [/自来水/, 1883, '自来水是1883年以后才有'], [/自鸣钟/, 1601, '自鸣钟万历年间才传入'], [/交子/, 995, '交子北宋才有'], [/会子/, 1160, '会子南宋才有'], [/八股文/, 1487, '八股文明成化以后才定型'], [/翰林院/, 738, '翰林院唐开元以后才有'], [/活字/, 1045, '活字印刷北宋才有'], [/花生/, 1530, '花生明中叶以后才传入'], [/番茄|西红柿/, 1600, '番茄明末才传入'],
+  [/鸟铳|鸟枪/, 1548, '鸟铳是1548年以后才有'], [/佛郎机/, 1520, '佛郎机炮1520年代才传入'], [/红夷大炮|红衣大炮/, 1620, '红夷大炮1620年代后才有'], [/手枪|步枪|左轮|来复枪|洋枪/, 1840, '是近代的火器'], [/火铳/, 1270, '火铳元代才有'], [/镖局/, 1500, '镖局盛于明后期以后'], [/天地会/, 1760, '天地会乾隆年间才有'], [/厘金/, 1853, '厘金咸丰以后才有'], [/票号/, 1820, '票号道光年间才兴起'], [/冰敬|炭敬|别敬/, 1644, '清代官场的叫法'], [/养廉银/, 1723, '雍正以后才有'], [/军机处|军机大臣/, 1729, '雍正以后才有'], [/锦衣卫/, 1382, '明代才有'], [/东厂/, 1420, '明永乐以后才有'], [/巡抚/, 1430, '明代以后的官名'], [/布政使/, 1376, '明清的官名'], [/内阁大学士|内阁首辅/, 1402, '明代以后'], [/玉米|苞谷/, 1531, '明中叶以后才传入'], [/番薯|红薯|地瓜/, 1593, '明万历以后才传入'], [/辣椒/, 1591, '明万历以后才传入'], [/马铃薯|土豆/, 1650, '明末清初以后才传入'], [/烟草|旱烟|抽烟|吸烟/, 1570, '明后期才传入'], [/鸦片/, 1620, '明末以后'], [/知县/, 960, '宋代以后才叫知县，之前是县令'], [/知府/, 990, '宋代以后才叫知府'], [/状元/, 622, '唐代以后才有'], [/进士/, 605, '隋代以后才有'], [/银票/, 1700, '清代以后'], [/三饷|辽饷|剿饷|练饷/, 1618, '明末才有']];
 /* 称呼、说法照时代：[式样, 起年, 止年, 说明]——此时还没有、或者早已不这么叫的，都算错。只收把握大的 */
 const ADDR = [
   [/皇上|万岁爷/, 1271, 1912, '「皇上」「万岁爷」是元明清的叫法（唐称陛下、圣人、大家，宋称官家、陛下）'],
@@ -8512,7 +8543,7 @@ async function reviewAll(s, said, text) {
   const empty = { text, audit: [], major: [], rawFixes: [], probs: [], logicFixes: [], result: 'PASS', severity: 'none' };
   if (!text || SETTINGS.check === false) return empty;
   const hard = logicFaults(s), prev = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk');
-  const head = `你是这局历史模拟游戏的综合审稿，替一段刚写好、还没给玩家看的正文把关。时间：${timeText(s.clock)}；地点：${s.place.full}（${s.place.polity || ''}）；主角：${s.protagonist.name ? s.protagonist.name + '，' : ''}${s.protagonist.role}。
+  const head = `你是这局历史模拟游戏的综合审稿，替一段刚写好、还没给玩家看的正文把关。${s.noTime ? '（这是开场，年代与地点以正文自己交代的为准，核对正文前后是否自洽、与史实是否相符）' : s.yearOnly ? `（这是开场：玩家只说了年份，约公元${s.clock.y}年；月日、地点以正文自己交代的为准，核对前后是否自洽、与史实是否相符）` : `时间：${timeText(s.clock)}；地点：${s.place.full}（${s.place.polity || ''}）`}；主角：${s.protagonist.name ? s.protagonist.name + '，' : ''}${s.protagonist.role}。
 不改文风、不改情节、不改虚构人物的言行，主角照玩家命令做的事、说的话一个不改（只改其中时代不对的字眼，不改意思、不软化、不换成别的做法）。程序记的账（下面【账】【局面卡】）是已经发生的事实，以它为准；本局被改写了的历史以【被改写的历史】【史线】为准，不拿原本的史书去改。`;
   const mats = [verifyMaterials(s, said, text), prev ? '【上一回的结尾】' + String(prev.text).slice(-500) : '', arcBlock(s, true), pressBlock(s), s.mainNow ? '【这一回的历史主线】' + s.mainNow.text + '（' + String(s.mainNow.phase || '').split('：')[0] + '）' : '', mentionedFigures(s, text), '【账】\n' + ledgerSnapshot(s), hard.length ? '【程序查出的硬伤（必须给改法）】' + hard.join('；') : ''].filter(Boolean).join('\n');
   const job = callClaude(`${head}
@@ -9527,7 +9558,7 @@ function pane(tab) {
         ${N0(v.favor) != null ? `<div class="grp"><span class="gk">好感 ${esc(v.favor)}</span><span class="bar"><i style="width:${Math.max(3, (Number(v.favor) + 100) / 2)}%" class="${v.favor < -30 ? 'bad' : v.favor < 0 ? 'warn' : v.favor >= 40 ? 'good' : ''}"></i></span>${v.favorDelta ? `<span class="${v.favorDelta > 0 ? 'up' : 'down'}">${v.favorDelta > 0 ? '▲' : '▼'}${Math.abs(v.favorDelta)}</span>` : ''}</div>` : ''}
         ${arr(v.traits).length ? `<div class="pl"><span>特质</span>${v.traits.map(t => `<span class="att">${esc(t)}</span>`).join(' ')}</div>` : ''}${v.stats ? `<div class="stchips">${statChips(v.stats, 5)}</div>${v.statSum ? `<div class="pl"><span>总评</span>${esc(v.statSum)}</div>` : ''}<details class="oadd"><summary class="muted">各项与依据（${v.statReal ? '照史料' : '照身份常情'}）</summary>${statFull(v.stats)}</details>` : `<button class="link" data-judge="${esc(k)}">请 DeepSeek 评定各项</button>`}
         ${v.personality || v.ability ? `<div class="pl"><span>为人</span>${esc(v.personality || '')}${v.ability ? `<span class="abil">本事${esc(v.ability)}</span>` : ''}</div>` : ''}
-        ${v.want ? `<div class="pl"><span>想要</span>${esc(v.want)}</div>` : ''}${v.goal ? `<div class="pl"><span>盘算</span>${esc(v.goal)}</div>` : ''}${v.plan ? `<div class="pl"><span>打算</span>${esc(v.plan)}</div>` : ''}${v.knows ? `<div class="pl"><span>知你</span>${esc(v.knows)}</div>` : ''}${v.status ? `<div class="pl"><span>近况</span>${esc(v.status)}</div>` : ''}${v.circle && v.basis ? `<div class="pl"><span>出处</span>${esc(v.basis)}${v.unver ? '（网上没核到）' : ''}</div>` : ''}
+        ${v.want ? `<div class="pl"><span>想要</span>${esc(v.want)}</div>` : ''}${v.goal ? `<div class="pl"><span>盘算</span>${esc(v.goal)}</div>` : ''}${v.plan ? `<div class="pl"><span>打算</span>${esc(v.plan)}</div>` : ''}${v.knows ? `<div class="pl"><span>知你</span>${esc(v.knows)}</div>` : ''}${v.status ? `<div class="pl"><span>近况</span>${esc(v.status)}</div>` : ''}${N0(v.wealth) != null ? `<div class="pl"><span>家资</span>${esc(fuzzN(s, v.wealth, (s.money || {}).unit || '两'))}${v.wealthBasis ? '<span class="muted">（' + esc(v.wealthBasis) + '）</span>' : ''}</div>` : ''}${v.dead ? `<div class="pl"><span>已故</span>${esc(v.deadWhy || '')}</div>` : ''}${v.circle && v.basis ? `<div class="pl"><span>出处</span>${esc(v.basis)}${v.unver ? '（网上没核到）' : ''}</div>` : ''}
         ${arr(v.opLog).length ? `<details class="oadd"><summary class="muted">好感的来由</summary>${v.opLog.slice().reverse().map(o => `<div class="muted" style="font-size:12px">${o.d > 0 ? '+' : ''}${esc(o.d)} ${esc(o.why)}</div>`).join('')}</details>` : ''}
         <button class="link" data-write="${esc('我去找' + k + '，')}">${/女|妇|氏$|娘|妻|妾|姐|妹|母|婆|姑/.test((v.gender || '') + (v.role || '') + (v.tie || '') + k) ? '找她' : '找他'}</button>
         <details class="oadd"><summary class="muted">谋划…</summary><div class="opost"><select data-sct="${esc(k)}">${Object.keys(SCHEMES).map(t => `<option>${t}</option>`).join('')}</select><input class="oin" data-scp="${esc(k)}" placeholder="离间：和谁"><button class="link" data-scheme="${esc(k)}">动手</button></div></details></div>`).join('')}
@@ -9671,6 +9702,7 @@ function pane(tab) {
     <p class="muted" style="font-size:13px">${BOCHA_KEY ? '✓ 已填博查 Key（尾号 ' + esc(BOCHA_KEY.slice(-4)) + '），每回合先用博查查，查不到的再查维基。' : '现在只用维基百科。填上博查 Key（open.bochaai.com 申请），每回合就先用博查查政局、官职、人物、地理，中文资料多得多。'}Key 只存在这个浏览器里。</p>
     <div class="row"><input id="wBocha" type="password" autocomplete="off" placeholder="博查 API Key" class="grow" style="min-width:0"><button id="bWBocha">保存并试搜</button>${BOCHA_KEY ? '<button class="link" id="bWBochaOff">不用博查</button>' : ''}<span class="muted" id="wBochaMsg" style="font-size:12px"></span></div>` : ''}
     <div class="h"><span class="seal">修</span>版本与问题报告</div>
+    <p class="muted" style="font-size:13px">${esc(versionLine())}</p>
     <p class="muted" style="font-size:13px">现在的版本：${esc(/^\d{8}/.test(BUILD) ? `${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : BUILD)}${MODE === 'local' && UPDINFO ? (UPDINFO.remote && String(UPDINFO.remote) > BUILD ? `；网上有更新的版本${UPDINFO.using === 'updated' ? '，已下载好，空下来时自动换上' : ''}` : UPDINFO.why ? `；上次查更新没成：${esc(UPDINFO.why)}` : UPDINFO.checked ? '；已是最新' : '') : ''}${UPDINFO && UPDINFO.needReinstall ? '；这次改动大，要重新下载安装包' : ''}</p>
     <div class="row">${MODE === 'local' ? `<button id="bUpdCheck" ${BUSY ? 'disabled' : ''}>检查更新</button>` : ''}<button id="bReport">导出问题报告</button><span class="muted" id="updMsg" style="font-size:12px"></span></div>
     <p class="muted" style="font-size:12px">玩的时候出了问题，点「导出问题报告」会下载一个文件（记着出过的错、此刻的版本和这一局最近几回，不含 Key），把它发给我就能照着查。</p>
@@ -9770,12 +9802,10 @@ async function startGame(sentence, have, havePre, custom, spec) {
       // 核实和立账册一起做：账册照初稿立，核实改掉的字再照改到账里
       if (DSM()) { ledP = callClaude(openingLedgerInput(sentence, draft.text, draft.hidden, custom, sb), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' }); ledP.catch(() => { /* 下面 await 时再处理 */ }); }
       const vs = fake ? { ...fake, research: arr(pre.research), almanac: arr(pre.almanac) } : { ...(pre || {}), research: arr(pre && pre.research), almanac: arr(pre && pre.almanac), clock: { y: oy ?? 0, m: 6, d: 1, yearLabel: '' }, place: { full: '', polity: '' }, protagonist: { name: '', role: sentence }, chat: [], world: {}, figOver: {}, turn: 0, noTime: oy == null, yearOnly: oy != null };
-      // 核实、情理审读、立账册一起做（网页版依次做）；有大毛病的，两边的意见合在一起把开场重写一次（只一次），账册照新稿重立
-      const critP = SETTINGS.critic !== false ? storyCritic({ ...vs, protagonist: { name: r ? r.name : '', gender: r ? r.gender : '', age: r ? r.age : null, role: r ? r.role : sentence } }, sentence + (custom ? '\n' + custom : ''), draft.text).catch(e => { if (e && e.code === 'cancelled') throw e; return []; }) : Promise.resolve([]);
-      critP.catch(() => { /* 停下了：下面 await 时再处理 */ });
-      if (!DSM()) await critP;
-      const vr = await verifyText(vs, sentence + (custom ? '\n' + custom : '') + (sb ? '\n' + sb : ''), draft.text);
-      const probs = (await critP).concat(arr(vr.major).map(x => `${x.problem}${x.fix ? '——应当：' + x.fix : ''}`));
+      // 开场也走综合审稿（史实、情理与人物、常理与连贯一次审完，和平常回合一个标准）；有大毛病（或程序查出的硬伤）才把开场重写一次，账册照新稿重立
+      const vsP = { ...vs, protagonist: { name: r ? r.name : '', gender: r ? r.gender : '', age: r ? r.age : null, role: r ? r.role : sentence } }, saidO = sentence + (custom ? '\n' + custom : '') + (sb ? '\n' + sb : '');
+      const vr = await reviewAll(vsP, saidO, draft.text);
+      const probs = anachronisms(vsP, draft.text).map(x => '时代不对：' + x).concat(arr(vr.probs));
       draft.text = vr.text; draft.audit = vr.audit;
       if (probs.length) {
         PHASE = 'rewrite'; DRAFTN = 0; render();
