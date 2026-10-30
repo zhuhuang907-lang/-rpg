@@ -19,11 +19,12 @@ const { chromium } = require('playwright');
   if (h.H.some(m => /某/.test(m[1]))) bad('家里人名字里有「某」：' + JSON.stringify(h.H));
   if (!h.H.some(m => m[3] && /推算|多/.test(m[4]))) bad('推出来的家里人没标推算、没写依据');
   if (h.needs.length) bad('补过一轮还缺：' + h.needs.join('、'));
-  const wife = h.H.find(m => /正室/.test(m[0])), son = h.H.find(m => m[1] === '汪承裕');
-  if (wife && son && !(wife[2] >= son[2] + 16)) bad('正妻比儿子大不到十六岁：' + JSON.stringify([wife, son]));
-  const fx = await p.evaluate(() => { S.household.push({ relation: '母', name: '吴氏', age: 20 }, { relation: '长子', name: '汪大成', age: 60 }); const r = familyAgeFix(S); return { r, m: S.household.find(x => x.name === '吴氏').age, c: S.household.find(x => x.name === '汪大成').age, me: S.protagonist.age }; });
-  if (!(fx.m >= fx.me + 15)) bad('母亲比本人还小，没改：' + JSON.stringify(fx));
-  if (!(fx.c <= fx.me - 14)) bad('儿子比本人还大，没改：' + JSON.stringify(fx));
+  // 年岁一律由 DeepSeek 推（2026-10-30 玩家：「原本那个年龄的框架彻底删除」）：程序不再照「父母大二十二、子女小十八、妻小两岁」硬改，只指出对不上的地方，交给 DeepSeek 照经历重推、写依据
+  const fx = await p.evaluate(async () => { S.household.push({ relation: '母', name: '吴氏', age: 20 }, { relation: '长子', name: '汪大成', age: 60 }); const iss = familyAgeIssues(S); const before = [S.household.find(x => x.name === '吴氏').age, S.household.find(x => x.name === '汪大成').age]; S.ageAgain = true; const got = await ageInfer(S); const m = S.household.find(x => x.name === '吴氏'), c = S.household.find(x => x.name === '汪大成'); return { iss, before, got, m: [m.age, m.ageWhy, m.ageAbout], c: [c.age, c.ageWhy], me: S.protagonist.age, src: typeof familyAgeFix }; });
+  if (fx.src !== 'undefined') bad('程序照常情硬改年岁的老框架还在');
+  if (fx.before[0] !== 20 || fx.before[1] !== 60) bad('程序自己把年岁改了：' + JSON.stringify(fx.before));
+  if (!fx.iss.some(x => /吴氏/.test(x)) || !fx.iss.some(x => /汪大成/.test(x))) bad('年岁对不上的地方没指出来：' + JSON.stringify(fx.iss));
+  if (!fx.got.length || !fx.m[1] || !fx.c[1]) bad('对不上的年岁没交给 DeepSeek 照经历重推、写依据：' + JSON.stringify(fx));
   // 人物一律大量博查（维基只查天下大势）：这里把博查 Key 存上，家谱、身边人都从博查来
   { const k = await p.evaluate(async () => { const r = await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); SEARCH_OFF = ''; SEARCH_DOWN = 0; return { r, bocha: KEY && KEY.bocha, can: canSearch() }; }); console.log('BOCHAKEY', JSON.stringify(k).slice(0, 400)); if (!k.bocha) bad('博查 Key 没存上：' + JSON.stringify(k).slice(0, 300)); }
   // 史书真人：家里人只照史料，查不到的不添、不推
@@ -44,8 +45,8 @@ const { chromium } = require('playwright');
     if (!c.ppl.includes('江春') || !c.ppl.includes('程晋芳') || c.ppl.includes('编造部将')) bad('身边的人没照史料列，或收了材料里没有的人：' + JSON.stringify(c));
     if (c.due) bad('家谱查完了还说要查'); }
   // 照史料生年算的岁数，程序不拿「父母比本人大二十二岁」这种常情去改；家谱查得太少的过两回再查
-  { const a = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.household = [{ relation: '母', name: '吴氏', age: 20, rec: true }]; familyAgeFix(s); const r = { mom: s.household[0].age }; s.protagonist.real = true; s.famRec = FAMV; s.famAt = s.turn - 3; s.famThinTry = 0; r.thin = familyDue(s); return r; });
-    if (a.mom !== 20) bad('照史料的岁数被程序改了：' + JSON.stringify(a)); if (!a.thin) bad('家谱只查到一两个人，也不再查'); }
+  { const a = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.household = [{ relation: '母', name: '吴氏', age: 20, rec: true, born: 1738 }]; familyAgeIssues(s); const r = { mom: s.household[0].age, todo: ageTodo(s).some(x => x[1].name === '吴氏') }; s.protagonist.real = true; s.famRec = FAMV; s.famAt = s.turn - 3; s.famThinTry = 0; r.thin = familyDue(s); return r; });
+    if (a.mom !== 20 || a.todo) bad('照史料的岁数被程序改了、或又拿去重推：' + JSON.stringify(a)); if (!a.thin) bad('家谱只查到一两个人，也不再查'); }
   // 旧存档（标了查过的老版本）也要照新办法再查一遍
   if (!(await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.famRec = 3; return familyDue(s); }))) bad('旧存档不会照新办法重查家谱');
   // 人物页：天下名录（宗室王公、中枢、各地大员），只列有出处的真人
