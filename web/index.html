@@ -1641,9 +1641,9 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261030062052';
+const BUILD = '20261030115458';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
-const VERSIONS = { game: '0.4.0', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', world: 'V2', save: '兼容（旧档读得进）' };
+const VERSIONS = { game: '0.4.1', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', world: 'V2', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 存档 ${VERSIONS.save}`;
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
@@ -2051,6 +2051,7 @@ function shrink(s) {
 }
 /** 第一版存档（按回合记的 log）转成对话 */
 function migrate(s) {
+  try { tidyState(s); } catch (_) { /* 旧档缺字段 */ }
   if (s && typeof s === 'object') s.gameVer = VERSIONS.game;   // 存档里记下是哪一版写的
   // 统一身份以后，旧存档里被「总兵、都督」字样误当成一方之主的：国势（国库、内帑那一套）收回，下一回照真身份重整
   try { if (s && s.gov && s.gov.scope && s.protagonist && s.gov.scope !== govScope(s)) { s.govOld = s.gov; s.gov = null; } } catch (_) { /* 旧档缺字段 */ }
@@ -3004,7 +3005,7 @@ let ID_MEMO = null;
 function identityOf(s) {
   const p = (s && s.protagonist) || {}, c = (s && s.career) || {}, y = s && s.clock ? num(s.clock.y) : null, me = p.name || '';
   const role = String(p.role || ''), office0 = String(c.office || '').trim(), rank = String(c.rank || '');
-  const F = arr(s && s.forces), T = arr(s && s.territory), O = arr(s && s.orgs).filter(o => o && !o.gone);
+  const F = arr(s && s.forces).filter(f => f && typeof f === 'object'), T = arr(s && s.territory).filter(Boolean), O = arr(s && s.orgs).filter(o => o && typeof o === 'object' && !o.gone);
   const key = [role, office0, rank, s && s.idm, y, me, F.map(f => [f.leader, f.owner, f.troops, f.status].join('/')).join('|'), T.length, O.map(o => [o.id, o.head, o.kind, o.count].join('/')).join('|')].join('#');
   if (ID_MEMO && ID_MEMO.s === s && ID_MEMO.key === key) return ID_MEMO.v;
   // 身份那句话里「知县之子」「总兵的幕友」「前任知府」说的是别人的官，不算自己的
@@ -9073,6 +9074,7 @@ function applyReply(s, d, said) {
   if (s.hookNow && play) { const h = arr(s.hooks).find(x => x.id === s.hookNow.id); if (h) { h.used = true; h.turn = s.turn; } s.lastHook = s.turn; const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { hook: { kind: s.hookNow.kind, title: s.hookNow.title, why: s.hookNow.why, basis: s.hookNow.basis } }); }
   s.hookNow = null;
   fixShiNames(s);   // 记账里新进来的「某氏」当场起名
+  tidyState(s);   // 记账留下的坏条目当场清掉
   for (const v of Object.values(s.people || {})) if (v && !v.pid) v.pid = 'p' + (s.pidSeq = (num(s.pidSeq) || 0) + 1);   // 这一回新进来的人也编上号
 }
 /** 每回底下的【当前情况】和第一行的【时间·地点·年龄】：程序照账册写，不靠 AI 记得写 */
@@ -9127,8 +9129,10 @@ function newSave(p) {
 
 /* ========== 画面 ========== */
 let S = null, VIEW = 'start', TAB = 'board', STREAM = '', THINK_T0 = 0, ERRMSG = '', EDITING = false, SIDE_FOLD = true, PENDING_SAID = '';
-function setBusy(on) { BUSY = on; if (on) THINK_T0 = Date.now(); render(); if (on) setTimeout(() => { const el = document.querySelector('.thinking'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); }
-setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = Math.round((Date.now() - THINK_T0) / 1000); } }, 1000);
+function setBusy(on) { BUSY = on; if (on) THINK_T0 = Date.now(); try { render(); } catch (_) { /* render 自己会兜住；这里再保一层，不让忙碌状态卡住 */ } if (on) setTimeout(() => { const el = document.querySelector('.thinking'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); }
+setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = Math.round((Date.now() - THINK_T0) / 1000);
+  // 显示「正忙」却没有在写的这一回（上一步出错没收尾）：二十秒后自己放开，发出键重新能点，不让玩家以为卡死了
+  if (!TURN && Date.now() - THINK_T0 > 20000) { BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已自动放开'); ERRMSG = ERRMSG || '上一步没收好尾，已放开，可以接着写'; render(); } } }, 1000);
 
 /* ========== 画像：主角的脸存在存档里（可捏）；身边的人按名字和身份生成一张固定的脸 ========== */
 const faceGender = g => /女/.test(String(g || '')) ? 'female' : 'male';
@@ -9186,7 +9190,25 @@ function openFaceEditor() {
   pane(); draw();
 }
 let PERF = null, CUR_RULING = null;
+/** 账里的列表只留像样的条目：AI 记账偶尔留下 null、一个字、缺名字的条目，一条坏的就能让整页画不出来、按钮全失灵（2026-10-30 玩家：第二回合说一句就没反应了） */
+function tidyState(s) {
+  if (!s || typeof s !== 'object') return s;
+  const ok = (k, need) => { if (s[k] == null) return; if (!Array.isArray(s[k])) { s[k] = []; return; } const n0 = s[k].length; s[k] = s[k].filter(x => x && typeof x === 'object' && !Array.isArray(x) && (!need || x[need])); return n0 - s[k].length; };
+  for (const [k, need] of [['forces', ''], ['territory', 'place'], ['powers', 'name'], ['orgs', 'name'], ['acts', 'id'], ['press', 'title'], ['household', 'name'], ['campaigns', 'force'], ['business', ''], ['circles', ''], ['plans', ''], ['orders', ''], ['factions', ''], ['figures', ''], ['offices', ''], ['edicts', ''], ['deeds', ''], ['canon', ''], ['chronicle', ''], ['summaries', ''], ['gmNotes', ''], ['goals', '']]) ok(k, need);
+  for (const o of arr(s.orgs)) { if (!Array.isArray(o.members)) o.members = []; o.members = o.members.filter(m => typeof m === 'string' && m); if (!Array.isArray(o.ties)) o.ties = []; if (!Array.isArray(o.log)) o.log = []; }
+  if (s.people && typeof s.people === 'object') for (const [k, v] of Object.entries(s.people)) if (!v || typeof v !== 'object' || Array.isArray(v)) delete s.people[k];
+  if (s.career != null && (typeof s.career !== 'object' || Array.isArray(s.career))) s.career = { office: typeof s.career === 'string' ? one(s.career, 30) : '' };
+  if (s.protagonist && typeof s.protagonist.role !== 'string') s.protagonist.role = s.protagonist.role == null ? '' : one(String(s.protagonist.role), 40);
+  return s;
+}
+let RENDER_ERR = '';
+/** 重画出错不许把整局卡死：先把账里的坏条目清掉再画一次；还不行就在页面上明说出了什么错，按钮照样能用 */
 function render() {
+  try { if (S) tidyState(S); render0(); RENDER_ERR = ''; return; } catch (e) { RENDER_ERR = String(e && e.message || e); noteErr('render', RENDER_ERR, { stack: String(e && e.stack || '').slice(0, 600), tab: typeof TAB !== 'undefined' ? TAB : '' }); }
+  try { if (typeof TAB !== 'undefined' && TAB !== 'board') { TAB = 'board'; render0(); return; } } catch (_) { /* 局面页也画不出 */ }
+  const app = document.querySelector('#app'); if (app && !document.querySelector('#renderErr')) app.insertAdjacentHTML('afterbegin', `<div id="renderErr" class="err" style="margin:8px 0">页面有一块画不出来（${esc(RENDER_ERR.slice(0, 120))}），已记进问题报告；游戏照常能玩，可以接着写下一步，或在「设置」里导出问题报告。</div>`);
+}
+function render0() {
   if (PERF && BUSY) { const t = Date.now(); if (PHASE !== PERF.cur) { if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); PERF.cur = PHASE; PERF.last = t; } }
   // 页面重画时，玩家正在填的字（Key、型号、要做的事……）和光标不丢
   const keep = {}, ae = document.activeElement, foc = ae && ae.id && /^(INPUT|TEXTAREA)$/.test(ae.tagName) ? ae.id : '';
@@ -9965,7 +9987,9 @@ async function afterTurnPool(s0) {
 }
 /** 一回合：先写正文（边写边显示），再交给账房记账核史实。账没记上，正文也留下，可以补记 */
 async function send(said, span, note, resume) {
-  if (BUSY || !S) return;
+  if (!S) return;
+  if (BUSY) { if (!TURN && Date.now() - (THINK_T0 || 0) > 20000) { BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已放开'); } else { ERRMSG = '上一步还在写（可以点「停下」再写这一步）'; try { render(); } catch (_) { } setTimeout(() => { if (ERRMSG.startsWith('上一步还在写')) { ERRMSG = ''; try { render(); } catch (_) { } } }, 4000); return; } }   // 以前这里一声不响就返回，玩家以为卡死了
+  tidyState(S);
   EDITING = false;
   // 后台的活照做，不挡玩家；记账前只等和记账写同一处的那几件（最多十五秒）
   ERRMSG = ''; STREAM = ''; PHASE = ''; DRAFT_LIVE = ''; PENDING_SAID = String(said || '').trim(); CUR_SAID = String(said || ''); FEED = []; if (S && S.clock && SETTINGS.hooks !== false) { const hk = pickHook(S, said); S.hookNow = hk || null; }
