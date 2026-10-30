@@ -22,6 +22,20 @@ const path = require('path');
     if (!st.ageAgain || st.household.some(m => m.ageV === 1 && /汪景福|汪景禄/.test(m.name))) bad.push('推完还长幼颠倒，没交下回重推');
     // 主角自己没有岁数，也推
     st = mk([]); st.protagonist.age = null; if (!ageTodo(st).some(x => x[0] === '我')) bad.push('主角没有岁数也不推');
+    // 开局给的「30」没依据：主角也交 DeepSeek 重推；有史载生年的、玩家亲手填的不推（2026-10-30 玩家：「年龄你写的还是30……让 ds 去推测」）
+    st = mk([]); st.protagonist.age = 30; if (!ageTodo(st).some(x => x[0] === '我')) bad.push('主角开局随手给了 30 岁、没依据，也不交 DeepSeek 重推');
+    st = mk([]); st.protagonist.age = 30; st.protagonist.born = 1728; if (ageTodo(st).some(x => x[0] === '我')) bad.push('有史载生年的主角也重推');
+    { const sv = newSave({ name: '汪景和', gender: '男', age: 30, ageSet: true, role: '盐商', gregorianYear: 1757, month: 3, day: 1, place: '扬州府', polity: '清' }); if (!sv.protagonist.ageSet || ageTodo(sv).some(x => x[0] === '我')) bad.push('玩家亲手填的年岁被重推'); }
+    { const sv = newSave({ name: '卢见曾', gender: '男', age: 68, born: 1690, role: '盐运使', real: true, gregorianYear: 1757, month: 3, day: 1, place: '扬州府', polity: '清' }); if (sv.protagonist.born !== 1690) bad.push('开局的史载生年没记上，主角年岁没根据'); }
+    // 人人推成 30：这几个人下回带着「不可能人人一样」再推
+    callClaude = async (pr) => ({ text: JSON.stringify({ people: ['汪甲','汪乙','汪丙','汪丁'].map(n => ({ name: n, age: 30, about: true, why: '推' })) }) });
+    try { st = mk(['汪甲','汪乙','汪丙','汪丁'].map((n, i) => ({ relation: ['妻','妾','仆','婢'][i], name: n, age: 30 }))); await ageInfer(st);
+      if (!st.household.every(m => m.ageV !== 1)) bad.push('人人推成 30 岁也照收，不再重推');
+      callClaude = async (pr) => { prompt = pr; return { text: '{"people":[]}' }; }; await ageInfer(st); if (!/都推成30岁，不可能人人一样/.test(prompt)) bad.push('重推时没告诉 DeepSeek 人人一样不行'); } finally { callClaude = orig; }
+    // 人物再出场：账上的年岁依据、本事、编号不被整条重写冲掉
+    st = newSave({ name: '汪景和', gender: '男', age: 40, role: '盐商', gregorianYear: 1757, month: 3, day: 1, place: '扬州府', polity: '清' }); st.people = { '卢见曾': { role: '盐运使', age: 68, ageV: 1, ageWhy: '生于1690年', ageAbout: false, stats: { 理政: { v: 70 } }, pid: 'p7', voice: '山东口音', seen: 1 } };
+    try { applyReply(st, { reply: '卢见曾来了。', presentNpcs: [{ name: '卢见曾', role: '两淮盐运使', favor: 10 }] }, '见卢见曾'); } catch (e) { bad.push('applyReply 出错：' + e.message + String(e.stack).slice(0, 300)); }
+    { const v = st.people['卢见曾'] || {}; if (v.ageWhy !== '生于1690年' || v.ageV !== 1 || !v.stats || v.pid !== 'p7' || v.voice !== '山东口音') bad.push('人物再出场，年岁依据、本事、编号、口吻被冲掉：' + JSON.stringify(v).slice(0, 200)); }
     // 叙述里的「某地某日」打回；对话里自称「某」不算
     st = mk([]); const f1 = nameFaults(st, '他在某地住了某日，办了某事。'), f2 = nameFaults(st, '「某不才，愿效犬马。」他说。');
     if (!f1.some(x => /某地|某日|某事/.test(x))) bad.push('叙述里的某地、某日、某事没挑出来'); if (f2.length) bad.push('对话里自称「某」也被当成错：' + f2);
