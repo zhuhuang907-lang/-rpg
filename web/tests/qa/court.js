@@ -194,7 +194,7 @@ const { chromium } = require('playwright');
   if (!fx.blk) bad('梳理没进写正文的材料');
   if (!fx.doubt) bad('临时改过的数没交给记账去定准');
   await p.click('[data-tab="court"]'); await p.waitForTimeout(300);
-  if (!/史实梳理/.test(await p.evaluate(() => document.body.innerText))) bad('朝局页上看不到史实梳理');
+  if (/史实梳理/.test(await p.evaluate(() => document.body.innerText))) bad('查证用的史实梳理露给玩家看了（不把查证原文、内部标记露给玩家看）');
   // 久不来往的人：萍水相逢的过几回断，家人不断；不删
   const f = await p.evaluate(() => { S.people['卖饼的王二'] = { role: '小贩', tie: '路人', seen: S.turn - 5 }; S.people['周先生'] = { role: '塾师', tie: '老师', seen: S.turn - 5 }; S.people['汪承裕'] = { role: '儿子', tie: '儿子', seen: S.turn - 99 }; fadePeople(S); return { a: !!S.people['卖饼的王二'].faded, b: !!S.people['周先生'].faded, c: !!S.people['汪承裕'].faded, kept: '卖饼的王二' in S.people, live: livePeople(S).some(([k]) => k === '卖饼的王二') }; });
   if (!f.a) bad('萍水相逢的过了几回还没断');
@@ -207,15 +207,18 @@ const { chromium } = require('playwright');
   // 方略：提出政治策略要有推演（能不能办、谁赞成反对、代价、步骤、影响、史例），推行后按月结算落到国势（CLAUDE.md「剧情」方略）
   { const sw = await p.evaluate(() => [stratWant('推行清丈田亩，查出隐田'), stratWant('去账房看看')]); if (!sw[0] || sw[1]) bad('认不出玩家提的方略：' + JSON.stringify(sw)); }
   await p.evaluate(() => { TAB = 'board'; render(); document.querySelector('#said').value = '推行清丈田亩，查出隐田，均平赋役'; });
-  await p.click('#bPlan'); await p.waitForFunction(() => !PLAN_P && PLAN_DRAFT, null, { timeout: 60000 }).catch(() => bad('推演按钮没反应'));
-  { const d = await p.evaluate(() => ({ t: (document.querySelector('.plandraft') || {}).innerText || '', n: arr(S.plans).filter(x => x.state === '拟议').length })); if (!/把握约/.test(d.t) || !/刘统勋/.test(d.t) || !/扬州士绅/.test(d.t) || !/张居正/.test(d.t) || !d.n) bad('推演没给出能否、赞成反对、史例：' + JSON.stringify(d).slice(0, 300)); }
+  // 推演在后台做，不摆给玩家看（2026-10-30 玩家：「推演应该自己在后台……出现的时候造成影响」）：没有推演按钮、正文下面没有推演卡；推演的结果照样记下、按月结算
+  if (await p.evaluate(() => !!document.querySelector('#bPlan'))) bad('输入框旁还有推演按钮');
+  { const d = await p.evaluate(async () => { const P = await planAnalyze(S, '推行清丈田亩，查出隐田，均平赋役'); return { P: !!P, t: JSON.stringify(P || {}) }; }); if (!d.P || !/刘统勋/.test(d.t) || !/扬州士绅/.test(d.t) || !/张居正/.test(d.t)) bad('后台推演没给出能否、赞成反对、史例：' + d.t.slice(0, 300)); }
+  await p.evaluate(() => { document.querySelector('#said').value = '推行清丈田亩，查出隐田，均平赋役'; });
   await p.click('#bSend'); if (!(await idle())) bad('推行方略那一回卡住');
-  { const t = await p.evaluate(() => { const g = S.chat[S.chat.length - 1]; return { card: !!(g.extra && g.extra.plan), live: arr(S.plans).filter(x => x.state === '推行').length, ui: [...document.querySelectorAll('.plan')].some(e => /清丈田亩/.test(e.innerText)) }; });
-    if (!t.card || !t.live || !t.ui) bad('提了方略、这一回没有推演卡或没记下推行：' + JSON.stringify(t)); }
+  { const t = await p.evaluate(() => ({ live: arr(S.plans).filter(x => x.state === '推行').length, ui: document.querySelectorAll('.plan').length, odds: /把握约|方略推演/.test(document.body.innerText) }));
+    if (!t.live) bad('提了方略，没在后台记下推行：' + JSON.stringify(t)); if (t.ui || t.odds) bad('推演卡、把握几成还摆给玩家看：' + JSON.stringify(t)); }
   // 推演照局势、利害、当代道德、可行性；各人嘴上说的不一定是心里想的：心腹看得穿，城府深的看不透（看个人等级）；推行时阳奉阴违的人办的那一步更难成（CLAUDE.md「剧情」方略要有推演）
-  { const d = await p.evaluate(() => { const t = [...document.querySelectorAll('.plan')].map(e => e.innerText).join('\n'); return { t, see: seeLv(S) }; });
-    for (const w of ['局势', '时论', '可行', '户房书吏', '小的一定尽力', '看不透', '心里：真心支持', '照各人表态看，把握约']) if (!d.t.includes(w)) bad('推演卡上没有：' + w + ' ' + d.t.slice(0, 300));
-    if (/暗中拖延/.test(d.t)) bad('城府深的人心里话被直接摆给玩家看了'); }
+  // 推演的内容照旧推全（局势、时论、可行、各人当面说的和心里的），存在后台给结算和写正文用，只是不摆给玩家
+  { const d = await p.evaluate(() => ({ t: JSON.stringify(arr(S.plans).filter(x => x.state === '推行').slice(-1)[0] || {}), ui: document.body.innerText }));
+    for (const w of ['户房书吏', '小的一定尽力', '真心支持']) if (!d.t.includes(w)) bad('后台推演没推出：' + w + ' ' + d.t.slice(0, 300));
+    if (/暗中拖延|小的一定尽力/.test(d.ui)) bad('推演里各人的说辞、心里话摆给玩家看了'); }
   { const f = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(S)); s.gov = null; const R = Math.random; Math.random = () => 0.1; const mk = bad => ({ id: 'y', name: '测二', state: '推行', month: 0, feasible: 20, actors: bad ? [{ who: '户房书吏', act: '阳奉阴违' }] : [], steps: [{ m: 1, what: '清丈', who: '户房书吏' }], effects: [], cost: { months: 1 }, log: [], done: [], applied: [] }); s.plans = [mk(false)]; planMonthly(s, 1); const a = s.plans[0].done[0].ok; s.plans = [mk(true)]; planMonthly(s, 1); const b = s.plans[0].done[0].ok; Math.random = R; return { a, b, nf: planAdopt(s, { can: '能做主', feasible: null, cost: {} }) }; });
     if (!f.a || f.b || f.nf) bad('阳奉阴违的人办的那一步没有更难、或没推出把握也推行了：' + JSON.stringify(f)); }
   // 临门的事：史书上这个月真发生的大事要实打实落到主角头上、身边的人照利害出手；正文必须写到；到期不应对照后果记账（CLAUDE.md「剧情」史事要临门、功能要有后果）
