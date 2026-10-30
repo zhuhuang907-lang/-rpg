@@ -111,6 +111,25 @@ const { chromium } = require('playwright');
     if (v.st0 !== '行军' || v.nb !== 1 || !v.a1.some(t => /攻扬州府/.test(t)) || !(v.en < 1000)) bad('出征没照日子走到、没结算一仗：' + JSON.stringify(v).slice(0, 400));
     if (v.st2 !== '待探报' || v.nb2 !== 2 || !/得手|败回/.test(v.st3)) bad('不知守军没派探报、或探报回来没打：' + JSON.stringify(v).slice(0, 400));
     if (!v.atk || v.nb3 !== 3 || !/军报/.test(v.blk)) bad('敌军来攻没结算、或军报没进写戏材料：' + JSON.stringify(v).slice(0, 400)); }
+  // 皇帝：全国官员名册（名录和人事树合一、可搜）；诏令发出→传递→收到→执行→回报，忠诚操守差、记恨的会拖延打折虚报抗命（CLAUDE.md「人事与职权」全国名册、诏令五步）
+  { const v = await p.evaluate(() => { TAB = 'court'; render(); const t = document.body.innerText; const c = JSON.parse(JSON.stringify(S));
+      c.people['忠臣甲'] = { favor: 60, stats: { 忠诚: { v: 90 }, 操守: { v: 90 }, 理政: { v: 70 } } }; c.people['奸臣乙'] = { favor: -80, stats: { 忠诚: { v: 10 }, 操守: { v: 10 }, 理政: { v: 40 } } };
+      const a1 = actNew(c, { type: '令', what: '清查甲省仓粮' }), a2 = actNew(c, { type: '令', what: '清查乙省仓粮' });
+      const e1 = edictNew(c, { what: '清查甲省仓粮', who: '忠臣甲', place: '苏州府', aid: a1.id }), e2 = edictNew(c, { what: '清查乙省仓粮', who: '奸臣乙', place: '苏州府', aid: a2.id });
+      const mid = (e1.day0 = dayIdx(c.clock) - 1, e2.day0 = dayIdx(c.clock) - 1, edictTick(c, 0), [e1.stage, e2.stage]); e1.day0 -= 200; e2.day0 -= 200; edictTick(c, 0); edictTick(c, 0);
+      return { name: /全国官员名册/.test(t), fu: /傅恒/.test(t), mid, s1: e1.stage, o1: e1.out, s2: e2.stage, o2: e2.out, a1: a1.state, a2: a2.state, blk: edictBlock(c), pr: arr(c.press).some(x => /回奏可疑/.test(x.title)) }; });
+    if (!v.name || !v.fu) bad('皇帝看不到全国官员名册：' + JSON.stringify(v).slice(0, 200));
+    if (v.mid[0] !== '传递' || v.s1 !== '回报' || v.o1 !== '照办' || v.a1 !== '办成') bad('诏令没走传递、回报，或忠臣没照办：' + JSON.stringify(v).slice(0, 300));
+    if (v.o2 === '照办' || (v.s2 !== '抗命' && !v.pr && v.o2 !== '拖延')) bad('奸臣也照实办了、或虚报没留破绽：' + JSON.stringify(v).slice(0, 300)); }
+  // 十字军之王式（CLAUDE.md「剧情」人物特质、事件抉择、臣属离心）：评人物带特质（只收单子上的）；临门的事带抉择，挑了哪条了结时照那条落账；手握兵马、怨深有野心的臣属会起兵，成了别家来攻的敌军
+  { const v = await p.evaluate(async () => { const c = JSON.parse(JSON.stringify(S)); c.people['评特质丁'] = { role: '幕僚', seen: c.turn }; await judgePeople(c, ['评特质丁']); const tr = traitsOf(c, '评特质丁');
+      c.press = []; delete c.pressAt; await buildPress(c); const x = c.press.find(z => z.kind === '史事' && arr(z.choices).length); const r = { tr, nch: x ? x.choices.length : 0 };
+      if (x) { c.money = c.money || {}; c.money.cash = 1000; c.renown = 10; x.picked = 0; applyPress(c, { pressResults: [{ title: x.title, result: '了结', why: '认捐了' }] }); r.cash = c.money.cash; r.ren = c.renown; }
+      c.forces = [{ name: '镇军', leader: '叛将丙', troops: 5000, at: '江宁府' }]; c.people['叛将丙'] = { favor: -90, traits: ['野心'], tie: '部将', role: '总兵', seen: c.turn }; c.powers = [];
+      const mine0 = myForce(c, c.forces[0]); const o = vassalTick(c, 3); r.mine0 = mine0; r.mine1 = myForce(c, c.forces[0]); r.o = o; r.pw = arr(c.powers).some(p => /叛军/.test(p.name)); r.pr = arr(c.press).some(z => /起兵反叛/.test(z.title) && arr(z.choices).length); return r; });
+    if (!v.tr.includes('勤勉') || v.tr.includes('不存在的特质')) bad('评人物没带特质、或收了单子外的特质：' + JSON.stringify(v.tr));
+    if (v.nch < 2 || v.cash !== 900 || v.ren !== 16) bad('临门的事没有抉择、或挑的那条了结时没落账：' + JSON.stringify(v).slice(0, 300));
+    if (!v.mine0 || v.mine1 || !v.pw || !v.pr || !v.o.some(t => /起兵/.test(t))) bad('怨深有野心的臣属没起兵、或起兵后还算你的兵：' + JSON.stringify(v).slice(0, 300)); }
   // 本事真起作用（CLAUDE.md「人事与职权」本事与派系）：户部尚书理财高国库涨、操守差腐败涨；没评定本事的不算
   { const om = await p.evaluate(() => { const c = JSON.parse(JSON.stringify(S)); for (const n of c.org.nodes) for (const q of n.posts) q.attr = null; c.people = {};
       const n = c.org.nodes.find(x => x.name === '户部'), q = n.posts.find(x => x.title === '尚书'); q.holder = '钱能干'; q.sinceYm = 0;
