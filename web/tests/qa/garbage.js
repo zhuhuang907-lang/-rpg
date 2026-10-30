@@ -28,7 +28,7 @@ const path = require('path');
         for (const [f, shape] of Object.entries(fields)) d[f] = R(junkList(shape));
         d.career = R([null, 'x', [], { office: R(G) }]); d.realm = R([null, 'x', { treasury: R(G) }]);
         try { applyReply(S, d, '歇着'); } catch (e) { bad.push(`${role} applyReply: ${e.message} @ ${String(e.stack).split('\n').slice(1, 4).join(' | ')}`); continue; }
-        for (const f of [() => logicFaults(S), () => familyNeeds(S), () => familyAgeFix(S), () => fadePeople(S), () => armyMonthly(S, 2), () => companionMonthly(S, 2), () => blocks(S, true), () => rulingInput(S, '去看看')]) { try { f(); } catch (e) { bad.push(`${role} ${String(f).slice(6, 40)}: ${e.message}`); } }
+        for (const f of [() => logicFaults(S), () => familyNeeds(S), () => familyAgeIssues(S), () => fadePeople(S), () => armyMonthly(S, 2), () => companionMonthly(S, 2), () => blocks(S, true), () => rulingInput(S, '去看看')]) { try { f(); } catch (e) { bad.push(`${role} ${String(f).slice(6, 40)}: ${e.message}`); } }
         for (const [tab] of tabsFor(S).concat([['court'], ['army']])) {
           TAB = tab; SIDE_FOLD = false;
           try { render(); } catch (e) { bad.push(`${role} 侧栏${tab}: ${e.message}`); continue; }
