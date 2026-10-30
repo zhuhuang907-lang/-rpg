@@ -1642,9 +1642,9 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261030213807';
+const BUILD = '20261030232050';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
-const VERSIONS = { game: '0.4.6', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', world: 'V2', save: '兼容（旧档读得进）' };
+const VERSIONS = { game: '0.4.7', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', world: 'V2', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 存档 ${VERSIONS.save}`;
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
@@ -3651,19 +3651,19 @@ const ageTxt = v => v && v.age != null ? `<span title="${esc(v.ageWhy || '')}">$
  *  真人照史载生年算虚岁；没有生年的照他的身份、经历、和家里人的关系推，写依据、标「约」；推不出写不详。程序不拿常情的差数去凑 ========== */
 const AGEV = 1;
 const ageTodo = s => { const me = s.protagonist && s.protagonist.name, L = [];
-  if (s.protagonist && num(s.protagonist.age) == null && s.protagonist.ageV !== AGEV) L.push(['我', s.protagonist]);
+  if (s.protagonist && s.protagonist.born == null && !s.protagonist.ageSet && s.protagonist.ageV !== AGEV) L.push(['我', s.protagonist]);
   for (const m of arr(s.household)) if (m && m.name && !m.dead && !(m.rec && m.born != null) && (m.ageV !== AGEV || s.ageAgain)) L.push(['家', m]);
   for (const [k, v] of Object.entries(s.people || {})) if (v && k !== me && !v.faded && !v.dead && !(v.born != null && v.statReal) && v.ageV !== AGEV && (s.turn - (num(v.seen) || 0)) <= 6) L.push([k, v]);
   return L; };
 const ageDue = s => s && s.clock && s.protagonist && ageTodo(s).length > 0 && !(s.ageFail != null && s.turn - s.ageFail < 2);
 async function ageInfer(s) {
   const L = ageTodo(s).slice(0, 18); if (!L.length) return [];
-  const p = s.protagonist, nm = x => x[0] === '家' || x[0] === '我' ? x[1].name : x[0], iss = familyAgeIssues(s);
+  const p = s.protagonist, nm = x => x[0] === '家' || x[0] === '我' ? x[1].name : x[0], iss = familyAgeIssues(s).concat(arr(s.ageSame));
   const H = arr(s.household).filter(m => !m.dead).map(m => `${m.relation}${m.name}${m.age != null ? '（' + (m.ageAbout ? '约' : '') + m.age + '岁' + (m.ageWhy ? '：' + cut(m.ageWhy, 30) : '') + '）' : ''}${m.mother ? '，生母' + m.mother : ''}${m.note ? '，' + cut(m.note, 30) : ''}`).join('；');
   const who = L.map(([k, v]) => `· ${nm([k, v])}：${k === '我' ? '主角本人，' + (v.role || '') : k === '家' ? '家里人，' + (v.relation || '') : (v.role || '') + (v.tie ? '，' + v.tie : '')}${v.note ? '；' + cut(v.note, 60) : ''}${v.status ? '；近况：' + cut(v.status, 40) : ''}${v.roleLog ? '；履历：' + arr(v.roleLog).map(r => r.to).join('→') : ''}${v.age != null ? '；账上原写' + v.age + '岁（没有依据，别照抄）' : ''}`).join('\n');
   const found = p.real ? await searchFirst(s, L.filter(([k]) => k !== '家').slice(0, 4).map(([k]) => `${k} 生年 生平`)).catch(() => '') : '';
   const { text } = await callClaude(`你是熟读史书、懂那个年代人情的史家，替一局历史游戏推定下面这些人此刻（${timeText(s.clock)}，${s.place.polity || ''}）的年岁。
-主角：${p.name}，${p.age != null ? p.age + '岁' : '年岁不详'}${p.ageWhy ? '（' + cut(p.ageWhy, 40) + '）' : ''}，${p.role}。
+主角：${p.name}，${p.age != null ? p.age + '岁' + (p.born == null && !p.ageSet && p.ageV !== AGEV ? '（开局账上随手写的，没依据，要重推）' : '') : '年岁不详'}${p.ageWhy ? '（' + cut(p.ageWhy, 40) + '）' : ''}，${p.role}。
 家里人：${H || '（无）'}
 ${found}
 要推的人：
@@ -3678,6 +3678,10 @@ ${iss.length ? '【眼下账上对不上的（这回必须推对）】' + iss.jo
     else if (a != null && a >= 0 && a < 110) { v.age = Math.round(a); v.ageAbout = x.about !== false; v.ageWhy = one(x.why, 50); }
     else continue;   // 没推出数：这个人下回再推，不写「不详」（2026-10-30 玩家：所有东西都要数据，要合理推断）
     out.push(`${n}${v.age != null ? (v.ageAbout ? '约' : '') + v.age + '岁' : '年岁不详'}`); }
+  // 好几个人推出同一个整十岁数（以前满屏三十岁）：这几个人下一回带着这条再推一次（最多三回）
+  { const C = {}; for (const it of L) { const v = it[1]; if (v.ageV === AGEV && v.ageAbout && v.age != null && v.age % 10 === 0) (C[v.age] = C[v.age] || []).push([nm(it), v]); }
+    const same = Object.entries(C).filter(([, g]) => g.length >= 3); s.ageSame = same.length && (num(s.ageSameTry) || 0) < 3 ? same.map(([a, g]) => `${g.map(x => x[0]).slice(0, 6).join('、')}都推成${a}岁，不可能人人一样，照各人经历分开推`) : [];
+    if (s.ageSame.length) { s.ageSameTry = (num(s.ageSameTry) || 0) + 1; for (const [, g] of same) for (const [, v] of g) v.ageV = 0; } }
   // 推完再查长幼次序：还颠倒的，下一回再请 DeepSeek 照这些冲突重推（最多三回），程序不自己凑数
   const left = familyAgeIssues(s); s.ageTries = left.length ? (num(s.ageTries) || 0) + 1 : 0;
   if (left.length && s.ageTries <= 3) { s.ageAgain = true; for (const m of arr(s.household)) if (left.some(t => t.includes(m.name))) m.ageV = 0; }
@@ -8290,7 +8294,7 @@ ${custom ? '【玩家自己定的设定（照办；没填的你按史实补；�
     r.real = true;
     if (f.died != null && r.y > f.died) { r.adjust.push(`${f.name}卒于${f.died}年，年份改到${f.died - 1}年`); r.y = f.died - 1; r.yearLabel = ''; }
     if (f.born != null && r.y < f.born + 6) { r.adjust.push(`${f.name}生于${f.born}年，年份改到${f.born + 15}年`); r.y = f.born + 15; r.yearLabel = ''; }
-    if (f.born != null) { const age = r.y - f.born + 1; if (c.cAge && Math.abs(N(c.cAge) - age) > 1) r.adjust.push(`${f.name}这一年${age}岁（史载生于${f.born}年），不是${c.cAge}岁`); r.age = age; }
+    if (f.born != null) { const age = r.y - f.born + 1; if (c.cAge && Math.abs(N(c.cAge) - age) > 1) r.adjust.push(`${f.name}这一年${age}岁（史载生于${f.born}年），不是${c.cAge}岁`); r.age = age; r.born = f.born; }
   }
   return r;
 }
@@ -8842,7 +8846,7 @@ function applyReply(s, d, said) {
       const k = one(n.name, 12), o = s.people[k] || {};
       const pick = f => one(n[f] || o[f], f === 'want' || f === 'status' ? 60 : 30);
       const fv = N0(n.favor); const ofv = N0(o.favor); const favWhy = one(n.favorWhy || n.attitude, 30);
-      s.people[k] = { favor: fv != null ? Math.max(-100, Math.min(100, fv)) : o.favor, favorDelta: fv != null && ofv != null ? fv - ofv : 0, role: pick('role'), tie: pick('tie'), personality: pick('personality'), ability: one(n.ability || o.ability, 2), attitude: one(n.attitude || o.attitude, 8), want: pick('want'), status: pick('status'), where: pick('where'), goal: one(n.goal || o.goal, 50), plan: one(n.plan || o.plan, 60), knows: one(n.knows || o.knows, 80), seen: turn, age: o.age != null ? o.age : num(n.age) };   // 岁数头一回记下，以后程序照年份加
+      s.people[k] = { ...o, faded: false, favor: fv != null ? Math.max(-100, Math.min(100, fv)) : o.favor, favorDelta: fv != null && ofv != null ? fv - ofv : 0, role: pick('role'), tie: pick('tie'), personality: pick('personality'), ability: one(n.ability || o.ability, 2), attitude: one(n.attitude || o.attitude, 8), want: pick('want'), status: pick('status'), where: pick('where'), goal: one(n.goal || o.goal, 50), plan: one(n.plan || o.plan, 60), knows: one(n.knows || o.knows, 80), seen: turn, age: o.age != null ? o.age : num(n.age) };   // 岁数头一回记下，以后程序照年份加；旧账上的本事、口吻、编号、年岁依据照留（以前整条重写，DeepSeek 推的年岁依据一出场就丢）
       noteFavor(s, k, ofv, N0(s.people[k].favor), favWhy);
     }
     const life = [];
@@ -9173,7 +9177,7 @@ function newSave(p) {
   return {
     v: 2, id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), turn: 0, createdAt: Date.now(),
     title: `${one(p.name, 8) || '无名'} · ${one(p.role, 14)}`,
-    protagonist: { name: one(p.name, 8) || '无名', gender: one(p.gender, 2), age: num(p.age), role: one(p.role, 40), nativePlace: one(p.nativePlace, 20), real: !!p.real },
+    protagonist: { name: one(p.name, 8) || '无名', gender: one(p.gender, 2), age: num(p.age), ...(num(p.born) != null && num(p.age) != null && Math.abs(num(p.gregorianYear) - num(p.born) + 1 - num(p.age)) <= 1 ? { born: num(p.born) } : {}), ...(p.ageSet ? { ageSet: true, ageWhy: '玩家自己定的' } : {}), role: one(p.role, 40), nativePlace: one(p.nativePlace, 20), real: !!p.real },
     idm, clock: { y: num(p.gregorianYear) ?? ((m => m ? (/前/.test(String(p.gregorianYear)) && +m[0] > 0 ? -m[0] : +m[0]) : null)(String(p.gregorianYear ?? '').match(/-?\d{1,4}/))) ?? 1600, m: Math.min(12, Math.max(1, num(p.month) || 1)), d: Math.min(30, Math.max(1, num(p.day) || 1)), leap: false, yearLabel: one(p.yearLabel, 16) },
     place: { full: one(p.place, 30), polity: one(p.polity, 10) },
     household: arr(p.household).filter(m => m && m.name).slice(0, 12).map(m => ({ relation: one(m.relation, 6), name: one(m.name, 8), age: num(m.age), note: one(m.note, 30) })),
@@ -9845,7 +9849,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
               throw { code: 'notreal', message: `${r.name ? `查不到史书上有「${r.name}」这个人` : '没找到合乎这个身份的史书真人'}${hint ? '（' + hint + '）' : ''}。查过：${bo ? `博查${sx.bocha > 0 ? '有' + sx.bocha + '条但对不上' : '没搜到'}` : '博查（没填博查 Key，没法查——在「设置」里填上博查 Key 再开局，人物才查得准）'}，DeepSeek 也举不出正史、方志的出处。可以写这个人的全名、加上朝代和官职再开局；想当虚构人物，就在「自己定制开局」里把「人物」选成「虚构人物」。` };
             }
             r.real = true; r.realChk = ck; r.traces = arr(r.traces).concat(arr(ck.evidence).map(x => cut(x, 140))).slice(0, 10);
-            if (ck.born != null && r.y != null) { const age = r.y - ck.born + 1; if (age > 0 && age < 110) { if (r.age != null && Math.abs(r.age - age) > 1) r.adjust = arr(r.adjust).concat([`${r.name}生于${ck.born}年（${ck.src}），这一年${age}岁`]); r.age = age; } }
+            if (ck.born != null && r.y != null) { const age = r.y - ck.born + 1; if (age > 0 && age < 110) { if (r.age != null && Math.abs(r.age - age) > 1) r.adjust = arr(r.adjust).concat([`${r.name}生于${ck.born}年（${ck.src}），这一年${age}岁`]); r.age = age; r.born = ck.born; r.bornSrc = ck.src; } }
             if (ck.died != null && r.y != null && r.y > ck.died) throw { code: 'notreal', message: `${r.name}卒于${ck.died}年（${ck.src}），${r.y}年已不在世。换个年份，或换个人再开局。` };
           } }
         // 虚构的主角不和史书真人重名：AI 起的名字撞了（不论哪个朝代的名人）就换一个同姓的；玩家自己填的照用，开场说明里点明
@@ -9912,11 +9916,11 @@ async function startGame(sentence, have, havePre, custom, spec) {
     if (!d || !d.setup) d = parseJSON((await callClaude(openingLedgerInput(sentence, st.text, st.hidden, custom, pre && pre.setting && pre.fake ? settingBlock(pre.setting, pre.fake) : ''), null, { maxTokens: 8000, temperature: 0.3, kind: '立账' })).text);
     if (!d || !d.setup) throw { code: 'bad_json' };
     const rr = pre && pre.setting, cc = (spec && spec.c) || {};
-    if (rr) Object.assign(d.setup, { gregorianYear: rr.y, month: rr.m, day: rr.d, polity: rr.polity || d.setup.polity, place: rr.place || d.setup.place, name: rr.name || d.setup.name, role: rr.role || d.setup.role, nativePlace: rr.native || d.setup.nativePlace, gender: rr.gender || d.setup.gender, age: rr.age ?? d.setup.age, real: rr ? !!rr.real : !!d.setup.real, yearLabel: rr.yearLabel || d.setup.yearLabel });
+    if (rr) Object.assign(d.setup, { gregorianYear: rr.y, month: rr.m, day: rr.d, polity: rr.polity || d.setup.polity, place: rr.place || d.setup.place, name: rr.name || d.setup.name, role: rr.role || d.setup.role, nativePlace: rr.native || d.setup.nativePlace, gender: rr.gender || d.setup.gender, age: rr.age ?? d.setup.age, ...(rr.born != null ? { born: rr.born, ageWhy: `生于${rr.born}年${rr.bornSrc ? '（' + cut(rr.bornSrc, 20) + '）' : ''}` } : {}), real: rr ? !!rr.real : !!d.setup.real, yearLabel: rr.yearLabel || d.setup.yearLabel });
     // 玩家亲手填的性别、姓名、年龄一定照办（真人的年龄按史实，已在定设定时算好）
     if (cc.cGender) d.setup.gender = cc.cGender;
     if (cc.cName) d.setup.name = cc.cName;
-    if (cc.cAge && !(rr && rr.real)) d.setup.age = +cc.cAge;
+    if (cc.cAge && !(rr && rr.real)) { d.setup.age = +cc.cAge; d.setup.ageSet = true; }
     // 年份、政权、地点、身份也照玩家填的：查资料得来的设定只补玩家没填的
     { const cy = cc.cYear ? sentenceYear(cc.cYear) : null; if (cy != null && num(d.setup.gregorianYear) !== cy) d.setup.gregorianYear = cy; if (cy != null && !/^前?\d+年?$/.test(cc.cYear)) d.setup.yearLabel = cc.cYear; }
     if (cc.cPolity && !String(d.setup.polity || '').includes(cc.cPolity)) d.setup.polity = cc.cPolity;
@@ -9991,7 +9995,7 @@ function bgJobs(s0, d, g) {
     { id: 'off', msg: '趁空查这地方此时在任的官员', due: () => canSearch() && officialsDue(s0), run: () => ensureOfficials(s0).catch(e => { s0.offFail = s0.turn; throw e; }) },   // 玩家读这一回、想下一步的时候先查好，下一回不用等
     { id: 'org', msg: '联网整理人事树和国策书', due: () => orgDue(s0), run: () => buildOrg(s0), needs: ['off'] },
     { id: 'orgref', msg: '逐年核人事树上的人（有没有调走、病故、接任）', due: () => orgRefreshDue(s0), run: () => orgRefresh(s0).catch(e => { s0.orgRefFail = s0.turn; throw e; }), needs: ['org'] },
-    { id: 'age', msg: '请 DeepSeek 照经历推家里人、身边人的年岁', due: () => ageDue(s0), run: () => ageInfer(s0).catch(e => { s0.ageFail = s0.turn; throw e; }), needs: ['fam'], ex: true },
+    { id: 'age', msg: '请 DeepSeek 照经历推家里人、身边人的年岁', due: () => ageDue(s0), run: () => ageInfer(s0).catch(e => { s0.ageFail = s0.turn; throw e; }), ex: true },
     { id: 'stats', msg: '请 DeepSeek 照史料评定这几回出场人物的各项', due: () => statsDue(s0), run: () => judgeDue(s0).catch(e => { s0.statFail = s0.turn; throw e; }) },
     { id: 'clash', msg: '查虚构人物有没有和史书真人重名', due: () => clashDue(s0), run: () => fictionClash(s0) },
     { id: 'career', msg: '照史料查人事树上真人的历任官职', due: () => careerDue(s0), run: () => careerFill(s0).catch(e => { s0.carFail = s0.turn; throw e; }), needs: ['org'] },
