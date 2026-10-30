@@ -17,7 +17,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
   if (!/【这一回的剧情扩展/.test(prompt) || !/不打断、不改变玩家的命令/.test(prompt)) bad('剧情扩展没进写戏材料');
   if (!r.used || r.now) bad('用过的没记下：' + JSON.stringify({ used: r.used, now: r.now }));
   if (!(r.hints || []).some(h => /议事|打听|借给|婉拒|媒人|缓一缓/.test(h))) bad('可走的路没摆成按钮：' + JSON.stringify(r.hints));
-  if (!/这一回添的事：/.test(r.txt)) bad('正文下面没注明添的事');
+  if (/这一回添的事：/.test(r.txt)) bad('正文下面还注明「这一回添的事」（幕后的东西不露给玩家）');
   // 玩家正在说话、办急事：不打岔
   const t2 = await p.evaluate(() => { S.lastHook = 0; return !!pickHook(S, '「你给我说清楚，这账是怎么回事？」'); });
   if (t2) bad('玩家正在说话也塞剧情扩展');
