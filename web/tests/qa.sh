@@ -54,6 +54,9 @@ start ai.js && {
   run "朝政与军务：国势阶层、时政期限、召见每月三次各照派系、照主张拟诏、处置结掉、国势增减；兵种核定与自定、募编加营、按月扣饷粮、按兵种和地形宽窄打仗" 600 node statecraft.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js
   run "营生与本事：属性本事声望品行、本事越用越长、此地行情差事门客、当场买卖拦钱不够驮不动、贵处卖出赚、应下差事、招揽门客、按月给薪" 600 node sandbox.js
+  run "统一身份：八种身份照账判定，总兵不是一方之主、寨主管不了县令、商人不是统治者、别人的官和兵不算自己的" 120 env PLAY="$ROOT/web/play.html" node identity.js
+  run "局面卡与按需材料：推演、写正文、记账先给局面卡（身份、权限、手里的），记账只附相干字段、只报变化，要紧的不丢" 120 env PLAY="$ROOT/web/play.html" node context.js
+  run "自家势力：山寨、商号、商队、宗族、乡勇、绿林共用一套账，人数照军务、本钱照营生，建入退换头领增减迁资结交散，权不互转" 120 env PLAY="$ROOT/web/play.html" node orgs.js
   run "新系统吃乱数据：四种身份×记账给出各种怪格式的国势、阶层、时政、军令、人事、本事、差事×每个侧栏，不报错、不露 undefined NaN [object Object]" 300 env PLAY="$ROOT/web/play.html" node garbage.js
   run "家族与人情：族谱、立嗣、生活方向按月长本事、谋划按月推进有成败败露、结果进下一回材料、好感有来由、关系名号" 600 node clan.js
   run "真人核查：开局可选自动／史上真人／虚构，真人查维基条目、维基数据、博查再由 DeepSeek 判，查不到不开局；大官自动查、查无此人另挑真人；人物页逐人核查" 900 node person.js
