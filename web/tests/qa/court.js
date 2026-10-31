@@ -125,7 +125,7 @@ const { chromium } = require('playwright');
   { const v = await p.evaluate(async () => { const c = JSON.parse(JSON.stringify(S)); c.people['评特质丁'] = { role: '幕僚', seen: c.turn }; await judgePeople(c, ['评特质丁']); const tr = traitsOf(c, '评特质丁');
       c.press = []; delete c.pressAt; await buildPress(c); const x = c.press.find(z => z.kind === '史事' && arr(z.choices).length); const r = { tr, nch: x ? x.choices.length : 0 };
       if (x) { c.money = c.money || {}; c.money.cash = 1000; c.renown = 10; x.picked = 0; applyPress(c, { pressResults: [{ title: x.title, result: '了结', why: '认捐了' }] }); r.cash = c.money.cash; r.ren = c.renown; }
-      c.forces = [{ name: '镇军', leader: '叛将丙', troops: 5000, at: '江宁府' }]; c.people['叛将丙'] = { favor: -90, traits: ['野心'], tie: '部将', role: '总兵', seen: c.turn }; c.powers = [];
+      c.forces = [{ name: '镇军', leader: '叛将丙', troops: 5000, at: '江宁府' }]; c.people['叛将丙'] = { favor: -90, traits: ['野心'], tie: '部将', role: '总兵', seen: c.turn, warned: true, warnYM: Math.floor(ymOf(c.clock)) - 2 };   /* 起兵前先有密报（CLAUDE.md 吩咐有回音、后果要合理）：这里当已密报过两个月 */ c.powers = [];
       const mine0 = myForce(c, c.forces[0]); const o = vassalTick(c, 3); r.mine0 = mine0; r.mine1 = myForce(c, c.forces[0]); r.o = o; r.pw = arr(c.powers).some(p => /叛军/.test(p.name)); r.pr = arr(c.press).some(z => /起兵反叛/.test(z.title) && arr(z.choices).length); return r; });
     if (!v.tr.includes('勤勉') || v.tr.includes('不存在的特质')) bad('评人物没带特质、或收了单子外的特质：' + JSON.stringify(v.tr));
     if (v.nch < 2 || v.cash !== 900 || v.ren !== 16) bad('临门的事没有抉择、或挑的那条了结时没落账：' + JSON.stringify(v).slice(0, 300));
@@ -242,7 +242,7 @@ const { chromium } = require('playwright');
     if (r.err) bad('颁行国策出错：' + r.err);
     if (r.c1 !== 1150 || r.c2 !== 1175) bad('贪墨、生意、追回没落到现钱上：' + JSON.stringify(r).slice(0, 300));
     if (!r.ks.includes('家事:汪承禄') || !r.ks.includes('破绽:钱管家') || r.ks.some(k => /张不在/.test(k))) bad('后宅的事、账上破绽没记上或收了没列着的人：' + JSON.stringify(r.ks));
-    if (r.fav !== -10 || r.hm !== 62 || !/家宅和睦/.test(r.blk)) bad('情分、家宅和睦没落账：' + JSON.stringify(r).slice(0, 300));
+    if (r.fav !== -5 || r.hm !== 62 || !/家宅和睦/.test(r.blk)) bad('情分、家宅和睦没落账：' + JSON.stringify(r).slice(0, 300));
     if (!/破绽/.test(r.bar) || /虚报/.test(r.bar)) bad('账上破绽没摆出来、或真相直接露给玩家：' + r.bar);
     if (r.ren !== 16) bad('没有辖区的人推的事没落到名声上：' + r.ren);
     if (!(r.q || []).includes('p9')) bad('颁行的国策没交给方略推演结算：' + JSON.stringify(r.q)); }
