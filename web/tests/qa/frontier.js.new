@@ -1,0 +1,69 @@
+// 周边各族与政区（CLAUDE.md 舆图「周边各族也画、也能玩」「君主自己划分政区」「看得到户口」）：唐时吐蕃、回纥、渤海在图上上色写名；契丹可汗是一方之主；
+// 君主改名、改隶、分置、定都、筑城照办（不在治下的改不了）；州府有户口（账上的照账、别的照地理志推、写依据）
+const { chromium } = require('playwright');
+const path = require('path');
+(async () => {
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage();
+  const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
+  await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof admDo === 'function' && typeof popInfer === 'function');
+  const out = await p.evaluate(async () => {
+    const bad = [];
+    // 1 唐天宝年间：吐蕃、回纥、渤海都在内置表里，各有地方、颜色；天下图上写得出名字
+    const R = realmsAt(750, 6), names = R ? R.list.map(x => x.name) : [];
+    for (const n of ['唐', '吐蕃', '回纥（回鹘）', '渤海', '南诏']) if (!names.includes(n)) bad.push('750 年没有' + n + '：' + names);
+    if (R && (R.of(91.1, 29.65) || {}).name !== '吐蕃') bad.push('逻些不归吐蕃');
+    if (R && (R.of(106.9, 47.9) || {}).name !== '回纥（回鹘）') bad.push('漠北不归回纥');
+    let s = newSave({ name: '李白', gender: '男', age: 50, role: '布衣', real: true, gregorianYear: 750, month: 6, day: 1, place: '长安', polity: '唐' }); s.chat = [{ role: 'gm', text: '开场。' }];
+    S = s; MAPZ.inited = true; MAPZ.mode = 'world'; MAPZ.prov = ''; MAPC.k = ''; const html = mapTab(s);
+    if (!html.includes('吐蕃') || !html.includes('渤海')) bad.push('天下图上没写吐蕃、渤海');
+    // 2 契丹可汗、吐蕃赞普是一方之主，能玩
+    for (const role of ['契丹可汗', '吐蕃赞普', '鲜卑部落首领']) { const t = newSave({ name: '阿保机', gender: '男', age: 40, role, gregorianYear: 907, month: 3, day: 1, place: '临潢', polity: '契丹' }); if (!isRuler(t)) bad.push(role + '不算一方之主'); }
+    // 3 君主划分政区
+    s = newSave({ name: '张九四', gender: '男', age: 45, role: '自立为吴王，割据平江', gregorianYear: 1365, month: 3, day: 1, place: '平江府', polity: '张士诚（吴）' }); s.money = { cash: 1e6, unit: '两' }; s.polPts = 20; S = s;
+    let M = mapUnits(s); const mine = M.L2.find(u => admMine(s, u)), far = M.L2.find(u => /大兴|京兆|太原/.test(u.n) && !admMine(s, u));
+    if (!mine) bad.push('找不到自己治下的府州'); else {
+      admDo(s, 'rename', { n: mine.n, to: '姑苏府' }); M = mapUnits(s); if (!M.L2.some(u => u.n === '姑苏府')) bad.push('改名没落到图上');
+      const cty = M.C.find(c => c.p === '姑苏府' || admMine(s, c));
+      if (cty) { admDo(s, 'split', { n: cty.n, to: '新安州' }); M = mapUnits(s); if (!M.L2.some(u => u.n === '新安州') || (M.C.find(c => c.n === cty.n) || {}).p !== '新安州') bad.push('分置新州没办'); }
+      admDo(s, 'capital', { n: '姑苏府' }); if (!s.realm || s.realm.capital !== '姑苏府') bad.push('定都没办');
+      const c0 = s.money.cash; MAPZ.pt = { lon: mine.lon + 0.2, lat: mine.lat + 0.1 }; admDo(s, 'build', { to: '新城', lon: MAPZ.pt.lon, lat: MAPZ.pt.lat }); if (!(s.money.cash < c0) || !arr(s.myAdm.newC).some(x => x.n === '新城')) bad.push('筑城没开工');
+      s.clock.y += 1; s.clock.m = 4; admMonthly(s); MU_C.k = ''; M = mapUnits(s); if (!M.C.some(c => c.n === '新城') || !arr(s.territory).some(t => t.place === '新城')) bad.push('城筑成了没上图、没归入地盘');
+      if (!arr(s.acts).some(x => /改.*为姑苏府/.test(x.what) && x.state === '办成')) bad.push('改政区没记进行动单'); }
+    if (far) { ORGMSG = ''; if (admDo(s, 'rename', { n: far.n, to: '某某' }) || !/不在你治下/.test(ORGMSG)) bad.push('不在治下的也能改名'); }
+    const t2 = newSave({ name: '甲乙', gender: '男', age: 40, role: '平民', gregorianYear: 1365, month: 3, day: 1, place: '平江府', polity: '元' }); if (admDo(t2, 'capital', { n: '平江府' })) bad.push('平民也能定都');
+    // 4 户口：照地理志推、写依据；账上的照账
+    s = newSave({ name: '李白', gender: '男', age: 50, role: '布衣', gregorianYear: 750, month: 6, day: 1, place: '长安', polity: '唐' }); S = s;
+    const L = popTodo(s); const oc = callClaude; let prompt = ''; callClaude = async pr => { prompt = pr; return { text: JSON.stringify({ list: L.slice(0, 3).map((u, i) => ({ name: u.n, hh: 10000 * (i + 1), pop: 50000 * (i + 1), about: false, why: '《新唐书·地理志》天宝户口' })) }) }; };
+    try { await popInfer(s); } finally { callClaude = oc; }
+    if (!/地理志/.test(prompt)) bad.push('推户口没照地理志');
+    const v = popOf(s, L[0].n); if (!v || v.hh !== 10000 || !/地理志/.test(v.why)) bad.push('户口没记下：' + JSON.stringify(v));
+    MAPZ.sel = L[0].n; const info = mapInfo(s); if (!/户口：<b>/.test(info)) bad.push('点开州府看不到户口');
+    s.territory = [{ place: L[1].n, pop: 123456 }]; if ((popOf(s, L[1].n) || {}).pop !== 123456) bad.push('自己地盘的户口没照账');
+    if (!/户口/.test(lookPlace(s, L[0].n))) bad.push('查账的地图里没有户口');
+    // 5 户口不写「约」；城池卡有农商城防；每月照开发涨落，兵燹之后减、写进年谱
+    if (/约/.test(popTxt(v))) bad.push('户口还写「约」');
+    s.popEst.m[L[0].n] = { hh: 20000, pop: 100000, nong: 60, shang: 40, cheng: 50, why: '《新唐书·地理志》' };
+    const ch = cityHtml(s, L[0].n); for (const w of ['城池', '丁壮', '农业', '商业', '城防']) if (!ch.includes(w)) bad.push('城池卡没有' + w);
+    const p0 = s.popEst.m[L[0].n].pop; cityMonthly(s, 12); const p1 = s.popEst.m[L[0].n].pop; if (!(p1 > p0 && p1 < p0 * 1.02)) bad.push(`太平年景一年户口变化不合常理：${p0}→${p1}`);
+    s.battles = [{ turn: s.turn, place: L[0].n, outcome: '大败' }]; let fell = false; for (let k = 0; k < 6 && !fell; k++) { const a0 = s.popEst.m[L[0].n].pop; s.clock.y += 1; cityMonthly(s, 1); s.turn += 0; if (s.popEst.m[L[0].n].pop < a0) fell = true; }
+    if (!fell) bad.push('打过仗的地方户口没掉');
+    // 6 自家的城：开发、赋税、赈济、太守；不是自家的管不了
+    s = newSave({ name: '张九四', gender: '男', age: 45, role: '自立为吴王，割据平江', gregorianYear: 1365, month: 3, day: 1, place: '平江府', polity: '张士诚（吴）' }); s.money = { cash: 1e6, unit: '两' }; S = s;
+    s.territory = [{ place: '平江府', pop: 500000, loyalty: 50, troops: 3000, grain: 20000 }]; s.popEst = { k: popKey(s), m: { 平江府: { hh: 100000, pop: 500000, nong: 50, shang: 70, cheng: 60, why: '推' } } }; s.people = { 吕珍: { role: '部将', seen: 1 } };
+    cityDo(s, '平江府', 'nong'); s.clock.m += 1; cityMonthly(s, 1); if (!(cityOf(s, '平江府').nong > 50)) bad.push('开发农田下个月没见效');
+    cityDo(s, '平江府', 'tax', '轻'); if (cityOf(s, '平江府').tax !== '轻') bad.push('赋税没定');
+    const l0 = N0(s.territory[0].loyalty); cityDo(s, '平江府', 'relief'); if (!(N0(s.territory[0].loyalty) > l0)) bad.push('赈济民心没涨');
+    cityDo(s, '平江府', 'gov', '吕珍'); if (cityOf(s, '平江府').gov !== '吕珍') bad.push('太守没任命'); if (cityDo(s, '平江府', 'gov', '王某甲乙')) bad.push('账上没有的人也当了太守');
+    ORGMSG = ''; if (cityDo(s, '大兴府', 'nong') || !/不是你的城/.test(ORGMSG)) bad.push('别人的城也能开发');
+    // 7 战法：山地设伏比正攻占便宜；一仗三合
+    s.unitTypes = [{ id: 'bu', name: '步卒', size: 500, atk: 50, def: 55, shock: 40, org: 60, mob: 40, pay: 1, grain: 0.5, months: 3 }]; armyAct(s, 'raise', { tpl: 'bu', n: 4 }); const ff = s.forces[0]; ff.train = 70;
+    const b0 = { enemy: '元军', enemyTroops: 2500, enemyQuality: '中', place: '常州府', terrain: '山谷', attacker: '我', ourForces: [ff.name] };
+    const ra = resolveBattle(s, { ...b0, tactic: '正攻' }), rb = resolveBattle(s, { ...b0, tactic: '设伏' });
+    if (!(rb.odds > ra.odds)) bad.push(`山谷设伏没比正攻占便宜：${ra.odds}→${rb.odds}`);
+    if (arr(rb.rounds).length !== 3 || rb.rounds[2].us !== rb.ours - rb.deadUs) bad.push('一仗没分三合、或三合的伤亡对不上总数：' + JSON.stringify(rb.rounds));
+    applyBattle(s, rb); if (!/战况/.test(battleHtml(s)) || !/鏖战/.test(battleHtml(s))) bad.push('军务页没有战况');
+    return bad;
+  });
+  for (const x of out) errs.push(x);
+  console.log('ERRS', JSON.stringify(errs)); await b.close();
+})();

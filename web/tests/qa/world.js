@@ -62,7 +62,7 @@ const path = require('path');
     { const f1 = draftFaults(st, '派人去梁家寨', '他让人发了一封电报到梁家寨。', ''), f2 = draftFaults(st, '用电报通知梁家寨', '众人面面相觑，谁也没听说过什么电报。', '');
       if (!f1.some(x => /电报/.test(x))) bad.push('嘉庆年间正文里出现电报，程序没挑出来'); if (f2.some(x => /电报/.test(x))) bad.push('玩家自己说的电报，正文写「没有」也被当成错'); }
     // 版本号：三个版本同一串，存档记下是哪一版
-    if (!/Game \d+\.\d+\.\d+ · 身份 V2 · 材料 V2 · 审稿 V2 · 自家势力 V1 · 世界 V2/.test(versionLine()) || mk({}).gameVer !== VERSIONS.game) bad.push('版本号没写全或存档没记版本');
+    if (!/Game \d+\.\d+\.\d+ · 身份 V2 · 材料 V2 · 审稿 V2 · 自家势力 V1 · 世界 V2 · 军政 V1/.test(versionLine()) || mk({}).gameVer !== VERSIONS.game) bad.push('版本号没写全或存档没记版本');
     // 检索词并成一批：几处同时要查的，凑在一起问
     const calls = []; const orig = callClaude; callClaude = async (prompt) => { calls.push((prompt.match(/^\d+\. /gm) || []).length); return { text: JSON.stringify({ results: [] }) }; };
     try { await Promise.all([dsLookup(['甲 一', '甲 二']), dsLookup(['乙 一', '乙 二', '乙 三']), dsLookup(['丙 一']), dsLookup(['甲 一'])]); } finally { callClaude = orig; }

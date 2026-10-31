@@ -34,6 +34,9 @@ const path = require('path');
     M = mapUnits(s); const hz = M.L2.find(u => u.n === '杭州');
     if (!M.builtin || !hz || (M.reg(hz) || {}).name !== '吴越') bad.push('DeepSeek 把吴越并进后唐，图上就跟着错');
     if (M.L2.length < 150) bad.push('DeepSeek 只报了两个州，图上就只有两个州：' + M.L2.length);
+    // 照谭图的样子：地形默认关；放大到本地也没有空白（离治所远的铺外境浅色）
+    if (MAPZ.lay.terr !== false) bad.push('地形默认开着，山影盖住颜色（谭图不打山影）');
+    { S = mk(934); MAPZ.inited = false; MAPC.k = ''; const h = mapTab(S); if (!/#d9cfb4|<rect/.test(h)) bad.push('放大图没有铺底'); }
     // 统一年代照旧（不当成分立）
     if (realmsAt(1750, 6)) bad.push('乾隆十五年也当成分立年代');
     return bad;
