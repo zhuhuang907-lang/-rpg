@@ -37,7 +37,7 @@ const path = require('path');
     try { await popInfer(s); } finally { callClaude = oc; }
     if (!/地理志/.test(prompt)) bad.push('推户口没照地理志');
     const v = popOf(s, L[0].n); if (!v || v.hh !== 10000 || !/地理志/.test(v.why)) bad.push('户口没记下：' + JSON.stringify(v));
-    MAPZ.sel = L[0].n; const info = mapInfo(s); if (!/户口：<b>/.test(info)) bad.push('点开州府看不到户口');
+    MAPZ.sel = L[0].n; const info = mapInfo(s); if (!/户口/.test(info) || !/城池/.test(info)) bad.push('点开州府看不到户口、城池');
     s.territory = [{ place: L[1].n, pop: 123456 }]; if ((popOf(s, L[1].n) || {}).pop !== 123456) bad.push('自己地盘的户口没照账');
     if (!/户口/.test(lookPlace(s, L[0].n))) bad.push('查账的地图里没有户口');
     // 5 户口不写「约」；城池卡有农商城防；每月照开发涨落，兵燹之后减、写进年谱
