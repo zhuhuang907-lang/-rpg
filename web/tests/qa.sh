@@ -62,6 +62,7 @@ start ai.js && {
   run "自家势力：山寨、商号、商队、宗族、乡勇、绿林共用一套账，人数照军务、本钱照营生，建入退换头领增减迁资结交散，权不互转" 120 env PLAY="$ROOT/web/play.html" node orgs.js
   run "世界自己转：要紧的人照身份、所在、资源、关系自己办事落到账上，账上没有的人不收，兵数不凭空涨，暗地里的只进幕后，外地出事落到辖区，检索词并成一批（五种身份）" 120 env PLAY="$ROOT/web/play.html" node world.js
   run "舆图着色：谭图真界下好几家政权照政权上色、你的地盘真上色、别家地盘写到省一级的照省上色、聚众据地的画商帮不画" 120 env PLAY="$ROOT/web/play.html" node mapcolor.js
+  run "吩咐有回音、后果要合理：跟前能办的令当回办成、拖了两回的必须见分晓、诏令没缘由不打折、应对过的不罚误期、一个月新来的事有上限、起兵先有密报" 120 env PLAY="$ROOT/web/play.html" node feedback.js
   run "年岁与名字：长幼次序（兄姐弟妹、伯叔、长次子）不许颠倒、颠倒的交 DeepSeek 重推、一定给数；叙述里不许某地某日某事" 120 env PLAY="$ROOT/web/play.html" node ages.js
   run "新系统吃乱数据：四种身份×记账给出各种怪格式的国势、阶层、时政、军令、人事、本事、差事×每个侧栏，不报错、不露 undefined NaN [object Object]" 300 env PLAY="$ROOT/web/play.html" node garbage.js
   run "家族与人情：族谱、立嗣、生活方向按月长本事、谋划按月推进有成败败露、结果进下一回材料、好感有来由、关系名号" 600 node clan.js
