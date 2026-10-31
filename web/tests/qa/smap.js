@@ -97,7 +97,7 @@ const { chromium } = require('playwright');
   if (!/东汉至北宋/.test(q2.river) || /夺淮/.test(q2.river) || /会通河/.test(q2.river) || !/通济渠/.test(q2.river)) bad('950年的黄河、运河不对：' + q2.river.slice(0, 300));
   // 不是清代的年份也照谭图历代府州界画真界，填色按政权（CLAUDE.md「舆图」）
   await p.waitForFunction(() => TS || TS_ERR, null, { timeout: 60000 }).catch(() => {});
-  { const t = await p.evaluate(() => { MAPC.k = ''; render(); const sv = document.querySelector('.smap'), h = sv.querySelector('path[data-mapu="杭州"]'), wy = (S.admin.regimes.find(r => r.name === '吴越') || {}).col; return { err: TS_ERR, h: !!h, fill: h && h.getAttribute('fill'), wy, foot: document.body.innerText.includes('历代府州界') }; });
+  { const t = await p.evaluate(() => { MAPC.k = ''; render(); const sv = document.querySelector('.smap'), h = sv.querySelector('path[data-mapu="杭州"]'), wy = (((realmsAt(S.clock.y, S.clock.m) || { list: [] }).list.find(r => r.name === '吴越')) || S.admin.regimes.find(r => r.name === '吴越') || {}).col;   /* 分立政权的颜色照内置史料（CLAUDE.md 舆图「每个时期都分政权画」） */ return { err: TS_ERR, h: !!h, fill: h && h.getAttribute('fill'), wy, foot: document.body.innerText.includes('历代府州界') }; });
     if (t.err || !t.h || !t.foot) bad('950年没照谭图历代府州界画：' + JSON.stringify(t)); else if (t.fill !== t.wy) bad('杭州的地块没按吴越着色：' + JSON.stringify(t)); }
   await p.click('.smap circle[data-mapu="杭州"]').catch(() => bad('950年图上没有杭州'));
   if (!/吴越/.test(await p.evaluate(() => (document.querySelector('.affair') || {}).innerText || ''))) bad('点杭州没说归吴越');

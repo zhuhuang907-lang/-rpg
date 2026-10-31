@@ -19,7 +19,7 @@ const path = require('path');
     const r1 = M.reg(jn), r2 = M.reg(sz);
     if (!r1 || r1.name !== '太平天国' || !r2 || r2.name !== '清') bad.push('谭图真界下好几家政权时，府州没认出归哪家：' + JSON.stringify([r1 && r1.name, r2 && r2.name]));
     let html = ''; try { html = stratMap(S); } catch (e) { bad.push('画图报错 ' + e.message); }
-    if (!html.includes('#3b6fb5')) bad.push('太平天国的颜色没画上');
+    { const tc = ((realmsAt(1855, S.clock.m) || { list: [] }).list.find(x => x.name === '太平天国') || {}).col || '#3b6fb5'; if (!html.includes(tc)) bad.push('太平天国的颜色没画上'); }   /* 2026-10-31 起分立政权的颜色照内置史料定（CLAUDE.md 舆图「每个时期都要分政权画」） */
     // 2 你的地盘：真颜色，不是 CSS 变量
     S = mk({ idm: 'warlord', protagonist: { name: '甲', role: '据有襄阳的军头' }, territory: [{ place: '襄阳府' }], forces: [{ name: '甲军', leader: '甲', troops: 5000 }] });
     try { html = stratMap(S); } catch (e) { bad.push('画图报错 ' + e.message); }
