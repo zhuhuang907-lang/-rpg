@@ -38,7 +38,7 @@ const path = require('path');
     if (MAPZ.lay.terr !== false) bad.push('地形默认开着，山影盖住颜色（谭图不打山影）');
     { S = mk(934); MAPZ.inited = false; MAPC.k = ''; const h = mapTab(S); if (!/#d9cfb4|<rect/.test(h)) bad.push('放大图没有铺底'); }
     // 统一年代照旧（不当成分立）
-    if (realmsAt(1750, 6)) bad.push('乾隆十五年也当成分立年代');
+    { const R = realmsAt(1750, 6); /* 周边各族也画（CLAUDE.md 舆图「周边各族也画、也能玩」）：乾隆十五年内地归清，准噶尔在西北 */ if (!R || (R.of(118.78, 32.05) || {}).name !== '清' || (R.of(87.6, 43.8) || {}).name !== '准噶尔') bad.push('乾隆十五年内地不归清、或准噶尔没画'); }
     return bad;
   });
   for (const x of out) errs.push(x);
