@@ -66,6 +66,7 @@ start ai.js && {
   run "朝局令当场办：一方之主任命跟前的当场到任、远处的下一回到任、罢免增设裁撤当场办、国策走诏令回报了才算已行；写正文吩咐了就办不说空话；日本新罗西域西南夷南越林邑都在" 120 env PLAY="$ROOT/web/play.html" node courtnow.js
   run "周边各族也画也能玩、君主自己划分政区（改名改隶分置定都筑城）、州府看得到户口（照地理志推、写依据）" 120 env PLAY="$ROOT/web/play.html" node frontier.js
   run "每个时期都分政权画：五代十国长安一带不空、各国和中原王朝不同色、DeepSeek 并成一家也照内置史料分开、各时期要紧城池归对政权" 120 env PLAY="$ROOT/web/play.html" node realms.js
+  run "人物页身边和远处分开（远处写信遣使）、不摆出处引文、真人主角不添虚构下人、中古的虚构名字像那时的士人" 120 env PLAY="$ROOT/web/play.html" node circle.js
   run "势力页天下各家全列、自家不列成别人、不留空白；人的本事只写品第不写数" 120 env PLAY="$ROOT/web/play.html" node power.js
   run "舆图缩放跟人走、兵牌军情卡、胜算照别国守军算、天时与军中突发之事、一个字的州认得出" 120 env PLAY="$ROOT/web/play.html" node warmap.js
   run "舆图着色：谭图真界下好几家政权照政权上色、你的地盘真上色、别家地盘写到省一级的照省上色、聚众据地的画商帮不画" 120 env PLAY="$ROOT/web/play.html" node mapcolor.js
