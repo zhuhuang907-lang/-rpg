@@ -17,7 +17,7 @@ const { chromium } = require('playwright');
     S.career = { office: '扬州营游击', rank: '从三品' }; r.mil = k(); S.career = { office: '户部主事', rank: '正六品' }; r.court = k();
     S.career = save.career; S.idm = 'emperor'; S.protagonist.role = '皇帝'; r.ruler = k(); S.idm = save.idm; S.protagonist.role = save.role; return r; });
   if (/court|army/.test(tabs.merchant)) bad('盐商也有朝局或军务：' + tabs.merchant);
-  if (!/court/.test(tabs.local) || /army/.test(tabs.local) || !/衙署/.test(tabs.local)) bad('知县的面板不对：' + tabs.local);
+  if (!/court/.test(tabs.local) || !/army/.test(tabs.local) || !/衙署/.test(tabs.local)) bad('知县的面板不对：' + tabs.local);   /* 2026-11-01 起知县能招乡勇民壮，有军务页（CLAUDE.md「各种身份管得到什么」） */
   if (!/army/.test(tabs.mil)) bad('武官没有军务：' + tabs.mil);
   if (!/court/.test(tabs.court) || /army/.test(tabs.court)) bad('京官的面板不对：' + tabs.court);
   if (!/court/.test(tabs.ruler) || !/army/.test(tabs.ruler)) bad('皇帝的面板不全：' + tabs.ruler);
