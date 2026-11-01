@@ -54,7 +54,7 @@ const path = require('path');
     cityDo(s, '平江府', 'tax', '轻'); if (cityOf(s, '平江府').tax !== '轻') bad.push('赋税没定');
     const l0 = N0(s.territory[0].loyalty); cityDo(s, '平江府', 'relief'); if (!(N0(s.territory[0].loyalty) > l0)) bad.push('赈济民心没涨');
     cityDo(s, '平江府', 'gov', '吕珍'); if (cityOf(s, '平江府').gov !== '吕珍') bad.push('太守没任命'); if (cityDo(s, '平江府', 'gov', '王某甲乙')) bad.push('账上没有的人也当了太守');
-    ORGMSG = ''; if (cityDo(s, '大兴府', 'nong') || !/不是你的城/.test(ORGMSG)) bad.push('别人的城也能开发');
+    ORGMSG = ''; if (cityDo(s, '大兴府', 'nong') || !/不是你的城|不归你管/.test(ORGMSG)) bad.push('别人的城也能开发');
     // 7 战法：山地设伏比正攻占便宜；一仗三合
     s.unitTypes = [{ id: 'bu', name: '步卒', size: 500, atk: 50, def: 55, shock: 40, org: 60, mob: 40, pay: 1, grain: 0.5, months: 3 }]; armyAct(s, 'raise', { tpl: 'bu', n: 4 }); const ff = s.forces[0]; ff.train = 70;
     const b0 = { enemy: '元军', enemyTroops: 2500, enemyQuality: '中', place: '常州府', terrain: '山谷', attacker: '我', ourForces: [ff.name] };
