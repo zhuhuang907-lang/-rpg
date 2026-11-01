@@ -41,7 +41,7 @@ const { chromium } = require('playwright');
   if (qr.st !== '办成' || !(qr.d > 0)) bad('差事办成没结掉、没加声望：' + JSON.stringify(qr));
   await p.click('[data-tab="skill"]'); await p.waitForTimeout(300);
   const txt = await p.evaluate(() => document.body.innerText);
-  for (const w of ['属性', '本事', '经商', '声望', '品行', '三代行盐']) if (!txt.includes(w)) bad('本事页上没有：' + w);
+  for (const w of ['属性', '本事', '经商', '名声', '品行', '三代行盐'])   /* 2026-11-01 起本事页不写数，「声望 N」改写「名声」品第（CLAUDE.md 人物「人的本事不用数目量」） */ if (!txt.includes(w)) bad('本事页上没有：' + w);
   // 身边人的各项：DeepSeek 照史料评定，人物页显眼地摆出来（数、依据、总评），没评过的可以点按钮请它评
   await p.evaluate(() => { S.people['程立德'] = { role: '账房', seen: S.turn }; TAB = 'people'; SIDE_FOLD = false; render(); });
   const jb = await p.$('[data-judge="程立德"]'); if (!jb) bad('人物页没有「请 DeepSeek 评定各项」'); else { await jb.click(); await p.waitForFunction(() => S.people['程立德'].stats, null, { timeout: 60000 }).catch(() => bad('点了评定没评出来')); }

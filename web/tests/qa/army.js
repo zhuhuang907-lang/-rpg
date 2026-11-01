@@ -19,7 +19,11 @@ const { chromium } = require('playwright');
   await turn('带乡勇去打仪征的盐枭');
   x = await lastExtra();
   const left = await p.evaluate(() => N0(S.forces.find(f => f.name === '乡勇').troops));
-  if (!x.battle || x.battle.virtual || left !== 400 - x.battle.deadUs) bad(`带自家兵出战，伤亡没扣对：剩 ${left}，结算 ${JSON.stringify(x.battle)}`);
+  // 同一个月里军中的突发之事（疫病、逃亡……，CLAUDE.md 舆图「兵牌、军情卡、胜算、天时、突发之事」）也扣人，照年谱里记的一并算上
+  const haz = await p.evaluate(() => arr(S.chronicle).filter(c => c.who === '军中' && /^乡勇/.test(c.what || '')).reduce((a, c) => a + (Number(((c.what.match(/约([\d,]+)人/) || [])[1] || '0').replace(/,/g, '')) || 0), 0));
+  /* 伤亡照结算时各军的人数比例扣（applyBattle），先出了疫病逃亡的，按剩下的人数折 */
+  const exp = 400 - haz - (x.battle ? Math.round(x.battle.deadUs * (400 - haz) / 400) : 0);
+  if (!x.battle || x.battle.virtual || left !== exp) bad(`带自家兵出战，伤亡没扣对：剩 ${left}，结算 ${JSON.stringify(x.battle)}`);
   // 离谱的米价：下一回的账房材料里要点出来
   await p.evaluate(() => { S.prices = [{ item: '米', price: 999, per: '斗' }]; });
   await turn('在家歇着');
