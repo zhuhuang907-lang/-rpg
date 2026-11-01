@@ -34,6 +34,19 @@ const path = require('path');
     M = mapUnits(s); const hz = M.L2.find(u => u.n === '杭州');
     if (!M.builtin || !hz || (M.reg(hz) || {}).name !== '吴越') bad.push('DeepSeek 把吴越并进后唐，图上就跟着错');
     if (M.L2.length < 150) bad.push('DeepSeek 只报了两个州，图上就只有两个州：' + M.L2.length);
+    // 贞明七年（921）的图（CLAUDE.md 舆图「唐五代的州府要齐、称号用当年的」；2026-11-01 玩家：「错误太多……没有涂色的地方……行政单位表达是错误的」）
+    { const s9 = mk(921, { protagonist: { name: '王审知', gender: '男', age: 59, role: '闽王' }, place: { full: '福州', polity: '闽' } }); s9.place.polity = '闽'; MAPZ.mode = 'world'; const M9 = mapUnits(s9), nm = new Set(M9.L2.map(u => u.n)), of = n => { const u = M9.L2.find(x => x.n === n); return u ? (M9.reg(u) || {}).name || '没人' : '图上没有'; };
+      for (const n of ['开封府', '宋州', '青州', '齐州', '曹州', '幽州', '代州', '云州', '相州', '梓州', '夔州', '阆州', '润州', '虔州', '蔡州', '赵州', '滑州']) if (!nm.has(n)) bad.push('921 年图上没有' + n);
+      for (const n of ['宣化府', '大兴府', '保安州', '平阳府', '南阳府', '庆远府', '兖州府', '汴州', '豫州', '雍州', '岐州', '黔州督护府']) if (nm.has(n)) bad.push('921 年图上出现了当时没有的「' + n + '」');
+      const W9 = { 开封府: '后梁', 青州: '后梁', 滑州: '后梁', 房州: '后梁', 太原府: '晋', 幽州: '晋', 凤翔府: '岐', 成都府: '前蜀', 夔州: '前蜀', 江陵府: '荆南', 潭州: '楚', 桂州: '楚', 广州: '南汉', 福州: '闽', 泉州: '闽', 杭州: '吴越', 江都府: '吴', 润州: '吴', 虔州: '吴', 镇州: '赵（王镕）', 定州: '北平王（王处直）', 夏州: '定难军（党项拓跋氏）', 灵州: '朔方军（韩逊）' };
+      for (const [n, r] of Object.entries(W9)) if (of(n) !== r) bad.push(`921 年${n}应归${r}，图上是${of(n)}`);
+      const none = M9.L2.filter(u => !M9.reg(u)).map(u => u.n); if (none.length) bad.push('921 年有州府没上色：' + none.join('、'));
+      const R9 = realmsAt(921, 6), rr = n => regRuler(s9, R9.list.find(x => x.name === n));
+      for (const [n, k] of [['吴', '杨溥（吴王）'], ['楚', '马殷（楚王）'], ['闽', '王审知（闽王）'], ['吴越', '钱镠（吴越王）'], ['后梁', '朱友贞（梁帝）'], ['晋', '李存勖（晋王）'], ['岐', '李茂贞（岐王）'], ['荆南', '高季昌（荆南节度使、渤海王）']]) if (rr(n) !== k) bad.push(`921 年${n}的君主应写「${k}」，写成「${rr(n)}」`);
+      if (R9.list.some(x => /睿帝|武穆|太祖|高祖|末帝/.test(rr(x.name)))) bad.push('921 年君主写成了死后的庙号谥号');
+      const C9 = Object.fromEntries(R9.list.map(x => [x.name, x.col])), dist = (a, b) => { const h = x => [1, 3, 5].map(k => parseInt(x.slice(k, k + 2), 16)); const A = h(a), B = h(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); };
+      for (const [a, b] of [['吴', '楚'], ['吴', '吴越'], ['楚', '南汉'], ['闽', '吴越'], ['闽', '吴'], ['后梁', '晋'], ['前蜀', '岐'], ['南汉', '静海军（交州）']]) if (dist(C9[a], C9[b]) < 90) bad.push(`921 年${a}和${b}挨着、颜色太像（${C9[a]} ${C9[b]}）`); }
+    MAPZ.mode = 'prov';
     // 照谭图的样子：地形默认关；放大到本地也没有空白（离治所远的铺外境浅色）
     if (MAPZ.lay.terr !== false) bad.push('地形默认开着，山影盖住颜色（谭图不打山影）');
     { S = mk(934); MAPZ.inited = false; MAPC.k = ''; const h = mapTab(S); if (!/#d9cfb4|<rect/.test(h)) bad.push('放大图没有铺底'); }
