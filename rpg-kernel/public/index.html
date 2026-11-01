@@ -1467,7 +1467,7 @@ const IDM = {
 };
 
 /** 家世、住处、地点不编：开局和每一回都照这个 */
-const NOFAB = '家世、住处、地点不编：史书真人（主角也好、旁人也好）的祖上、父母、妻妾、子女、宅第、来历、交游，只照史料——查到的照写，史料没有记载的就是没有，不推、不补、不主观臆断，也不替他添一个没记载的妻子儿女；能从史料直接推出的（如史载其子某某，则其子在）才写。只有虚构的主角（玩家选了虚构人物），家才照那个年代那种人家最常见的样子给齐（成年的富户、官宦男子有正妻，多有子女、仆婢），都往平常处写，不编显赫祖上、隐秘身世、传家宝、恩怨旧案。地名只用材料里有的真实地名（州县、乡镇、街巷、寺观、书院、会馆、码头要么在【地理】【本地志】【联网查到的资料】里，要么是那里真有的），查不到名字的街巷、村子、店铺不起名，写「城东一条巷子」「西门外的村子」。每个人都要有全名，女眷也一样（妻、妾、母、女、婢都写姓加名，如「程婉贞」「柳素娥」；对话里照礼称「程氏」「柳姨娘」可以，名册里不能只写「某氏」）。虚构的人物照常起全名，但不得与史书上的真人重名（不论哪个朝代的名人，如「李白」「王安石」「和珅」都不能拿来给虚构的人用），程序会在界面上标「（虚拟）」，正文里你不用自己标。';
+const NOFAB = '主角是史书真人时不添虚构人物：出场有名有姓的一律是这一年确在他身边、或与他确有往来的史书真人（家人、僚属、近侍、使者都照史料）；跑腿传话的小角色只写身份（内侍、驿卒、门吏），不起名字；远在别处的人（外放的皇子、出镇的将帅、外州的官）不在跟前，只能书信、遣使、诏令往来，不写成当面说话。家世、住处、地点不编：史书真人（主角也好、旁人也好）的祖上、父母、妻妾、子女、宅第、来历、交游，只照史料——查到的照写，史料没有记载的就是没有，不推、不补、不主观臆断，也不替他添一个没记载的妻子儿女；能从史料直接推出的（如史载其子某某，则其子在）才写。只有虚构的主角（玩家选了虚构人物），家才照那个年代那种人家最常见的样子给齐（成年的富户、官宦男子有正妻，多有子女、仆婢），都往平常处写，不编显赫祖上、隐秘身世、传家宝、恩怨旧案。地名只用材料里有的真实地名（州县、乡镇、街巷、寺观、书院、会馆、码头要么在【地理】【本地志】【联网查到的资料】里，要么是那里真有的），查不到名字的街巷、村子、店铺不起名，写「城东一条巷子」「西门外的村子」。每个人都要有全名，女眷也一样（妻、妾、母、女、婢都写姓加名，如「程婉贞」「柳素娥」；对话里照礼称「程氏」「柳姨娘」可以，名册里不能只写「某氏」）。虚构的人物照常起全名，但不得与史书上的真人重名（不论哪个朝代的名人，如「李白」「王安石」「和珅」都不能拿来给虚构的人用），程序会在界面上标「（虚拟）」，正文里你不用自己标。';
 function storyRules() {
   return `你在和玩家一起写一个人在真实历史里的一生。玩家说主角做什么，你写那个年代的世界怎么回应：身边的人怎么说、怎么想、怎么做，事情怎么一步步起变化。你写世界和别人，不替主角想、不替主角说。
 
@@ -1642,9 +1642,9 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261101092619';
+const BUILD = '20261101104637';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
-const VERSIONS = { game: '0.5.6', military: 'V2', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', world: 'V3', save: '兼容（旧档读得进）' };
+const VERSIONS = { game: '0.5.7', military: 'V2', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', world: 'V3', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
@@ -3933,7 +3933,8 @@ function famPlanTick(s) {
 async function familyFix(s) { try { return await familyFix0(s); } finally { fixShiNames(s); } }
 async function familyFix0(s, only) {
   // 真人主角：家里人只照史料；府里干活的仆婢、管家不是他的家世，后院要有人使唤，另补，标「虚构」
-  if (s.protagonist && s.protagonist.real && !only) { const got = await familyFromRecords(s); if (familyNeeds(s).includes('仆婢')) got.push(...await familyFix0(s, ['仆婢'])); return got; }
+  // 2026-11-01 玩家：「明明不能有虚构人物的加上虚构人物」——真人主角家里一个虚构的人都不添（以前补虚构的管家、仆役），只照史料
+  if (s.protagonist && s.protagonist.real && !only) { s.famOk = Object.assign(s.famOk || {}, { serv: true }); return familyFromRecords(s); }
   const need = only || familyNeeds(s); s.famTried = s.clock.y + ':' + need.join(); if (!need.length) return [];
   const p = s.protagonist, yl = s.clock.yearLabel || s.clock.y + '年';
   const found = p.real && p.name ? await searchFirst(s, [`${p.name} 妻 夫人 继室`, `${p.name} 妾 子女 后嗣`]) : '';
@@ -5727,9 +5728,9 @@ ${found || '（这回没联网查到资料）'}
 }
 function rosterHtml(s) {
   if (rosterDue(s) && !BUSY && !ROSTER_P) ROSTER_P = Promise.resolve().then(() => buildRoster(s)).catch(e => { if (!(e && e.code === 'cancelled')) s.rosterFail = s.turn; }).finally(() => { ROSTER_P = null; try { store.save(s); } catch (_) {} if (TAB === 'people') render(); });
-  const R = s.roster, head = `<div class="h" style="margin-top:6px"><span class="seal">朝</span>天下名录<span class="note">${R ? R.y + '年' : '这一年'}全国在任、在世的要紧人物，照史料带出处</span></div>`;
+  const R = s.roster, head = `<div class="h" style="margin-top:6px"><span class="seal">朝</span>天下名录<span class="note">${R ? R.y + '年' : '这一年'}全国在任、在世的要紧人物</span></div>`;
   if (!R || R.y !== s.clock.y) return head + `<div class="muted">${ROSTER_P ? '正在查这一年全国的宗室王公、中枢大臣、各地大员、将帅、世家……' : '这回没查成，下一回再查。'}</div>`;
-  return head + `<div class="roster">${R.groups.map((g, i) => `<details class="oadd"${i < 2 ? ' open' : ''}><summary><b>${esc(g.name)}</b> <span class="muted">${g.people.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>职位</th><th>出处</th><th></th></tr>${g.people.map(x => `<tr><td><b>${esc(x.name)}</b>${x.note ? `<div class="muted" style="font-size:11px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.post)}${x.since ? `<span class="muted">（${esc(x.since)}年起）</span>` : ''}</td><td class="muted" style="font-size:11px">${esc(x.source)}</td><td><button class="link" data-write="${esc('设法求见' + x.name + '，')}">求见</button></td></tr>`).join('')}</table></div></details>`).join('')}</div>`;
+  return head + `<div class="roster">${R.groups.map((g, i) => `<details class="oadd"${i < 2 ? ' open' : ''}><summary><b>${esc(g.name)}</b> <span class="muted">${g.people.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>职位</th><th></th></tr>${g.people.map(x => `<tr><td><b>${esc(x.name)}</b>${x.note ? `<div class="muted" style="font-size:11px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.post)}${x.since ? `<span class="muted">（${esc(x.since)}年起）</span>` : ''}</td><td><button class="link" data-write="${esc('设法求见' + x.name + '，')}">求见</button></td></tr>`).join('')}</table></div></details>`).join('')}</div>`;
 }
 /* ========== 全国官员名册：天下名录和人事树并成一份，分中枢、各省、军镇；可搜、可筛；空缺、本事、派系都在上面 ========== */
 let ROSTER_Q = '', ROSTER_G = '';
@@ -9909,10 +9910,14 @@ function dossierBlock(s, text) {
 /* ========== 起名：正文里出现「严某」「王某人」这种占位的称呼，程序替他起一个合乎时代的全名，前后一致，账册里一并改 ========== */
 const SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯管卢莫房裘缪解应宗丁宣邓郁单杭洪包诸左石崔吉龚程邢裴陆荣翁荀惠甄曲封储靳段焦巴弓牧山谷车侯全班仰秋仲伊宫宁仇栾暴甘厉戎祖武符刘景詹龙叶幸司韶黎薄印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阳胥能苍双闻党翟谭贡劳姬申扶冉宰雍桑桂濮牛寿通边扈燕冀浦尚农温别庄晏柴瞿阎连习艾鱼容向古易慎戈廖庾终衡步都耿满弘匡国文寇广禄东欧殳沃利蔚越夔隆师巩聂晁勾敖融冷辛阚那简饶空曾沙养鞠须丰巢关蒯相查后荆红游竺权盖益桓公';
 const GIVEN = ['守仁', '承业', '德茂', '文焕', '世昌', '允中', '景和', '思道', '仲谦', '伯庸', '子厚', '惟清', '廷佐', '宗礼', '汝成', '敬之', '应龙', '可久', '时雍', '克让', '延年', '光远', '士弘', '彦升', '孝先', '端甫', '良辅', '用晦', '希贤', '本初', '叔达', '季平', '养正', '存诚', '道生', '志远', '尚义', '有容', '居敬', '怀德', '秉忠', '兴宗', '大有', '子平', '慎行', '安仁', '复初', '致远', '永年', '继先'];
+// 唐宋以前的士人多单名（杨素、高颎、苏威、牛弘），双名也是那时的样子（李德林、虞世基、颜师古）；明清那套雅名（守仁、文焕）放在中古不像
+const GIVEN_OLD1 = ['弘', '素', '威', '谟', '纲', '琮', '恭', '俭', '让', '质', '绍', '瑾', '恪', '谅', '融', '衡', '绰', '彦', '懿', '亮', '基', '瓒', '朗', '玄', '雅', '顗', '冲', '肃', '敬', '晏', '逊', '翼', '湛', '粲', '畅', '琰', '浚', '崇'];
+const GIVEN_OLD2 = ['德林', '世基', '孝慈', '元寿', '仁寿', '处约', '思廉', '师古', '玄感', '彦博', '君肃', '子才', '文举', '仲举', '伯达', '季良', '叔宝', '孝伯', '元礼', '道衡', '弘之', '处默', '玄卿', '德方', '景仁', '安仁', '公辅', '士廉'];
 const GIVEN_LOW = ['大', '二', '三', '四', '五', '六', '七', '八', '老大', '老二', '老三', '老四', '二郎', '三郎', '四郎', '阿大', '阿二', '小五', '小六', '狗儿', '牛儿', '福', '顺', '旺', '根'];
 const GIVEN_F = ['秀英', '桂兰', '玉珍', '素娥', '月娥', '婉贞', '翠屏', '淑真', '巧云', '凤仙', '兰芝', '惠娘', '春桃', '采莲', '静宜', '慧贞', '婉如', '玉容', '蕙兰', '佩芳', '若兰', '淑仪', '宝琴', '湘云', '素云', '秋菊', '碧霞', '瑞珠', '云英'];
 /** 官员、贵族的名字要查：把「此地 此年 这个官职」排进下一回的查证 */
 function pickName(s, sur, pool, used) {
+  if (pool === GIVEN && s && s.clock && s.clock.y < 960) pool = (sur.charCodeAt(0) + Object.keys(s.nameMap || {}).length) % 5 < 3 ? GIVEN_OLD1 : GIVEN_OLD2;
   let k = (sur.charCodeAt(0) + Object.keys(s.nameMap || {}).length * 7) % pool.length;
   const R = typeof realAll === 'function' ? realAll(s) : new Set(), bad = n => used.has(n) || R.has(n);   // 不撞本局的人，也不撞史书真人
   for (let n = 0; n < pool.length && bad(sur + pool[k]); n++) k = (k + 1) % pool.length;
@@ -10076,7 +10081,7 @@ function nameFixes(s, text) {
     if (!nm) {
       const female = m[2] === '氏' || /[娘妇女妻嫂姐妹婆]$/.test(t.slice(Math.max(0, m.index - 2), m.index));
       // 贫户、手艺人、跑腿的多叫小名排行，不起读书人家的雅名
-      const low = /(卖|挑|佃|伙计|小二|长工|短工|乞|叫花|车夫|轿夫|船夫|艄公|屠|贩|樵|渔|农|奴|仆|家丁|丫鬟|婢|脚夫|苦力|更夫|差役|衙役|皂隶|兵丁|流民|饥民|货郎|摊|担)/.test(t.slice(Math.max(0, m.index - 10), m.index));
+      const low = !(s.protagonist && s.protagonist.real) && /(乞|叫花|佃户|长工|短工|脚夫|苦力|流民|饥民|货郎|挑夫|纤夫)/.test(t.slice(Math.max(0, m.index - 10), m.index));
       const pool = female ? GIVEN_F : low ? GIVEN_LOW : GIVEN;
       nm = pickName(s, sur, pool, used); s.nameMap[sur + '某'] = nm;
     }
@@ -11132,8 +11137,23 @@ function pane(tab) {
     const P = Object.entries(s.people).filter(([, v]) => v && !v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const OLD = Object.entries(s.people).filter(([, v]) => v && v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const fam = s.household.filter(m => !s.people[m.name]);
-    const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionSet(s), FX = n => { const c = chkOf(s, n); return (FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>') + (c ? `<span class="muted" style="font-size:11px" title="${esc(c.why || '')}">${c.real ? '已核：' + esc(c.src) : '已核：查无此人'}</span>` : n === s.protagonist.name ? '' : `<button class="link" style="font-size:11px" data-pchk="${esc(n)}">核查是否真人</button>`); };
-    const ID = s.protagonist.ident, identH = ID ? `<div class="h" style="margin-top:6px"><span class="seal">身</span>身份<span class="note">照史料：${esc(ID.source)}</span></div><div class="list"><div>${[['字', ID.zi], ['号', ID.hao], ['籍贯', ID.jiguan], ['出身', ID.chushen], ['功名', ID.gongming], ['爵位', ID.jue]].filter(x => x[1]).map(([k, v]) => `<b>${k}</b> ${esc(v)}`).join('　')}</div>${arr(ID.career).length ? `<div class="muted" style="font-size:12px">履历：${ID.career.map(c => (c.y ? c.y + '年 ' : '') + esc(c.post)).join('；')}</div>` : ''}</div>` : '';
+    const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionSet(s), FX = n => { const c = chkOf(s, n); return (FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>') + (c ? `<span class="muted" style="font-size:11px">${c.real ? '已核' : '已核：查无此人'}</span>` : n === s.protagonist.name ? '' : `<button class="link" style="font-size:11px" data-pchk="${esc(n)}">核查是否真人</button>`); };
+    const ID = s.protagonist.ident, identH = ID ? `<div class="h" style="margin-top:6px"><span class="seal">身</span>身份</div><div class="list"><div>${[['字', ID.zi], ['号', ID.hao], ['籍贯', ID.jiguan], ['出身', ID.chushen], ['功名', ID.gongming], ['爵位', ID.jue]].filter(x => x[1]).map(([k, v]) => `<b>${k}</b> ${esc(v)}`).join('　')}</div>${arr(ID.career).length ? `<div class="muted" style="font-size:12px">履历：${ID.career.map(c => (c.y ? c.y + '年 ' : '') + esc(c.post)).join('；')}</div>` : ''}</div>` : '';
+    // 身边和远处分开（2026-11-01 玩家：「朝廷的角色、远在很远地方的人根本就不是身边的人，但是可以给他们写信；身边的人是另外一群人」）：
+    // 和你在一处的、家将近侍幕僚这类随身的算身边；人在别处的列「远处的人」，按钮是写信；真人主角戏里出场的虚构小角色收起来
+    const hereP = hereXY(s), atCourt = isRuler(s) || /京|朝/.test(String(geoCenter(s)));
+    const isNear = v => { const w = String(v.where || '').trim(); if (!w) return true; if (/身边|左右|帐下|府中|家中|宫中|随行|随侍|跟前/.test(w)) return true; if (/^(朝中|京师|京城|在朝|朝廷)$/.test(w)) return atCourt;
+      if (samePlace(w, geoCenter(s)) || (s.at && samePlace(w, s.at))) return true; const u = hereP && placeXY(s, w, s.clock.y); return !!(u && u.lat && hereP.lat && Math.hypot(u.lon - hereP.lon, u.lat - hereP.lat) < 0.35); };
+    const FIC = s.protagonist.real ? P.filter(([k, v]) => { const c = chkOf(s, k); return (c && !c.real) || v.fic; }) : []   /* 只收已核实查无此人、或标了虚构的；还没核的照常列着 */, P1 = P.filter(x => !FIC.includes(x)), NEAR = P1.filter(([, v]) => isNear(v)), FAR = P1.filter(([, v]) => !isNear(v));
+    const CARD = ([k, v]) => `<div class="pc"><div class="pn"><b>${esc(k)}</b>${FX(k)}${relTag(v) ? `<span class="att onpath">${relTag(v)}</span>` : ''}${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
+        <div class="pr">${esc(v.role)}${ageTxt(v) ? ' · ' + ageTxt(v) : ''}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''}</div>
+        ${N0(v.favor) != null ? `<div class="grp"><span class="gk">好感 ${esc(v.favor)}</span><span class="bar"><i style="width:${Math.max(3, (Number(v.favor) + 100) / 2)}%" class="${v.favor < -30 ? 'bad' : v.favor < 0 ? 'warn' : v.favor >= 40 ? 'good' : ''}"></i></span>${v.favorDelta ? `<span class="${v.favorDelta > 0 ? 'up' : 'down'}">${v.favorDelta > 0 ? '▲' : '▼'}${Math.abs(v.favorDelta)}</span>` : ''}</div>` : ''}
+        ${arr(v.traits).length ? `<div class="pl"><span>特质</span>${v.traits.map(t => `<span class="att">${esc(t)}</span>`).join(' ')}</div>` : ''}${v.stats ? `<div class="stchips">${statChips(v.stats, 5)}</div>${v.statSum ? `<div class="pl"><span>总评</span>${esc(v.statSum)}</div>` : ''}<details class="oadd"><summary class="muted">各项与依据（${v.statReal ? '照史料' : '照身份常情'}）</summary>${statFull(v.stats)}</details>` : `<button class="link" data-judge="${esc(k)}">请 DeepSeek 评定各项</button>`}
+        ${v.personality || v.ability ? `<div class="pl"><span>为人</span>${esc(v.personality || '')}${v.ability ? `<span class="abil">本事${esc(v.ability)}</span>` : ''}</div>` : ''}
+        ${v.want ? `<div class="pl"><span>想要</span>${esc(v.want)}</div>` : ''}${v.goal ? `<div class="pl"><span>盘算</span>${esc(v.goal)}</div>` : ''}${v.plan ? `<div class="pl"><span>打算</span>${esc(v.plan)}</div>` : ''}${v.knows ? `<div class="pl"><span>知你</span>${esc(v.knows)}</div>` : ''}${v.status ? `<div class="pl"><span>近况</span>${esc(v.status)}</div>` : ''}${N0(v.wealth) != null ? `<div class="pl"><span>家资</span>${esc(fuzzN(s, v.wealth, (s.money || {}).unit || '两'))}</div>` : ''}${v.dead ? `<div class="pl"><span>已故</span>${esc(v.deadWhy || '')}</div>` : ''}
+        ${arr(v.opLog).length ? `<details class="oadd"><summary class="muted">好感的来由</summary>${v.opLog.slice().reverse().map(o => `<div class="muted" style="font-size:12px">${o.d > 0 ? '+' : ''}${esc(o.d)} ${esc(o.why)}</div>`).join('')}</details>` : ''}
+        ${isNear(v) ? `<button class="link" data-write="${esc('我去找' + k + '，')}">${/女|妇|氏$|娘|妻|妾|姐|妹|母|婆|姑/.test((v.gender || '') + (v.role || '') + (v.tie || '') + k) ? '找她' : '找他'}</button>` : `<button class="link" data-write="${esc('给' + k + '写信：')}">写信</button><button class="link" data-write="${esc('遣使去' + (v.where || '') + '见' + k + '，')}">遣使</button>`}
+        <details class="oadd"><summary class="muted">谋划…</summary><div class="opost"><select data-sct="${esc(k)}">${Object.keys(SCHEMES).map(t => `<option>${t}</option>`).join('')}</select><input class="oin" data-scp="${esc(k)}" placeholder="离间：和谁"><button class="link" data-scheme="${esc(k)}">动手</button></div></details></div>`;
     const famBtn = s.protagonist.real ? `<button class="link" id="bFamRe" ${FAM_P ? 'disabled' : ''}>${FAM_P ? '正在照史料重查家谱、身边人……' : '照史料重查家谱、身边人'}</button>` : '';
     const homeH = (() => { const H = s.home, hs = [...livePeople(s).filter(([, v]) => v.feel).map(([k, v]) => [k, v]), ...arr(s.household).filter(m => m.feel && !m.dead).map(m => [m.name, m])].slice(0, 8);
       if (!(H && H.harmony != null) && !hs.length) return '';
@@ -11141,15 +11161,9 @@ function pane(tab) {
     const famTbl = identH + famBtn + homeH + (HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母${arr(s.famPlan).length ? `；史载还有${s.famPlan.length}个子女在日后出生，到时照记` : ''}</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b>${m.basis ? `<div class="gb"><span class="gr ${m.inferred || m.unver ? 'inf' : 'rec'}">${m.inferred ? '推算' : m.unver ? '史载·网上没核到' : '史载'}</span>${esc(String(m.basis).replace(/^推算[：:]/, ''))}</div>` : ''}</td><td>${m.age != null ? esc(m.age) + '岁' + (m.ageWhy ? `<div class="muted" style="font-size:11px">${esc(m.ageWhy)}</div>` : '') : '<span class="muted">不详</span>'}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(String(m.note || '').replace(/（推算）$/, ''))}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '');
     return (ORGMSG && /核查|查无此人|有其人|评定/.test(ORGMSG) ? `<div class="muted" style="margin:4px 0">${esc(ORGMSG)}</div>` : '') + (arr(s.clashLog).some(x => s.turn - x.turn <= 3) ? `<div class="muted" style="margin:4px 0">虚构人物与史书真人重名，已改名：${esc(s.clashLog.filter(x => s.turn - x.turn <= 3).map(x => x.t).join('；'))}</div>` : '') + clanHtml(s) + famTbl + rosterHtml(s) + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
       ${fam.map(m => `<div class="pc"><div class="pn"><b>${esc(m.name)}</b>${m.alias ? `<span class="muted">（${esc(m.alias)}）</span>` : ''}${FX(m.name)}<span class="att">${esc(m.relation)}</span></div><div class="pr">${ageTxt(m)}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
-      ${P.map(([k, v]) => `<div class="pc"><div class="pn"><b>${esc(k)}</b>${FX(k)}${relTag(v) ? `<span class="att onpath">${relTag(v)}</span>` : ''}${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
-        <div class="pr">${esc(v.role)}${ageTxt(v) ? ' · ' + ageTxt(v) : ''}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''}</div>
-        ${N0(v.favor) != null ? `<div class="grp"><span class="gk">好感 ${esc(v.favor)}</span><span class="bar"><i style="width:${Math.max(3, (Number(v.favor) + 100) / 2)}%" class="${v.favor < -30 ? 'bad' : v.favor < 0 ? 'warn' : v.favor >= 40 ? 'good' : ''}"></i></span>${v.favorDelta ? `<span class="${v.favorDelta > 0 ? 'up' : 'down'}">${v.favorDelta > 0 ? '▲' : '▼'}${Math.abs(v.favorDelta)}</span>` : ''}</div>` : ''}
-        ${arr(v.traits).length ? `<div class="pl"><span>特质</span>${v.traits.map(t => `<span class="att">${esc(t)}</span>`).join(' ')}</div>` : ''}${v.stats ? `<div class="stchips">${statChips(v.stats, 5)}</div>${v.statSum ? `<div class="pl"><span>总评</span>${esc(v.statSum)}</div>` : ''}<details class="oadd"><summary class="muted">各项与依据（${v.statReal ? '照史料' : '照身份常情'}）</summary>${statFull(v.stats)}</details>` : `<button class="link" data-judge="${esc(k)}">请 DeepSeek 评定各项</button>`}
-        ${v.personality || v.ability ? `<div class="pl"><span>为人</span>${esc(v.personality || '')}${v.ability ? `<span class="abil">本事${esc(v.ability)}</span>` : ''}</div>` : ''}
-        ${v.want ? `<div class="pl"><span>想要</span>${esc(v.want)}</div>` : ''}${v.goal ? `<div class="pl"><span>盘算</span>${esc(v.goal)}</div>` : ''}${v.plan ? `<div class="pl"><span>打算</span>${esc(v.plan)}</div>` : ''}${v.knows ? `<div class="pl"><span>知你</span>${esc(v.knows)}</div>` : ''}${v.status ? `<div class="pl"><span>近况</span>${esc(v.status)}</div>` : ''}${N0(v.wealth) != null ? `<div class="pl"><span>家资</span>${esc(fuzzN(s, v.wealth, (s.money || {}).unit || '两'))}${v.wealthBasis ? '<span class="muted">（' + esc(v.wealthBasis) + '）</span>' : ''}</div>` : ''}${v.dead ? `<div class="pl"><span>已故</span>${esc(v.deadWhy || '')}</div>` : ''}${v.circle && v.basis ? `<div class="pl"><span>出处</span>${esc(v.basis)}${v.unver ? '（网上没核到）' : ''}</div>` : ''}
-        ${arr(v.opLog).length ? `<details class="oadd"><summary class="muted">好感的来由</summary>${v.opLog.slice().reverse().map(o => `<div class="muted" style="font-size:12px">${o.d > 0 ? '+' : ''}${esc(o.d)} ${esc(o.why)}</div>`).join('')}</details>` : ''}
-        <button class="link" data-write="${esc('我去找' + k + '，')}">${/女|妇|氏$|娘|妻|妾|姐|妹|母|婆|姑/.test((v.gender || '') + (v.role || '') + (v.tie || '') + k) ? '找她' : '找他'}</button>
-        <details class="oadd"><summary class="muted">谋划…</summary><div class="opost"><select data-sct="${esc(k)}">${Object.keys(SCHEMES).map(t => `<option>${t}</option>`).join('')}</select><input class="oin" data-scp="${esc(k)}" placeholder="离间：和谁"><button class="link" data-scheme="${esc(k)}">动手</button></div></details></div>`).join('')}
+      ${NEAR.length ? NEAR.map(CARD).join('') : ''}
+      ${FAR.length ? `<div class="h" style="margin-top:8px"><span class="seal">远</span>远处的人<span class="note">不在你跟前：只能写信、遣使、下诏往来</span></div>${FAR.map(CARD).join('')}` : ''}
+      ${FIC.length ? `<details class="fold"${FIC.some(([, v]) => (v.seen || 0) >= (s.turn || 0)) ? ' open' : ''}><summary>戏里出场的小角色（${FIC.length}）<span class="note">不是史书人物</span></summary>${FIC.map(CARD).join('')}</details>` : ''}
       ${!P.length && !fam.length ? '<div class="muted">开场后，出场的人会列在这里。</div>' : ''}</div>
       ${OLD.length ? `<details class="fold"><summary>断了来往的旧识（${OLD.length}）<span class="note">久不见、一面之缘的照关系淡出，不删；再去找、再碰上就回来</span></summary><div class="list">${OLD.map(([k, v]) => `<div><b>${esc(k)}</b>${FX(k)} <span class="muted">${esc(v.role || '')}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''} · ${esc(v.fadeWhy || '断了来往')}（第${esc(v.seen || 0)}回合后没再见）</span> <button class="link" data-write="${esc('我去找' + k + '，')}">去找</button></div>`).join('')}</div></details>` : ''}`;
   }

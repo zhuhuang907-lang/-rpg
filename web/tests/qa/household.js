@@ -53,11 +53,12 @@ const { chromium } = require('playwright');
   { await p.evaluate(() => { TAB = 'people'; SIDE_FOLD = false; render(); }); await p.waitForFunction(() => S.roster || S.rosterFail != null, null, { timeout: 60000 }).catch(() => {});
     const r = await p.evaluate(() => { render(); const t = document.querySelector('.roster'); return { txt: t ? t.textContent : '', n: arr(S.roster && S.roster.groups).length }; });
     if (!/傅恒/.test(r.txt) || /某大臣|编造大员/.test(r.txt)) bad('人物页没有天下名录、或混进了没出处的人：' + JSON.stringify(r).slice(0, 300)); }
-  // 默认开局就是真人主角：后院不能空——史书只记姓氏的照写不改名，府里的下人补上并标虚构（CLAUDE.md「人物」）
+  // 默认开局就是真人主角：史书只记姓氏的照写不改名；府里不补虚构的下人（CLAUDE.md「人物」，2026-11-01 改）
   if (!rr.hh.some(h => /^母吴氏\|/.test(h))) bad('史书只记姓氏的家里人被丢了或被改了名：' + JSON.stringify(rr));
   if (!rr.hh.some(h => /^子汪承裕/.test(h))) bad('史载的儿子没记上：' + JSON.stringify(rr));
   { const st = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = false; await familyFix(s); return s.household.filter(m => /管家|仆|婢|丫鬟/.test(m.relation)).map(m => [m.relation, m.name, !!m.fic, m.note]); });
-    if (!st.length || st.some(x => !x[2] || !/虚构/.test(x[3]))) bad('真人主角的后院没人使唤，或下人没标虚构：' + JSON.stringify(st)); }
+    /* 2026-11-01 玩家作废了「真人主角补虚构下人」：真人主角家里一个虚构的人都不补（CLAUDE.md 人物「真人主角不添虚构人物」） */
+    if (st.length) bad('真人主角家里又补了虚构的下人：' + JSON.stringify(st)); }
   // 每回合当场审：写一回，常理审查就跟着审一次（不是隔几回）
   const n0 = (() => { try { return require('fs').readFileSync('logic.log', 'utf8').split('\n').filter(Boolean).length; } catch (_) { return 0; } })();
   await p.fill('#said', '去账房看看今年的账'); await p.click('#bSend'); if (!(await idle())) bad('这一回卡住');
