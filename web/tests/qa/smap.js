@@ -49,11 +49,14 @@ const { chromium } = require('playwright');
   await p.evaluate(() => { S.idm = 'warlord'; S.territory = [{ place: '扬州府', pop: 500000, troops: 3000, grain: 20000, loyalty: 60 }]; S.powers = [{ name: '两江督标', leader: '尹继善', seat: '江宁府', land: '苏州府、常州府', troops: '2万', stance: '提防' }]; S.forces = [{ name: '扬州营', leader: S.protagonist.name, troops: 3000, at: '扬州府', status: '驻守' }]; S.battles = [{ when: '三月', place: '镇江府', outcome: '小胜' }]; render(); });
   const r2 = await p.evaluate(() => ({ own: document.querySelectorAll('.smap [fill="var(--zhu)"]').length, txt: document.querySelector('.smap').textContent, leg: [...document.querySelectorAll('.mlegend')].map(x => x.innerText).join(' ') }));
   if (r2.own < 1) bad('地盘没着色');
-  if (!/扬州营 3,000/.test(r2.txt)) bad('兵马没标出来');
+  if (!/扬州营\s*3,000/.test(r2.txt)) bad('兵马没标出来');   // 兵牌上名字和人数分开写（CLAUDE.md 军事「兵牌」）
   if (!/⚔/.test(r2.txt) || !/★/.test(r2.txt)) bad('战场、你在哪没标');
   if (!/两江督标/.test(r2.leg) || !/清/.test(r2.leg)) bad('图例不全：' + r2.leg);
   if (!/弘历/.test(r2.leg) || !/◉ 府州治所/.test(r2.leg)) bad('图例里的君主没照史料核、或没标治所：' + r2.leg);
-  { const w = await p.evaluate(() => { const sv = document.querySelector('.smap'); return { area: [...sv.querySelectorAll('.arealbl')].map(e => e.textContent), foot: document.body.innerText.includes('CHGIS Version 6') }; }); if (!w.area.includes('扬州府') || !w.foot) bad('天下图上府州名没写在地块上、或没注明府界出处：' + JSON.stringify(w).slice(0, 200)); }
+  { const w = await p.evaluate(() => { const sv = document.querySelector('.smap'); return { area: [...sv.querySelectorAll('.arealbl')].map(e => e.textContent), foot: document.body.innerText.includes('CHGIS Version 6') }; }); if (w.area.length > 0 || !w.foot) bad('天下图上不该写满府州名（2026-11-01 玩家：放大了才看各州名字）、或没注明府界出处：' + JSON.stringify(w).slice(0, 200));
+    /* 放大到扬州一带，府州名写在地块上（CLAUDE.md 舆图「舆图能放大缩小」） */
+    const z = await p.evaluate(() => { const k = [MAPZ.mode, MAPZ.span, MAPZ.c, MAPZ.follow]; MAPZ.mode = 'near'; MAPZ.span = 2; MAPZ.c = { lon: 119.44, lat: 32.39 }; MAPZ.follow = false; render(); const a = [...document.querySelectorAll('.smap .arealbl')].map(e => e.textContent); [MAPZ.mode, MAPZ.span, MAPZ.c, MAPZ.follow] = k; render(); return a; });
+    if (!z.includes('扬州府')) bad('放大到扬州一带，府州名没写在地块上：' + JSON.stringify(z).slice(0, 200)); }
   // 兵马归谁调：你的部将领的也归你调；别家的只能看（CLAUDE.md 兵马）
   { const m = await p.evaluate(() => { const keep = S.forces; S.people['王得禄'] = { role: '把总', tie: '部将', seen: S.turn }; S.forces = keep.concat([{ name: '亲兵营', leader: '王得禄', troops: '800', at: '扬州府' }, { name: '督标', leader: '尹继善', owner: '两江督标', troops: '20000', at: '江宁府' }]);
       const r = { sub: myForce(S, S.forces.find(f => f.name === '亲兵营')), other: myForce(S, S.forces.find(f => f.name === '督标')), go: !!armyAct(S, 'march', { force: '亲兵营', target: '仪征县' }), no: !armyAct(S, 'march', { force: '督标', target: '仪征县' }) };
