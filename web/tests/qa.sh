@@ -36,6 +36,7 @@ run() {   # $1 = 名字，$2 = 超时秒，$3... = 命令；输出里必须没�
 say "构建"; (cd "$ROOT" && python3 web/build.py 2>&1) | tail -3; [ ${PIPESTATUS[0]} -eq 0 ] || { bad "构建失败（页面脚本有语法错误）"; echo "有不合格项，不许发布"; exit 1; }
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
+say "江山时序：本机服务替玩家下到 data/cache/jiangshan、只认两个文件、不是地图数据不收、下过不再下"; JS=$(node "$ROOT/web/tests/jsmapsrv.js" 2>&1 | tail -1); echo "$JS"; echo "$JS" | grep -q "ERRS \[\]" || bad "江山时序下载"
 say "端口被占：别的程序占着往后挪、游戏已经开着不另开"; PF=$(node "$ROOT/web/tests/portfallback.js" 2>&1 | tail -1); echo "$PF"; echo "$PF" | grep -q "ERRS \[\]" || bad "端口被占"
 KEYVAL= start ai.js && run "填 Key：粘贴、保存、换 Key、型号、博查、开关、输入不丢" 300 node keyflow.js
 start ai.js && {
@@ -70,6 +71,8 @@ start ai.js && {
   run "朝局令当场办：一方之主任命跟前的当场到任、远处的下一回到任、罢免增设裁撤当场办、国策走诏令回报了才算已行；写正文吩咐了就办不说空话；日本新罗西域西南夷南越林邑都在" 120 env PLAY="$ROOT/web/play.html" node courtnow.js
   run "大人物照真官：隋唐尚书令照例不授、不起虚构的；三品以上查不到真人就空着待查、后台再查；小吏照旧起名；旧存档清掉大位子上的虚构名字；一方之主能破例除授、小官保举不了" 120 env PLAY="$ROOT/web/play.html" node officials.js
   run "出征真能打：军务页出征单列邻近的城（归谁、多远、几日、胜算、守军不详不编）、点进攻当场立行军、静候军报、撤回；营数整数、总数和战报对得上；胜负折损看对面战力" 120 env PLAY="$ROOT/web/play.html" node march.js
+  run "用江山时序的版图：只当数据解析不执行、照多边形认各家、没画到的照内置；测试里不自动下；玩家亲手打下丢掉的才改图" 120 env PLAY="$ROOT/web/play.html" node jsmap.js
+  run "官场门道与谋升迁：仕途页摆门道和照例数目、打点上司一月一回、清廉的退礼、结同年攒人脉、求保举下月定准驳、准了改官记履历" 120 env PLAY="$ROOT/web/play.html" node shitu.js
   run "周边各族也画也能玩、君主自己划分政区（改名改隶分置定都筑城）、州府看得到户口（照地理志推、写依据）" 120 env PLAY="$ROOT/web/play.html" node frontier.js
   run "每个时期都分政权画：五代十国长安一带不空、各国和中原王朝不同色、DeepSeek 并成一家也照内置史料分开、各时期要紧城池归对政权" 120 env PLAY="$ROOT/web/play.html" node realms.js
   run "人物页身边和远处分开（远处写信遣使）、不摆出处引文、真人主角不添虚构下人、中古的虚构名字像那时的士人" 120 env PLAY="$ROOT/web/play.html" node circle.js
