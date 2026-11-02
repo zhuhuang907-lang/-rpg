@@ -145,6 +145,7 @@ const checks = [
   ['出征与战斗数值（CLAUDE.md「舆图」出征与战斗数值）：军务页出征单、胜算守军不编、整数营实有人数、折损看对面战力', /function marchPanel\(s, f\)/.test(src) && /function marchTargets\(s, f\)/.test(src) && /const uMen = /.test(src) && /function clashCore\(pu, pt, roll, a, b\)/.test(src) && /守军不详（户口还没推出来）/.test(src)],
   ['用江山时序的版图、玩家够不着的照原史（CLAUDE.md「舆图」）：运行时下载不进仓库、只当 JSON 解析、钉版本；只有程序结算的仗改图', /function jsmapParse\(snapTxt, mapTxt\)/.test(src) && /JSON\.parse\(snapTxt\.slice/.test(src) && /const JSMAP_VER = '[0-9a-f]{40}'/.test(src) && /navigator\.webdriver && !window\.JSMAP_TEST/.test(src) && /s\.mapOwn\[geoStem\(r\.take\)\]/.test(src)],
   ['官场门道与谋升迁（CLAUDE.md「人事与职权」）：升迁之制带潜规则、仕途页能打点、结同年、求保举，下月程序定准驳', /function shituAct\(s, act, amt\)/.test(src) && /function shituMonthly\(s\)/.test(src) && /"rules":\[\{"name":"","what":"怎么做","cost":null/.test(src) && /shituMonthly\(s\)\)/.test(src)],
+  ['放大不变花、府州界、你的辖区（CLAUDE.md「舆图」）', /function domainSet\(s, M\)/.test(src) && /function mapToDomain\(s\)/.test(src) && /class="prefline"/.test(src) && /return o \? o\.col : r && r\.col \? r\.col : MAP_PLAIN;/.test(src)],
   ['不卡顿、推理够深（CLAUDE.md「发布与仓库」卡顿）：一回最多改一次稿（程序、核实、审读挑的毛病合在一起改）；每回记下各阶段用时进问题报告；方略、临门、家宅、天下推演都深度思考', /PERF = \{ t0: Date\.now\(\)/.test(src) && /最近几回用时/.test(src) && /!early \|\| fatal/.test(src) && /kind === '推演' && !\(extra && extra\.thinking === false\)/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }

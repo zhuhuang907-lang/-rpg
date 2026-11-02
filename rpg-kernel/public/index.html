@@ -1642,9 +1642,9 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261102043227';
+const BUILD = '20261102054141';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
-const VERSIONS = { game: '0.5.9', military: 'V3', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', officials: 'V3', world: 'V4', save: '兼容（旧档读得进）' };
+const VERSIONS = { game: '0.6.0', military: 'V3', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', officials: 'V3', world: 'V5', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
@@ -7997,6 +7997,23 @@ function mapGestures() {
     MAPG.wk = (MAPG.wk || 1) * (e.deltaY < 0 ? 1.25 : 0.8); MAPG.wat = mapLL(sv, e.clientX, e.clientY); sv.style.transformOrigin = `${e.clientX - sv.getBoundingClientRect().left}px ${e.clientY - sv.getBoundingClientRect().top}px`; sv.style.transform = `scale(${MAPG.wk})`;
     MAPG.wt = setTimeout(() => { const k = MAPG.wk; MAPG.wk = 1; mapZoomBy(k, MAPG.wat); render(); }, 220); }, { passive: false });
 }
+/** 你的辖区落在图上哪些府州县（2026-11-02 玩家：「割据军阀、皇帝、官员之类的，你应该可以看到自己的辖区」）：
+ *  一方之主是自家政权的全部州府加账上的地盘；地方官是自己那个府州或县；山寨是寨子所在；武官是自己兵马驻的地方 */
+function domainSet(s, M) {
+  const D = myDomain(s), set = new Set(); for (const p of arr(D.places)) if (p) set.add(geoStem(p));
+  if (D.kind === 'realm' && M) { const pol = String(pol0(s) || ''); for (const u of arr(M.L2)) { const r = M.reg(u); if (r && pol && (r.name === pol || pol.includes(r.name) || r.name.includes(pol))) set.add(geoStem(u.n)); } }
+  if (D.kind === 'army') for (const f of arr(s.forces)) if (myForce(s, f) && f.at) set.add(geoStem(f.at));
+  return { D, set };
+}
+/** 把图挪到你的辖区上，放到正好看得全 */
+function mapToDomain(s) {
+  const M = mapUnits(s), { set } = domainSet(s, M), P = [];
+  for (const u of arr(M.L2).concat(arr(M.C))) if (u && u.lat && set.has(geoStem(u.n))) P.push(u);
+  if (!P.length) for (const n of set) { const u = placeXY(s, n, s.clock.y); if (u && u.lat) P.push(u); }
+  if (!P.length) { ORGMSG = '你眼下没有辖区（没有地盘、不管地方、不统兵）'; return false; }
+  const xs = P.map(u => u.lon), ys = P.map(u => u.lat), c = { lon: (Math.min(...xs) + Math.max(...xs)) / 2, lat: (Math.min(...ys) + Math.max(...ys)) / 2 };
+  TAB = 'map'; MAPZ.inited = true; MAPZ.mode = 'near'; MAPZ.prov = ''; MAPZ.sel = ''; MAPZ.follow = false; MAPZ.c = c; MAPZ.span = Math.max(0.6, Math.min(12, Math.max(Math.max(...xs) - Math.min(...xs), (Math.max(...ys) - Math.min(...ys)) * 1.2) / 2 * 1.3 + 0.5)); MAPC.k = ''; return true;
+}
 function stratMap(s) {
   try { jsmapLoad(); } catch (_) { /* 下不成照内置史料画 */ }
   if (!geoData().length) return '<div class="muted">地名库没载进来，画不了舆图。</div>';
@@ -8020,8 +8037,10 @@ function stratMap(s) {
   // 政区着色：每个府州占就近的陆地（海上不着），按政权（分裂年代）、你和各方的地盘着色；国界粗实线、省界细虚线
   const PL = Ly.adm && M.poly ? M.poly : null;
   // 格子细一些，边不起锯齿（2026-11-01 玩家：「看起来非常丑陋，渲染极度糟糕」）；放得不够近（几个省以上）照政权上色，不按州府各上一种浅色（那样一片花花绿绿）
-  const fine = zoom && !(near && sp > 2.6), cell = fine ? 5 : 3.5, ck = [y, s.myAdm ? 'a' + s.myAdm.v : '', (M.era ? M.era.id + (PL ? 'P' : '') : '') + (M.ok ? M.A.at : 'c'), MAPZ.mode, prov, near ? near.lon + ',' + near.lat : '', W, H, Ly.adm, [...own.entries()].map(([k, v]) => k + v.who).join()].join('|');
+  const DOM = domainSet(s, M), inDom = u => !u.outer && (DOM.set.has(geoStem(u.n)) || (u.lv === 3 && u.p && DOM.set.has(geoStem(u.p))));
+  const fine = zoom && !(near && sp > 2.6), cell = fine ? 5 : 3.5, ck = [[...DOM.set].join(), y, s.myAdm ? 'a' + s.myAdm.v : '', (M.era ? M.era.id + (PL ? 'P' : '') : '') + (M.ok ? M.A.at : 'c'), MAPZ.mode, prov, near ? near.lon + ',' + near.lat : '', W, H, Ly.adm, [...own.entries()].map(([k, v]) => k + v.who).join()].join('|');
   let fills = MAPC.k === ck ? MAPC.v : '', plFills = '';
+  const MAP_PLAIN = '#d6c9a6';
   const TINT = ['#b89f6a', '#7f9f6c', '#9a83ad', '#ad8670', '#6f95ab', '#a8a35f', '#6fa094', '#ad7a8b'];
   // 屏幕坐标的多边形路径（挨得不到一个像素的点省掉）
   const dOf = rings => { let d = ''; for (const R of rings) { let lx = -1e9, ly = -1e9, k = 0, sg = ''; for (const [lo, la] of R) { const X = 10 + (lo - x0) / (x1 - x0) * (W - 20), Y = 10 + (y1 - la) / (y1 - y0) * (H - 20); if (Math.abs(X - lx) + Math.abs(Y - ly) < 1.1) continue; sg += (k++ ? 'L' : 'M') + X.toFixed(1) + ' ' + Y.toFixed(1); lx = X; ly = Y; } if (k >= 3) d += sg + 'Z'; } return d; };
@@ -8032,9 +8051,11 @@ function stratMap(s) {
     const colorize = (items, bb) => { const c = new Map(); for (const it of items) { const b = bb(it), used = new Set(); for (const [o, k] of c) { const q = bb(o); if (!(q[2] < b[0] || q[0] > b[2] || q[3] < b[1] || q[1] > b[3])) used.add(k); } let k = 0; while (used.has(k) && k < TINT.length - 1) k++; c.set(it, k); } return c; };
     const cP = colorize(PL.prov, f => f.bb), pc = new Map(PL.prov.map(f => [f.n, TINT[cP.get(f)]])), cU = zoom ? colorize(U, u => u.poly.bb) : null;
     const pn = new Map(), tintN = n => { if (!n) return '#a99'; if (!pn.has(n)) pn.set(n, TINT[pn.size % TINT.length]); return pn.get(n); };
-    const fillOf = u => { const o = ownOf(u), r = M.reg(u); return o ? o.col : M.ok && M.A.split && r ? r.col : zoom ? TINT[cU.get(u)] : pc.get(u.p) || tintN(u.p); };
+    // 放大缩小都照政权上色（2026-11-02 玩家：「突然一往下就变了个样子，变成很夸张的各种颜色」）：不再一放大就每个府州各一种颜色；没认出归哪家的铺谭图那种素色，府州之间靠界线分
+    const fillOf = u => { const o = ownOf(u), r = M.reg(u); return o ? o.col : r && r.col ? r.col : MAP_PLAIN; };
     const tip = u => `${u.n}（${u.t || '府州'}${u.p ? '，属' + u.p : ''}${u.seatC ? '，治所' + u.seatC : ''}）${ownOf(u) ? ' · ' + ownOf(u).who : ''}`;
-    fills = `<g fill-opacity="${Ly.terr ? '.32' : '.48'}" stroke="#4a3a2a" stroke-opacity="${zoom ? '.9' : '.6'}" stroke-width="${zoom ? '1' : '.5'}" stroke-linejoin="round">${U.map(u => `<path d="${dOf(u.poly.R)}" fill="${fillOf(u)}"${ownOf(u) || (M.ok && M.A.split && M.reg(u)) ? ` fill-opacity="${Ly.terr ? '.55' : '.7'}"` : ''} fill-rule="evenodd" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(tip(u))}</title></path>`).join('')}</g>`
+    fills = `<g fill-opacity="${Ly.terr ? '.32' : '.48'}" stroke="#4a3a2a" stroke-opacity="${zoom ? '.9' : '.6'}" stroke-width="${zoom ? '1' : '.5'}" stroke-linejoin="round">${U.map(u => `<path d="${dOf(u.poly.R)}" fill="${fillOf(u)}"${ownOf(u) || M.reg(u) ? ` fill-opacity="${Ly.terr ? '.42' : zoom ? '.4' : '.55'}"` : ''} fill-rule="evenodd" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(tip(u))}</title></path>`).join('')}</g>`
+      + (DOM.set.size ? `<g fill="none" stroke="#b3261e" stroke-width="2.6" stroke-opacity=".95" pointer-events="none" class="domline">${U.filter(inDom).map(u => `<path d="${dOf(u.poly.R)}"/>`).join('')}</g>` : '')
       + `<g fill="none" stroke="#2f2216" stroke-opacity=".85" stroke-width="${zoom ? 2.2 : 1.2}" stroke-linejoin="round" pointer-events="none">${VP.map(f => `<path d="${dOf(f.R)}"/>`).join('')}</g>`;
     // 放大时：每个府州里有好几个县，县与县之间画虚线（府界照谭图；府界之内按各县治所远近分，不越出府界）
     if (zoom && cty.length) { const c2 = 5, nx2 = Math.ceil(W / c2), ny2 = Math.ceil(H / c2), G = [], ofP = new Map(M.L2.filter(u => u.poly).map(u => [u.poly, u])), CP = cty.map(c => [px(c), py(c), c]);
@@ -8059,16 +8080,18 @@ function stratMap(s) {
       if (e != null && e < 0) { Gd[i].push(null); continue; } if (plOf) { const f = polyAt(PL, lon, lat); if (f && plOf.has(f)) { Gd[i].push(null); continue; } }
       const [best, bd] = nearP(gx, gy); Gd[i].push(bd < lim ? best : outOf(lon, lat)); } }   // 离哪个治所都远的陆地照谭图的样子铺「外境」浅色，不留白
     const pIx = new Map(), pref = u => u.lv === 3 ? u.p || u.n : u.n, tint = u => { const n = fine ? pref(u) : M.prov(u); if (!pIx.has(n)) pIx.set(n, pIx.size); return n ? TINT[pIx.get(n) % TINT.length] : '#999'; };
-    const split = M.ok && M.A.split, fillOf = u => { if (u.outer) return u.frontier ? u.frontier.col : '#d9cfb4'; const o = ownOf(u), r = M.reg(u); return o ? o.col : split && r && !fine ? r.col : (fine ? tint(u) : r && M.A.regimes.length > 1 && r !== M.A.regimes[0] ? r.col : tint(u)); };
-    const strong = u => u.outer ? !!u.frontier : !!(ownOf(u) || (split && !fine && M.reg(u)) || (!fine && M.reg(u) && M.A.regimes.length > 1 && M.reg(u) !== M.A.regimes[0]));   // 政权、地盘的颜色要看得出来
+    const split = M.ok && M.A.split, fillOf = u => { if (u.outer) return u.frontier ? u.frontier.col : '#d9cfb4'; const o = ownOf(u), r = M.reg(u); return o ? o.col : r && r.col ? r.col : MAP_PLAIN; };
+    const strong = u => u.outer ? !!u.frontier : !!(ownOf(u) || (M.reg(u) && M.reg(u).col));   // 政权、地盘的颜色要看得出来
     const R = [], R2 = []; for (let j = 0; j < ny; j++) { let i = 0; while (i < nx) { const u = Gd[i][j]; if (!u) { i++; continue; } const c = fillOf(u), sg = strong(u); let k = i + 1; while (k < nx && Gd[k][j] && fillOf(Gd[k][j]) === c && strong(Gd[k][j]) === sg) k++; (sg ? R2 : R).push(`<rect x="${i * cell}" y="${j * cell}" width="${(k - i) * cell}" height="${cell}" fill="${c}"/>`); i = k; } }
     const edges = key => { const E = []; for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) { const u = Gd[i][j]; if (!u) continue;
       if (i + 1 < nx && Gd[i + 1][j] && key(Gd[i + 1][j]) !== key(u)) E.push(`M${(i + 1) * cell} ${j * cell}v${cell}`);
       if (j + 1 < ny && Gd[i][j + 1] && key(Gd[i][j + 1]) !== key(u)) E.push(`M${i * cell} ${(j + 1) * cell}h${cell}`); } return E.join(''); };
-    fills = `<g opacity="${Ly.terr ? '.3' : '.5'}" shape-rendering="crispEdges">${R.join('')}</g><g opacity="${Ly.terr ? '.55' : '.7'}" shape-rendering="crispEdges">${R2.join('')}</g>`
-      + (fine ? `<path d="${edges(u => u.n)}" stroke="#3a2a1a" stroke-opacity=".85" stroke-width="1" fill="none" stroke-dasharray="3 2" class="cntyline"/><path d="${edges(pref)}" stroke="#5a4a3a" stroke-opacity=".7" stroke-width="1" fill="none" stroke-dasharray="4 2"/>` : '')
+    // 颜色照谭图那样淡一些（2026-11-02 玩家：「很夸张的各种颜色，这样其实不太合适」）：政权色放大以后更淡，界线和州名看得清
+    fills = `<g opacity="${Ly.terr ? '.3' : '.45'}" shape-rendering="crispEdges">${R.join('')}</g><g opacity="${Ly.terr ? '.42' : zoom ? '.4' : '.55'}" shape-rendering="crispEdges">${R2.join('')}</g>`
+      + (fine ? `<path d="${edges(u => u.n)}" stroke="#3a2a1a" stroke-opacity=".85" stroke-width="1" fill="none" stroke-dasharray="3 2" class="cntyline"/><path d="${edges(pref)}" stroke="#3a2a1a" stroke-opacity=".9" stroke-width="1.4" fill="none" class="prefline"/>` : zoom ? `<path d="${edges(pref)}" stroke="#3a2a1a" stroke-opacity=".75" stroke-width="1" fill="none" class="prefline"/>` : '')   // 稍微放大一点就画府州界（2026-11-02 玩家：「要能看到州及他们的行政划分，有区域界线」）
       + (M.ok || M.era ? `<path d="${edges(u => M.prov(u) || '?')}" stroke="#4a3a2a" stroke-opacity=".5" stroke-width="${fine ? 1.4 : 0.6}" fill="none"${fine ? '' : ' stroke-dasharray="3 2"'}/>` : '')
-      + (M.ok && M.A.regimes.length > 1 ? `<path d="${edges(u => u.r || '?')}" stroke="#7a1f1f" stroke-opacity=".85" stroke-width="2" fill="none"/>` : '');
+      + (M.ok && M.A.regimes.length > 1 ? `<path d="${edges(u => u.r || '?')}" stroke="#7a1f1f" stroke-opacity=".85" stroke-width="2" fill="none"/>` : '')
+      + (DOM.set.size ? `<path d="${edges(u => inDom(u) ? 'D' : '-')}" stroke="#b3261e" stroke-opacity=".95" stroke-width="2.6" fill="none" class="domline"/>` : '');   // 你的辖区：朱红粗线圈出来
     fills += plFills; MAPC.k = ck; MAPC.v = fills;
   }
   const P = (L) => L.map(p => `${px({ lon: p[0], lat: p[1] }).toFixed(1)},${py({ lon: p[0], lat: p[1] }).toFixed(1)}`).join(' ');
@@ -8136,6 +8159,7 @@ function stratMap(s) {
   const showLbl = !zoom ? pts.filter(special) : PL ? ctyL.concat(pts.filter(special)) : pts.concat(ctyL);   // 有界址的，州府名写在地块中间（areaLbl），治所点上不再重复
   const svg = `<svg viewBox="0 0 ${W} ${H}" class="smap" role="img" aria-label="舆图"><rect width="${W}" height="${H}" fill="#c4dae8"/>${img ? `<image href="${img}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/>` : ''}${Ly.adm ? fills : ''}${lakes}${coast}${rivers}${roads}${mts}${rlab.join('')}${regLbl}${frLbl}${areaLbl}${passes}
     ${placeLbls(showLbl, zoom ? 11 : 10)}${cty.map(cdot).join('')}${pts.map(dot).join('')}
+    ${DOM.D.kind !== 'none' && DOM.D.kind !== 'realm' ? arr(DOM.D.places).concat(DOM.D.kind === 'army' ? arr(s.forces).filter(f => myForce(s, f)).map(f => f.at) : []).filter(Boolean).slice(0, 6).map(n => { const u = placeXY(s, n, y); if (!u || !u.lat || !inBox(u)) return ''; const x = px(u), yy = py(u); return `<g pointer-events="none" class="dommark"><circle cx="${x.toFixed(1)}" cy="${yy.toFixed(1)}" r="${zoom ? 16 : 9}" fill="none" stroke="#b3261e" stroke-width="2.4" stroke-dasharray="5 3"/><text x="${x.toFixed(1)}" y="${(yy - (zoom ? 20 : 12)).toFixed(1)}" font-size="12" font-weight="700" fill="#b3261e" text-anchor="middle" stroke="#fff" stroke-width="2.6" paint-order="stroke">${esc(DOM.D.label)}</text></g>`; }).join('') : ''}
     ${battles.filter(x => inBox(x.u)).map(x => `<text x="${px(x.u).toFixed(0)}" y="${(py(x.u) - 6).toFixed(0)}" font-size="13" text-anchor="middle" pointer-events="none"><title>${esc(x.b.when || '')} ${esc(x.b.place)}之战：${esc(x.b.outcome)}</title>⚔</text>`).join('')}
     ${(() => { /* 军旗牌：像《钢铁雄心》的兵牌——旗色分敌我，下面三条是兵力、士气、组织；行军的画出去向；点牌子选中这支兵马 */
       const at = new Map(), out = [];
@@ -8401,7 +8425,7 @@ function domainPanel(s) {
   const F = arr(s.forces).filter(f => f && myForce(s, f)), note = { realm: '点城池卡上的按钮直接办；地图上点哪座城都看得到', local: '劝农、缉盗、清积案、赈济、修城、定赋税，招乡勇在军务页', stronghold: '修寨、招人在这里和军务页；下山劫掠在地图上点一座城', army: '你只管自己统带的兵；军令在军务页' }[D.kind] || '';
   return `<div class="h"><span class="seal">治</span>${esc(D.label)}<span class="note">${esc(note)}</span></div>${D.places.slice(0, 4).map(n => cityHtml(s, n)).join('')}
     <div class="h"><span class="seal">兵</span>你的兵马</div>${F.length ? `<div class="list">${F.map(f => `<div><b>${esc(f.name)}</b> ${esc(fmtN(forceStats(s, f).men, '人'))} · ${esc(f.leader || '')}统 · 驻${esc(f.at || '?')} · ${esc(f.status || '')} <span class="gr ${/史载/.test(f.src || '') ? 'rec' : 'inf'}" title="${esc(f.why || '')}">${esc(f.src || '推算')}</span></div>`).join('')}</div>` : `<div class="muted" style="font-size:12px">${s.cmdTried != null && s.turn - s.cmdTried >= 1 ? '史料里查不到你此时统带的兵；可以去军务页招募' : '后台正照史料查你此时统带的兵'}</div>`}
-    <div class="opost"><button class="link" data-tab="army">去军务页下军令</button><button class="link" data-tab="map">看舆图</button></div>`;
+    <div class="opost"><button class="link" data-mapdomain="1">在舆图上看${esc(D.label)}</button><button class="link" data-tab="army">去军务页下军令</button></div>`;
 }
 /** 开局：凡统兵、管地方、占山寨、做头领的，照史料（查不到的照本朝兵制和这个职位的定额）推出此刻手下实有的兵，写依据；一兵都没有的照没有 */
 const cmdDue = s => s && s.clock && s.protagonist && s.cmdTried == null && ['realm', 'local', 'stronghold', 'army'].includes(myDomain(s).kind) && !arr(s.forces).some(f => myForce(s, f));
@@ -11699,7 +11723,9 @@ function pane(tab) {
   if (tab === 'career') {
     const c = s.career || {}, I = s.inst;
     const kv = [['本官', c.office], ['品级', c.rank], ['差遣', c.post], ['称号', arr(c.titles).join('、')], ['执掌', c.duties], ['职权', c.powers], ['上司', c.superior], ['属下', c.subordinates], ['考课', c.evaluation], ['任期', c.tenure]].filter(([, v]) => v);
+    const DD = myDomain(s);
     return `${examHtml(s)}<div class="h" style="margin-top:6px"><span class="seal">官</span>你的仕途<span class="note">官职、品级、称号与职权</span></div>
+      ${DD.kind !== 'none' ? `<div class="pl" style="font-size:13px"><span>${esc(DD.label)}</span>${esc(arr(DD.places).slice(0, 6).join('、') || (DD.kind === 'army' ? arr(s.forces).filter(f => myForce(s, f)).map(f => f.name + '（驻' + (f.at || '?') + '）').join('、') : ''))} <button class="link" data-mapdomain="1">在舆图上看</button></div>` : ''}
       ${kv.length ? `<dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : '<div class="muted">眼下没有官职。做了官、得了功名或爵位，这里会写清楚。</div>'}
       ${arr(c.nextSteps).length ? `<div class="h"><span class="seal">升</span>可能的下一步</div><div class="list">${c.nextSteps.map(x => `<div><b>${esc(x.to)}</b>${x.need ? `<div class="muted">要：${esc(x.need)}</div>` : ''}</div>`).join('')}</div>` : ''}
       ${arr(s.careerLog).length ? `<div class="h"><span class="seal">历</span>履历</div><div class="tblwrap"><table class="tbl"><tr><th>时间</th><th>事</th><th>此后</th></tr>${s.careerLog.slice().reverse().map(x => `<tr><td>${esc(x.when)}</td><td>${esc(x.what)}</td><td>${esc(x.office)}</td></tr>`).join('')}</table></div>` : ''}
@@ -12352,6 +12378,7 @@ document.addEventListener('click', async e => {
   const t = e.target.closest('button'); if (!t) return;
   if (S && !BUSY && (t.id === 'bExam' || t.id === 'bXiao' || t.id === 'bStudy')) { if (t.id === 'bExam') examApply(S); else if (t.id === 'bXiao') examRecommend(S); else { const E = examOf(S); if (E.studyFrom != null) { E.studyFrom = null; S.focus = ''; ORGMSG = '不再闭门读书'; } else { E.studyFrom = Math.floor(ymOf(S.clock)); S.focus = '读书'; ORGMSG = '开始闭门读书：每过一个月文墨长一些，应考把握大一些'; } } try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.id === 'bReform' && !REFORM_P) { ORGMSG = '正在拟定章程……'; REFORM_P = 1; render(); try { await reformStart(S, ($('#refName') || {}).value || '', ($('#refBody') || {}).value || ''); } catch (er) { ORGMSG = '没推行成：' + errText(er); } REFORM_P = null; try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && t.dataset.mapdomain) { if (mapToDomain(S)) { SIDE_FOLD = false; } render(); return; }
   if (S && !BUSY && t.dataset.shitu) { shituAct(S, t.dataset.shitu, ($('#shAmt') || {}).value); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.id === 'bFound') { founding(S, ($('#fGuo') || {}).value || '', ($('#fNian') || {}).value || '', ($('#fDu') || {}).value || ''); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.id === 'bShop') { ORGMSG = '问问行情……'; render(); try { await shopOpen(S, ($('#shopKind') || {}).value || '', ($('#shopCap') || {}).value || '', ($('#shopAt') || {}).value || ''); } catch (er) { ORGMSG = '没开成：' + errText(er); } try { await store.save(S); } catch (_) {} render(); return; }
