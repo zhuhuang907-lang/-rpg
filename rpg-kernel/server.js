@@ -1048,12 +1048,24 @@ const server = http.createServer(async (req, res) => {
 engine.ensureDirs();
 fs.mkdirSync(adapters.ADAPTER_DIR, { recursive: true });
 
+// 端口被占：先看占着的是不是本游戏（已经开着就直说、不另起一个）；是别的程序就往后挪一个端口（最多十二个），实际用的端口写进 data/port.json，启动器照它找
+let LIVE_PORT = PORT, PORT_TRIES = 0;
 server.on('error', e => {
-  logErr(e && e.code === 'EADDRINUSE' ? `端口 ${PORT} 已被占用：游戏可能已经开着了（看看浏览器里是不是已有一个），或先关掉它再打开` : e);
+  if (e && e.code === 'EADDRINUSE' && PORT_TRIES < 12) {
+    const probe = require('http').get({ host: '127.0.0.1', port: LIVE_PORT, path: '/api/health', timeout: 1500 }, r => {
+      let b = ''; r.on('data', c => { b += c; }); r.on('end', () => {
+        if (r.statusCode === 200 && /ok/.test(b) && PORT_TRIES === 0) { console.log(`游戏已经开着：http://${HOST}:${LIVE_PORT}（不再另开一个）`); try { fs.writeFileSync(path.join(__dirname, 'data', 'port.json'), JSON.stringify({ port: LIVE_PORT })); } catch (_) {} process.exit(98); }
+        PORT_TRIES++; LIVE_PORT = PORT + PORT_TRIES; console.log(`端口 ${LIVE_PORT - 1} 被别的程序占着，改用 ${LIVE_PORT}`); server.listen(LIVE_PORT, HOST); }); });
+    probe.on('error', () => { PORT_TRIES++; LIVE_PORT = PORT + PORT_TRIES; console.log(`端口 ${LIVE_PORT - 1} 被占着，改用 ${LIVE_PORT}`); server.listen(LIVE_PORT, HOST); });
+    probe.on('timeout', () => probe.destroy(new Error('timeout')));
+    return;
+  }
+  logErr(e && e.code === 'EADDRINUSE' ? `端口 ${PORT}—${PORT + 12} 都被占用：先关掉别的占端口的程序再打开` : e);
   process.exit(98);   // 98：不是意外，守护进程不要再重启
 });
+server.on('listening', () => { try { fs.writeFileSync(path.join(__dirname, 'data', 'port.json'), JSON.stringify({ port: LIVE_PORT })); } catch (_) {} });
 server.listen(PORT, HOST, () => {
-  console.log(`枢引擎 running: http://${HOST}:${PORT}`);
+  console.log(`枢引擎 running: http://${HOST}:${LIVE_PORT}`);
   // 启动时先探一遍外网：连不上的站点（国内常见的维基）提前记下，开局时直接走兜底，不再一个个等超时
   setTimeout(() => checkUpdate().catch(() => {}), 2000);
   if (!process.env.RPG_OFFLINE) require('./core/net').check().then(r => console.log('[net]', r.results.map(x => `${x.name}:${x.ok ? 'ok' : 'down'}`).join(' '))).catch(() => {});
