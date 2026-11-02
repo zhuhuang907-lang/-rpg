@@ -245,6 +245,19 @@ async function chgisGet(id) {
     try { fs.writeFileSync(cf, b); } catch (_) { /* 存不下就算了 */ } return { buf: b };
   } catch (e) { return { why: String(e && e.message || e).slice(0, 120) }; }
 }
+/* 江山时序（DeanChensj/jiangshan-map，GPL-3.0；其中府州界源出 CHGIS，只许非商用）：不随游戏打包，用到时替玩家从 jsDelivr 下到本机（data/cache/jiangshan），只当数据给页面 */
+const JSMAP_VER = '0842fac0aa3b0e655ce54f312be29673131ba32d', JSMAP_FILES = /^(atlas_snapshots|map_data)$/;
+async function jsmapGet(f) {
+  if (!JSMAP_FILES.test(f)) return { why: '没有这个文件' };
+  const dir = path.join(ROOT, 'data', 'cache', 'jiangshan'); fs.mkdirSync(dir, { recursive: true }); const cf = path.join(dir, JSMAP_VER.slice(0, 12) + '_' + f + '.js');
+  try { const t = fs.readFileSync(cf, 'utf8'); if (t.length > 1000) return { text: t }; } catch (_) { /* 没缓存 */ }
+  try {
+    const r = await require('./core/net').fetchX((process.env.JSMAP_BASE || `https://cdn.jsdelivr.net/gh/DeanChensj/jiangshan-map@${JSMAP_VER}/js/`) + f + '.js', { signal: AbortSignal.timeout(180000) });
+    if (!r.ok) return { why: 'HTTP ' + r.status };
+    const t = await r.text(); if (t.length < 1000 || !/window\./.test(t)) return { why: '下到的不是地图数据' };
+    try { fs.writeFileSync(cf, t); } catch (_) { /* 存不下就算了 */ } return { text: t };
+  } catch (e) { return { why: String(e && e.message || e).slice(0, 120) }; }
+}
 // 博查全局限流：后台几件活（家谱、临门、人事树……）一起查时，加起来也只同时搜六条，免得被博查限流
 let BOCHA_N = 0; const BOCHA_Q = [];
 const bochaSlot = async fn => { if (BOCHA_N >= 6) await new Promise(r => BOCHA_Q.push(r)); BOCHA_N++; try { return await fn(); } finally { BOCHA_N--; const nx = BOCHA_Q.shift(); if (nx) nx(); } };
@@ -1025,6 +1038,7 @@ const server = http.createServer(async (req, res) => {
   if ((req.method === 'POST' || req.method === 'PUT') && routes[key] && !/json/i.test(req.headers['content-type'] || '')) return send(res, 415, { ok: false, why: '请求格式不对' });
   let body = {};
   try { if (req.method === 'POST' || req.method === 'PUT') body = await readBody(req); } catch (e) { return send(res, 413, { ok: false, why: String(e.message || e) }); }
+  if (key === 'GET /api/jsmap') { const r = await jsmapGet(String(url.searchParams.get('f') || '')); if (!r.text) return send(res, 502, { ok: false, why: r.why }); res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(r.text); }
   if (key === 'GET /api/chgisbin') { const r = await chgisGet(String(url.searchParams.get('id') || '')); if (!r.buf) return send(res, 200, { ok: false, why: r.why }); res.writeHead(200, { 'content-type': 'application/zip', 'content-length': r.buf.length }); return res.end(r.buf); }
   const handler = routes[key];
   if (!handler) return serveStatic(req, res, url.pathname);

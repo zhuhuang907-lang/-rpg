@@ -1642,9 +1642,9 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261102035437';
+const BUILD = '20261102043227';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
-const VERSIONS = { game: '0.5.8', military: 'V2', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', officials: 'V2', world: 'V3', save: '兼容（旧档读得进）' };
+const VERSIONS = { game: '0.5.9', military: 'V3', identity: 'V2', context: 'V2', review: 'V2', organization: 'V1', officials: 'V3', world: 'V4', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
@@ -2370,19 +2370,75 @@ ${s.inst ? '【本朝官制要览】' + cut(instText(s, 1200), 1200) + '\n' : ''
 - 主角此刻这一官的品级、上司、考核办法（考满、考课、京察大计之类，叫什么、几年一次、谁来考）；
 - 正常往上走的下一步：通常迁到哪些官（品级）、凭什么（资历年限、考绩等第、出身、保举、捐纳、军功），谁来定（吏部铨选、皇帝特旨、督抚题补……），要等多久，任命走什么文书、多久赴任；
 - 不合制度的：出身不够做不了的官、越级的限度、回避（本籍、亲属）、丁忧守制、处分降革；
-- 没有官职的：照他的出身，入仕有哪些路子、各要什么。
+- 没有官职的：照他的出身，入仕有哪些路子、各要什么；
+- 官场的潜规则（这一朝这一级官员真实的门道，三到八条）：给上司、座主送礼的规矩（叫什么、一年几回、照例多少，用这一朝的钱写数目）、座师同年同乡门生的情分怎么用、到部候选要不要使部费、印结、候补要排多久、捐纳的价码、上司写考语靠什么、什么事一做就犯忌。有数目的写数目（照史料或照这一朝的俸禄推，写依据），推不出的写 null；
+- 一任照例几年（tenureY，数字）。
 有资料写明的照资料；资料不够的照确凿史实推断，写明依据；拿不准的放进 unsure，不编造。
-只输出一个 JSON 对象：{"office":"此刻这一官","rank":"品级","superior":"上司","review":"考核办法与周期","tenure":"一任几年、俸满考满的规矩","next":[{"post":"下一步的官","rank":"品级","how":"凭什么、谁来定、要多久"}],"limits":["不合制度、做不到的，一句一条"],"appoint":"任命的手续、文书、赴任期限","entry":["没有官职时入仕的路子"],"unsure":[""],"basis":"依据（书名或资料）"}`, null, { maxTokens: 2500, temperature: 0.2, kind: '研读', detached: true });
+只输出一个 JSON 对象：{"office":"此刻这一官","rank":"品级","superior":"上司","review":"考核办法与周期","tenure":"一任几年、俸满考满的规矩","next":[{"post":"下一步的官","rank":"品级","how":"凭什么、谁来定、要多久"}],"limits":["不合制度、做不到的，一句一条"],"appoint":"任命的手续、文书、赴任期限","entry":["没有官职时入仕的路子"],"rules":[{"name":"","what":"怎么做","cost":null,"unit":"","fx":"有什么用、有什么风险","basis":""}],"tenureY":null,"unsure":[""],"basis":"依据（书名或资料）"}`, null, { maxTokens: 2500, temperature: 0.2, kind: '研读', detached: true });
   const d = parseJSON(text); if (!d) { s.promoFail = s.turn; return null; }
   const o = (v, n) => one(v, n || 80);
   s.promo = { key: promoKey(s), turn: s.turn, y: s.clock.y, office: o(d.office, 30), rank: o(d.rank, 16), superior: o(d.superior, 30), review: o(d.review, 120), tenure: o(d.tenure, 100), appoint: o(d.appoint, 120), basis: o(d.basis, 80), searched: R.length,
     next: arr(d.next).filter(x => x && x.post).slice(0, 6).map(x => ({ post: o(x.post, 20), rank: o(x.rank, 16), how: o(x.how, 100) })), limits: arr(d.limits).map(x => o(x, 80)).filter(Boolean).slice(0, 8), entry: arr(d.entry).map(x => o(x, 80)).filter(Boolean).slice(0, 6), unsure: arr(d.unsure).map(x => o(x, 60)).filter(Boolean).slice(0, 5) };
+  s.promo.rules = arr(d.rules).filter(x => x && x.name).slice(0, 8).map(x => ({ name: o(x.name, 12), what: o(x.what, 80), cost: num(x.cost) != null && num(x.cost) > 0 ? num(x.cost) : null, unit: o(x.unit, 4), fx: o(x.fx, 80), basis: o(x.basis, 40) }));
+  s.promo.tenureY = num(d.tenureY) != null && num(d.tenureY) > 0 && num(d.tenureY) <= 12 ? num(d.tenureY) : null;
   if (!c.rank && s.promo.rank && s.career) s.career.rank = s.promo.rank;
   return s.promo;
+}
+/* ========== 官场门道与谋升迁（2026-11-02 玩家：「当时的潜规则系统和上升途径都写得非常不好」）：
+ *  照「升迁之制」里查出的门道办：打点上司（钱从现钱出，一个月一回，多少由你定；上司廉洁的不收、反倒记一笔）、拜座师结同年同乡（攒人脉）、
+ *  求上司保举迁转（看任满了几成、上司的好感、人脉、考语、是不是一派），下个月由程序定准驳，准了照升迁之制的下一步改官、记履历 ========== */
+const shituOf = s => (s.shitu = s.shitu || { favor: 0, net: 0, log: [] });
+function shituSup(s) { const c = s.career || {}, P = s.promo || {}; return String(c.superior || P.superior || '').replace(/[（(].*$/, '').trim(); }
+function shituAct(s, act, amt) {
+  const c = s.career || {}, P = s.promo, T = shituOf(s), ym = Math.floor(ymOf(s.clock)), cash = N0(s.money && s.money.cash) || 0, u = (s.money || {}).unit || '';
+  if (!c.office) { ORGMSG = '你眼下没有官职：先走科举、察举、捐纳这些入仕的路子（见上面「功名与科举」）'; return null; }
+  if (act === 'gift' || act === 'ally') {
+    const v = Math.round(num(amt) || 0); if (!(v > 0)) { ORGMSG = '先写上拿多少钱'; return null; } if (v > cash) { ORGMSG = `现钱只有${fmtN(cash, u)}，拿不出${fmtN(v, u)}`; return null; }
+    if (act === 'gift' && T.giftYM === ym) { ORGMSG = '这个月已经打点过了，再送就露了痕迹'; return null; }
+    const R = arr(P && P.rules).find(x => x.cost && (act === 'gift' ? /敬|礼|节|寿|打点|孝敬|规/.test(x.name + x.what) : /座|同年|乡|门生|拜/.test(x.name + x.what))), base = R ? R.cost : Math.max(1, cash * 0.1);
+    s.money.cash = cash - v; const k = Math.max(0.2, Math.min(2, v / base));
+    if (act === 'gift') { T.giftYM = ym; const sup = shituSup(s), pp = sup && (s.people || {})[sup], clean = pp && /廉洁|忠直/.test(arr(pp.traits).join(''));
+      if (clean) { T.favor = Math.max(-30, T.favor - 5); s.money.cash += v; ORGMSG = `${sup}素来清介，礼原样退回，还记了你一笔（好感略降）`; }
+      else { const add = Math.round(6 * k); T.favor = Math.min(40, T.favor + add); if (pp) pp.aff = Math.max(-100, Math.min(100, (num(pp.aff) || 0) + Math.round(add / 2))); ORGMSG = `打点${sup || '上司'}${fmtN(v, u)}${R ? `（照例约${fmtN(R.cost, R.unit || u)}）` : ''}，上司那里的情分添了${add}`; } }
+    else { const add = Math.round(5 * k); T.net = Math.min(40, T.net + add); ORGMSG = `拜座师、走动同年同乡，花了${fmtN(v, u)}，人脉添了${add}`; }
+    T.log = arr(T.log).concat([{ when: timeText(s.clock), what: ORGMSG }]).slice(-12);
+    actNew(s, { type: '令', what: ORGMSG, who: '自己', src: '仕途', perm: '自家钱', ok: '能', state: '办成', log: [{ turn: s.turn, when: timeText(s.clock), state: '办成', why: '照办了' }] }); return ORGMSG; }
+  if (act === 'ask') {
+    if (T.ask) { ORGMSG = `已经求过了，${T.ask.to}的事等下个月的回音`; return null; }
+    if (T.askAfter && ym < T.askAfter) { ORGMSG = '上回刚被驳回，过几个月再求，不然上司嫌你躁进'; return null; }
+    const nx = arr(P && P.next)[0]; if (!nx) { ORGMSG = '本朝升迁之制还没整理出来（下一回自动查），先等等'; return null; }
+    const ty = (P && P.tenureY) || 3, served = c.sinceY != null ? Math.max(0, s.clock.y - c.sinceY) : 0, prog = Math.min(1.2, served / ty);
+    const sup = shituSup(s), pp = sup && (s.people || {})[sup], same = pp && pp.faction && c.faction && pp.faction === c.faction;
+    const p = Math.max(0.03, Math.min(0.9, 0.08 + 0.42 * prog + T.favor / 100 + T.net / 160 + (same ? 0.08 : 0) + (/优|上|卓异|称职/.test(String(c.evaluation || '')) ? 0.1 : /劣|下|不称/.test(String(c.evaluation || '')) ? -0.15 : 0) + ((N0(s.fame) || 0) - 50) / 400));
+    T.ask = { ym, to: nx.post, rank: nx.rank, p: Math.round(p * 100), why: `任满${Math.round(prog * 100)}%、上司情分${T.favor}、人脉${T.net}${same ? '、同是一派' : ''}` };
+    ORGMSG = `详请${sup || '上司'}保举你迁${nx.post}${nx.rank ? '（' + nx.rank + '）' : ''}：下个月有回音`;
+    actNew(s, { type: '请', what: ORGMSG, who: sup || '上司', src: '仕途', perm: '详请上司', ok: '要批准', state: '在办', log: [{ turn: s.turn, when: timeText(s.clock), state: '在办', why: '递上去了' }], ref: 'shitu' }); return ORGMSG; }
+  return null;
+}
+/** 按月：求的保举到了月份定准驳（准了改官、记履历，上司情分用掉一半） */
+function shituMonthly(s) {
+  const T = s.shitu, out = []; if (!T || !T.ask) return out; const ym = Math.floor(ymOf(s.clock)); if (ym <= T.ask.ym) return out;
+  const A = T.ask, roll = seeded((s.turn || 0) * 53 + A.ym % 997 + String(A.to).length * 7), c = s.career = s.career || {};
+  if (roll * 100 < A.p) { const old = c.office; c.office = A.to; if (A.rank) c.rank = A.rank; c.sinceY = s.clock.y; T.favor = Math.round(T.favor / 2);
+    s.careerLog = arr(s.careerLog).concat([{ when: timeText(s.clock), what: `由${old}迁${A.to}`, after: A.rank || '' }]);
+    out.push(`保举准了：你由${old}迁${A.to}${A.rank ? '（' + A.rank + '）' : ''}`); actSet(s, z => z.ref === 'shitu', '办成', '准了'); s.promo = null; }
+  else { T.askAfter = ym + 3; out.push(`保举驳回：${A.to}这一缺另有人补（${A.why}）`); actSet(s, z => z.ref === 'shitu', '驳回', '没准'); }
+  T.log = arr(T.log).concat([{ when: timeText(s.clock), what: out[0] }]).slice(-12); T.ask = null; return out;
+}
+function shituHtml(s) {
+  const c = s.career || {}, P = s.promo, T = shituOf(s), u = (s.money || {}).unit || '';
+  if (!c.office) return '';
+  return `<div class="h"><span class="seal">道</span>官场的门道<span class="note">打点、人脉、求保举；准不准下个月见分晓</span></div>
+    ${arr(P && P.rules).length ? `<div class="list">${P.rules.map(x => `<div><b>${esc(x.name)}</b> ${esc(x.what)}${x.cost ? `<span class="muted">（照例约${esc(fmtN(x.cost, x.unit || u))}）</span>` : ''}${x.fx ? `<div class="muted">${esc(x.fx)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted">这一朝的门道正在整理（下一回就有）。</div>'}
+    <div class="pl" style="font-size:13px"><span>你的底子</span>上司（${esc(shituSup(s) || '未详')}）那里的情分 ${T.favor} · 人脉 ${T.net}${c.sinceY != null ? ` · 本任已${s.clock.y - c.sinceY}年${P && P.tenureY ? '（一任照例' + P.tenureY + '年）' : ''}` : ''}</div>
+    ${T.ask ? `<div class="route">在求：迁${esc(T.ask.to)}，下个月有回音</div>` : ''}
+    <div class="opost"><input class="oin" id="shAmt" type="number" min="1" style="width:7em" placeholder="拿多少钱"><button class="link" data-shitu="gift">打点上司</button><button class="link" data-shitu="ally">拜座师、结同年同乡</button><button class="link" data-shitu="ask">求上司保举迁转</button></div>
+    ${arr(T.log).length ? `<div class="list">${T.log.slice(-5).reverse().map(x => `<div class="muted">${esc(x.when)}：${esc(x.what)}</div>`).join('')}</div>` : ''}`;
 }
 function promoBlock(s) {
   const P = s && s.promo; if (!P) return '';
   return `【本朝升迁之制（${P.searched ? '联网查过' : '照史书'}；主角的升降调补一律照此，不合的写不成${P.basis ? '；依据：' + P.basis : ''}）】\n` + [P.office && `此刻：${P.office}${P.rank ? '（' + P.rank + '）' : ''}${P.superior ? '，上司' + P.superior : ''}`, P.review && '考核：' + P.review, P.tenure && '任期：' + P.tenure,
+    arr(P.rules).length && '官场的门道：' + P.rules.map(x => `${x.name}（${x.what}${x.cost ? '，照例约' + x.cost + (x.unit || '') : ''}${x.fx ? '；' + x.fx : ''}）`).join('；'),
     P.next.length && '正常的下一步：' + P.next.map(x => `${x.post}${x.rank ? '（' + x.rank + '）' : ''}${x.how ? '——' + x.how : ''}`).join('；'), P.appoint && '任命：' + P.appoint, P.limits.length && '做不到的：' + P.limits.join('；'), P.entry.length && '入仕的路子：' + P.entry.join('；'), P.unsure.length && '拿不准：' + P.unsure.join('；')].filter(Boolean).join('\n');
 }
 /** 品级换成数：正一品=1，从一品=1.5……从九品=9.5；认不出的给 null */
@@ -7756,13 +7812,72 @@ function realmRows() {
   return REALM_ROWS;
 }
 /** 这一年（带月份）并立的政权：两家以上才算分立；没有就返回 null，照旧用核定的政区 */
+/* ========== 江山时序（DeanChensj/jiangshan-map，GPL-3.0；府州界源出 CHGIS 只许非商用）：不随游戏打包，用到时替玩家下到本机（桌面版缓存在 data/cache/jiangshan，网页版存在浏览器里）
+ *  只当数据读：从下到的 js 里切出 JSON 解析（不执行它的代码），自己解坐标；每年取那一年的版图快照（各政权的多边形、名字、颜色） ========== */
+const JSMAP_VER = '0842fac0aa3b0e655ce54f312be29673131ba32d';   // 钉在这一版（有武周等阶段），换版本改这里
+const JSMAP_CDN = f => `https://cdn.jsdelivr.net/gh/DeanChensj/jiangshan-map@${JSMAP_VER}/js/${f}.js`;
+let JSMAP_FAILAT = 0;
+let JSMAP = null, JSMAP_P = null, JSMAP_ERR = '';
+function jsmapParse(snapTxt, mapTxt) {
+  const a = snapTxt.indexOf('const D = '), b = snapTxt.indexOf(';\n  const rc', a); if (a < 0 || b < 0) throw new Error('版图快照的格式认不出');
+  const D = JSON.parse(snapTxt.slice(a + 10, b));
+  const i = mapTxt.indexOf('window.DYNASTY_DATA = '), j = mapTxt.indexOf('window.CORRIDOR_DATA', i); if (i < 0 || j < 0) throw new Error('朝代表的格式认不出');
+  const DY = JSON.parse(mapTxt.slice(i + 22, j).trim().replace(/;$/, ''));
+  if (!Array.isArray(D.r) || !Array.isArray(D.f) || !D.d || !Array.isArray(DY)) throw new Error('数据不全');
+  return { D, DY: DY.filter(d => d && Array.isArray(d.phases) && d.phases.length).map(d => ({ key: d.key, title: d.title, y0: d.fromYear, y1: d.toYear, ph: d.phases.map(p => ({ until: p.until, snap: p.snap, cap: p.overview || '' })) })), rings: [] };
+}
+const JS_A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-', JS_R = (() => { const R = new Uint8Array(128); for (let i = 0; i < 64; i++) R[JS_A.charCodeAt(i)] = i; return R; })();
+function jsRing(M, idx) {
+  if (M.rings[idx]) return M.rings[idx];
+  const s = String(M.D.r[idx] || ''), r = []; let i = 0, x = 0, y = 0;
+  while (i < s.length) { let b, sh = 0, v = 0; do { b = JS_R[s.charCodeAt(i++)]; v |= (b & 31) << sh; sh += 5; } while (b >= 32 && i < s.length); x += (v & 1) ? ~(v >>> 1) : (v >>> 1);
+    sh = 0; v = 0; do { b = JS_R[s.charCodeAt(i++)]; v |= (b & 31) << sh; sh += 5; } while (b >= 32 && i < s.length); y += (v & 1) ? ~(v >>> 1) : (v >>> 1); r.push([x / 100, y / 100]); }
+  return (M.rings[idx] = r);
+}
+function jsFeat(M, idx) { const f = M.D.f[idx]; if (!f) return null; if (f._polys) return f; const sh = f.shape || {}; const P = sh._p ? [sh._p] : sh._m ? sh._m : []; f._polys = P.map(p => p.map(k => jsRing(M, k)));
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of f._polys) for (const [x, y] of p[0] || []) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } f._bb = [x0, y0, x1, y1]; return f; }
+/** 这一年（月）用哪一幅快照：先找朝代（起年≤y<止年），再找第一个 until≥y 的阶段 */
+function jsSnapAt(M, y) {
+  const d = M.DY.find(z => y >= z.y0 && y < z.y1) || (y >= (M.DY[M.DY.length - 1] || {}).y1 ? null : M.DY.find(z => y <= z.y1)); if (!d) return null;
+  const p = d.ph.find(z => y <= z.until) || d.ph[d.ph.length - 1]; const sn = M.D.d[p.snap]; if (!sn) return null;
+  return { id: p.snap, dyn: d.title, cap: sn.caption || p.cap, polities: arr(sn.polities).map(k => jsFeat(M, k)).filter(Boolean), regions: arr(sn.regions).map(k => jsFeat(M, k)).filter(Boolean) };
+}
+const jsIn = (pt, ring) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i], [xj, yj] = ring[j]; if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c; } return c; };
+function jsInFeat(f, lon, lat) { const b = f._bb; if (!b || lon < b[0] || lon > b[2] || lat < b[1] || lat > b[3]) return false; for (const p of f._polys) if (p[0] && jsIn([lon, lat], p[0]) && !p.slice(1).some(h => jsIn([lon, lat], h))) return true; return false; }
+/** 这一点这一年归哪个政权（照江山时序的版图）：{name, tint, role}；不在任何政权里返回 null */
+function jsPolityAt(M, y, lon, lat) { const S = jsSnapAt(M, y); if (!S) return null; for (const f of S.polities) if (jsInFeat(f, lon, lat)) return { name: f.title, tint: f.tint, role: f.role || '', snap: S.id }; return null; }
+
+/** 下江山时序的数据：桌面版走本机服务（缓存在 data/cache/jiangshan），网页版直接从 jsDelivr 拿；下过的存在浏览器里，下回不再下。
+ *  测试里（浏览器由程序驱动）不自动下，保持内置史料的画法；下不成就照旧用内置史料，两分钟后再试 */
+function jsmapLoad() {
+  if (JSMAP || JSMAP_P || SETTINGS.jsmap === false || (navigator.webdriver && !window.JSMAP_TEST) || (JSMAP_FAILAT && Date.now() - JSMAP_FAILAT < 120000)) return JSMAP_P;
+  JSMAP_P = (async () => {
+    const key = 'jsmap:' + JSMAP_VER; let t = await polyCache(key);
+    if (!t || !t.a || !t.b) {
+      const get = async f => { if (MODE === 'local') { const r = await fetch('/api/jsmap?f=' + f); if (!r.ok) throw new Error('本机服务没下成（HTTP ' + r.status + '）'); return r.text(); }
+        const r = await fetch(JSMAP_CDN(f), { signal: AbortSignal.timeout(120000) }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); };
+      const [a, b] = await Promise.all([get('atlas_snapshots'), get('map_data')]); t = { a, b }; polyCache(key, t);
+    }
+    JSMAP = jsmapParse(t.a, t.b); JSMAP_ERR = ''; MAPC.k = ''; try { if (S && TAB === 'map') render(); } catch (_) { /* 没在看图 */ }
+  })().catch(e => { JSMAP_ERR = String(e && e.message || e).slice(0, 80); JSMAP_FAILAT = Date.now(); }).finally(() => { JSMAP_P = null; });
+  return JSMAP_P;
+}
+
 function realmsAt(y, m) {
   const yv = y + ((num(m) || 1) - 1) / 12, rows = realmRows().filter(r => r.y0 <= yv && yv < (Number.isInteger(r.y1) ? r.y1 + 1 : r.y1));   // 止年带小数的到那个月为止
-  const names = [...new Set(rows.map(r => r.n))]; if (names.length < 2) return null;
+  // 江山时序下好了：这一年各家照它的版图（多边形）认；它没画到的地方（更远的周边各族）照内置史料
+  const JS = JSMAP ? jsSnapAt(JSMAP, Math.floor(yv)) : null, ren = {}, cov = new Set();
+  // 内置史料里的一家，治所落在江山时序的哪个多边形里，就是同一家：割据、地方政权照游戏里一贯的叫法（剧情、身份都用这个名字），正统王朝照江山时序（武周这类改号照它）；
+  // 被盖住的内置条目不再另算一家，只有它没画到的地方（更远的周边各族）照内置史料
+  const tok = n => { const t = String(n || '').replace(/[（）()·、\s]+/g, '|').split('|').filter(Boolean); return t; }, akin = (a, b) => tok(a).some(x => tok(b).some(y => x === y || (x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x)))));
+  if (JS) for (const r of rows) { const f = JS.polities.find(f => r.pts.some(([x, y2]) => jsInFeat(f, x, y2))); if (f) { cov.add(r); if (!r.base && f.role !== 'main' && !ren[f.title] && akin(f.title, r.n)) ren[f.title] = r.n; } }
+  const nmOf = f => ren[f.title] || String(f.title || '').trim(), rowsU = JS ? rows.filter(r => !cov.has(r)) : rows;
+  const jsN = JS ? [...new Set(JS.polities.map(nmOf).filter(Boolean))] : [];
+  const names = [...new Set(jsN.concat(rowsU.map(r => r.n)))]; if (names.length < 2) return null;
   const col = {};
   // 挨着的几家颜色要拉得开（2026-11-01 玩家看贞明七年的图：吴和楚、南汉和静海都是相近的绿、相近的红，分不出来）：
   // 地盘大的先挑，每家从没用过的色里挑一个跟已上色的邻居差得最远的；色板用完了照黄金角取色相
-  const rgb = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16)), pts = n => rows.filter(r => r.n === n).flatMap(r => r.pts);
+  const rgb = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16)), pts = n => { const P = rows.filter(r => r.n === n).flatMap(r => r.pts); if (P.length || !JS) return P; return JS.polities.filter(f => nmOf(f) === n && f.anchor).map(f => f.anchor); };
   const near = (a, b) => { const A = pts(a), B = pts(b); for (const p of A) for (const q of B) if (Math.hypot((p[0] - q[0]) * Math.cos(p[1] * Math.PI / 180), p[1] - q[1]) < 3) return true; return false; };
   const order = names.slice().sort((a, b) => pts(b).length - pts(a).length), used = new Set();
   // 朱红留给「你的地盘」，各国不挑跟它相近的红（2026-11-01：吴的红和你的地盘分不出）
@@ -7770,9 +7885,10 @@ function realmsAt(y, m) {
   order.forEach((n, i) => { const nb = order.filter(m => col[m] && col[m][0] === '#' && near(n, m)).map(m => rgb(col[m]));
     let best = null, bs = -1; for (const c of REALM_COL) { if (used.has(c) || nearZhu(c)) continue; const d = nb.length ? Math.min(...nb.map(x => Math.hypot(...rgb(c).map((v, k) => v - x[k])))) : 999; if (d > bs + 0.5) { bs = d; best = c; } }
     col[n] = best || `hsl(${Math.round((i * 137.5) % 360)},52%,${44 + (i % 3) * 8}%)`; if (best) used.add(best); });   // 并立的多过色板（十六国、西域诸国同时在），往后的照黄金角取色相，不撞色   // 并立的各家照次序取色板（色板红蓝绿紫橙……相邻的色相差得开），同一年不会撞色、也不会两家都是褐色
-  const list = names.map(n => { const r0 = rows.find(r => r.n === n); return { name: n, col: col[n], lon: r0.pts[0][0], lat: r0.pts[0][1], basis: '内置史料', builtin: true }; });
+  const list = names.map(n => { const r0 = rows.find(r => r.n === n), f0 = JS && JS.polities.find(f => nmOf(f) === n), at = r0 ? r0.pts[0] : f0 && f0.anchor ? f0.anchor : [null, null]; return { name: n, col: col[n], lon: at[0], lat: at[1], basis: f0 ? '江山时序' : '内置史料', builtin: true, main: !!(f0 && f0.role === 'main') }; });
   const cache = new Map();
   const of = (lon, lat) => { if (lon == null || lat == null) return null; const k = lon.toFixed(2) + ',' + lat.toFixed(2); if (cache.has(k)) return cache.get(k);
+    if (JS) for (const f of JS.polities) if (jsInFeat(f, lon, lat)) { const v = list.find(x => x.name === nmOf(f)) || null; cache.set(k, v); return v; }
     let best = null, bd = 1e9, bi = -1;
     for (const r of rows) { let d = 1e9; for (const [x, y2] of r.pts) { const e = Math.hypot((x - lon) * Math.cos(lat * Math.PI / 180), y2 - lat); if (e < d) d = e; }
       if (d > (r.base ? 6 : r.r)) continue;
@@ -7780,10 +7896,15 @@ function realmsAt(y, m) {
       const eff = r.base && d > r.r ? 50 + d : d;
       if (eff < bd - 0.05 || (Math.abs(eff - bd) <= 0.05 && r.i > bi)) { bd = eff; best = r; bi = r.i; } }
     const v = best ? list.find(x => x.name === best.n) : null; cache.set(k, v); return v; };
-  return { list, of, rows };
+  return { list, of, rows, js: JS ? { id: JS.id, cap: JS.cap } : null };
 }
 const MU_C = { k: '', s: null, v: null };
-function mapUnits(s) { return admOverlay(s, mapUnits0(s)); }
+/** 玩家造成的改变才改图（2026-11-02 玩家：「有玩家当权的话地图就不会这样，权力权限不到的话，地图该怎么样就怎么样」）：
+ *  只有程序结算的仗（你打下、你丢掉的地方）记进 s.mapOwn，图上那一处照这个；其余照史书（江山时序、内置史料）画 */
+function mapUnits(s) { const M = admOverlay(s, mapUnits0(s)), MO = s && s.mapOwn; if (!M || !MO || !Object.keys(MO).length || M._mo) return M;
+  const r0 = M.reg, R = realmsAt(s.clock.y, s.clock.m), mine = { name: pol0(s) || '你', col: '#a63a2a', mine: true };
+  M.reg = u => { const k = u && MO[geoStem(u.lv === 3 && u.p ? u.p : u.n)]; if (!k) return r0(u); if (k.owner === '你') return (R && R.list.find(x => x.name === pol0(s))) || mine; return (R && R.list.find(x => x.name === k.owner)) || { name: k.owner, col: '#7a6a5a' }; };
+  M._mo = true; return M; }
 function mapUnits0(s) {
   const A = s.admin && Math.abs(s.admin.y - s.clock.y) <= (s.admin.split ? 1 : 15) ? s.admin : null;
   const { prefs, counties } = stratUnits(s);
@@ -7877,6 +7998,7 @@ function mapGestures() {
     MAPG.wt = setTimeout(() => { const k = MAPG.wk; MAPG.wk = 1; mapZoomBy(k, MAPG.wat); render(); }, 220); }, { passive: false });
 }
 function stratMap(s) {
+  try { jsmapLoad(); } catch (_) { /* 下不成照内置史料画 */ }
   if (!geoData().length) return '<div class="muted">地名库没载进来，画不了舆图。</div>';
   const y = s.clock.y, M = mapUnits(s), own = mapOwners(s), here = hereXY(s), Ly = MAPZ.lay, T = terr();
   const prov = MAPZ.mode === 'prov' ? MAPZ.prov : '', near = MAPZ.mode === 'near' && MAPZ.c, zoom = MAPZ.mode !== 'world';
@@ -9546,6 +9668,7 @@ function applyBattle(s, r) {
   }
   if (r.take && !arr(s.territory).some(x => x.place === r.take)) s.territory = arr(s.territory).concat([{ place: r.take, pop: null, troops: Math.round(r.ours * 0.1), grain: null, loyalty: 30, note: `第${r.turn}回打下` }]);
   if (r.lose) s.territory = arr(s.territory).filter(x => x.place !== r.lose);
+  if (!r.virtual && (r.take || r.lose)) { s.mapOwn = s.mapOwn || {}; if (r.take) s.mapOwn[geoStem(r.take)] = { owner: '你', turn: r.turn, why: '打下' }; if (r.lose) s.mapOwn[geoStem(r.lose)] = { owner: String(r.enemyOwner || r.enemy || '敌').replace(/(守军|军|兵)$/, '') || '敌', turn: r.turn, why: '丢了' }; }
   s.battles = arr(s.battles).concat([{ turn: r.turn, when: timeText(s.clock), place: r.place, enemy: r.enemy, ours: r.ours, theirs: r.enemyTroops, outcome: r.outcome, deadUs: r.deadUs, deadThem: r.deadThem, take: r.take, lose: r.lose, terrain: r.terrain, tactic: r.tactic || '', tacWhy: r.tacWhy || '', rounds: r.rounds || [], forces: arr(r.ourForces).join('、') }]).slice(-40);
   return r;
 }
@@ -10913,7 +11036,7 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg)), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s)), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
       if (!s.yearSnap) s.yearSnap = yearSnap(s);
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
@@ -11581,6 +11704,7 @@ function pane(tab) {
       ${arr(c.nextSteps).length ? `<div class="h"><span class="seal">升</span>可能的下一步</div><div class="list">${c.nextSteps.map(x => `<div><b>${esc(x.to)}</b>${x.need ? `<div class="muted">要：${esc(x.need)}</div>` : ''}</div>`).join('')}</div>` : ''}
       ${arr(s.careerLog).length ? `<div class="h"><span class="seal">历</span>履历</div><div class="tblwrap"><table class="tbl"><tr><th>时间</th><th>事</th><th>此后</th></tr>${s.careerLog.slice().reverse().map(x => `<tr><td>${esc(x.when)}</td><td>${esc(x.what)}</td><td>${esc(x.office)}</td></tr>`).join('')}</table></div>` : ''}
       ${s.promo ? `<div class="h"><span class="seal">迁</span>本朝升迁之制<span class="note">${s.promo.searched ? '联网查过' : '照史书整理'}${s.promo.basis ? '；依据：' + esc(s.promo.basis) : ''}</span></div><dl class="kv">${[['考核', s.promo.review], ['任期', s.promo.tenure], ['任命', s.promo.appoint]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${s.promo.next.length ? `<div class="list">${s.promo.next.map(x => `<div><b>${esc(x.post)}</b>${x.rank ? ' <span class="muted">' + esc(x.rank) + '</span>' : ''}<div class="muted">${esc(x.how)}</div></div>`).join('')}</div>` : ''}${s.promo.limits.length ? `<div class="muted">做不到的：${esc(s.promo.limits.join('；'))}</div>` : ''}${s.promo.entry.length && !c.office ? `<div class="muted">入仕的路子：${esc(s.promo.entry.join('；'))}</div>` : ''}` : ''}
+      ${shituHtml(s)}
       <div class="h"><span class="seal">制</span>本朝官制<span class="note">${I ? esc(I.when || '') : ''}</span></div>
       ${I ? `${I.era ? `<div class="muted">适用：${esc(I.era)}</div>` : ''}<div class="overview">${esc(I.summary)}</div>
         ${I.local ? `<div class="pl"><span>层级</span>${esc(I.local)}</div>` : ''}
@@ -12228,6 +12352,7 @@ document.addEventListener('click', async e => {
   const t = e.target.closest('button'); if (!t) return;
   if (S && !BUSY && (t.id === 'bExam' || t.id === 'bXiao' || t.id === 'bStudy')) { if (t.id === 'bExam') examApply(S); else if (t.id === 'bXiao') examRecommend(S); else { const E = examOf(S); if (E.studyFrom != null) { E.studyFrom = null; S.focus = ''; ORGMSG = '不再闭门读书'; } else { E.studyFrom = Math.floor(ymOf(S.clock)); S.focus = '读书'; ORGMSG = '开始闭门读书：每过一个月文墨长一些，应考把握大一些'; } } try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.id === 'bReform' && !REFORM_P) { ORGMSG = '正在拟定章程……'; REFORM_P = 1; render(); try { await reformStart(S, ($('#refName') || {}).value || '', ($('#refBody') || {}).value || ''); } catch (er) { ORGMSG = '没推行成：' + errText(er); } REFORM_P = null; try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && t.dataset.shitu) { shituAct(S, t.dataset.shitu, ($('#shAmt') || {}).value); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.id === 'bFound') { founding(S, ($('#fGuo') || {}).value || '', ($('#fNian') || {}).value || '', ($('#fDu') || {}).value || ''); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.id === 'bShop') { ORGMSG = '问问行情……'; render(); try { await shopOpen(S, ($('#shopKind') || {}).value || '', ($('#shopCap') || {}).value || '', ($('#shopAt') || {}).value || ''); } catch (er) { ORGMSG = '没开成：' + errText(er); } try { await store.save(S); } catch (_) {} render(); return; }
   const ds = t.dataset;
