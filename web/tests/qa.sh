@@ -73,6 +73,7 @@ start ai.js && {
   run "出征真能打：军务页出征单列邻近的城（归谁、多远、几日、胜算、守军不详不编）、点进攻当场立行军、静候军报、撤回；营数整数、总数和战报对得上；胜负折损看对面战力" 120 env PLAY="$ROOT/web/play.html" node march.js
   run "用江山时序的版图：只当数据解析不执行、照多边形认各家、没画到的照内置；测试里不自动下；玩家亲手打下丢掉的才改图" 120 env PLAY="$ROOT/web/play.html" node jsmap.js
   run "官场门道与谋升迁：仕途页摆门道和照例数目、打点上司一月一回、清廉的退礼、结同年攒人脉、求保举下月定准驳、准了改官记履历" 120 env PLAY="$ROOT/web/play.html" node shitu.js
+  run "舆图放大不变花、稍放大有府州界和州名、自己的辖区朱红线圈出、局面页仕途页「在舆图上看」点得动、平民没有" 120 env PLAY="$ROOT/web/play.html" node mapdomain.js
   run "周边各族也画也能玩、君主自己划分政区（改名改隶分置定都筑城）、州府看得到户口（照地理志推、写依据）" 120 env PLAY="$ROOT/web/play.html" node frontier.js
   run "每个时期都分政权画：五代十国长安一带不空、各国和中原王朝不同色、DeepSeek 并成一家也照内置史料分开、各时期要紧城池归对政权" 120 env PLAY="$ROOT/web/play.html" node realms.js
   run "人物页身边和远处分开（远处写信遣使）、不摆出处引文、真人主角不添虚构下人、中古的虚构名字像那时的士人" 120 env PLAY="$ROOT/web/play.html" node circle.js
