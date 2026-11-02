@@ -36,6 +36,7 @@ run() {   # $1 = 名字，$2 = 超时秒，$3... = 命令；输出里必须没�
 say "构建"; (cd "$ROOT" && python3 web/build.py 2>&1) | tail -3; [ ${PIPESTATUS[0]} -eq 0 ] || { bad "构建失败（页面脚本有语法错误）"; echo "有不合格项，不许发布"; exit 1; }
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
+say "端口被占：别的程序占着往后挪、游戏已经开着不另开"; PF=$(node "$ROOT/web/tests/portfallback.js" 2>&1 | tail -1); echo "$PF"; echo "$PF" | grep -q "ERRS \[\]" || bad "端口被占"
 KEYVAL= start ai.js && run "填 Key：粘贴、保存、换 Key、型号、博查、开关、输入不丢" 300 node keyflow.js
 start ai.js && {
   run "巡检（开局 + 三回合 + 十个侧栏）" 600 node tour.js
@@ -62,8 +63,12 @@ start ai.js && {
   run "自家势力：山寨、商号、商队、宗族、乡勇、绿林共用一套账，人数照军务、本钱照营生，建入退换头领增减迁资结交散，权不互转" 120 env PLAY="$ROOT/web/play.html" node orgs.js
   run "世界自己转：要紧的人照身份、所在、资源、关系自己办事落到账上，账上没有的人不收，兵数不凭空涨，暗地里的只进幕后，外地出事落到辖区，检索词并成一批（五种身份）" 120 env PLAY="$ROOT/web/play.html" node world.js
   run "军政：军令程序当场办（募编分兵合兵换将拨粮改编裁撤）、钱人兵不够当场说明、记账改不了主角兵数、科技照年代开放成了真改战力、推演列 lookup 程序查账给写正文和记账" 120 env PLAY="$ROOT/web/play.html" node mil.js
+  run "按钮真点得动：六种身份每页每个按钮真点一下不报错；输入框上有这个身份能办的事、点了写进框里" 900 env PLAY="$ROOT/web/play.html" node clickall.js
+  run "新制与改革、建号改元、职权内选官：改革职权以内当场推行按月见效、建号改元当场改、招贤来的人当场任命、平民没有这个窗口" 120 env PLAY="$ROOT/web/play.html" node reform.js
+  run "百姓科举、经营：功名照朝代一级级考、到月程序定中不中、进士授官、隋以前察举；开铺子由 DeepSeek 判行情、程序按月结算、增资收铺、记账改不了本钱" 120 env PLAY="$ROOT/web/play.html" node livelihood.js
   run "各种身份都能玩：地方官管辖区、山大王管山寨能劫掠、武官管自己的兵、节度使土司酋长是一方之主、开局照史料查统带的兵、局面页摆出辖区和兵马" 120 env PLAY="$ROOT/web/play.html" node roles.js
   run "朝局令当场办：一方之主任命跟前的当场到任、远处的下一回到任、罢免增设裁撤当场办、国策走诏令回报了才算已行；写正文吩咐了就办不说空话；日本新罗西域西南夷南越林邑都在" 120 env PLAY="$ROOT/web/play.html" node courtnow.js
+  run "大人物照真官：隋唐尚书令照例不授、不起虚构的；三品以上查不到真人就空着待查、后台再查；小吏照旧起名；旧存档清掉大位子上的虚构名字；一方之主能破例除授、小官保举不了" 120 env PLAY="$ROOT/web/play.html" node officials.js
   run "周边各族也画也能玩、君主自己划分政区（改名改隶分置定都筑城）、州府看得到户口（照地理志推、写依据）" 120 env PLAY="$ROOT/web/play.html" node frontier.js
   run "每个时期都分政权画：五代十国长安一带不空、各国和中原王朝不同色、DeepSeek 并成一家也照内置史料分开、各时期要紧城池归对政权" 120 env PLAY="$ROOT/web/play.html" node realms.js
   run "舆图着色：谭图真界下好几家政权照政权上色、你的地盘真上色、别家地盘写到省一级的照省上色、聚众据地的画商帮不画" 120 env PLAY="$ROOT/web/play.html" node mapcolor.js

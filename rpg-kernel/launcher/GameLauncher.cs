@@ -103,6 +103,7 @@ static class GameLauncher
             Log("8787 被占用，改用 " + Port);
         }
 
+        try { var pj0 = Path.Combine(GameDir, "data", "port.json"); if (File.Exists(pj0)) File.Delete(pj0); } catch { }   // 上回的端口记录不作数
         Say("启动游戏服务……");
         var psi = new ProcessStartInfo(node, "server.js")
         {
@@ -122,6 +123,7 @@ static class GameLauncher
         for (int i = 0; i < 120 && !Server.HasExited; i++)
         {
             if (Ping()) { Ready = true; break; }
+            try { var pj = Path.Combine(GameDir, "data", "port.json"); if (File.Exists(pj)) { var m = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(pj), "\\d{4,5}"); int pp; if (m.Success && int.TryParse(m.Value, out pp) && pp != Port) { Port = pp; Log("服务改用了端口 " + Port); } } } catch { }
             if (i == 10) Say("第一次启动稍慢（杀毒软件可能在扫描），请稍等……");
             Thread.Sleep(500);
         }

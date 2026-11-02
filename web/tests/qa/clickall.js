@@ -1,68 +1,33 @@
-// 每个能点的都点一遍：首页、自定开局表、游戏里每一页侧栏、正文下的按钮。
-// 每点一下记：页面报错、点了毫无反应（页面、状态、本机存储、请求都没变）、卡住、怪字。
-// 有副作用的（删除、回首页、停）点完会恢复到游戏里再接着点。
-const { chromium } = require('playwright');
-const PORT = process.env.GAME_PORT || 8793;
-(async () => {
-  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const ctx = await b.newContext({ acceptDownloads: true }); const p = await ctx.newPage();
-  const errs = [], dead = [], weird = []; let CUR = 'open'; let reqs = 0; let dls = 0;
-  p.on('pageerror', e => errs.push(CUR + ' → ' + String(e.message).slice(0, 160))); p.on('dialog', d => d.dismiss()); p.on('request', () => reqs++); p.on('download', () => dls++);
-  const idle = async (ms = 300000) => { try { await p.waitForFunction(() => !BUSY && !document.querySelector('.thinking') && !KEYSAVING, null, { timeout: ms, polling: 200 }); return true; } catch (_) { return false; } };
-  const snap = () => p.evaluate(() => { let ls = ''; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); ls += k + '=' + (localStorage.getItem(k) || '').length + ';'; } } catch (_) { } const sel = window.getSelection ? String(window.getSelection()) : ''; const vals = [...document.querySelectorAll('input, select, textarea')].map(x => x.id + ':' + (x.type === 'checkbox' ? x.checked : x.value)).join(','); return vals + '|' + (document.body.innerHTML.length) + '|' + document.body.innerText + '|' + ls + '|' + (document.activeElement && (document.activeElement.id || document.activeElement.tagName)) + '|' + (document.activeElement && document.activeElement.value || '') + '|' + JSON.stringify(typeof S !== 'undefined' && S ? [S.id, S.turn, S.chat && S.chat.length] : null) + '|' + VIEW + '|' + sel + '|' + scrollY; });
-  const back = async () => { if (await p.evaluate(() => VIEW !== 'game' || !S)) { const l = await p.$('[data-load]'); if (l) { await l.click(); await p.waitForTimeout(800); } } };
-  // 选得出、此刻看得见、没禁用的可点物；用一条能再找到它的选择器标记
-  const targets = () => p.evaluate(() => {
-    const out = []; let n = 0;
-    for (const el of document.querySelectorAll('button, a[href], [data-tab], [data-write], [data-goal], [data-fb], [data-load], [data-ex], summary, input[type=checkbox], select')) {
-      const r = el.getBoundingClientRect(); if (!r.width || !r.height || el.disabled || el.closest('[hidden]')) continue;
-      const cs = getComputedStyle(el); if (cs.visibility === 'hidden' || cs.display === 'none') continue;
-      const name = (el.id ? '#' + el.id : '') + ' ' + [...el.attributes].filter(a => a.name.startsWith('data-')).map(a => a.name + '=' + a.value.slice(0, 20)).join(' ') + ' 「' + (el.innerText || el.value || '').trim().slice(0, 16) + '」';
-      el.setAttribute('data-qa', String(++n)); out.push({ q: '[data-qa="' + n + '"]', name: name.trim(), tag: el.tagName, href: el.getAttribute('href') || '' });
-    }
-    return out;
-  });
-  // 这些点了本来就该离开或打断：点完恢复
-  const RISKY = /#bHome|data-del=|data-askdel|#bStop|#bCustomClear|#bNoBocha|data-load/;
-  const SKIP = /#bStart|#bCustomStart|#bSend|#bKeySave|#bBochaSave|#bWBocha\b|#bRegenGo|#bEditSave|data-fb=|#bSettle|#bRetry|#bBranch/;   // 这些会发起新的一回或保存 Key：另有专门的检测
-  async function sweep(label) {
-    const seen = new Set();
-    for (let round = 0; round < 3; round++) {
-      const list = (await targets()).filter(t => !seen.has(t.name));
-      if (!list.length) break;
-      for (const t of list) {
-        seen.add(t.name); if (SKIP.test(t.name)) continue;
-        if (t.tag === 'A' && /^https?:/.test(t.href)) continue;   // 外链不点
-        CUR = label + ' ' + t.name;
-        const el = await p.$(t.q); if (!el || !(await el.isVisible().catch(() => false))) continue;
-        const before = await snap(); const r0 = reqs, d0 = dls;
-        try {
-          if (t.tag === 'SELECT') { const opts = await el.$$eval('option', o => o.map(x => x.value)); const cur = await el.inputValue(); await el.selectOption(opts.find(v => v !== cur) || cur); }
-          else await el.click({ timeout: 3000 });
-        } catch (e) { if (!/detached|not attached|intercept|outside of the viewport|Timeout/i.test(e.message)) weird.push(CUR + '：点不了 ' + e.message.slice(0, 80)); continue; }
-        await p.waitForTimeout(400); if (!(await idle(120000))) weird.push(CUR + '：点完卡住两分钟');
-        const after = await snap();
-        if (after === before && reqs === r0 && dls === d0) dead.push(CUR);
-        const vis = await p.evaluate(() => document.body.innerText).catch(() => '');
-        const leak = vis.match(/【幕后】|undefined|NaN|\[object Object\]|"elapsedDays"/g); if (leak) weird.push(CUR + '：点完有怪字 ' + [...new Set(leak)].join(','));
-        const err = await p.evaluate(() => [...document.querySelectorAll('.err')].map(e => e.innerText).join(' | ')).catch(() => '');
-        if (err && !/没通|连不上|网络或模型抖了/.test(err)) weird.push(CUR + '：点完报错 ' + err.slice(0, 100));
-        if (await p.$('#faceModal:not([hidden])')) { const c = await p.$('#faceModal [data-close], #faceModal .close, #fmClose'); if (c) await c.click().catch(() => {}); else await p.keyboard.press('Escape'); }
-        if (RISKY.test(t.name) || label.startsWith('游戏')) { await back(); }
-      }
-    }
+// 真点按钮扫一遍（CLAUDE.md「发布与仓库」按钮真点得动）：皇帝、山大王、将领、文官、百姓、商人六种身份，每一页每个按钮真点一下，不许报错；每个身份输入框上有一排能办的事、点了写进框里
+const { chromium } = require('playwright'); const path = require('path');
+(async () => { const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1280, height: 900 } }); const pe = []; p.on('pageerror', e => pe.push(e.message));
+ p.on('dialog', d => d.dismiss());
+ await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof render0 === 'function');
+ const roles = [['皇帝', '大明皇帝', 1630, '顺天府', '明', { idm: 'emperor' }], ['山大王', '山寨寨主，啸聚梁山', 1120, '郓州', '宋', {}], ['将领', '登州镇总兵', 1630, '登州府', '明', { career: { office: '登州镇总兵', rank: '正二品' } }], ['文官', '潍县知县', 1747, '莱州府潍县', '清', { career: { office: '潍县知县', rank: '正七品' } }], ['百姓', '耕读人家的读书人', 1747, '扬州府江都县', '清', {}], ['商人', '扬州盐商', 1757, '扬州府江都县', '清', {}]];
+ const report = {};
+ for (const [k, role, y, pl, pol, extra] of roles) {
+  await p.evaluate(([role, y, pl, pol, extra]) => { const s = Object.assign(newSave({ name: '甲乙丙', gender: '男', age: 30, role, gregorianYear: y, month: 5, day: 1, place: pl, polity: pol }), extra); s.chat = [{ role: 'gm', text: '开场。' }]; s.money = { cash: 5000, unit: '两', hist: [] };
+   s.unitTypes = [{ id: 'bu', name: '步兵', size: 100, atk: 50, def: 50, shock: 40, org: 50, mob: 40, pay: 1, grain: 0.5, months: 2, unit: '营' }]; s.forces = role.includes('总兵') ? [{ name: '登州镇标', leader: '甲乙丙', troops: '3000', at: '登州府', status: '驻守', src: '推算' }] : [];
+   if (role.includes('知县')) s.gov = { scope: 'local', keys: [], stats: { 存银: 4000, 仓粮: 2000, 民心: 50, 治安: 40, 积案: 60, 灾情: 30, 吏治: 50 }, basis: {}, hist: [] };
+   S = s; VIEW = 'game'; SIDE_FOLD = false; window.__s0 = JSON.stringify(s); }, [role, y, pl, pol, extra]);
+  const tabs = await p.evaluate(() => tabsFor(S).map(t => t[0])); report[k] = { tabs, dead: [], err: [] };
+  for (const t of tabs) {
+   await p.evaluate(t => { S = JSON.parse(window.__s0); TAB = t; ORGMSG = ''; SIDE_FOLD = false; MAPZ.inited = false; MAPC.k = ''; render0(); }, t);
+   const n = await p.evaluate(() => document.querySelectorAll('.side button:not([data-tab]), .side [data-write]:not(button), .side [data-mapu]').length);
+   for (let i = 0; i < Math.min(n, 30); i++) {
+    const r = await p.evaluate(i => { const els = [...document.querySelectorAll('.side button:not([data-tab]), .side [data-write]:not(button), .side [data-mapu]')]; const el = els[i]; if (!el || el.disabled || el.offsetParent === null) return null; if (/删除|换一局|导出|下载|清理|退出|重写这一条/.test(el.innerText || '')) return null;
+      const lab = (el.innerText || el.value || el.id || '').trim().slice(0, 16), before = document.body.innerText + '|' + ($('#said') || {}).value + '|' + ORGMSG + '|' + JSON.stringify(S).length; el.dispatchEvent(new MouseEvent('click', { bubbles: true })); return { lab, before }; }, i);
+    if (!r) continue; await p.waitForTimeout(150);
+    const after = await p.evaluate(() => document.body.innerText + '|' + ($('#said') || {}).value + '|' + ORGMSG + '|' + JSON.stringify(S).length);
+    if (after === r.before) report[k].dead.push(`${t}:${r.lab}`);
+    if (pe.length) { report[k].err.push(`${t}:${r.lab}: ${pe.splice(0).join(';')}`); }
+    await p.evaluate(t => { S = JSON.parse(window.__s0); TAB = t; ORGMSG = ''; VIEW = 'game'; SIDE_FOLD = false; MAPZ.inited = false; MAPC.k = ''; render0(); }, t);
+   }
   }
-  await p.goto(`http://127.0.0.1:${PORT}/`); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
-  await p.evaluate(() => { const d = document.querySelector('#dCustom'); if (d) d.open = true; });
-  await sweep('首页');
-  await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart');
-  if (!(await idle()) || !(await p.$('#said'))) { console.log('OPENING FAILED', JSON.stringify(errs)); await b.close(); process.exit(1); }
-  await p.fill('#said', '去钞关打听今年的盐引价钱'); await p.click('#bSend'); await idle();
-  for (const tab of await p.$$eval('[data-tab]', xs => [...new Set(xs.map(x => x.dataset.tab))])) {
-    await back(); await p.click(`[data-tab="${tab}"]`).catch(() => {}); await p.waitForTimeout(300);
-    await sweep('游戏·' + tab);
-  }
-  console.log('PAGE ERRORS', errs.length, JSON.stringify([...new Set(errs)], null, 1));
-  console.log('DEAD', dead.length, JSON.stringify(dead, null, 1));
-  console.log('WEIRD', weird.length, JSON.stringify(weird, null, 1));
-  await b.close(); process.exit(errs.length || weird.length ? 1 : 0);
-})();
+ }
+ const errs = []; for (const [k, v] of Object.entries(report)) for (const e of v.err) errs.push(k + ' ' + e);
+ // 每个身份输入框上有一排能办的事，真点一下写进框里
+ for (const [k, role, y, pl, pol, extra] of roles) { const r = await p.evaluate(async ([role, y, pl, pol, extra]) => { const s = Object.assign(newSave({ name: '甲乙丙', gender: '男', age: 30, role, gregorianYear: y, month: 5, day: 1, place: pl, polity: pol }), extra); s.chat = [{ role: 'gm', text: '开场。' }]; S = s; VIEW = 'game'; TAB = 'board'; render0(); const L = roleActions(s); const bt = document.querySelector('.goalbar.acts .goal'); if (!bt) return { n: L.length, ok: false }; bt.click(); await new Promise(r => setTimeout(r, 200)); return { n: L.length, ok: !!(document.querySelector('#said') || {}).value }; }, [role, y, pl, pol, extra]);
+   if (!r.n) errs.push(k + '：输入框上没有能办的事'); else if (!r.ok) errs.push(k + '：点了能办的事，没写进框里'); }
+ if (pe.length) errs.push(...pe);
+ console.log('ERRS', JSON.stringify(errs)); await b.close(); })();
