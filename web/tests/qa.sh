@@ -75,6 +75,7 @@ start ai.js && {
   run "官场门道与谋升迁：仕途页摆门道和照例数目、打点上司一月一回、清廉的退礼、结同年攒人脉、求保举下月定准驳、准了改官记履历" 120 env PLAY="$ROOT/web/play.html" node shitu.js
   run "舆图放大不变花、稍放大有府州界和州名、自己的辖区朱红线圈出、局面页仕途页「在舆图上看」点得动、平民没有" 120 env PLAY="$ROOT/web/play.html" node mapdomain.js
   run "真人不标虚拟、DS 一表核真假、朝堂全表并进人事树带派系关系、立嗣落到情分名声和睦派系临门、后宅宠冷落到情分和睦（真点按钮）" 120 env PLAY="$ROOT/web/play.html" node courtfull.js
+  run "皇帝管全国：地盘是全部州府、照地域分列、州名点了到图上；称臣附庸、唐中后期藩镇另列写朝廷管到哪；州名字够大、大图铺满屏幕；正统王朝土黄" 120 env PLAY="$ROOT/web/play.html" node emperor.js
   run "周边各族也画也能玩、君主自己划分政区（改名改隶分置定都筑城）、州府看得到户口（照地理志推、写依据）" 120 env PLAY="$ROOT/web/play.html" node frontier.js
   run "每个时期都分政权画：五代十国长安一带不空、各国和中原王朝不同色、DeepSeek 并成一家也照内置史料分开、各时期要紧城池归对政权" 120 env PLAY="$ROOT/web/play.html" node realms.js
   run "人物页身边和远处分开（远处写信遣使）、不摆出处引文、真人主角不添虚构下人、中古的虚构名字像那时的士人" 120 env PLAY="$ROOT/web/play.html" node circle.js

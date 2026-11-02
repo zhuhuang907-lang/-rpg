@@ -147,6 +147,7 @@ const checks = [
   ['官场门道与谋升迁（CLAUDE.md「人事与职权」）：升迁之制带潜规则、仕途页能打点、结同年、求保举，下月程序定准驳', /function shituAct\(s, act, amt\)/.test(src) && /function shituMonthly\(s\)/.test(src) && /"rules":\[\{"name":"","what":"怎么做","cost":null/.test(src) && /shituMonthly\(s\)\)/.test(src)],
   ['放大不变花、府州界、你的辖区（CLAUDE.md「舆图」）', /function domainSet\(s, M\)/.test(src) && /function mapToDomain\(s\)/.test(src) && /class="prefline"/.test(src) && /return o \? o\.col : r && r\.col \? r\.col : MAP_PLAIN;/.test(src)],
   ['真人不标虚拟、朝堂全表、立嗣后宅有后果（CLAUDE.md）', /function fictionShow\(s\)/.test(src) && /const F = \[\.\.\.fictionShow\(s\)\]/.test(src) && /async function pplChkDS\(s\)/.test(src) && /async function courtFullDS\(s\)/.test(src) && /id: 'court'/.test(src) && /function setHeir\(s, name\)/.test(src) && /function haremAct\(s, name, act\)/.test(src) && /【朝中派系（照史书）】/.test(src)],
+  ['州名看得清、皇帝管全国、藩镇另列（CLAUDE.md「舆图」）', /function realmVassals\(s\)/.test(src) && /const BIGREG = /.test(src) && /data-mapbig="1"/.test(src) && /placeLbls\(showLbl, zoom \? 15 : 13\)/.test(src) && /魏博镇\|763\|811/.test(src)],
   ['不卡顿、推理够深（CLAUDE.md「发布与仓库」卡顿）：一回最多改一次稿（程序、核实、审读挑的毛病合在一起改）；每回记下各阶段用时进问题报告；方略、临门、家宅、天下推演都深度思考', /PERF = \{ t0: Date\.now\(\)/.test(src) && /最近几回用时/.test(src) && /!early \|\| fatal/.test(src) && /kind === '推演' && !\(extra && extra\.thinking === false\)/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
