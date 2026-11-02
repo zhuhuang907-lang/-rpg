@@ -14,16 +14,19 @@ const path = require('path');
       { key: '三公', name: '三公', parent: 'ROOT', level: '加官', duty: '', posts: [{ title: '太尉', rank: '正一品', quota: 1, holders: [] }] }] },
       B: { nodes: [{ key: '京兆郡', name: '京兆郡', parent: 'ROOT', level: '郡', duty: '', path: true, posts: [{ title: '京兆尹', rank: '正三品', quota: 1, holders: [] }] }, { key: '大兴县', name: '大兴县', parent: '京兆郡', level: '县', duty: '', path: true, posts: [{ title: '县令', rank: '从六品', quota: 1, holders: [] }, { title: '书吏', rank: '', quota: 4, holders: [] }] }] },
       C: { nodes: [{ key: '左翊卫', name: '左翊卫', parent: 'ROOT', level: '卫', duty: '', posts: [{ title: '大将军', rank: '正三品', quota: 1, holders: [] }, { title: '校尉', rank: '正六品', quota: 4, holders: [] }] }] } };
+    let TABLE_ASKS = 0, TABLE_MODE = 'full';
     const run = async (y, role, name) => {
       const s = newSave({ name, gender: '男', age: 40, role, gregorianYear: y, month: 3, day: 1, place: '大兴', polity: y < 618 ? '隋' : '唐' }); S = s; s.chat = [{ role: 'gm', text: '开场。' }];
       const oc = callClaude, ob = bochaDeep, of = searchFirst; let k = 0;
       bochaDeep = async () => ({ text: '', items: [] }); searchFirst = async () => '';
-      callClaude = async (pr) => { if (/国策书/.test(pr)) return { text: '{"policies":[]}' }; if (/fills/.test(pr)) return { text: '{"fills":[]}' }; const P = /整理「中枢」/.test(pr) ? 'A' : /整理「地方」/.test(pr) ? 'B' : /整理「军事」/.test(pr) ? 'C' : ''; k++; return { text: JSON.stringify(P ? tree[P] : {}) }; };
+      callClaude = async (pr) => { if (/在任官员表/.test(pr)) { TABLE_ASKS++; const rows = []; pr.split('\n').forEach(l => { const m = /^(\d+)\. (.+?)｜(.+?)(（|，|$)/.exec(l); if (!m) return; const ti = m[3]; const i = +m[1];
+          if (TABLE_MODE === 'none') return; if (ti === '左仆射') rows.push({ i, names: [y < 618 ? '苏威' : '豆卢钦望'] }); else if (ti === '吏部尚书') rows.push({ i, names: [y < 618 ? '牛弘' : '韦巨源'] }); else if (ti === '京兆尹') rows.push({ i, vacant: true, names: [], why: '此时京兆尹出缺' }); else if (ti === '大将军') rows.push({ i, names: ['某将军'] }); else rows.push({ i, unknown: true, names: [] }); }); return { text: JSON.stringify({ rows }) }; }
+        if (/国策书/.test(pr)) return { text: '{"policies":[]}' }; if (/fills/.test(pr)) return { text: '{"fills":[]}' }; const P = /整理「中枢」/.test(pr) ? 'A' : /整理「地方」/.test(pr) ? 'B' : /整理「军事」/.test(pr) ? 'C' : ''; k++; return { text: JSON.stringify(P ? tree[P] : {}) }; };
       try { await buildOrg(s); } finally { callClaude = oc; bochaDeep = ob; searchFirst = of; }
       return s;
     };
     for (const [y, nm] of [[607, '隋'], [700, '唐']]) {
-      const s = await run(y, '大兴县县令', '韦待价');
+      TABLE_MODE = 'none'; const s = await run(y, '大兴县县令', '韦待价');
       if (!s.org) { bad.push(nm + ' 人事树没建起来：' + ORGMSG); continue; }
       const P = []; for (const n of s.org.nodes) for (const q of n.posts) P.push({ n, q });
       const sl = P.find(x => x.q.title === '尚书令');
@@ -42,6 +45,43 @@ const path = require('path');
       ORGMSG = ''; orgAct(s, 'appoint', { node: sl.n, pi: sl.n.posts.indexOf(sl.q), person: '刘文静' });
       if (sl.q.holder === '刘文静' || sl.q.pending === '刘文静') bad.push(nm + ' 县令竟能保举尚书令');
     }
+    // DS 做表（一次列全）：大官照表填真人；表上说史载空着的空着、写依据；表上编「某」的不收、照旧待查；小吏照旧起名
+    for (const [y, nm] of [[607, '隋'], [700, '唐']]) {
+      TABLE_MODE = 'full'; TABLE_ASKS = 0; const s = await run(y, '大兴县县令', '韦待价');
+      const P = []; for (const n of s.org.nodes) for (const q of n.posts) P.push({ n, q });
+      const g = t => (P.find(x => x.q.title === t) || {}).q || {};
+      if (g('左仆射').holder !== (y < 618 ? '苏威' : '豆卢钦望') || g('左仆射').src !== 'DS表') bad.push(nm + ' 表上的左仆射没填：' + JSON.stringify(g('左仆射')));
+      if (g('吏部尚书').holder !== (y < 618 ? '牛弘' : '韦巨源')) bad.push(nm + ' 表上的吏部尚书没填');
+      if (g('京兆尹').holder || g('京兆尹').status !== '史载此时空缺' || !g('京兆尹').histVacant) bad.push(nm + ' 表上说史载空着的京兆尹没照空：' + JSON.stringify(g('京兆尹')));
+      if (/某/.test(g('大将军').holder || '') || g('大将军').src === '拟') bad.push(nm + ' 大将军填了「某」或虚构的：' + JSON.stringify(g('大将军')));
+      if (g('尚书令').holder) bad.push(nm + ' 有表以后尚书令反倒有人了');
+      if (!g('县令').holder && !g('县令').histVacant) bad.push(nm + ' 小官县令空着没名字');
+      if (TABLE_ASKS < 1 || TABLE_ASKS > 2) bad.push(nm + ' 在任官员表该一次（分块）问完，问了 ' + TABLE_ASKS + ' 回');
+      for (const x of P) if (!x.q.holder && x.n.id !== 'root' && !x.q.noGrant && !x.q.histVacant && !orgMajor(x.n, x.q)) bad.push(nm + ' 小官位子空着没名字：' + x.n.name + x.q.title);
+    }
+    // 不漏查：头一回 DeepSeek 漏答的行，挑出来再问一回
+    { TABLE_MODE = 'none'; const s = await run(700, '大兴县县令', '韦待价'); const P = []; for (const n of s.org.nodes) for (const q of n.posts) if (q.title === '左仆射' || q.title === '吏部尚书') { q.holder = ''; q.src = ''; P.push(q); }
+      const oc = callClaude; let calls = 0, second = '';
+      callClaude = async pr => { calls++; const rows = []; pr.split('\n').forEach(l => { const m = /^(\d+)\. (.+?)｜(.+?)(（|，|$)/.exec(l); if (!m) return; if (calls === 1 && m[3] === '吏部尚书') return; if (calls > 1) second += m[3] + ','; rows.push({ i: +m[1], names: [m[3] === '左仆射' ? '豆卢钦望' : m[3] === '吏部尚书' ? '韦巨源' : ''].filter(Boolean), unknown: !/左仆射|吏部尚书/.test(m[3]) }); }); return { text: JSON.stringify({ rows }) }; };
+      try { await orgTableDS(s, s.org.nodes, true); } finally { callClaude = oc; }
+      if (P[1].holder !== '韦巨源') bad.push('头一回漏答的吏部尚书没再问：' + JSON.stringify(P[1]));
+      if (/左仆射/.test(second)) bad.push('答过的行又重问了一回：' + second); }
+    // 往后几年的更替开局就查好存进存档，走到月份照表换人；玩家任命的位子照玩家的
+    { TABLE_MODE = 'none'; const s = await run(700, '大兴县县令', '韦待价'); const n = s.org.nodes.find(z => z.posts.some(q => q.title === '左仆射')), q = n.posts.find(z => z.title === '左仆射'), q2 = n.posts.find(z => z.title === '尚书令'); q.holder = '豆卢钦望'; q.src = 'DS表';
+      const nb = s.org.nodes.find(z => z.posts.some(q => q.title === '吏部尚书')), qb = nb.posts.find(z => z.title === '吏部尚书'); qb.holder = '韦巨源'; qb.byPlayer = true;
+      if (!orgFutureDue(s)) bad.push('开局没排上「往后几年的更替表」');
+      const oc = callClaude; let asked = '';
+      callClaude = async pr => { asked = pr; const rows = []; pr.split('\n').forEach(l => { const m = /^(\d+)\. (.+?)｜(.+?)｜/.exec(l); if (!m) return; if (m[3] === '左仆射') rows.push({ i: +m[1], y: 701, m: 3, name: '魏元忠', prev: '罢' }); if (m[3] === '吏部尚书') rows.push({ i: +m[1], y: 701, m: 1, name: '李峤' }); }); return { text: JSON.stringify({ changes: rows }) }; };
+      try { await orgFutureDS(s); } finally { callClaude = oc; }
+      if (!/705年底/.test(asked)) bad.push('更替表没往后查五年');
+      if (arr(s.org.future).length !== 2 || s.org.futureTo !== 705) bad.push('更替表没存进存档：' + JSON.stringify(s.org.future));
+      if (orgFutureDue(s)) bad.push('更替表查好了还排着');
+      s.clock.y = 701; s.clock.m = 2; const out0 = histTick(s); if (q.holder !== '豆卢钦望') bad.push('还没到月份就换人了');
+      s.clock.m = 4; const out = histTick(s);
+      if (q.holder !== '魏元忠' || q.src !== '史书') bad.push('到了月份没照表换人：' + JSON.stringify(q));
+      if (qb.holder !== '韦巨源' || !out0.concat(out).some(x => /史事已改/.test(x))) bad.push('玩家任命的位子被史书表覆盖了：' + JSON.stringify(qb) + JSON.stringify(out));
+      s.clock.y = 704; if (!orgFutureDue(s)) bad.push('快到表尾了没再往后查'); }
+    TABLE_MODE = 'none';
     // 隋大业二年：尚书令是杨素
     { const s = await run(606, '大兴县县令', '韦待价'); const x = s.org && s.org.nodes.flatMap(n => n.posts).find(q => q.title === '尚书令'); if (!x || x.holder !== '杨素') bad.push('606 年尚书令该是杨素：' + JSON.stringify(x)); }
     // 一方之主能打破旧制除授
