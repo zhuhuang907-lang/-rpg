@@ -69,8 +69,12 @@ start ai.js && {
   run "各种身份都能玩：地方官管辖区、山大王管山寨能劫掠、武官管自己的兵、节度使土司酋长是一方之主、开局照史料查统带的兵、局面页摆出辖区和兵马" 120 env PLAY="$ROOT/web/play.html" node roles.js
   run "朝局令当场办：一方之主任命跟前的当场到任、远处的下一回到任、罢免增设裁撤当场办、国策走诏令回报了才算已行；写正文吩咐了就办不说空话；日本新罗西域西南夷南越林邑都在" 120 env PLAY="$ROOT/web/play.html" node courtnow.js
   run "大人物照真官：隋唐尚书令照例不授、不起虚构的；三品以上查不到真人就空着待查、后台再查；小吏照旧起名；旧存档清掉大位子上的虚构名字；一方之主能破例除授、小官保举不了" 120 env PLAY="$ROOT/web/play.html" node officials.js
+  run "出征真能打：军务页出征单列邻近的城（归谁、多远、几日、胜算、守军不详不编）、点进攻当场立行军、静候军报、撤回；营数整数、总数和战报对得上；胜负折损看对面战力" 120 env PLAY="$ROOT/web/play.html" node march.js
   run "周边各族也画也能玩、君主自己划分政区（改名改隶分置定都筑城）、州府看得到户口（照地理志推、写依据）" 120 env PLAY="$ROOT/web/play.html" node frontier.js
   run "每个时期都分政权画：五代十国长安一带不空、各国和中原王朝不同色、DeepSeek 并成一家也照内置史料分开、各时期要紧城池归对政权" 120 env PLAY="$ROOT/web/play.html" node realms.js
+  run "人物页身边和远处分开（远处写信遣使）、不摆出处引文、真人主角不添虚构下人、中古的虚构名字像那时的士人" 120 env PLAY="$ROOT/web/play.html" node circle.js
+  run "势力页天下各家全列、自家不列成别人、不留空白；人的本事只写品第不写数" 120 env PLAY="$ROOT/web/play.html" node power.js
+  run "舆图缩放跟人走、兵牌军情卡、胜算照别国守军算、天时与军中突发之事、一个字的州认得出" 120 env PLAY="$ROOT/web/play.html" node warmap.js
   run "舆图着色：谭图真界下好几家政权照政权上色、你的地盘真上色、别家地盘写到省一级的照省上色、聚众据地的画商帮不画" 120 env PLAY="$ROOT/web/play.html" node mapcolor.js
   run "吩咐有回音、后果要合理：跟前能办的令当回办成、拖了两回的必须见分晓、诏令没缘由不打折、应对过的不罚误期、一个月新来的事有上限、起兵先有密报" 120 env PLAY="$ROOT/web/play.html" node feedback.js
   run "年岁与名字：长幼次序（兄姐弟妹、伯叔、长次子）不许颠倒、颠倒的交 DeepSeek 重推、一定给数；叙述里不许某地某日某事" 120 env PLAY="$ROOT/web/play.html" node ages.js
