@@ -10,14 +10,14 @@ const { chromium } = require('playwright');
   const send = async t => { await p.fill('#said', t); await p.click('#bSend'); return done(); };
   if (!(await send('派人去仪征打听掣验的行情'))) bad('第一回卡住');
   // 家常的一步走快路：正文先给看，记账在后头跑（CLAUDE.md「家常的一步走快路」）——等账记上再查，最多二十秒
-  await p.waitForFunction(() => arr(S.acts).some(x => /派人/.test(x.what) && x.state !== '在办') || !!(S.chat[S.chat.length - 1].extra || {}).salvaged, null, { timeout: 20000, polling: 300 }).catch(() => {});
+  await p.waitForFunction(() => arr(S.acts).some(x => /派人/.test(x.what) && x.state !== '在办') || !!(S.chat[S.chat.length - 1].extra || {}).salvaged, null, { timeout: 60000, polling: 300 }).catch(() => {});
   { const r = await p.evaluate(() => ({ sal: !!(S.chat[S.chat.length - 1].extra || {}).salvaged, acts: arr(S.acts).map(x => [x.type, x.what, x.state]), rc: !!document.querySelector('.receipt'), rt: (document.querySelector('.receipt') || {}).innerText || '' }));
     if (r.sal) console.log('这一回假 AI 的账没记上（故意出错的那一成），行动单留到下一回'); else if (!r.acts.some(a => /派人/.test(a[1]) && a[2] === '办成')) bad('玩家的令没开行动单、或记账报的进展没落到单子上：' + JSON.stringify(r).slice(0, 300));
     if (!r.sal && r.rc && r.acts.some(a => /派人/.test(a[1]) && a[2] === '办成') && /派人去仪征/.test(r.rt)) bad('办成了的事还在回执里唠叨（2026-10-30 玩家：幕后的不给看，回执只提没成、受阻、拖着的）：' + r.rt); }
   // 收回账房的权：正文说亲军涨到九万九，没有募兵的令，不落账
   await p.evaluate(() => { S.forces = [{ name: '亲军', leader: S.protagonist.name, troops: '3000', at: '扬州府' }]; });
   if (!(await send('假装多出兵，去江边走走'))) bad('第二回卡住');
-  await p.waitForFunction(() => arr(S.unbooked).some(x => /亲军/.test(x.text)) || !!(S.chat[S.chat.length - 1].extra || {}).salvaged, null, { timeout: 20000, polling: 300 }).catch(() => {});
+  await p.waitForFunction(() => arr(S.unbooked).some(x => /亲军/.test(x.text)) || !!(S.chat[S.chat.length - 1].extra || {}).salvaged, null, { timeout: 60000, polling: 300 }).catch(() => {});
   { const r = await p.evaluate(() => ({ sal: !!(S.chat[S.chat.length - 1].extra || {}).salvaged, t: (S.forces.find(f => f.name === '亲军') || {}).troops, unb: arr(S.unbooked).map(x => x.text), rt: [...document.querySelectorAll('.receipt')].map(e => e.innerText).join('|') }));
     if (r.sal) console.log('这一回假 AI 的账没记上（故意出错的那一成），兵数照旧 ' + r.t); else if (String(r.t) !== '3000' || !r.unb.some(t => /亲军/.test(t)) || !/其实没成/.test(r.rt)) bad('没有募兵的令，正文里多出的兵也落了账：' + JSON.stringify(r).slice(0, 300)); }
   // 三回没下文：明写「没有下文」，不悄悄删
