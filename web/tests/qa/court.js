@@ -38,10 +38,10 @@ const { chromium } = require('playwright');
   // 人事树真人优先：要紧位子空着的，先大量博查、DeepSeek 只从材料里认人；材料里没有的名字（钱不存）不收（CLAUDE.md「人事与职权」人事树先填真人）
   { const r = await p.evaluate(() => { const q = S.org.nodes.find(n => n.name === '户部').posts.find(x => x.title === '尚书'); return { h: q.holder, src: q.src, fake: S.org.nodes.some(n => n.posts.some(x => x.holder === '钱不存' || arr(x.others).includes('钱不存'))), mg: S.org.nodes.some(n => n.posts.some(x => x.manage !== undefined)) }; });
     if (r.h !== '蒋溥' || r.src !== '博查') bad('户部尚书空着时没有用博查找真人：' + JSON.stringify(r)); if (r.fake) bad('材料里没有的名字被填进人事树'); }
-  const deep = await p.evaluate(() => ({ max: Math.max(...S.org.nodes.map(n => n.depth || 0)), vac: S.org.nodes.filter(n => n.id !== 'root').some(n => n.posts.some(x => !x.holder && ((orgMajor(n, x) || x.noGrant) ? !/待查|不授|虚衔/.test(x.status || '') : true))), fz: S.org.nodes.find(n => /保甲/.test(n.name)).posts[0], fs: fictionSet(S).size }));
+  const deep = await p.evaluate(() => ({ max: Math.max(...S.org.nodes.map(n => n.depth || 0)), vac: S.org.nodes.filter(n => n.id !== 'root').some(n => n.posts.some(x => !x.holder && ((orgMajor(n, x) || x.noGrant) ? !/出缺|史载|不授|虚衔/.test(x.status || '') : true))), fz: S.org.nodes.find(n => /保甲/.test(n.name)).posts[0], fs: fictionSet(S).size }));
   if (deep.max < 4) bad('人事树没有一路通到基层：最深 ' + deep.max + ' 层');
   // 2026-11-02 大人物照真官：大位子查不到真人就空着写待查，小官照旧起名
-  if (deep.vac) bad('还有空着没起名的小官位子，或空着的大位子没写待查、照例不授');
+  if (deep.vac) bad('还有空着没起名的小官位子，或空着的大位子没写出缺、照例不授');
   if (!(deep.fz.others && deep.fz.others.length >= 2)) bad('保正员额四十，只列了一个人');
   if (!deep.fs) bad('虚构的官员没标虚拟');
   await p.click('[data-tab="court"]'); await p.waitForTimeout(500);

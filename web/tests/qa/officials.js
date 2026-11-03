@@ -34,12 +34,12 @@ const path = require('path');
         if (sl.q.holder) bad.push(nm + y + '年尚书令有人：' + sl.q.holder + '（' + sl.q.src + '）');
         if (sl.q.status !== '照例不授' || !sl.q.noGrant) bad.push(nm + ' 尚书令没标照例不授：' + JSON.stringify(sl.q)); }
       for (const x of P) if (x.q.src === '拟' && orgMajor(x.n, x.q)) bad.push(nm + ' 大人物位子是虚构的：' + x.n.name + x.q.title + x.q.holder);
-      for (const t of ['左仆射', '吏部尚书', '京兆尹', '大将军']) { const x = P.find(z => z.q.title === t); if (!x) { bad.push(nm + ' 没有' + t); continue; } if (x.q.holder) bad.push(nm + ' ' + t + '查不到真人却填了' + x.q.holder); if (!/待查/.test(x.q.status || '')) bad.push(nm + ' ' + t + '空着却没写待查：' + x.q.status); }
+      for (const t of ['左仆射', '吏部尚书', '京兆尹', '大将军']) { const x = P.find(z => z.q.title === t); if (!x) { bad.push(nm + ' 没有' + t); continue; } if (x.q.holder) bad.push(nm + ' ' + t + '查不到真人却填了' + x.q.holder); if (!/出缺/.test(x.q.status || '') || !x.q.needReal) bad.push(nm + ' ' + t + '空着却没写出缺、没记再查：' + x.q.status); }
       const tw = P.find(x => x.q.title === '太尉'); if (tw && (tw.q.holder || !/虚衔/.test(tw.q.status || ''))) bad.push(nm + ' 太尉没标加官虚衔：' + JSON.stringify(tw.q));
       const shuli = P.find(x => x.q.title === '书吏'); if (!shuli || !shuli.q.holder) bad.push(nm + ' 小吏查不到也该起个虚构名字（标虚拟）');
       if (!orgSeekDue(s) && canSearch()) bad.push(nm + ' 大人物空着，后台没排上再查');
       // 界面上写明照例不授、空缺待查
-      TAB = 'court'; render0(); const h = document.body.innerHTML; if (!/照例不授/.test(h)) bad.push(nm + ' 朝局页没写照例不授'); if (!/查无在任真人/.test(h)) bad.push(nm + ' 朝局页没写空缺待查');
+      TAB = 'court'; render0(); const h = document.body.innerHTML; if (!/照例不授/.test(h)) bad.push(nm + ' 朝局页没写照例不授'); if (!/出缺/.test(h)) bad.push(nm + ' 朝局页没写出缺'); if (/待查/.test(document.body.innerText)) bad.push(nm + ' 朝局页写着待查');
       // 小官保举不了照例不授的位子
       s.people = Object.assign(s.people || {}, { 刘文静: { role: '门客', seen: 1, where: '大兴' } });
       ORGMSG = ''; orgAct(s, 'appoint', { node: sl.n, pi: sl.n.posts.indexOf(sl.q), person: '刘文静' });
