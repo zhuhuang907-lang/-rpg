@@ -28,7 +28,7 @@ const fs = require('fs');
     await p.waitForTimeout(Number(process.env.RP_READ || 8000));   // 玩家读正文的工夫
     const pb = await p.$('.goalbar.press .goal');
     let said = acts[i % acts.length];
-    if (pb && i % 2 === 1) { await pb.click(); await p.waitForTimeout(200); said = (await p.inputValue('#said')) + '先照规矩应下来，再看情形'; }
+    if (pb && i % 2 === 1) { await p.click('.goalbar.press .goal').catch(() => {}); await p.waitForTimeout(200); said = (await p.inputValue('#said')) + '先照规矩应下来，再看情形'; }
     await p.fill('#said', said); const ts = Date.now(); await p.click('#bSend');
     const ok = await turnDone();
     console.log('TURN', i + 1, ok ? 'ok' : 'STUCK', Math.round((Date.now() - ts) / 1000) + 's', said.slice(0, 30));

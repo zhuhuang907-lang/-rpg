@@ -78,6 +78,7 @@ start ai.js && {
   run "皇帝管全国：地盘是全部州府、照地域分列、州名点了到图上；称臣附庸、唐中后期藩镇另列写朝廷管到哪；州名字够大、大图铺满屏幕；正统王朝土黄" 120 env PLAY="$ROOT/web/play.html" node emperor.js
   run "各种身份过日子：庙号认皇帝、行情表、土匪劫道绑票孝敬寨规围剿招安、地主收租加减租置田放债抗租、佃户短工、主母查账女红、后妃晋位、女子不应考、身份卡（真点按钮）" 120 env PLAY="$ROOT/web/play.html" node life.js
   run "起义流寇：李自成黄巢太平军照史书转战上图、义军逼近百姓官员各有应对、小兵立功升级逃投、首领裹挟开仓号令；皇帝起义宗室不应考、唐代门荫入幕流外；人事树不写待查；招贤本地名人照性子来；进士搜不到照史书列（真点按钮）" 120 env PLAY="$ROOT/web/play.html" node rebel.js
+  run "各身份的日子：官军军阶照朝代（绿营卫所营兵禁军府兵部曲）、功劳到头要保题、饷欠饷讨饷吃空饷被参；商人会馆远货赊账伙计关卡；私下的日子名目照身份（皇帝后妃女子寨主僧人知县）、花钱照行情、过节、会病要请郎中（真点按钮）" 120 env PLAY="$ROOT/web/play.html" node life2.js
   run "周边各族也画也能玩、君主自己划分政区（改名改隶分置定都筑城）、州府看得到户口（照地理志推、写依据）" 120 env PLAY="$ROOT/web/play.html" node frontier.js
   run "每个时期都分政权画：五代十国长安一带不空、各国和中原王朝不同色、DeepSeek 并成一家也照内置史料分开、各时期要紧城池归对政权" 120 env PLAY="$ROOT/web/play.html" node realms.js
   run "人物页身边和远处分开（远处写信遣使）、不摆出处引文、真人主角不添虚构下人、中古的虚构名字像那时的士人" 120 env PLAY="$ROOT/web/play.html" node circle.js
