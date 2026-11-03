@@ -41,7 +41,7 @@ const path = require('path');
   // 4 立嗣有后果（真点按钮）
   await p.evaluate(() => { S.household = [{ relation: '妻', name: '独孤伽罗', age: 56 }, { relation: '嫔', name: '云昭训', age: 30 }, { relation: '长子', name: '杨勇', age: 32, mother: '独孤伽罗' }, { relation: '次子', name: '杨广', age: 30, mother: '独孤伽罗' }, { relation: '三子', name: '杨俊', age: 28, mother: '云昭训' }]; S.people = Object.assign(S.people, { 杨广: { role: '晋王', seen: 1 }, 杨俊: { role: '秦王', seen: 1 }, 独孤伽罗: { role: '皇后', seen: 1 }, 云昭训: { role: '嫔', seen: 1 } }); S.renown = 300; S.home = { harmony: 70 }; S.press = []; TAB = 'people'; render0(); });
   const hb = await p.$('button[data-heir="杨广"]'); if (!hb) bad.push('人物页没有立嗣按钮'); else {
-    await hb.click(); const st = await p.evaluate(() => ({ heir: S.heir, fy: (S.people.杨勇 || {}).favor, fg: (S.people.杨广 || {}).favor, ren: S.renown, har: S.home.harmony, press: arr(S.press).map(x => x.title), fac: arr(S.factions).map(f => f.name), chron: arr(S.chronicle).slice(-1)[0], msg: ORGMSG }));
+    await p.click('button[data-heir="杨广"]'); const st = await p.evaluate(() => ({ heir: S.heir, fy: (S.people.杨勇 || {}).favor, fg: (S.people.杨广 || {}).favor, ren: S.renown, har: S.home.harmony, press: arr(S.press).map(x => x.title), fac: arr(S.factions).map(f => f.name), chron: arr(S.chronicle).slice(-1)[0], msg: ORGMSG }));
     if (st.heir !== '杨广') bad.push('点了立嗣没立上');
     if (!(st.fy < 0) || !(st.fg > 0)) bad.push('立嗣以后被越过的、被立的情分没动：' + JSON.stringify(st));
     if (!(st.ren < 300) || !(st.har < 70)) bad.push('越过嫡长子名声、家宅和睦没掉：' + JSON.stringify(st));
@@ -52,10 +52,10 @@ const path = require('path');
   // 5 后宅：宠、冷落落到情分和和睦，别的妻妾吃醋；一个月对同一人一回
   await p.evaluate(() => { TAB = 'people'; render0(); });
   const hm = await p.$('button[data-harem="云昭训"][data-hact="chong"]'); if (!hm) bad.push('人物页没有后宅按钮'); else {
-    const f0 = await p.evaluate(() => ({ y: (S.people.云昭训 || {}).favor || 0, d: (S.people.独孤伽罗 || {}).favor || 0, h: S.home.harmony })); await hm.click();
+    const f0 = await p.evaluate(() => ({ y: (S.people.云昭训 || {}).favor || 0, d: (S.people.独孤伽罗 || {}).favor || 0, h: S.home.harmony })); await p.click('button[data-harem="云昭训"][data-hact="chong"]');
     const f1 = await p.evaluate(() => ({ y: (S.people.云昭训 || {}).favor || 0, d: (S.people.独孤伽罗 || {}).favor || 0, h: S.home.harmony }));
     if (!(f1.y > f0.y) || !(f1.d < f0.d) || !(f1.h < f0.h)) bad.push('宠幸没落到情分、别的妻妾、家宅和睦上：' + JSON.stringify([f0, f1]));
-    await p.evaluate(() => { TAB = 'people'; render0(); }); await (await p.$('button[data-harem="云昭训"][data-hact="chong"]')).click();
+    await p.evaluate(() => { TAB = 'people'; render0(); }); await p.click('button[data-harem="云昭训"][data-hact="chong"]');
     if (!/已有过处置/.test(await p.evaluate(() => ORGMSG))) bad.push('一个月里能对同一人反复宠幸');
   }
   for (const x of bad) errs.push(x);

@@ -22,11 +22,11 @@ const path = require('path');
   if (r1.names < 3) bad.push('稍微放大看不到州名：' + r1.names);
   // 局面页的按钮：在舆图上看你的地盘
   await p.evaluate(() => { TAB = 'board'; VIEW = 'game'; SIDE_FOLD = false; MAPZ.mode = 'world'; render0(); });
-  const btn = await p.$('button[data-mapdomain]'); if (!btn) bad.push('局面页没有「在舆图上看」'); else { await btn.click(); const st = await p.evaluate(() => ({ tab: TAB, mode: MAPZ.mode, c: MAPZ.c, h: /class="domline"/.test(document.body.innerHTML) })); if (st.tab !== 'map' || st.mode !== 'near' || !st.h) bad.push('点了「在舆图上看」没把图挪到你的地盘：' + JSON.stringify(st)); }
+  const btn = await p.$('button[data-mapdomain]'); if (!btn) bad.push('局面页没有「在舆图上看」'); else { await p.click('button[data-mapdomain]'); const st = await p.evaluate(() => ({ tab: TAB, mode: MAPZ.mode, c: MAPZ.c, h: /class="domline"/.test(document.body.innerHTML) })); if (st.tab !== 'map' || st.mode !== 'near' || !st.h) bad.push('点了「在舆图上看」没把图挪到你的地盘：' + JSON.stringify(st)); }
   // 知县：仕途页能看到辖区、点了图上有圈
   const r2 = await p.evaluate(() => { S = newSave({ name: '汪辉祖', gender: '男', age: 46, role: '宁远县知县', gregorianYear: 1787, month: 3, day: 1, place: '宁远县', polity: '清' }); S.chat = [{ role: 'gm', text: '开场。' }]; S.career = { office: '宁远县知县', rank: '正七品' }; TAB = 'career'; VIEW = 'game'; SIDE_FOLD = false; render0(); return { kind: myDomain(S).kind, txt: document.body.innerText }; });
   if (r2.kind !== 'local' || !/你的辖区/.test(r2.txt)) bad.push('知县的仕途页看不到自己的辖区：' + r2.kind);
-  const b2 = await p.$('button[data-mapdomain]'); if (!b2) bad.push('仕途页没有「在舆图上看」'); else { await b2.click(); const h = await p.evaluate(() => ({ tab: TAB, mark: /class="dommark"/.test(document.body.innerHTML) || /class="domline"/.test(document.body.innerHTML) })); if (h.tab !== 'map' || !h.mark) bad.push('知县点了「在舆图上看」，图上没圈出辖区：' + JSON.stringify(h)); }
+  const b2 = await p.$('button[data-mapdomain]'); if (!b2) bad.push('仕途页没有「在舆图上看」'); else { await p.click('button[data-mapdomain]'); const h = await p.evaluate(() => ({ tab: TAB, mark: /class="dommark"/.test(document.body.innerHTML) || /class="domline"/.test(document.body.innerHTML) })); if (h.tab !== 'map' || !h.mark) bad.push('知县点了「在舆图上看」，图上没圈出辖区：' + JSON.stringify(h)); }
   // 平民没有辖区：不摆按钮
   const r3 = await p.evaluate(() => { S = newSave({ name: '张三', gender: '男', age: 30, role: '苏州城外的佃户', gregorianYear: 1600, month: 3, day: 1, place: '苏州', polity: '明' }); S.chat = [{ role: 'gm', text: '开场。' }]; TAB = 'board'; VIEW = 'game'; render0(); return !!document.querySelector('button[data-mapdomain]'); });
   if (r3) bad.push('平民也摆了「在舆图上看辖区」');
