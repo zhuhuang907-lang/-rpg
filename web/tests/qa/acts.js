@@ -16,8 +16,13 @@ const { chromium } = require('playwright');
     if (!r.sal && r.rc && r.acts.some(a => /派人/.test(a[1]) && a[2] === '办成') && /派人去仪征/.test(r.rt)) bad('办成了的事还在回执里唠叨（2026-10-30 玩家：幕后的不给看，回执只提没成、受阻、拖着的）：' + r.rt); }
   // 收回账房的权：正文说亲军涨到九万九，没有募兵的令，不落账
   await p.evaluate(() => { S.forces = [{ name: '亲军', leader: S.protagonist.name, troops: '3000', at: '扬州府' }]; });
-  if (!(await send('假装多出兵，去江边走走'))) bad('第二回卡住');
-  await p.waitForFunction(() => arr(S.unbooked).some(x => /亲军/.test(x.text)) || !!(S.chat[S.chat.length - 1].extra || {}).salvaged, null, { timeout: 60000, polling: 300 }).catch(() => {});
+  // 假 AI 有一成五的账故意写坏（截断、包代码块……），截断补全后可能连兵马那一栏都没了——那一回账房根本没报多出的兵，再走一步照样查（兵数照旧本来就对）
+  for (let k = 0; k < 3; k++) {
+    if (!(await send('假装多出兵，去江边走走'))) bad('第二回卡住');
+    await p.waitForFunction(() => arr(S.unbooked).some(x => /亲军/.test(x.text)) || !!(S.chat[S.chat.length - 1].extra || {}).salvaged, null, { timeout: 60000, polling: 300 }).catch(() => {});
+    if (await p.evaluate(() => arr(S.unbooked).some(x => /亲军/.test(x.text)) || !!(S.chat[S.chat.length - 1].extra || {}).salvaged || String((S.forces.find(f => f.name === '亲军') || {}).troops) !== '3000')) break;
+    console.log('这一回账房没报兵马（假 AI 的账截断了），再走一步');
+  }
   { const r = await p.evaluate(() => ({ sal: !!(S.chat[S.chat.length - 1].extra || {}).salvaged, t: (S.forces.find(f => f.name === '亲军') || {}).troops, unb: arr(S.unbooked).map(x => x.text), rt: [...document.querySelectorAll('.receipt')].map(e => e.innerText).join('|') }));
     if (r.sal) console.log('这一回假 AI 的账没记上（故意出错的那一成），兵数照旧 ' + r.t); else if (String(r.t) !== '3000' || !r.unb.some(t => /亲军/.test(t)) || !/其实没成/.test(r.rt)) bad('没有募兵的令，正文里多出的兵也落了账：' + JSON.stringify(r).slice(0, 300)); }
   // 三回没下文：明写「没有下文」，不悄悄删
