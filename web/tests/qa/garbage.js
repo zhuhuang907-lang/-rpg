@@ -33,7 +33,7 @@ const path = require('path');
           TAB = tab; SIDE_FOLD = false;
           try { render(); } catch (e) { bad.push(`${role} 侧栏${tab}: ${e.message}`); continue; }
           const t = (document.querySelector('.side') || document.body).innerText;
-          const m = t.match(/undefined|NaN|\[object Object\]/); if (m) bad.push(`${role} 侧栏${tab} 露出 ${m[0]}：…${t.slice(Math.max(0, t.indexOf(m[0]) - 40), t.indexOf(m[0]) + 20).replace(/\s+/g, ' ')}…`);
+          const m = t.match(/undefined|NaN|\[object Object\]|\d\.\d{4,}/); if (m) bad.push(`${role} 侧栏${tab} 露出 ${m[0]}：…${t.slice(Math.max(0, t.indexOf(m[0]) - 40), t.indexOf(m[0]) + 20).replace(/\s+/g, ' ')}…`);
         }
       }
     }
