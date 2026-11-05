@@ -5099,30 +5099,40 @@ ${prov}下辖：${U.map(u => u.n + '（治' + (u.seat || '?') + '）').join('、
 const pol0 = s => s.place.polity || '';
 /* ---------- 天下名录：这一年全国在任、在世的要紧人物（宗室王公、中枢、各地大员、将帅、世家），单独一回调用，照史料带出处 ---------- */
 let ROSTER_P = null;
-const rosterDue = s => s && s.clock && (!s.roster || s.roster.v !== 2 || s.roster.y !== s.clock.y || s.roster.pol !== (s.place.polity || '')) && !(s.rosterFail != null && s.turn - s.rosterFail < 2);
+const rosterDue = s => s && s.clock && (!s.roster || s.roster.v !== 3 || s.roster.y !== s.clock.y || s.roster.pol !== (s.place.polity || '')) && !(s.rosterFail != null && s.turn - s.rosterFail < 2);
 /** 先查内置史料（这一年在任的人，带任期），再联网搜；DeepSeek 只从这些材料里整理，名字在材料里找不到的一律不收（不编人） */
 async function buildRoster(s) {
+  // 2026-11-05 玩家：「很多人物都没有搜索到，闽国难道搜索不到真实的除了宗室以外的吗，其他国家也是，明明有的」；查实：搜索词照清朝写死（军机大臣、总督巡抚、郡王贝勒），
+  // 只查自己那一家，名字又必须出现在搜到的摘要里——五代十国一搜什么都没有。改成：这一年并立的每一家各做一张表（问 DeepSeek 照史书列，带出处），有博查的一个个按名字核，核得上的收；没博查照表收（问 DS 要表）
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '';
   const base = [], seen = new Set();
-  for (const r of rulersAt(y, s)) if (!seen.has(r.name)) { seen.add(r.name); base.push({ g: '君主', name: r.name, post: r.title || r.polity, src: '内置史料' }); }
+  for (const r of rulersAt(y, s)) if (!seen.has(r.name)) { seen.add(r.name); base.push({ g: r.polity || pol, name: r.name, post: r.title || r.polity, src: '内置史料' }); }
   for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && !seen.has(f.name + ps[2])) { seen.add(f.name + ps[2]); base.push({ g: '', name: f.name, post: ps[2], since: ps[0], src: '内置史料' }); }
-  const B = await bochaDeep(s, [`${yl} ${pol} 宗室 亲王`, `${yl} 郡王 贝勒`, `${y}年 ${pol} 宰相`, `${yl} 军机大臣`, `${yl} 大学士`, `${yl} 吏部尚书`, `${yl} 户部尚书`, `${yl} 礼部尚书`, `${yl} 兵部尚书`, `${yl} 刑部尚书`, `${yl} 工部尚书`, `${yl} 总督`, `${yl} 巡抚`, `${yl} 将军`, `${y}年 ${pol} 统兵 将领`, `${y}年 ${pol} 后妃 皇子`, `${pol} ${y}年 世家 大族`, `${pol} ${y}年 名臣`], 60);
-  const found = B.text, hay = B.items.map(i => `${i.title} ${i.snippet}`).join('\n') + '\n' + base.map(b => b.name).join('、');
-  let G = [];
-  if (found || base.length) {
-    const { text } = await callClaude(`替一局历史游戏开一份「天下名录」：公元${y}年（${yl}）${pol}在任、在世的要紧人物。玩家要能翻看全国的人，不只本地。
-【内置史料：这一年在任的人】${base.map(b => `${b.name}（${b.post}${b.since ? '，' + b.since + '年起' : ''}）`).join('；') || '（无）'}
-${found || '（这回没联网查到资料）'}
-只照上面两份材料分组整理：君主与后妃、皇子；宗室王公；中枢（宰辅、军机、大学士、六部尚书侍郎……照当时官制）；地方大员（总督、巡抚、节度使、刺史……）；将帅；世家大族、名士。
-规矩：只列材料里出现的名字，材料没写到的人一个都不添、不凭记忆补；官职照这一年；每人写出处（内置史料，或搜到的那条资料的标题）。每组至多二十人。
-只输出一个 JSON 对象：{"groups":[{"name":"宗室王公","people":[{"name":"","post":"","since":null,"note":"一句","source":"出处"}]}]}`, null, { maxTokens: 10000, temperature: 0, kind: '研读', detached: true });
-    const d = parseJSON(text);
-    G = arr(d && d.groups).map(g => ({ name: one(g && g.name, 12), people: arr(g && g.people).filter(x => x && x.name && x.source && !/推|估计|可能/.test(String(x.source)) && !/某/.test(String(x.name)) && hay.includes(String(x.name).trim())).slice(0, 20).map(x => ({ name: one(x.name, 10), post: one(x.post, 30), since: num(x.since), note: one(x.note, 40), source: one(x.source, 50) })) })).filter(g => g.name && g.people.length);
-  }
-  // 整理没成，就把内置史料里这一年在任的人照原样摆出来（不编）
-  if (!G.length && base.length) G = [{ name: '这一年在任的人（内置史料）', people: base.slice(0, 60).map(b => ({ name: b.name, post: b.post, since: b.since || null, note: '', source: b.src })) }];
+  const RA = realmsAt(y, s.clock.m), RL = rulersAt(y, s).map(r => String(r.polity || '')), big = n => RL.some(p0 => p0 && (p0.includes(n) || n.includes(p0.replace(/[（(].*$/, '')))),
+    realms = [...new Set([pol].concat(RA ? RA.list.map(r => r.name).sort((a, b) => big(b) - big(a)) : []).filter(Boolean))].slice(0, 18);   // 自己那家、史料里有君主的大国先问（921 年楚、南汉、荆南排在三十几家后头漏了）
+  const blocks = []; for (let i = 0; i < realms.length; i += 3) blocks.push(realms.slice(i, i + 3));
+  const ask = rs => callClaude(`你是精通历代职官年表、人物传记的史家。替一局历史游戏开「天下名录」：公元${y}年（${yl}）下面几家各自在任、在世的要紧人物。
+这一张只写：${rs.join('、')}。${rs.includes(pol) ? `其中「${pol}」是玩家所在的一家，列全一些（四十人以内）；` : ''}别的每家二十人以内。
+每家分：君主与后妃、宗室；宰辅重臣（照那一家当时的官制：宰相、枢密、节度、判官、掌书记……）；文臣、名士；将帅；地方要员。宗室以外的文武大臣一定要列，史书有名的都列上（例如十国的宰相、枢密使、将领，正史、《十国春秋》《资治通鉴》有记载的）。
+规矩：只列史书确有其人、这一年在世的；官职照这一年；每人写出处（正史、《资治通鉴》、《十国春秋》、方志的篇名）；拿不准这一年在不在的不列；不许「某」「佚名」、不许编。
+只输出一个 JSON 对象：{"realms":[{"realm":"","people":[{"name":"","post":"","group":"宰辅重臣","since":null,"note":"一句","source":""}]}]}`, null, { maxTokens: 9000, temperature: 0.1, kind: '研读', detached: true, thinking: false }).then(r => parseJSON(r.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; });
+  const res = await Promise.all(blocks.map(ask)), cand = [];
+  for (const d of res) for (const R0 of arr(d && d.realms)) { const rn = one(R0 && R0.realm, 16); for (const x of arr(R0 && R0.people)) { const nm = one(x && x.name, 10);
+    if (!nm || nm.length < 2 || /某|佚名|不详/.test(nm) || !x.source || /推|估计|可能/.test(String(x.source)) || cand.some(c => c.name === nm)) continue;
+    cand.push({ realm: rn, name: nm, post: one(x.post, 30), grp: one(x.group, 8), since: num(x.since), note: one(x.note, 40), source: one(x.source, 50) }); } }
+  // 有博查的一个个按名字核：名字和那一家（或官职）同在一条资料里的收；博查一条也没回的（断网、限流）照表收
+  let items = []; const hasB = MODE === 'local' ? !!(KEY && KEY.bocha) : !!BOCHA_KEY;
+  if (hasB && cand.length) { const QS = cand.slice(0, 160).map(c => `${c.name} ${c.realm || pol}`); for (let k = 0; k < QS.length; k += 24) { const b = await bochaDeep(s, QS.slice(k, k + 24), 300); items.push(...b.items.filter(i => !i.ds)); } }
+  const hay = items.map(i => `${i.title} ${i.snippet}`).join('\n');
+  const ok = c => !items.length || hay.includes(c.name);
+  const MISC = RA ? '各家要人（史料没写归哪家）' : (pol || '朝中'), byR = new Map(); const nk = k => { const k0 = String(k || '').replace(/[（(].*$/, ''); return realms.find(n => n === k || (k0 && (n === k0 || n.replace(/[（(].*$/, '') === k0))) || k; };   // 「契丹（辽）」「荆南（南平）」和表上的「契丹」「荆南」是一家
+  for (const b of base) { const k = b.g ? nk(b.g) : MISC; if (!byR.has(k)) byR.set(k, []); if (byR.get(k).some(z => z.name === b.name)) continue; byR.get(k).push({ name: b.name, post: b.post, since: b.since || null, note: '', source: b.src }); }
+  for (const c of cand) { if (!ok(c)) continue; const k = nk(c.realm || pol || '朝中'); if (!byR.has(k)) byR.set(k, []); const L = byR.get(k); if (L.some(z => z.name === c.name)) continue;
+    L.push({ name: c.name, post: c.post, since: c.since, note: [c.grp, c.note].filter(Boolean).join('：'), source: c.source, ver: items.length ? '博查核' : 'DS表' }); }
+  if (byR.has(MISC) && MISC !== pol) { const other = new Set([...byR.entries()].filter(([k]) => k !== MISC).flatMap(([, L]) => L.map(z => z.name))); byR.set(MISC, byR.get(MISC).filter(z => !other.has(z.name))); }   // 表上认出是哪家的，挪过去
+  const G = [...byR.entries()].sort((a, b) => (b[0] === pol) - (a[0] === pol) || (a[0] === MISC) - (b[0] === MISC)).map(([name, people]) => ({ name, people: people.slice(0, name === pol ? 50 : 24) })).filter(g => g.people.length);
   if (!G.length) { s.rosterFail = s.turn; return null; }
-  s.roster = { y, pol, at: s.turn, groups: G, v: 2 }; orgFillReal(s); return s.roster;
+  s.roster = { y, pol, at: s.turn, groups: G, v: 3 }; orgFillReal(s); return s.roster;
 }
 function rosterHtml(s) {
   if (rosterDue(s) && !BUSY && !ROSTER_P) ROSTER_P = Promise.resolve().then(() => buildRoster(s)).catch(e => { if (!(e && e.code === 'cancelled')) s.rosterFail = s.turn; }).finally(() => { ROSTER_P = null; try { store.save(s); } catch (_) {} if (TAB === 'people') render(); });
@@ -6208,7 +6218,7 @@ function stratUnits(s) {
  *  758—959 年把记到 741 年的州府续上（同名的这期间另有记载的照那条），唐宋之际不认年份不明的州府；五代改的府名照改 */
 const GEO_Y = {};
 // 后世才有的府州名（照史书的起年）：这一年以前的图上不许出现
-const GEO_FROM = { 乾州: 896, 凤翔府: 757, 京兆府: 713, 河中府: 720, 兴元府: 784, 江陵府: 760, 成都府: 757, 太原府: 723, 河南府: 713, 开封府: 907, 应天府: 1006, 大名府: 1042, 真定府: 1048, 兴庆府: 1033, 临安府: 1129, 绍兴府: 1131, 顺天府: 1403, 应天: 1368 };
+const GEO_FROM = { 乾州: 896, 凤翔府: 757, 京兆府: 713, 河中府: 720, 兴元府: 784, 江陵府: 760, 成都府: 757, 太原府: 723, 河南府: 713, 开封府: 907, 应天府: 1006, 大名府: 1042, 真定府: 1048, 兴庆府: 1033, 临安府: 1129, 绍兴府: 1131, 顺天府: 1403, 应天: 1368, 南阳府: 1275, 平阳府: 1116, 兖州府: 1385, 庆远府: 1265, 宣化府: 1430, 大兴府: 1153 };   // 地名库里揉成几百年一条的后世府名（2026-11-05 唐天宝图上冒出南阳府、平阳府）
 // 唐五代图上不该有的后世府名（地名库把起年记早了）：平阳府是北宋政和才升的、南阳府、庆远府是明的，唐五代分别是晋州、邓州、宜州
 const GEO_LATE = /^(平阳府|南阳府|滕州|庆远府|兖州府)$/;
 // 唐初旋置旋废的、地名库里年份记错的州（鸿州、仙州、鼎州……），唐后期五代的图上不该有
@@ -6235,12 +6245,14 @@ function geoYear(y) {
   }
   // 2026-11-05 玩家：「地图错误太多了……标识不对」；查实：地名库里有把前后几个同名同地的建置揉成一条的（凤翔府记成前687—1911、乾州579—1267），
   // 开皇二十年的图上冒出唐乾宁才置的乾州、至德以后才有的凤翔府，同一处还有雍州、京兆州两条：后世才有的府州名照史书的起年挡掉（GEO_FROM）；同一处几条并存的，取记了所属政权、起止最窄的那条
-  { const late = u => GEO_FROM[u.name] != null && y < GEO_FROM[u.name];
+  { const late = u => (GEO_FROM[u.name] != null && y < GEO_FROM[u.name]) || (/总管府?$/.test(u.name) && !/军民|路/.test(u.name) && (y < 581 || y > 624));   // 州总管府只在隋到唐武德七年（624 改都督府），五代图上不许冒出「延州总管」
     G = G.filter(u => !late(u));
     const keep = [], drop = new Set(); for (const u of G.filter(u => P.test(u.type)).sort((a, b) => (a.parent ? 0 : 1) - (b.parent ? 0 : 1) || (a.to - a.from) - (b.to - b.from))) { if (keep.some(k => Math.hypot(k.lon - u.lon, k.lat - u.lat) < 0.12)) { drop.add(u); continue; } keep.push(u); }
     G = G.filter(u => !drop.has(u)); }
   const ren = GEO_REN.filter(r => r[2] <= y && y <= r[3]);
-  if (ren.length) { const names = new Set(G.map(u => u.name)); G = G.map(u => { const r = ren.find(x => x[0] === u.name && (x[4] == null || Math.hypot(x[4] - u.lon, x[5] - u.lat) < 0.5)); /* 同名的两处只改对的那处（陇右的武州改阶州，幽蓟的武州不改） */ return r && !names.has(r[1]) && P.test(u.type) ? { ...u, name: r[1], type: r[1].slice(-1) === '府' ? '府' : '州', old: u.name } : u; }); }
+  if (ren.length) { const names = new Set(G.map(u => u.name)); G = G.map(u => { const r = ren.find(x => x[0] === u.name && (x[4] == null || Math.hypot(x[4] - u.lon, x[5] - u.lat) < 0.5)); /* 同名的两处只改对的那处（陇右的武州改阶州，幽蓟的武州不改） */ return r && !names.has(r[1]) && P.test(u.type) ? { ...u, name: r[1], type: r[1].slice(-1) === '府' ? '府' : '州', old: u.name } : u; });
+    /* 改了名的新名已经单有一条（地名库里兴唐府自成一条），旧名那条就不再画：930 年图上魏州、兴唐府不并存 */
+    G = G.filter(u => { const r = ren.find(x => x[0] === u.name && (x[4] == null || Math.hypot(x[4] - u.lon, x[5] - u.lat) < 0.5)); return !(r && P.test(u.type) && G.some(v => v.name === r[1] && Math.hypot(v.lon - u.lon, v.lat - u.lat) < 0.6)); }); }
   return (GEO_Y[y] = G);
 }
 // 唐天宝元年至乾元元年（742–758）、隋大业（607–617）州改郡，其余年份是州；地名库里州、郡两套名字年份有重叠，只取当年通行的那套
@@ -7076,9 +7088,13 @@ function stratMap(s) {
   const BRm = realmsAt(y, s.clock.m), ext = !prov && !near && BRm ? BRm.rows.flatMap(r => r.pts).filter(([lo, la]) => lo >= 68 && lo <= 146 && la >= 10 && la <= 50).map(([lon, lat]) => ({ lon, lat })) : [];   // 天下图：周边各族的地方也画进来
   const bx = pts.concat(ext).map(u => u.lon), by = pts.concat(ext).map(u => u.lat), bb = [Math.min(...bx), Math.max(...bx), Math.min(...by), Math.max(...by)];
   if (near) { bb[0] = near.lon - sp; bb[1] = near.lon + sp; bb[2] = near.lat - sp * 0.8; bb[3] = near.lat + sp * 0.8; }   // 本地：默认方圆二百来里，县县都看得清；放大缩小改 span
+  // 大图铺满屏幕：看的范围照屏幕的宽高比放宽，两边不留没画的空白（2026-11-05 玩家：「没有填充的地区」）
+  const BIGA = MAPZ.big && typeof innerWidth === 'number' && innerHeight > 240 ? Math.max(0.6, Math.min(2.6, (innerWidth - 16) / (innerHeight - 64))) : 0;
+  if (BIGA) { const pd = zoom ? 0.35 : 0.8, cs = Math.cos((bb[2] + bb[3]) / 2 * Math.PI / 180), lw = bb[1] - bb[0] + 2 * pd, lh = bb[3] - bb[2] + 2 * pd;
+    if (lw * cs / lh < BIGA) { const ad = (lh * BIGA / cs - lw) / 2; bb[0] -= ad; bb[1] += ad; } else { const ad = (lw * cs / BIGA - lh) / 2; bb[2] -= ad; bb[3] += ad; } }
   const pad = zoom ? 0.35 : 0.8, x0 = bb[0] - pad, x1 = bb[1] + pad, y0 = bb[2] - pad, y1 = bb[3] + pad;
   const cty = zoom && (!near || sp <= 2.6) ? M.C.filter(u => u.lon >= x0 - 0.3 && u.lon <= x1 + 0.3 && u.lat >= y0 - 0.3 && u.lat <= y1 + 0.3) : [];
-  const W = 640, H = Math.round(Math.max(340, Math.min(640, W * (y1 - y0) / Math.max(0.01, (x1 - x0) * Math.cos((y0 + y1) / 2 * Math.PI / 180)))));
+  const W = BIGA ? Math.round(Math.min(1600, Math.max(640, innerWidth - 16))) : 640, H = Math.round(Math.max(BIGA ? 200 : 340, Math.min(BIGA ? 1400 : 640, W * (y1 - y0) / Math.max(0.01, (x1 - x0) * Math.cos((y0 + y1) / 2 * Math.PI / 180)))));
   MAPC.box = { x0, x1, y0, y1, W, H };
   const px = u => 10 + (u.lon - x0) / (x1 - x0) * (W - 20), py = u => 10 + (y1 - u.lat) / (y1 - y0) * (H - 20), XY = u => `${px(u).toFixed(1)},${py(u).toFixed(1)}`;
   const inBox = u => u && u.lon >= x0 && u.lon <= x1 && u.lat >= y0 && u.lat <= y1;
@@ -7121,6 +7137,8 @@ function stratMap(s) {
     // 放大时以县为单位分地：每个县占就近的一块，府州的地是它属县的地合起来（府城的附郭县也是一个县）
     const seats = zoom && cty.length ? allPts.filter(u => !cty.some(c => Math.hypot(c.lon - u.lon, c.lat - u.lat) < 0.06)) : allPts;
     const plOf = PL ? new Set(M.L2.filter(u => u.poly).map(u => u.poly)) : null, OUTER = { n: '（外境）', lv: 0, outer: true }, OUTR = new Map(), outOf = (lon, lat) => { const rr = BRm && BRm.of(lon, lat); if (!rr) return OUTER; if (!OUTR.has(rr.name)) OUTR.set(rr.name, { n: '（' + rr.name + '）', lv: 0, outer: true, r: rr.name, frontier: rr }); return OUTR.get(rr.name); };
+    // 离治所远、可还在同一家政权里的地方归最近的治所，不切成一个个圆圈（2026-11-05 玩家：「竟然还有圆形和没有填充的地区」）
+    const inRealm = (u, lon, lat, bd) => { if (!u) return false; const rr = BRm ? BRm.of(lon, lat) : null, g = M.reg(u); return rr ? !!(g && rr.name === g.name) : bd < lim * 9; };   // 没哪家认领的海边、河口碎地，离治所三倍远以内的也归它
     const nx = Math.ceil(W / cell), ny = Math.ceil(H / cell), Gd = [], P2 = (fine ? cty : []).concat(seats).map(u => [px(u), py(u), u]),
       BK = 32, BKT = new Map(), bkk = (a, b) => a * 4096 + b; for (const q of P2) { const k = bkk(Math.floor(q[0] / BK), Math.floor(q[1] / BK)); if (!BKT.has(k)) BKT.set(k, []); BKT.get(k).push(q); }
     const nearP = (gx, gy) => { const ci = Math.floor(gx / BK), cj = Math.floor(gy / BK), R = Math.ceil(Math.max(W, H) / BK) + 2; let best = null, bd = Infinity;   // 照格子分桶找最近的治所，一圈圈往外找，比挨个比快得多
@@ -7128,7 +7146,7 @@ function stratMap(s) {
         if (best && bd <= (r * BK) ** 2) break; } return [best, bd]; }, lim = ((zoom ? 0.8 : 1.9) * (W - 20) / Math.max(0.01, x1 - x0)) ** 2;   // 照经纬度算：离治所八十里（天下图一百九十里）以外才算外境
     for (let i = 0; i < nx; i++) { Gd.push([]); for (let j = 0; j < ny; j++) { const gx = i * cell + cell / 2, gy = j * cell + cell / 2, lon = x0 + (gx - 10) / (W - 20) * (x1 - x0), lat = y1 - (gy - 10) / (H - 20) * (y1 - y0), e = elevAt(lon, lat);
       if (e != null && e < 0) { Gd[i].push(null); continue; } if (plOf) { const f = polyAt(PL, lon, lat); if (f && plOf.has(f)) { Gd[i].push(null); continue; } }
-      const [best, bd] = nearP(gx, gy); Gd[i].push(bd < lim ? best : outOf(lon, lat)); } }   // 离哪个治所都远的陆地照谭图的样子铺「外境」浅色，不留白
+      const [best, bd] = nearP(gx, gy); Gd[i].push(bd < lim ? best : e == null ? (BRm && BRm.of(lon, lat) ? outOf(lon, lat) : null) : inRealm(best, lon, lat, bd) ? best : outOf(lon, lat)); } }   // 高程图外头（远海）不知是海是陆，离治所远的不铺色   // 离哪个治所都远的陆地照谭图的样子铺「外境」浅色，不留白
     const pIx = new Map(), pref = u => u.lv === 3 ? u.p || u.n : u.n, tint = u => { const n = fine ? pref(u) : M.prov(u); if (!pIx.has(n)) pIx.set(n, pIx.size); return n ? TINT[pIx.get(n) % TINT.length] : '#999'; };
     const split = M.ok && M.A.split, fillOf = u => { if (u.outer) return u.frontier ? u.frontier.col : '#d9cfb4'; const o = ownOf(u), r = M.reg(u); return o ? o.col : r && r.col ? r.col : MAP_PLAIN; };
     const strong = u => u.outer ? !!u.frontier : !!(ownOf(u) || (M.reg(u) && M.reg(u).col));   // 政权、地盘的颜色要看得出来
@@ -7170,7 +7188,7 @@ function stratMap(s) {
   const split = M.ok && M.A.split;
   // 省名放在不压着治所点、兵马旗的空处（压住了点不着）
   const dotsXY = pts.map(u => [px(u), py(u)]).concat(arr(s.forces).map(f => f.at ? placeXY(s, f.at, y) : null).filter(u => u && u.lat).map(u => [px(u) + 20, py(u) - 15]));
-  const lblBox = [], hit = b => lblBox.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3]));
+  const lblBox = [], LBLD = new Set(), hit = b => lblBox.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3]));
   // 你所在的府州名先占位，省名让开
   const homeU = PL && here ? M.L2.find(u => u.poly && polyAt(PL, +here.lon, +here.lat) === u.poly) : null;
   let homeB = null; if (homeU && homeU.poly.lab && !zoom) { const fs = 9.5, x = px({ lon: homeU.poly.lab[0], lat: homeU.poly.lab[1] }), yy = py({ lon: homeU.poly.lab[0], lat: homeU.poly.lab[1] }) + fs / 3, w = homeU.n.length * fs; homeB = [x - w / 2, yy - fs, x + w / 2, yy + 2]; lblBox.push(homeB); }
@@ -7190,25 +7208,25 @@ function stratMap(s) {
     for (const u of L) { const t = u.n, w = t.length * fs + (zoom ? t.length * 2 : 0), pw = (u.poly.bb[2] - u.poly.bb[0]) / (x1 - x0) * (W - 20); if (!zoom && pw < w * 0.5) continue;
       const x = px({ lon: u.poly.lab[0], lat: u.poly.lab[1] }), y0l = py({ lon: u.poly.lab[0], lat: u.poly.lab[1] });
       for (const dy of [0, fs + 3, -fs - 3]) { const yy = y0l + dy + fs / 3, b = [x - w / 2, yy - fs, x + w / 2, yy + 2]; if (b[0] < 0 || b[2] > W || b[1] < 0 || b[3] > H || lblBox.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3]))) continue;
-        lblBox.push(b); out.push(`<text x="${x.toFixed(1)}" y="${yy.toFixed(1)}" font-size="${fs}" fill="#5a1f05" text-anchor="middle"${zoom ? ' font-weight="700" letter-spacing="2"' : ''} data-mapu="${esc(u.n)}" style="cursor:pointer" stroke="#fff" stroke-width="2.4" paint-order="stroke" class="arealbl">${esc(t)}</text>`); break; } }
+        lblBox.push(b); LBLD.add(u.n); out.push(`<text x="${x.toFixed(1)}" y="${yy.toFixed(1)}" font-size="${fs}" fill="#5a1f05" text-anchor="middle"${zoom ? ' font-weight="700" letter-spacing="2"' : ''} data-mapu="${esc(u.n)}" style="cursor:pointer" stroke="#fff" stroke-width="2.4" paint-order="stroke" class="arealbl">${esc(t)}</text>`); break; } }
     return out.join(''); })();
   // 治所、县城
   const dot = u => { if (u.noSeat) return ''; const o = ownOf(u), sel = MAPZ.sel === u.n; if (PL) return `<g data-mapu="${esc(u.n)}" style="cursor:pointer"><circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${zoom ? 14 : 9}" fill="transparent"/><title>${esc(u.n)}治所${u.seatC ? '（' + esc(u.seatC) + '）' : ''}${o ? ' · ' + esc(o.who) : ''}</title><circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${sel ? 6.5 : zoom ? 5 : 2.4}" fill="#fff" stroke="${sel ? 'var(--zhu)' : o ? o.col : '#2a2a2a'}" stroke-width="${sel ? 2.2 : zoom ? 1.3 : 0.9}"/><circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${zoom ? 2.2 : 1}" fill="${o ? o.col : '#2a2a2a'}" data-mapu="${esc(u.n)}"/></g>`; return `<circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${sel ? 6 : zoom ? 4.2 : 3.2}" fill="${o ? o.col : '#2a2a2a'}" stroke="${sel ? 'var(--zhu)' : '#fff'}" stroke-width="${sel ? 2 : 1}" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(u.n)}${u.t ? '（' + esc(u.t) + '）' : ''}${o ? ' · ' + esc(o.who) : ''}</title></circle>`; };
   const cdot = u => `<rect x="${(px(u) - 2.8).toFixed(1)}" y="${(py(u) - 2.8).toFixed(1)}" width="5.6" height="5.6" fill="#fff" stroke="#222" stroke-width="1.1" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(u.n)}（${esc(u.t || '县')}${u.p ? '，属' + esc(u.p) : ''}）</title></rect>`;
   const placeLbls = (L, fs) => { const boxes = [], out = [], rk = u => (here && geoStem(u.n) === geoStem(here.name)) ? 0 : ownOf(u) ? 1 : u.lv === 2 ? 2 : 3;
-    for (const u of L.slice().sort((a, b) => rk(a) - rk(b))) { const t = u.n.replace(/(府|路|郡)$/, ''), f = u.lv === 3 ? Math.max(12, fs - 2) : fs, w = t.length * f, x = px(u), yy = py(u);
+    for (const u of L.slice().sort((a, b) => rk(a) - rk(b))) { const t = u.n, f = u.lv === 3 ? Math.max(12, fs - 2) : fs, w = t.length * f, x = px(u), yy = py(u);
       for (const [dx, dy] of [[5, 4], [-5 - w, 4], [-w / 2, -6], [-w / 2, f + 6]]) { const b = [x + dx, yy + dy - f, x + dx + w, yy + dy + 2];
-        if (b[0] < 0 || b[2] > W || b[1] < 0 || b[3] > H || boxes.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3]))) continue;
-        boxes.push(b); out.push(`<text x="${(x + dx).toFixed(1)}" y="${(yy + dy).toFixed(1)}" font-size="${f}" fill="#1f1f1f" pointer-events="none" stroke="#fff" stroke-width="2" paint-order="stroke">${esc(t)}</text>`); break; } }
+        if (b[0] < 0 || b[2] > W || b[1] < 0 || b[3] > H || boxes.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3])) || (u.lv !== 3 && LBLD.has(u.n) === false && PL && lblBox.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3])))) continue;   // 补写在治所旁的州名避开地块上的州名；县名照旧
+        boxes.push(b); LBLD.add(u.n); out.push(`<text x="${(x + dx).toFixed(1)}" y="${(yy + dy).toFixed(1)}" font-size="${f}" fill="#1f1f1f" pointer-events="none" stroke="#fff" stroke-width="2" paint-order="stroke">${esc(t)}</text>`); break; } }
     return out.join(''); };
   const forces = arr(s.forces).map(f => ({ f, u: f.at ? placeXY(s, f.at, y) : null })).filter(x => x.u && x.u.lat);
   const battles = arr(s.battles).slice(-8).map(b => ({ b, u: b.place ? placeXY(s, b.place, y) : null })).filter(x => x.u && x.u.lat);
   const special = u => ownOf(u) || MAPZ.sel === u.n || forces.some(x => geoStem(x.u.name) === geoStem(u.n)) || (here && geoStem(u.n) === geoStem(here.name)) || (M.ok && arr(M.A.regimes).some(r => r.lat && Math.abs(r.lat - u.lat) < 0.05 && Math.abs(r.lon - u.lon) < 0.05));
   // 照放大的程度给地名：天下只标都城、你在的、你的地盘和有兵的；放大到几个省才标各州府；再放大才标县
   const ctyL = near && sp > 1.6 ? [] : near && sp > 0.8 ? cty.filter(u => (homeU && u.p === homeU.n) || special(u)) : cty;   // 中间那一档只标你那个府州的县，免得县名挤掉州名
-  const showLbl = !zoom ? pts.filter(special) : PL ? ctyL.concat(pts.filter(special)) : pts.concat(ctyL);   // 有界址的，州府名写在地块中间（areaLbl），治所点上不再重复
+  const showLbl = !zoom ? pts.filter(special) : PL ? ctyL.concat(pts.filter(u => special(u) || !LBLD.has(u.n))) : pts.concat(ctyL);   // 有界址的，州府名写在地块中间（areaLbl），治所点上不再重复
   const svg = `<svg viewBox="0 0 ${W} ${H}" class="smap" role="img" aria-label="舆图"><rect width="${W}" height="${H}" fill="#c4dae8"/>${img ? `<image href="${img}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/>` : ''}${Ly.adm ? fills : ''}${lakes}${coast}${rivers}${roads}${mts}${rlab.join('')}${regLbl}${frLbl}${areaLbl}${passes}
-    ${placeLbls(showLbl, zoom ? 15 : 13)}${cty.map(cdot).join('')}${pts.map(dot).join('')}
+    ${placeLbls(showLbl, zoom ? (BIGA ? 16 : 15) : 13)}${cty.map(cdot).join('')}${pts.filter(u => !zoom || LBLD.has(u.n) || special(u)).map(dot).join('')}
     ${rebelsNow(s).map(R => { const tN = s.clock.y * 12 + (s.clock.m || 1), P2 = R.route.filter(p => p[0] * 12 + (p[1] || 1) <= tN); const ptsS = P2.map(p => `${px({ lon: p[3], lat: p[4] }).toFixed(1)},${py({ lon: p[3], lat: p[4] }).toFixed(1)}`).join(' '); const x = px(R), yy = py(R);
       return `<g class="rebroute" pointer-events="none">${P2.length > 1 ? `<polyline points="${ptsS}" fill="none" stroke="#8b1a1a" stroke-width="2.2" stroke-dasharray="6 3" opacity=".85" marker-end="url(#marr)"/>` : ''}${P2.map(p => inBox({ lon: p[3], lat: p[4] }) ? `<text x="${px({ lon: p[3], lat: p[4] }).toFixed(1)}" y="${(py({ lon: p[3], lat: p[4] }) - 6).toFixed(1)}" font-size="10" fill="#8b1a1a" text-anchor="middle" stroke="#fff" stroke-width="2" paint-order="stroke">${p[0]}年${p[1]}月</text>` : '').join('')}${inBox(R) ? `<g><circle cx="${x.toFixed(1)}" cy="${yy.toFixed(1)}" r="9" fill="#8b1a1a" stroke="#fff" stroke-width="2"/><text x="${x.toFixed(1)}" y="${(yy + 4).toFixed(1)}" font-size="11" fill="#fff" text-anchor="middle" font-weight="700">${esc(R.name.slice(0, 1))}</text><text x="${(x + 12).toFixed(1)}" y="${(yy + 4).toFixed(1)}" font-size="13" font-weight="700" fill="#8b1a1a" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(R.name)}军（号称${esc(R.men)}）</text></g>` : ''}</g>`; }).join('')}
     ${DOM.D.kind !== 'none' && DOM.D.kind !== 'realm' ? arr(DOM.D.places).concat(DOM.D.kind === 'army' ? arr(s.forces).filter(f => myForce(s, f)).map(f => f.at) : []).filter(Boolean).slice(0, 6).map(n => { const u = placeXY(s, n, y); if (!u || !u.lat || !inBox(u)) return ''; const x = px(u), yy = py(u); return `<g pointer-events="none" class="dommark"><circle cx="${x.toFixed(1)}" cy="${yy.toFixed(1)}" r="${zoom ? 16 : 9}" fill="none" stroke="#b3261e" stroke-width="2.4" stroke-dasharray="5 3"/><text x="${x.toFixed(1)}" y="${(yy - (zoom ? 20 : 12)).toFixed(1)}" font-size="12" font-weight="700" fill="#b3261e" text-anchor="middle" stroke="#fff" stroke-width="2.6" paint-order="stroke">${esc(DOM.D.label)}</text></g>`; }).join('') : ''}
@@ -9941,8 +9959,12 @@ function quoteFaults(said, text) {
   for (const q of told) if (!mine.some(m => simText(m, q) >= 0.45 || q.includes(m) || m.includes(q))) return `玩家让主角说「${one(mine[0], 30)}」，正文里主角说的却是「${one(q, 30)}」`;
   return '';
 }
+const LEN_N = { short: [300, 450], normal: [600, 1000], long: [1200, 1800] };
 function draftFaults(s, said, text, span) {
   const out = [], asks = countIn(text, BORING[3][1]);
+  // 字数（2026-11-05 玩家：「字数不对，表达相当拖延」）：没让过一段日子的，超出约定一半以上打回去
+  { const [lo, hi] = LEN_N[SETTINGS.len] || LEN_N.normal, n = String(text || '').replace(/\s/g, '').length;
+    if (!SPANS[span] && n > hi * 1.5) out.push(`正文${n}字，约定${lo}到${hi}字：只留跟玩家这一步直接相干的经过和结果，删掉铺垫、旁枝、景物和重复的话，压到${hi}字以内`); }   // 只管写长了：对话停在对方说完的那种回合本来就短
   if (asks >= 2) out.push(`身边的人一再请示、等主角拍板（出现 ${asks} 处）：他们是能干的人，分内的事自己办好、回报结果，最多留一件真正要主角定的大事`);
   // 人物一再追问主角（对白里的问句）、事情一再往后拖：都打回去
   const qs = countIn(text, /要不要|是否要|可否|您的意思|您说呢/g);
@@ -10116,6 +10138,20 @@ const IRON_HEAD = `【这一回的铁律】
 
 `;
 const IRON_TAIL = '\n\n【再说一遍最要紧的四条】主角只说玩家给的话，轮到主角开口就停；人名、官名、地名、年号、数目只用材料里有的，材料里没有的不编，宁可不写；时间只推进到这一步做完；不用「仿佛」「不禁」「一丝」「深吸一口气」「嘴角上扬」「眼中闪过」「心中一凛」「意味深长」这类套话，人的心思从动作和话里看出来。';
+/** 最后再交代一遍：主角是谁、前面几步做了什么、玩家这回说的原话、字数（2026-11-05 玩家：「游戏对于主角的身份和前面做的事毫无了解，而且字数不对，表达相当拖延，有时候还跟看不到指令一样，说一些废话」；
+ *  查实：玩家的话放在一长串材料的最前头，后面堆了十几块家谱、档案、史线、裁定、制度、账，结尾只重复规矩，模型写着写着就离了题） */
+function recapTail(s, said, span) {
+  const P = s.protagonist || {}, id = (() => { try { return identityLine(s); } catch (_) { return ''; } })();
+  const mine = arr(s.chat).filter(c => c.role === 'me' && c.text).slice(-3).map(c => one(c.text, 60));   // 这一回的话写完正文才进 chat，这里都是前几步的
+  const prevG = arr(s.chat).filter(c => c.role === 'gm' && c.text).slice(-1)[0];
+  const L = [`\n\n【主角】${P.name || ''}，${[P.role, id].filter(Boolean).join('；')}；此刻在${(s.place && s.place.full) || ''}，${s.clock ? timeText(s.clock) : ''}。写他时照这个身份、这个处境，别人照这个身份待他。`];
+  if (mine.length) L.push(`【前面几步主角做了】${mine.join(' → ')}（这些已经做过、有了结果，接着往下写，不重来、不忘）`);
+  if (prevG) L.push(`【上一回停在】${String(prevG.text).replace(/\s+/g, '').slice(-160)}`);
+  const sd = String(said || '').trim();
+  L.push(sd ? `【玩家这回说的原话，正文就写这件事】${sd}\n——从这件事写起，写它的经过和结果；他一句里几件事就都写到；跟这件事无关的材料一概不用，不铺垫、不绕远、不讲大道理，人物说的每句话都要有用。` : '【玩家这回没说话】照上面的规矩写，不替主角做决定。');
+  if (!SPANS[span]) L.push(`【字数】正文${LEN[SETTINGS.len] || LEN.normal}，不超出；写完这件事就停。`);
+  return L.join('\n');
+}
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
   const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : ''));
@@ -10133,7 +10169,7 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const sb2 = spanBlock(s, span, said);
   const dir = directorBlock(s, said) + (sb2 ? sb2 + '\n' : '') + (s.mainNow && s.mainNow.upcoming && s.mainNow.days > 3 && !SPANS[span] && /歇着|歇几天|歇一阵|等着|等等看|观望|过几天|过些日子|闲着|没什么事|养病|守孝|读书度日/.test(said) ? `【这一回的时间】玩家要歇着、等着：把日子往前推，写这几天到几十天里主线的前兆一件件来，推到离那件大事更近的时候（它约${s.mainNow.days}天后到来，可以直接写到它前一两天或当天）。\n` : '');
   const bb = ruling && ruling.battleResult ? battleBlock(ruling.battleResult) : '';
-  return pushUser(turns, IRON_HEAD + what + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + '\n\n照规则写正文。');
+  return pushUser(turns, IRON_HEAD + what + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文。');
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
 function ledgerInput(s, said, story, hidden, span, ruling) {
@@ -11182,7 +11218,8 @@ let S = null, VIEW = 'start', TAB = 'board', STREAM = '', THINK_T0 = 0, ERRMSG =
 function setBusy(on) { BUSY = on; if (on) THINK_T0 = Date.now(); try { render(); } catch (_) { /* render 自己会兜住；这里再保一层，不让忙碌状态卡住 */ } if (on) setTimeout(() => { const el = document.querySelector('.thinking'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); }
 setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = Math.round((Date.now() - THINK_T0) / 1000);
   // 显示「正忙」却没有在写的这一回（上一步出错没收尾）：二十秒后自己放开，发出键重新能点，不让玩家以为卡死了
-  if (!TURN && Date.now() - THINK_T0 > 20000) { BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已自动放开'); ERRMSG = ERRMSG || '上一步没收好尾，已放开，可以接着写'; render(); } } }, 1000);
+  /* 开局一次查齐（prepAll）也是「正忙、没在写这一回」，不能放开：放开了玩家一出手就跟后台的活撞上、那一回丢了 */
+  if (!TURN && !PREP && Date.now() - THINK_T0 > 20000) { BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已自动放开'); ERRMSG = ERRMSG || '上一步没收好尾，已放开，可以接着写'; render(); } } }, 1000);
 
 /* ========== 画像：主角的脸存在存档里（可捏）；身边的人按名字和身份生成一张固定的脸 ========== */
 const faceGender = g => /女/.test(String(g || '')) ? 'female' : 'male';
