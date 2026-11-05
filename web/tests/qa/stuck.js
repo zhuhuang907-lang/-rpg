@@ -32,6 +32,9 @@ const { chromium } = require('playwright');
   // 真在写的时候（这一回正在跑）不乱放：照样正忙
   await p.evaluate(() => { BUSY = true; TURN = { signal: {} }; THINK_T0 = Date.now() - 25000; });
   await p.waitForTimeout(1500); if (!(await p.evaluate(() => BUSY))) bad('这一回正在写，也被当成卡住放开了');
-  await p.evaluate(() => { TURN = null; BUSY = false; render(); });
+  // 开局一次查齐时（没有在写的这一回，但后台正在查）也不放开：放开了玩家一出手就跟后台的活撞上、那一回丢了（2026-11-05 巡检少一回查出来的）
+  await p.evaluate(() => { TURN = null; PREP = { round: 2, t0: Date.now() - 60000 }; BUSY = true; THINK_T0 = Date.now() - 25000; });
+  await p.waitForTimeout(1500); if (!(await p.evaluate(() => BUSY))) bad('开局查资料查到二十秒，就被当成卡住放开了');
+  await p.evaluate(() => { PREP = null; TURN = null; BUSY = false; render(); });
   console.log('ERRS', JSON.stringify(errs.filter(e => !/测试：这一页画不出/.test(e)))); await b.close();
 })();

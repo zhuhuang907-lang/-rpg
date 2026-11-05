@@ -10,7 +10,7 @@ const W = Number(process.argv[2] || 1300), H = Number(process.argv[3] || 900), T
   const idle = async (ms = 60000) => { try { await p.waitForFunction(() => !document.querySelector('.thinking'), null, { timeout: ms }); } catch (_) {} };
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart');
   await p.waitForTimeout(700); await shot('01opening-wait');
-  await idle(); await p.waitForTimeout(500); await shot('02opened');
+  await idle(300000); await p.waitForTimeout(500); await shot('02opened');   // 开局要把后台的活一次查齐（R-119），本来就慢，等到放开为止
   const acts = ['找程立德问亏空的事', '去运司衙门找人', '戏外：一引盐赚多少？', '在家歇着，过一个月'];
   for (let i = 0; i < acts.length; i++) {
     await p.fill('#said', acts[i]); await p.click('#bSend');

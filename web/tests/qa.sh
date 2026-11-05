@@ -60,6 +60,9 @@ start ai.js && {
   run "朝局：总览、人事树、国策书、委任花国策点、到任落到树上、死人委任不了、身份低只能看；人物照关系淡出不删" 600 node court.js
   run "朝政与军务：国势阶层、时政期限、召见每月三次各照派系、照主张拟诏、处置结掉、国势增减；兵种核定与自定、募编加营、按月扣饷粮、按兵种和地形宽窄打仗" 600 node statecraft.js
   run "真人和别朝人同名不改名、跨朝代的同一个人不拆成两个、已认作真人的不被翻成虚构" 120 env PLAY="$ROOT/web/play.html" node samename.js
+  run "舆图不留圆圈和空白、不串年代（后世府名、总管府、改名后旧名并存）、放大后治所都写名字、府名写全、大图照屏幕宽高" 300 env PLAY="$ROOT/web/play.html" node mapfix.js
+  run "正文紧扣玩家这一步：结尾再交代原话、主角身份、前几步、上一回停在哪、字数；字数超出一半或不到一半打回改稿（R-134）" 120 env PLAY="$ROOT/web/play.html" node narr.js
+  run "天下名录照这一年并立的各家做表，宗室以外的文武大臣都列上，有博查的逐个按名字核，不按清朝写死问法" 120 env PLAY="$ROOT/web/play.html" node roster.js
   run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js
   run "营生与本事：属性本事声望品行、本事越用越长、此地行情差事门客、当场买卖拦钱不够驮不动、贵处卖出赚、应下差事、招揽门客、按月给薪" 600 node sandbox.js
@@ -127,4 +130,6 @@ if [ -z "${QUICK:-}" ]; then
   say "桌面服务端自测"; (cd "$ROOT/rpg-kernel" && timeout 400 node test_runner.js 2>&1 | grep 汇总) | tee "$WORK/tr.out"; grep -q "FAIL 0" "$WORK/tr.out" || bad "桌面服务端自测"
 fi
 echo; [ $FAIL -eq 0 ] && echo "全部通过" || echo "有不合格项，不许发布"
+# 全部通过就记下源码指纹；提交时 scripts/check.sh 核对（需求台账 R-132）
+[ $FAIL -eq 0 ] && bash "$ROOT/scripts/fingerprint.sh" > "$ROOT/.qa-pass"
 exit $FAIL
