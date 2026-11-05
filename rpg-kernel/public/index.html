@@ -1643,7 +1643,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261105182711';
+const BUILD = '20261105223222';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.6.9', military: 'V5', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2598,7 +2598,7 @@ function orgVacantFix(s, nodes) {
   return k;
 }
 function orgHolders(s) { const H = new Set(); for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.holder) H.add(p.holder); return H; }
-const orgDue = s => s && s.clock && !(s.orgFail != null && s.turn - s.orgFail < 4) && roleKind(s) !== 'none' && (!s.org || s.org.pol !== (s.place.polity || '') || s.org.ruler !== isRuler(s));   // 有官职、统兵、一方之主的，开局后就提前整理好；平头百姓没有这个面板
+const orgDue = s => s && s.clock && !(s.orgFail != null && s.turn - s.orgFail < 4) && seesCourt(s) && (!s.org || s.org.pol !== (s.place.polity || '') || s.org.ruler !== isRuler(s));   // 有官职、统兵、一方之主的，开局后就提前整理好；平头百姓没有这个面板
 /** 人事树：照内置制度库（按史书编的中枢、地方、军制）当骨架，联网查过，分中枢、地方（从最高地方长官一直到乡里保甲、吏役）、军事三路同时整理；
  *  主角所在这一路写实名实地；在任的真人只填资料、名册里有的，其余（尤其基层）起虚构的名字、标「虚拟」，查到真人再换；员额照制度，玩家可改 */
 /** 内置制度库里的赋税、兵制、俸禄原文（按史书编，带年份和数目）：定国势、核兵种时当底 */
@@ -3465,10 +3465,23 @@ function roleKind(s) {
   return 'none';   // 寨主、东家、族长、乡勇头目：没有官府的衙门，自家的人和兵在「势力」「军务」里管
 }
 const ROLE_TXT = { ruler: '一方之主：国势、时政、召见、人事树（直接下令）、国策书、军务全开', local: '地方官：辖区、本地时政、召见属官、人事树（可上疏）、国策（可上疏请行）', court: '京官：人事树和国策（可上疏），国势只知邸报里的', military: '武官：军务（自己统带的兵马），人事树只能看', none: '' };
+/** 谁看得到朝局（2026-11-05 玩家：「贵族也能看到信息，只有平头百姓、没有读过书的人看不到……正常读书人以上都能知道」）：
+ *  做官的、一方之主、宗室贵族（含君主的儿孙兄弟）、读书人（生员举人进士、塾师、士人）、乡绅地主看得到，只能看、不能下令；平头百姓、没读过书的（农夫、小贩、兵卒、匠人、土匪）看不到 */
+function seesCourt(s) {
+  if (!s || !s.protagonist) return false;
+  if (roleKind(s) !== 'none') return true;
+  const d = identityOf(s), g = d.tags || [];
+  if (g.some(x => x === '贵' || x === '士' || x === '官' || x === '地主')) return true;
+  const role = `${s.protagonist.role || ''} ${(s.career || {}).office || ''} ${(s.career || {}).degree || ''}`;
+  if (/[王帝皇君主]\S{0,6}之[子女孙弟侄]|皇子|皇孙|王孙|宗室|宗亲|太子|世子/.test(role)) return true;
+  // 家里的父、祖、兄是这一年在位的君主：就是宗室
+  try { const R = new Set(rulersAt(s.clock.y, s).map(r => String(r.name || '').replace(/[（(].*$/, ''))); if (arr(s.household).some(m => m && /父|祖|兄/.test(m.relation || '') && R.has(String(m.name || '').replace(/[（(].*$/, '')))) return true; } catch (_) { /* 没有君主名单就照身份 */ }
+  return false;
+}
 function tabsFor(s) {
   const r = roleKind(s), T = [['board', '局面'], ['map', '舆图'], ['people', '人物'], ['skill', '本事'], ['estate', '家业'], ['trade', '营生']];
   if (r === 'ruler' || orgsLive(s).length || arr(s.powers).length || arr(s.territory).length || arr(s.forces).length || arr(s.circles).length || arr(s.factions).length) T.push(['power', '势力']);
-  if (r !== 'none') T.push(['court', r === 'local' ? '衙署' : '朝局']);
+  if (seesCourt(s)) T.push(['court', r === 'local' ? '衙署' : '朝局']);
   if (r === 'ruler' || r === 'military' || arr(s.forces).some(f => myForce(s, f)) || myDomain(s).recruitCap) T.push(['army', '军务']);
   T.push(['guide', '指南'], ['career', '仕途'], ['news', '见闻'], ['world', '史线'], ['geo', '地理'], ['chron', '年谱'], ['arc', '档案馆'], ['set', '设置']);
   return T;
@@ -11516,7 +11529,7 @@ function scrubText(s, t) { t = String(t == null ? '' : t); const nf = nameFixes(
 function scrubObj(s, o) { try { const raw = JSON.stringify(o), t = scrubText(s, raw); return t === raw ? o : JSON.parse(t); } catch (_) { return o; } }
 /** 真人名单：史料里的、档案里认定的真人、查到的本地真人、名册里史料或推断出的官员 */
 function realNameSet(s) {
-  const R = new Set();
+  const R = new Set(Object.keys((s && s.realOK) || {}));
   for (const h of HALL(s)) for (const f of arr(h.figures)) if (f.name) R.add(f.name);
   for (const [k, v] of Object.entries(s.dossiers || {})) if (v && v.real !== false) R.add(k);
   for (const f of arr(s.figures)) if (f && f.name) R.add(f.name);
@@ -11617,6 +11630,27 @@ function freshName(s, old, female, low) {
   return pickName(s, sur, female ? GIVEN_F : low ? GIVEN_LOW : GIVEN, used);
 }
 /** 每回合后台：新出现的虚构名字逐个查（每回最多六个，联网的最多三个），撞了真人就换 */
+/** 以前查重名时改掉的名字（clashLog），复查一遍：史书上那位就是这一年这一家的这个人的，改回原名、认作真人（2026-11-05 闽国真官员被改名） */
+const clashUndoDue = s => !!(s && s.clock && arr(s.clashLog).some(x => x && !x.chk && /（DeepSeek）|（博查）/.test(x.t || '')) && !(s.cuFail != null && s.turn - s.cuFail < 2));
+async function clashUndo(s) {
+  const L = arr(s.clashLog).filter(x => x && !x.chk && /（DeepSeek）|（博查）/.test(x.t || '')).map(x => { const m = String(x.t || '').match(/^(\S+?)→(\S+?)（/); return m ? { x, from: m[1], to: m[2] } : null; }).filter(Boolean).slice(0, 40);
+  if (!L.length) return 0; const yl = `公元${s.clock.y}年（${s.clock.yearLabel || ''}）${s.place.polity || ''}`;
+  const { text } = await callClaude(`这一局是${yl}。下面这些名字，哪些就是这一年、这一家（${s.place.polity || ''}）的史书真人（正史、《资治通鉴》、十国春秋、方志有载，此时在世），而不是别朝别地的同名人？
+${L.map(z => z.from).join('、')}
+只输出一个 JSON 对象：{"same":[""]}`, null, { maxTokens: 800, temperature: 0, kind: '检索', detached: true, thinking: false });
+  const d = parseJSON(text); if (!d) { s.cuFail = s.turn; throw { code: 'bad_json' }; }
+  const same = new Set(arr(d.same).map(x => one(x, 8))); let k = 0;
+  for (const z of L) { z.x.chk = 1; if (!same.has(z.from)) continue; renameEverywhere(s, z.to, z.from); markRealPerson(s, z.from); z.x.t += '；已改回原名（就是这一年的这位真人）'; k++; }
+  return k;
+}
+/** 原先当虚构的名字，查实就是这一年这一家的真人：处处改认作真人（人事树、人物、人选、名册），名字不动 */
+function markRealPerson(s, n) {
+  for (const nd of arr(s.org && s.org.nodes)) for (const p of arr(nd.posts)) { if (p.holder === n && /拟/.test(p.src || '')) p.src = '史书'; if (arr(p.others).includes(n) && p.othersFake) p.othersFake = false; }
+  const v = (s.people || {})[n]; if (v) { delete v.fic; if (v.real === false) v.real = true; if (/虚构|^拟/.test(String(v.src || ''))) v.src = '史书'; }
+  for (const t of arr(s.talent && s.talent.list)) if (t && t.name === n) t.real = true;
+  for (const o of arr(s.offices)) if (o && o.name === n && o.src === '拟') o.src = '史书';
+  s.realOK = s.realOK || {}; s.realOK[n] = s.turn;
+}
 async function fictionClash(s) {
   // 虚构主角的家里人一定是虚构的：名字撞了名人也算重名（不能当成那位名人）
   s.clashOK = s.clashOK || {}; const R = realAll(s), famF = s.protagonist && !s.protagonist.real ? arr(s.household).map(m => m && m.name).filter(Boolean).concat([s.protagonist.name]) : [];
@@ -11629,12 +11663,18 @@ async function fictionClash(s) {
   const NB = {}, cand0 = F.filter(n => !R.has(n)).slice(0, 96);   // 一次最多查九十六个，没轮到的下回接着查
   // 先让 DeepSeek 认：明确是史书名人的直接改名，明确不是的放过，拿不准的才上博查
   let toNet = cand0;
+  // 2026-11-05 玩家拿闽国的局：「为什么要真正的官员改名啊」——查实：人事树上占位的名字（陈峤、郑元弼、刘乙、张睦、程赟）正是这一年闽国的真官员，查重名时查出「史书有此人」就当撞名改掉了。
+  // 现在一并问清：史书上那位是不是就是这一年、这一家的这个人（同时同地同身份）；是的就认作真人、名字不动，只有撞了别朝别地的人才改名
+  const SAME = new Set(), yl = `公元${s.clock.y}年（${s.clock.yearLabel || ''}）${s.place.polity || ''}`, roleOf = n => { for (const nd of arr(s.org && s.org.nodes)) for (const p of arr(nd.posts)) if (p.holder === n) return nd.name + p.title; const v = (s.people || {})[n]; return v ? v.role || '' : ''; };
   if (cand0.length && DSM()) { try { const { text } = await callClaude(`下面这些名字，哪些和中国历史上（任何朝代）有名有姓、史书或方志有传的人物同名？只看名字本身是否同名，不管时代。
-${cand0.join('、')}
-只输出一个 JSON 对象：{"famous":[{"name":"","who":"是哪朝的什么人"}],"unsure":[""]}`, null, { maxTokens: 1500, temperature: 0, kind: '检索', detached: true, thinking: false });
-      const d = parseJSON(text); if (d) { for (const x of arr(d.famous)) { const n = one(x && x.name, 8); if (cand0.includes(n)) NB[n] = `${n}：${one(x.who, 40)}（DeepSeek）`; } const uns = new Set(arr(d.unsure).map(x => one(x, 8))); for (const n of cand0) if (!(n in NB) && !uns.has(n)) NB[n] = ''; toNet = cand0.filter(n => uns.has(n)); } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+这一局是${yl}；括号里是这个名字在局里的身份。同名的再判一句：史书上那一位，是不是就是这一年、这一家、这个身份的这个人（same: true），还是别朝别地的另一个人（same: false）。
+${cand0.map(n => n + (roleOf(n) ? '（' + roleOf(n) + '）' : '')).join('、')}
+只输出一个 JSON 对象：{"famous":[{"name":"","who":"是哪朝的什么人","same":false}],"unsure":[""]}`, null, { maxTokens: 2000, temperature: 0, kind: '检索', detached: true, thinking: false });
+      const d = parseJSON(text); if (d) { for (const x of arr(d.famous)) { const n = one(x && x.name, 8); if (!cand0.includes(n)) continue; if (x.same === true || x.same === 'true') { SAME.add(n); continue; } NB[n] = `${n}：${one(x.who, 40)}（DeepSeek）`; } const uns = new Set(arr(d.unsure).map(x => one(x, 8))); for (const n of cand0) if (!(n in NB) && !uns.has(n)) NB[n] = ''; toNet = cand0.filter(n => uns.has(n)); } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
   if (canSearch()) for (let k = 0; k < toNet.length; k += 24) { const P = toNet.slice(k, k + 24); try { const B = await within(bochaDeep(s, P, 300), 60000, null); if (!B) continue; for (const n of P) { const h = clashHit(n, arr(B.items).filter(i => i.q === n || String(i.title).includes(n))); NB[n] = h ? `${n}：${cut(h.snippet, 60)}（博查）` : ''; } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+  for (const n of SAME) { markRealPerson(s, n); s.clashOK[n] = 1; }
   for (const n of F) {
+    if (SAME.has(n)) continue;
     let why = R.has(n) ? `${n}是史书上的真人（内置史料）` : null;
     let looked = n in NB; if (!why && looked) why = NB[n] || null;
     if (!why) { if (!looked && canSearch()) continue; s.clashOK[n] = 1; continue; }   // 这回没轮到联网查的，下回再查
@@ -12786,7 +12826,7 @@ function pane(tab) {
       if (!(H && H.harmony != null) && !hs.length) return '';
       return `<div class="pl" style="font-size:13px">${H && H.harmony != null ? `<span>家宅和睦</span><b>${esc(H.harmony)}</b>${H.why ? `<small class="muted">（${esc(H.why)}）</small>` : ''}` : ''}${hs.length ? `<div class="muted" style="font-size:12px">看得出的情分：${hs.map(([k, v]) => `${esc(k)}${seeThrough(s, { who: k, tell: 50 }) ? `对${esc(v.feel.toward)}${esc(v.feel.feel)}` : `——${esc(v.feel.shows || '看不透')}`}`).join('；')}</div>` : ''}</div>`; })();
     const famTbl = identH + famBtn + homeH + (HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母${arr(s.famPlan).length ? `；史载还有${s.famPlan.length}个子女在日后出生，到时照记` : ''}</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b>${m.basis ? `<div class="gb"><span class="gr ${m.inferred || m.unver ? 'inf' : 'rec'}">${m.inferred ? '推算' : m.unver ? '史载·网上没核到' : '史载'}</span>${esc(String(m.basis).replace(/^推算[：:]/, ''))}</div>` : ''}</td><td>${m.age != null ? esc(m.age) + '岁' + (m.ageWhy ? `<div class="muted" style="font-size:11px">${esc(m.ageWhy)}</div>` : '') : '<span class="muted">不详</span>'}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(String(m.note || '').replace(/（推算）$/, ''))}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '');
-    return (ORGMSG && /核查|查无此人|有其人|评定/.test(ORGMSG) ? `<div class="muted" style="margin:4px 0">${esc(ORGMSG)}</div>` : '') + (arr(s.clashLog).some(x => s.turn - x.turn <= 3) ? `<div class="muted" style="margin:4px 0">虚构人物与史书真人重名，已改名：${esc(s.clashLog.filter(x => s.turn - x.turn <= 3).map(x => x.t).join('；'))}</div>` : '') + clanHtml(s) + famTbl + courtHtml(s) + rosterHtml(s) + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
+    return (ORGMSG && /核查|查无此人|有其人|评定/.test(ORGMSG) ? `<div class="muted" style="margin:4px 0">${esc(ORGMSG)}</div>` : '') + (arr(s.clashLog).some(x => s.turn - x.turn <= 3 && !/已改回原名/.test(x.t || '')) ? `<div class="muted" style="margin:4px 0">程序起的名字和史书人物重了，已换名：${esc(arr(s.clashLog).filter(x => s.turn - x.turn <= 3 && !/已改回原名/.test(x.t || '')).map(x => String(x.t).replace(/（.*$/, '')).join('；'))}</div>` : '') + clanHtml(s) + famTbl + courtHtml(s) + rosterHtml(s) + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
       ${fam.map(m => `<div class="pc"><div class="pn"><b>${esc(m.name)}</b>${m.alias ? `<span class="muted">（${esc(m.alias)}）</span>` : ''}${FX(m.name)}<span class="att">${esc(m.relation)}</span></div><div class="pr">${ageTxt(m)}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
       ${NEAR.length ? NEAR.map(CARD).join('') : ''}
       ${FAR.length ? `<div class="h" style="margin-top:8px"><span class="seal">远</span>远处的人<span class="note">不在你跟前：只能写信、遣使、下诏往来</span></div>${FAR.map(CARD).join('')}` : ''}${figHtml(s)}
@@ -13169,6 +13209,7 @@ function bgJobs(s0, d, g) {
     { id: 'pop', msg: '照地理志推各府州的户口', due: () => popDue(s0), run: () => popInfer(s0).catch(e => { s0.popFail = s0.turn; throw e; }) },
     { id: 'age', msg: '请 DeepSeek 照经历推家里人、身边人的年岁', due: () => ageDue(s0), run: () => ageInfer(s0).catch(e => { s0.ageFail = s0.turn; throw e; }), ex: true },
     { id: 'stats', msg: '请 DeepSeek 照史料评定这几回出场人物的各项', due: () => statsDue(s0), run: () => judgeDue(s0).catch(e => { s0.statFail = s0.turn; throw e; }) },
+    { id: 'clashundo', msg: '复查以前改过名的人，是这一年的真人就改回原名', due: () => clashUndoDue(s0), run: () => clashUndo(s0) },
     { id: 'clash', msg: '查虚构人物有没有和史书真人重名', due: () => clashDue(s0), run: () => fictionClash(s0) },
     { id: 'econ', msg: '照史料推本地的物价行情', due: () => econDue(s0), run: () => econDS(s0) },
     { id: 'prefoff', msg: '照史书列各州府这一年的长官', due: () => prefOffDue(s0), run: () => prefOffDS(s0) },
