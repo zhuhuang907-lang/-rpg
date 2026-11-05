@@ -162,6 +162,8 @@ const checks = [
   ['天下名录照各家做表（CLAUDE.md 人物「天下名录照各家做表」）', /这一张只写：\$\{rs\.join\('、'\)\}/.test(src) && /s\.roster\.v !== 3/.test(src) && !/`\$\{yl\} 郡王 贝勒`/.test(src)],
   ['正文紧扣玩家这一步（需求台账 R-134）：结尾再交代原话、主角、前几步、字数；字数超出一半打回', /function recapTail\(s, said, span\)/.test(src) && /IRON_TAIL \+ recapTail\(s, said, span\)/.test(src) && /n > hi \* 1\.5/.test(src)],
   ['开局一次查齐时不被「正忙二十秒自动放开」放开（需求台账 R-119）', /if \(!TURN && !PREP && Date\.now\(\) - THINK_T0 > 20000\)/.test(src)],
+  ['读书人以上能看朝局、百姓看不到（需求台账 R-136）', /function seesCourt\(s\)/.test(src) && /if \(seesCourt\(s\)\) T\.push\(\['court'/.test(src) && /seesCourt\(s\) && \(!s\.org \|\|/.test(src)],
+  ['这一年这一家的真官员不当撞名改掉、旧档改回（需求台账 R-137）', /function markRealPerson\(s, n\)/.test(src) && /same: true/.test(src) && /async function clashUndo\(s\)/.test(src) && /id: 'clashundo'/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

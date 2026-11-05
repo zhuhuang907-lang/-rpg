@@ -43,7 +43,7 @@ const { chromium } = require('playwright');
   await p.evaluate(async () => { await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); SEARCH_OFF = ''; SEARCH_DOWN = 0; });
   const cl = await p.evaluate(async () => { S.protagonist.real = false; S.household.push({ relation: '书童', name: '王安石' }); S.people['江春'] = { role: '盐商', seen: S.turn, fic: true }; S.household.push({ relation: '管家', name: '汪福' }); const out = await fictionClash(S);
     const R = realAll(S), picks = []; for (let i = 0; i < 30; i++) picks.push(pickName(S, '王', GIVEN, new Set())); TAB = 'people'; render();
-    return { out, left: ['王安石', '江春'].filter(n => S.people[n] || S.household.some(m => m.name === n)), ren: S.renamed, bad: picks.filter(n => R.has(n)), txt: document.body.innerText.includes('已改名'), keep: !!S.household.find(m => m.name === '汪福') }; });
+    return { out, left: ['王安石', '江春'].filter(n => S.people[n] || S.household.some(m => m.name === n)), ren: S.renamed, bad: picks.filter(n => R.has(n)), txt: document.body.innerText.includes('已换名'), keep: !!S.household.find(m => m.name === '汪福') }; });
   if (cl.left.length || cl.out.length < 2 || cl.bad.length || !cl.txt || !cl.keep) bad('虚构人物和真人重名没改：' + JSON.stringify(cl));
   const vis = await p.evaluate(() => document.body.innerText); if (/NaN|undefined|\[object/.test(vis)) bad('页面有坏字');
   console.log('DBG', JSON.stringify({ a, b2, c, d, e: { g: e.g && e.g.src, q: e.q && e.q.why } }));

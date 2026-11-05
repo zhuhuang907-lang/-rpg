@@ -16,7 +16,7 @@ const { chromium } = require('playwright');
     r.merchant = k(); S.career = { office: '江都县知县', rank: '正七品' }; r.local = k() + '|' + tabsFor(S).find(x => x[0] === 'court')?.[1];
     S.career = { office: '扬州营游击', rank: '从三品' }; r.mil = k(); S.career = { office: '户部主事', rank: '正六品' }; r.court = k();
     S.career = save.career; S.idm = 'emperor'; S.protagonist.role = '皇帝'; r.ruler = k(); S.idm = save.idm; S.protagonist.role = save.role; return r; });
-  if (/court|army/.test(tabs.merchant)) bad('盐商也有朝局或军务：' + tabs.merchant);
+  if (/court|army/.test(tabs.merchant)) bad('盐商也有朝局或军务：' + tabs.merchant);   /* 读书人以上才看得到朝局，商人、百姓看不到（台账 R-136，2026-11-05 玩家定） */
   if (!/court/.test(tabs.local) || !/army/.test(tabs.local) || !/衙署/.test(tabs.local)) bad('知县的面板不对：' + tabs.local);   /* 2026-11-01 起知县能招乡勇民壮，有军务页（CLAUDE.md「各种身份管得到什么」） */
   if (!/army/.test(tabs.mil)) bad('武官没有军务：' + tabs.mil);
   if (!/court/.test(tabs.court) || /army/.test(tabs.court)) bad('京官的面板不对：' + tabs.court);

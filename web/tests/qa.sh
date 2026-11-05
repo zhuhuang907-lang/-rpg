@@ -62,6 +62,7 @@ start ai.js && {
   run "真人和别朝人同名不改名、跨朝代的同一个人不拆成两个、已认作真人的不被翻成虚构" 120 env PLAY="$ROOT/web/play.html" node samename.js
   run "舆图不留圆圈和空白、不串年代（后世府名、总管府、改名后旧名并存）、放大后治所都写名字、府名写全、大图照屏幕宽高" 300 env PLAY="$ROOT/web/play.html" node mapfix.js
   run "正文紧扣玩家这一步：结尾再交代原话、主角身份、前几步、上一回停在哪、字数；字数超出一半或不到一半打回改稿（R-134）" 120 env PLAY="$ROOT/web/play.html" node narr.js
+  run "读书人以上（宗室、读书人、乡绅）能看朝局、百姓看不到；这一年这一家的真官员不当撞名改掉、旧档改回原名（R-136、R-137）" 120 env PLAY="$ROOT/web/play.html" node court2.js
   run "天下名录照这一年并立的各家做表，宗室以外的文武大臣都列上，有博查的逐个按名字核，不按清朝写死问法" 120 env PLAY="$ROOT/web/play.html" node roster.js
   run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js
