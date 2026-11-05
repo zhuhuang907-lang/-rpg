@@ -38,11 +38,11 @@ const { chromium } = require('playwright');
   // 人事树真人优先：要紧位子空着的，先大量博查、DeepSeek 只从材料里认人；材料里没有的名字（钱不存）不收（CLAUDE.md「人事与职权」人事树先填真人）
   { const r = await p.evaluate(() => { const q = S.org.nodes.find(n => n.name === '户部').posts.find(x => x.title === '尚书'); return { h: q.holder, src: q.src, fake: S.org.nodes.some(n => n.posts.some(x => x.holder === '钱不存' || arr(x.others).includes('钱不存'))), mg: S.org.nodes.some(n => n.posts.some(x => x.manage !== undefined)) }; });
     if (r.h !== '蒋溥' || r.src !== '博查') bad('户部尚书空着时没有用博查找真人：' + JSON.stringify(r)); if (r.fake) bad('材料里没有的名字被填进人事树'); }
-  const deep = await p.evaluate(() => ({ max: Math.max(...S.org.nodes.map(n => n.depth || 0)), vac: S.org.nodes.filter(n => n.id !== 'root').some(n => n.posts.some(x => !x.holder && ((orgMajor(n, x) || x.noGrant) ? !/出缺|史载|不授|虚衔/.test(x.status || '') : true))), fz: S.org.nodes.find(n => /保甲/.test(n.name)).posts[0], fs: fictionSet(S).size }));
+  const deep = await p.evaluate(() => ({ max: Math.max(...S.org.nodes.map(n => n.depth || 0)), vac: S.org.nodes.filter(n => n.id !== 'root').some(n => n.posts.some(x => !x.holder && ((orgMajor(n, x) || x.noGrant) ? !/出缺|史载|不授|虚衔/.test(x.status || '') : x.status !== '照额'))), fz: S.org.nodes.find(n => /保甲/.test(n.name)).posts[0], fs: fictionSet(S).size }));
   if (deep.max < 4) bad('人事树没有一路通到基层：最深 ' + deep.max + ' 层');
   // 2026-11-02 大人物照真官：大位子查不到真人就空着写待查，小官照旧起名
   if (deep.vac) bad('还有空着没起名的小官位子，或空着的大位子没写出缺、照例不授');
-  if (!(deep.fz.others && deep.fz.others.length >= 2)) bad('保正员额四十，只列了一个人');
+  if (deep.fz.holder || deep.fz.status !== '照额') bad('保正这类丙等位子只写员额、不起虚构名字（2026-11-05 玩家定）：' + JSON.stringify(deep.fz));
   if (!deep.fs) bad('虚构的官员没标虚拟');
   await p.click('[data-tab="court"]'); await p.waitForTimeout(500);
   const t0 = await p.evaluate(() => document.querySelector('.side, #side, body').innerText);
@@ -82,7 +82,7 @@ const { chromium } = require('playwright');
     if (!/特旨破格任命/.test(q.l2 || '') || q.pts !== 3) bad('一方之主再点一次没成特旨破格、或没多花两点：' + JSON.stringify(q).slice(0, 300));
     if (!q.liuOk) bad('照史料现任协办大学士的刘统勋调户部尚书被拦了：' + JSON.stringify(q.liu)); }
   // 真人优先（CLAUDE.md「人事与职权」真人优先）：DeepSeek 报的名字一个都不先扔，全部拿博查核，核得上的用真人
-  { const v = await p.evaluate(() => { const q = S.org.nodes.find(n => n.name === '户部').posts.find(x => x.title === '侍郎'); return { h: q.holder, src: q.src }; });
+  { const v = await p.evaluate(() => { const q = S.org.nodes.find(n => n.name === '户部').posts.find(x => x.title === '侍郎'); return { h: q.holder, src: q.src, where: S.org.nodes.flatMap(n => n.posts.filter(z => z.holder === '钱维城' || arr(z.others).includes('钱维城')).map(z => n.name + z.title + ':' + z.src)), dz: (S.dossiers || {})['钱维城'] }; });
     if (v.h !== '钱维城' || v.src !== '博查') bad('DeepSeek 报的真人没拿博查核、当场换成了虚构的：' + JSON.stringify(v)); }
   // 虚构的不许和史书人物同名：一批联网查，撞了就改名（以前一次只查三个）
   { const v = await p.evaluate(async () => { const n = S.org.nodes.find(x => x.name === '户部'); n.posts.push({ title: '笔帖式', rank: '', quota: 1, holder: '王守仁', src: '拟' }); S.clashOK = {}; await fictionClash(S); const h = n.posts[n.posts.length - 1].holder; n.posts.pop(); return h; });

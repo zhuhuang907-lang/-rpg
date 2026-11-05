@@ -10,7 +10,7 @@ FAIL=0; PIDS=()
 say() { printf '\n== %s\n' "$*"; }
 bad() { echo "!! 不合格：$*"; FAIL=1; }
 stop_all() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill "$p" 2>/dev/null; done; PIDS=(); sleep 0.5; }
-trap 'stop_all; rm -rf "$WORK"' EXIT
+trap 'stop_all; rm -rf "$WORK"; rm -f /tmp/rpg-qa.lock' EXIT
 start() {   # $1 = 模拟 AI 的脚本名
   stop_all
   rm -rf "$WORK/rk" && mkdir -p "$WORK/rk" "$WORK/mock"
@@ -34,6 +34,7 @@ run() {   # $1 = 名字，$2 = 超时秒，$3... = 命令；输出里必须没�
   echo "$out" | grep -qE 'ERRS \[[^]]|PAGE ERRORS [1-9]|UI ERRORS [1-9]|STUCK \[[^]]|LEAKS [1-9]|INVARIANTS [1-9]|ESTATE FAIL' && bad "$name：有报错"
 }
 say "构建"; (cd "$ROOT" && python3 web/build.py 2>&1) | tail -3; [ ${PIPESTATUS[0]} -eq 0 ] || { bad "构建失败（页面脚本有语法错误）"; echo "有不合格项，不许发布"; exit 1; }
+echo $$ > /tmp/rpg-qa.lock   # 完整测试跑着时不许别处重新构建（build.py 照这个锁拒绝），免得测到一半页面被换掉
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
 say "江山时序：本机服务替玩家下到 data/cache/jiangshan、只认两个文件、不是地图数据不收、下过不再下"; JS=$(node "$ROOT/web/tests/jsmapsrv.js" 2>&1 | tail -1); echo "$JS"; echo "$JS" | grep -q "ERRS \[\]" || bad "江山时序下载"
@@ -52,11 +53,14 @@ start ai.js && {
   run "开关与按钮：旧版的「关」不生效、篇幅记住、自检网络报告更新分支换 Key 都有结果、侧栏无怪字、建议只写进输入框" 600 node controls.js
   run "旧存档：缺新册子、旧写法的局读得进来、每页画得出、能接着玩、刷新还在" 600 node oldsave.js
   run "行动单：玩家的话分问计请令试开单子、记账只报进展、三回没下文明写、没有令的兵和地不落账" 600 node acts.js
+  run "开局一次查齐：开场写完挡着输入框把后台的活做完（没做成的当场再做），做完才放第一步；界面不写上回没推成" 900 node prep.js
   run "绝不卡死：记账留下坏条目、有一页画不出来，第二回「我要去酒楼」照样往下走；正忙放不开二十秒自己放开" 900 node stuck.js
   run "聊天一样快：家常的一句话不深想、不另起审稿；要紧的一步照旧深想、审稿；人物有口吻" 900 node light.js
   run "玩家只过日子：天下推演照样跑，要紧的人自己办事落到账上，不凭空添人" 900 node idle.js
   run "朝局：总览、人事树、国策书、委任花国策点、到任落到树上、死人委任不了、身份低只能看；人物照关系淡出不删" 600 node court.js
   run "朝政与军务：国势阶层、时政期限、召见每月三次各照派系、照主张拟诏、处置结掉、国势增减；兵种核定与自定、募编加营、按月扣饷粮、按兵种和地形宽窄打仗" 600 node statecraft.js
+  run "真人和别朝人同名不改名、跨朝代的同一个人不拆成两个、已认作真人的不被翻成虚构" 120 env PLAY="$ROOT/web/play.html" node samename.js
+  run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js
   run "营生与本事：属性本事声望品行、本事越用越长、此地行情差事门客、当场买卖拦钱不够驮不动、贵处卖出赚、应下差事、招揽门客、按月给薪" 600 node sandbox.js
   run "统一身份：八种身份照账判定，总兵不是一方之主、寨主管不了县令、商人不是统治者、别人的官和兵不算自己的" 120 env PLAY="$ROOT/web/play.html" node identity.js
@@ -81,6 +85,9 @@ start ai.js && {
   run "各身份的日子：官军军阶照朝代（绿营卫所营兵禁军府兵部曲）、功劳到头要保题、饷欠饷讨饷吃空饷被参；商人会馆远货赊账伙计关卡；私下的日子名目照身份（皇帝后妃女子寨主僧人知县）、花钱照行情、过节、会病要请郎中（真点按钮）" 120 env PLAY="$ROOT/web/play.html" node life2.js
   run "自己不进自己的家谱（宗室子弟的兄弟里没有他自己）、史书往后一直接着修（没有博查也修、存进存档、离尽头不到六年再修）、天下消息照身份传到、国丧禁宴乐、各州府长官一表补齐（虚构的标虚拟、待查不收）" 120 env PLAY="$ROOT/web/play.html" node hist2.js
   run "大官上网一个个核、核不上的换问法再搜换人；日后显达的人此刻在下位照真人贴进树里（不标虚拟）；新制的阻力落账、只写当面反对的、强推缓行罢议真点有后果；账里的怪数取整（真点按钮）" 120 env PLAY="$ROOT/web/play.html" node real3.js
+  run "官员系统·一：位子分甲乙丙三等，名字只从一个口子进（低来源不盖高来源、死人小孩不收、一人一个实职、玩家任命的不动）、丙等只写员额（真点朝局页）" 120 env PLAY="$ROOT/web/play.html" node seat.js
+  run "人才年表进档案、名臣谱只写此刻不剧透、没碰过的照史书调、靠山没了转本局、招揽拜访（真点按钮）" 120 env PLAY="$ROOT/web/play.html" node tl.js
+  run "宣战名分（讨逆复仇收复吊民伐罪开疆）、不宣而战的后果、做官的奏请与擅启边衅、议和；国计民生每月收支照户口农业灾情赋税算、政策工程有后果；地名不串年代（真点按钮）" 120 env PLAY="$ROOT/web/play.html" node warfisc.js
   run "周边各族也画也能玩、君主自己划分政区（改名改隶分置定都筑城）、州府看得到户口（照地理志推、写依据）" 120 env PLAY="$ROOT/web/play.html" node frontier.js
   run "每个时期都分政权画：五代十国长安一带不空、各国和中原王朝不同色、DeepSeek 并成一家也照内置史料分开、各时期要紧城池归对政权" 120 env PLAY="$ROOT/web/play.html" node realms.js
   run "人物页身边和远处分开（远处写信遣使）、不摆出处引文、真人主角不添虚构下人、中古的虚构名字像那时的士人" 120 env PLAY="$ROOT/web/play.html" node circle.js

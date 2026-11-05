@@ -44,7 +44,7 @@ const path = require('path');
     if (/约/.test(popTxt(v))) bad.push('户口还写「约」');
     s.popEst.m[L[0].n] = { hh: 20000, pop: 100000, nong: 60, shang: 40, cheng: 50, why: '《新唐书·地理志》' };
     const ch = cityHtml(s, L[0].n); for (const w of ['城池', '丁壮', '农业', '商业', '城防']) if (!ch.includes(w)) bad.push('城池卡没有' + w);
-    const p0 = s.popEst.m[L[0].n].pop; cityMonthly(s, 12); const p1 = s.popEst.m[L[0].n].pop; if (!(p1 > p0 && p1 < p0 * 1.02)) bad.push(`太平年景一年户口变化不合常理：${p0}→${p1}`);
+    const p0 = s.popEst.m[L[0].n].pop; cityMonthly(s, 12); const p1 = s.popEst.m[L[0].n].pop; const ev0 = arr(((s.cities || {})[L[0].n] || {}).ev); if (ev0.length ? !(p1 < p0 && ev0.every(e => /旱|水|蝗|疫|兵/.test(e.k) && e.lost > 0)) : !(p1 > p0 && p1 < p0 * 1.02)) bad.push(`太平年景一年户口变化不合常理：${p0}→${p1} ${JSON.stringify(ev0)}`);   // 照季节掷到了灾的，户口照灾减、记进变故；没灾的照常慢涨
     s.battles = [{ turn: s.turn, place: L[0].n, outcome: '大败' }]; let fell = false; for (let k = 0; k < 6 && !fell; k++) { const a0 = s.popEst.m[L[0].n].pop; s.clock.y += 1; cityMonthly(s, 1); s.turn += 0; if (s.popEst.m[L[0].n].pop < a0) fell = true; }
     if (!fell) bad.push('打过仗的地方户口没掉');
     // 6 自家的城：开发、赋税、赈济、太守；不是自家的管不了
