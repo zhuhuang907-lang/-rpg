@@ -1,7 +1,15 @@
 # 把真实农历月表嵌进网页，生成两份同样的页面：
 #   web/index.html                 —— 发布到 claude.ai（用浏览者自己的 Claude）
 #   rpg-kernel/public/index.html   —— 桌面版游戏的主页面（用玩家自己的 DeepSeek Key，存档在本机）
-import json, pathlib
+import json, pathlib, os, sys
+# 完整测试（qa.sh）跑着的时候不许重新构建：测到一半页面被换掉，结果就作废了（qa.sh 自己开头那次构建在上锁之前）
+try:
+    _pid = int(open('/tmp/rpg-qa.lock').read().strip() or 0)
+    if _pid and _pid != os.getppid():
+        os.kill(_pid, 0)
+        print('完整测试（qa.sh，进程 %d）正在跑，不许重新构建；等它跑完或先停掉它' % _pid); sys.exit(2)
+except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
+    pass
 here = pathlib.Path(__file__).parent
 cal = json.load(open(here.parent / 'rpg-kernel/data/calendar.json', encoding='utf8'))['years']
 compact = json.dumps([[y, lens, leap] for y, _jd, lens, leap in cal], separators=(',', ':'))
@@ -66,11 +74,10 @@ print('ok', len(body), 'history eras:', len(hist), 'inst:', len(inst), 'arcs:', 
 # 构建完先查页面脚本的语法：有错就让构建失败（一个字写错整页打不开，不能等到测试才发现）
 import tempfile, sys
 _k = 0
-while True:   # 每一段 <script> 都查（最前面那段老浏览器提示也算）
-    _i = body.find('<script>', _k)
-    if _i < 0: break
-    _j = body.find('</script>', _i); _k = _j
-    with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf8') as _f: _f.write(body[_i + 8:_j]); _tmp = _f.name
+import re as _re
+for _m in _re.finditer(r'<script(\s[^>]*)?>([\s\S]*?)</script>', body):   # 每一段内联脚本都查（带属性的主脚本以前漏查了，一个注释吞掉半行代码整页打不开，构建还说 ok）
+    if _m.group(1) and _re.search(r'\bsrc=|type="(application/json|text/plain)"', _m.group(1)): continue
+    with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf8') as _f: _f.write(_m.group(2)); _tmp = _f.name
     _r = subprocess.run(['node', '--check', _tmp], capture_output=True, text=True, encoding='utf8')
     pathlib.Path(_tmp).unlink(missing_ok=True)
     if _r.returncode != 0:

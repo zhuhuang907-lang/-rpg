@@ -62,7 +62,7 @@ const { chromium } = require('playwright');
       const r = { sub: myForce(S, S.forces.find(f => f.name === '亲兵营')), other: myForce(S, S.forces.find(f => f.name === '督标')), go: !!armyAct(S, 'march', { force: '亲兵营', target: '仪征县' }), no: !armyAct(S, 'march', { force: '督标', target: '仪征县' }) };
       S.forces = keep; S.armyPending = []; delete S.people['王得禄']; return r; });
     if (!m.sub || !m.go) bad('部将领的兵调不动：' + JSON.stringify(m)); if (m.other || !m.no) bad('别家的兵也能调：' + JSON.stringify(m)); }
-  await p.click('.smap circle[data-mapu="江宁府"]');
+  await p.$eval('.smap g[data-mapu="江宁府"], .smap circle[data-mapu="江宁府"]', el => el.dispatchEvent(new MouseEvent('click', { bubbles: true })))   // 州名、治所都带 data-mapu，重叠着也点得到;
   const info = await p.evaluate(() => document.querySelector('.affair').innerText);
   if (!/治所：上元县/.test(info) || !/界址照谭图/.test(info)) bad('点了府州没说治所在哪：' + info.slice(0, 200));
   if (!/江宁府/.test(info) || !/两江督标/.test(info) || !/离你约\d+里/.test(info) || !/通往：/.test(info) || !/海拔/.test(info)) bad('点了没出详情、通路：' + info);
@@ -102,7 +102,7 @@ const { chromium } = require('playwright');
   await p.waitForFunction(() => TS || TS_ERR, null, { timeout: 60000 }).catch(() => {});
   { const t = await p.evaluate(() => { MAPC.k = ''; render(); const sv = document.querySelector('.smap'), h = sv.querySelector('path[data-mapu="杭州"]'), wy = (((realmsAt(S.clock.y, S.clock.m) || { list: [] }).list.find(r => r.name === '吴越')) || S.admin.regimes.find(r => r.name === '吴越') || {}).col;   /* 分立政权的颜色照内置史料（CLAUDE.md 舆图「每个时期都分政权画」） */ return { err: TS_ERR, h: !!h, fill: h && h.getAttribute('fill'), wy, foot: document.body.innerText.includes('历代府州界') }; });
     if (t.err || !t.h || !t.foot) bad('950年没照谭图历代府州界画：' + JSON.stringify(t)); else if (t.fill !== t.wy) bad('杭州的地块没按吴越着色：' + JSON.stringify(t)); }
-  await p.click('.smap circle[data-mapu="杭州"]').catch(() => bad('950年图上没有杭州'));
+  await p.$eval('.smap g[data-mapu="杭州"], .smap circle[data-mapu="杭州"]', el => el.dispatchEvent(new MouseEvent('click', { bubbles: true })))   // 州名、治所都带 data-mapu，重叠着也点得到.catch(() => bad('950年图上没有杭州'));
   if (!/吴越/.test(await p.evaluate(() => (document.querySelector('.affair') || {}).innerText || ''))) bad('点杭州没说归吴越');
   await SHOT('w950');
   const vis = await p.evaluate(() => document.body.innerText); if (/NaN|undefined|\[object/.test(vis)) bad('页面有坏字');

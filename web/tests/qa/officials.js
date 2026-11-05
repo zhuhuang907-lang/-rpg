@@ -36,7 +36,7 @@ const path = require('path');
       for (const x of P) if (x.q.src === '拟' && orgMajor(x.n, x.q)) bad.push(nm + ' 大人物位子是虚构的：' + x.n.name + x.q.title + x.q.holder);
       for (const t of ['左仆射', '吏部尚书', '京兆尹', '大将军']) { const x = P.find(z => z.q.title === t); if (!x) { bad.push(nm + ' 没有' + t); continue; } if (x.q.holder) bad.push(nm + ' ' + t + '查不到真人却填了' + x.q.holder); if (!/出缺/.test(x.q.status || '') || !x.q.needReal) bad.push(nm + ' ' + t + '空着却没写出缺、没记再查：' + x.q.status); }
       const tw = P.find(x => x.q.title === '太尉'); if (tw && (tw.q.holder || !/虚衔/.test(tw.q.status || ''))) bad.push(nm + ' 太尉没标加官虚衔：' + JSON.stringify(tw.q));
-      const shuli = P.find(x => x.q.title === '书吏'); if (!shuli || !shuli.q.holder) bad.push(nm + ' 小吏查不到也该起个虚构名字（标虚拟）');
+      const shuli = P.find(x => x.q.title === '书吏'); if (!shuli || shuli.q.holder || shuli.q.status !== '照额') bad.push(nm + ' 书吏这类丙等位子只写员额、不起虚构名字（2026-11-05 玩家定）：' + JSON.stringify(shuli && shuli.q));
       if (!orgSeekDue(s) && canSearch()) bad.push(nm + ' 大人物空着，后台没排上再查');
       // 界面上写明照例不授、空缺待查
       TAB = 'court'; render0(); const h = document.body.innerHTML; if (!/照例不授/.test(h)) bad.push(nm + ' 朝局页没写照例不授'); if (!/出缺/.test(h)) bad.push(nm + ' 朝局页没写出缺'); if (/待查/.test(document.body.innerText)) bad.push(nm + ' 朝局页写着待查');
@@ -57,7 +57,7 @@ const path = require('path');
       if (g('尚书令').holder) bad.push(nm + ' 有表以后尚书令反倒有人了');
       if (!g('县令').holder && !g('县令').histVacant) bad.push(nm + ' 小官县令空着没名字');
       if (TABLE_ASKS < 1 || TABLE_ASKS > 2) bad.push(nm + ' 在任官员表该一次（分块）问完，问了 ' + TABLE_ASKS + ' 回');
-      for (const x of P) if (!x.q.holder && x.n.id !== 'root' && !x.q.noGrant && !x.q.histVacant && !orgMajor(x.n, x.q)) bad.push(nm + ' 小官位子空着没名字：' + x.n.name + x.q.title);
+      for (const x of P) if (!x.q.holder && x.n.id !== 'root' && !x.q.noGrant && !x.q.histVacant && !orgMajor(x.n, x.q) && x.q.status !== '照额') bad.push(nm + ' 乙等小官位子空着没名字：' + x.n.name + x.q.title);
     }
     // 不漏查：头一回 DeepSeek 漏答的行，挑出来再问一回
     { TABLE_MODE = 'none'; const s = await run(700, '大兴县县令', '韦待价'); const P = []; for (const n of s.org.nodes) for (const q of n.posts) if (q.title === '左仆射' || q.title === '吏部尚书') { q.holder = ''; q.src = ''; P.push(q); }
@@ -96,7 +96,7 @@ const path = require('path');
       const t = JSON.parse(JSON.stringify(s)); migrate(t); const q = t.org.nodes[1].posts;
       if (q[0].holder || q[1].holder) bad.push('旧存档大人物位子上的虚构名字没清：' + JSON.stringify(q));
       if (q[2].holder !== '苏威') bad.push('旧存档的真人被清了');
-      if (t.org.nodes[2].posts[0].holder !== '王二') bad.push('旧存档的小吏被清了'); }
+      if (t.org.nodes[2].posts[0].holder || t.org.nodes[2].posts[0].status !== '照额') bad.push('旧存档书吏位子上程序起的虚构名字没改成只写员额'); }
     // 写给人事树的材料里有照例不授的表
     if (!/尚书令/.test(vacantText(607)) || !/丞相/.test(vacantText(1500)) || !/中书令/.test(vacantText(1000))) bad.push('照例不授的表不全');
     if (vacantOff(1370, '左丞相', '中书省')) bad.push('明初洪武三年的丞相被当成不设');
