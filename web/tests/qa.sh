@@ -70,6 +70,7 @@ start ai.js && {
   run "作战按天打：宽度、战术相克、组织度、追击合围、城破被俘；自创战法 AI 评估有上限、条件不合用不上；战报逐日；军务页真点（R-141）" 200 env PLAY="$ROOT/web/play.html" node battle.js
   run "外交卡（修好结盟联姻称臣互市）、战局、补给线、战争进度与议和割地、敌国来犯；外交只给一方之主、寨主义军是绿林往来、商人大臣没有（R-142、R-143）" 200 env PLAY="$ROOT/web/play.html" node diplo.js
   run "按钮都有效果：资料没推好挡住的按钮点了当场去推、推好就能用；没填内容的按钮说清楚缺什么（R-144）" 300 env PLAY="$ROOT/web/play.html" node buttons.js
+  run "打仗不止攻城、敌国之主和手下大臣由 DeepSeek 扮演主动行事：敌军开拔走到真打、设伏劫粮劫营迎击、和书、奏章准驳落账、将领便宜行事（R-145）" 200 env PLAY="$ROOT/web/play.html" node rivals.js
   run "天下名录照这一年并立的各家做表，宗室以外的文武大臣都列上，有博查的逐个按名字核，不按清朝写死问法" 120 env PLAY="$ROOT/web/play.html" node roster.js
   run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js
