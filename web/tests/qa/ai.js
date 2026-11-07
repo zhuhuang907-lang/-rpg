@@ -64,6 +64,9 @@ function opening() {
 function answer(p, last, json) {
   // 敌国之主、手下大臣由 DeepSeek 扮演（R-145）：敌国照战局进攻主角离他最近的城，大臣请犒军，将领固守
   if (p.includes('你扮演跟主角交战的各家之主')) { const pw = (p.match(/· ([^：\n]+)：主事的/) || [])[1] || '', city = ((p.match(/主角的城池：([^、\n]+)/) || [])[1] || '').replace(/等$/, ''); return JSON.stringify({ orders: pw ? [{ power: pw, act: city ? '进攻' : '按兵', target: city, share: 0.3, term: '', general: '', why: '趁其不备' }] : [] }); }
+  if (p.includes('来寻好汉入伙')) return JSON.stringify({ heroes: [{ name: '赵大刀', from: '逃兵', wu: 7, tong: 4, mou: 3, yi: 1, temper: '豪爽', wish: '有口饱饭' }] });   // 草根线（R-147）
+  if (p.includes('在当地打听有没有活计')) { const tg = ((p.match(/只能从这些地方里挑：([^、；\n]+)/) || [])[1] || '').trim(); return JSON.stringify({ quests: tg ? [{ type: '送信', giver: '王乡老', target: tg, why: '家书' }] : [] }); }
+  if (p.includes('路上撞见主角一伙')) return JSON.stringify({ verdict: '不允', reply: '少废话！', why: '不信' });
   if (p.includes('听主角当面（或主角的使者）跟你说话')) return JSON.stringify({ verdict: '不允', reply: '容某再思之。', why: '未见其利' });   // 当面说（R-148）
   if (p.includes('你扮演主角手下的大臣和将领')) { const who = (p.match(/大臣：([^（；\n]+)（/) || [])[1] || ''; return JSON.stringify({ memorials: who && who !== '无' ? [{ who, act: '犒军', target: '', share: 0, why: '将士辛苦，宜加犒赏' }] : [], generals: [] }); }
   if (p.includes('替接下来一两个月备六件')) { fs.appendFileSync('hooks.log', 'x\n'); return JSON.stringify({ hooks: [{ kind: '时事', title: '盐引加课传到扬州', who: '两淮盐运司书吏程立德', what: '运司出了告示，今年每引加课三钱，商总召集各家议事。', why: '乾隆二十二年两淮盐政加课', basis: '史载', choices: ['去商总家议事', '先托人打听底细'], months: 2 }, { kind: '人物', title: '同乡来借钱', who: '歙县同乡汪伯庸', what: '同乡汪伯庸生意折本，上门来借三百两。', why: '徽商同乡相济的常情', basis: '推', choices: ['借给他', '婉拒'], months: 1 }, { kind: '家事', title: '儿子议亲', who: '汪承裕', what: '媒人上门给汪承裕说亲。', why: '到了议亲年纪', basis: '推', choices: ['见见媒人', '先缓一缓'], months: 2 }] }); }

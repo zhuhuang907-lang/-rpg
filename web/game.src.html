@@ -2852,6 +2852,7 @@ function campResolve(s, c, est) {
     f.at = c.target; f.status = c.mode === '守' ? '驻守' : c.mode === '攻' ? '占领' : '驻扎'; c.state = '到达';
     if (c.mode === '攻' && G.owner !== '' && !arr(s.territory).some(x => samePlace(x.place, c.target))) { s.territory = arr(s.territory).concat([{ place: c.target, pop: null, troops: Math.round((N0(f.troops) || 0) * 0.1), grain: null, loyalty: 30, note: `第${s.turn}回${f.name}进占（无兵把守）` }]); s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(c.target)] = { owner: '你', turn: s.turn, why: '进占' }; warNote(s, G.owner, true, c.target); out.push(`${f.name}进抵${c.target}，${G.owner || '那里'}无兵把守，进占`); }
     else out.push(`${f.name}到${c.target}，${f.status}`);
+    if (f.party) out.push(...ptArrive(s, f, c.target));   // 草根线：差事到了地方（R-147）
     return out;
   }
   const T = /关|隘|口/.test(c.target) ? '关隘' : /府|州|县|城|郡|京/.test(c.target) || G.owner ? '城池' : '平原';
@@ -2886,6 +2887,8 @@ function campaignTick(s, days) {
     if (c.state === '待发' && c.turn < s.turn) { if (/不成|没去|受阻|拒/.test(String(f.status || ''))) { c.state = '没发'; continue; } c.state = '行军'; c.done = 0; c.li = c.li || campLi(s, c.from || f.at, c.target) || 300; c.pace = campPace(s, f, c.paceTxt); f.status = '行军'; out.push(`${f.name}从${c.from || f.at}开拔，往${c.target}（约${c.li}里，日行约${c.pace}里）`); continue; }
     if (c.state === '围城') { if (!c.joinOf) out.push(...siegeTick(s, c, f, days)); continue; }
     if (c.state !== '行军' || !days) continue;
+    if (f.party && s.enc) { out.push(`${f.name}在路上遇事，还没了结`); continue; }   // 草根线：路上遇事先了结（R-147）
+    if (f.party && c.mode !== '攻' && (c.done || 0) < c.li && seeded(Math.floor(ymOf(s.clock)) * 19 + Math.round(c.done || 0) + (s.turn || 0) * 3) < Math.min(0.8, 0.3 * days / 10)) { c.done = Math.min(c.li, (c.done || 0) + days * c.pace * 0.5); out.push(ptEncounter(s, f, c.done / c.li < 0.5 ? (c.from || f.at) : c.target)); continue; }
     c.done = Math.min(c.li, (c.done || 0) + days * c.pace * ((num(f.morale) ?? 60) < 30 ? 0.6 : 1));
     { const A = arr(s.foeAmb).find(a => warOf(s, a.power) && nearRoute(s, c.from || f.at, c.target, a.place) <= 60); if (A) { s.foeAmb = arr(s.foeAmb).filter(x => x !== A);   // 路上中了敌军的埋伏（R-145）
       const r = resolveBattle(s, { enemy: `${A.power}伏兵`, enemyOwner: A.power, enemyTroops: A.men, enemyQuality: '精', place: A.place, terrain: /山|岭|谷|关|峡|林/.test(A.place) ? '山地' : '平原', attacker: '敌', surprise: true, field: true, ourForces: [f.name] });
@@ -7838,7 +7841,7 @@ function bandMonthly(s, months) {
 }
 function banditHtml(s) {
   const B = bandOf(s), E = econOf(s), u = (s.money || {}).unit || '', men = bandMen(s);
-  return `<div class="h" style="font-size:14px">山寨</div>
+  return `<div class="h" style="font-size:14px">山寨</div>${B.offer ? '' : parleyBox(s, 'amnesty', '官府', null, '托人向官府说招安')}
     <div class="pl" style="font-size:13px"><span>寨众</span>${esc(fmtN(men, '人'))} · 现钱 ${esc(fmtN(N0(s.money && s.money.cash) || 0, u))} · 义名 ${esc(B.fame)} · 官府追剿的风头 <b style="color:${B.heat >= 20 ? 'var(--zhu)' : B.heat >= 10 ? '#b7791f' : 'inherit'}">${esc(B.heat)}</b>${B.heat >= 10 ? '（到二十官府就调兵来剿）' : ''}</div>
     ${E ? `<div class="muted" style="font-size:12px">本地行情：一队客商货值约${esc(fmtN(E.caravan, u))}，富户赎金约${esc(fmtN(E.ransom, u))}，一村一月孝敬约${esc(fmtN(E.protect, u))}</div>` : '<div class="muted" style="font-size:12px">本地行情正在照史料推</div>'}
     ${B.siege ? `<div class="route" style="color:var(--zhu)">官军约${esc(fmtN(B.siege.n, '人'))}正往山寨来，下个月到</div>` : ''}${B.offer ? `<div class="route">官府愿招安，授你${esc(B.offer.title)} <button class="link" data-band="accept">接受招安</button></div>` : ''}
@@ -8835,6 +8838,7 @@ function parleyCtx(s, kind, tg, ask) {
     return { who: `${c.target}守将${S0.g.general || ''}`, key: 'yield:' + c.target, sit: `守${c.target}（属${S0.g.owner || '别家'}），城中守军约${fmtN(S0.g.troops, '人')}，被主角围了${S0.days}日，城墙破损${Math.round(S0.prog)}%，城中粮${S0.days > S0.food ? '已尽' : '还够约' + (S0.food - S0.days) + '日'}`, want: `开城归降`, c }; }
   if (kind === 'pris') { const p = arr(s.prisoners).find(x => x.name === tg); if (!p) return null; return { who: `被俘的${p.owner || ''}将领${tg}`, key: 'pris:' + tg, sit: `${tg}原是${p.owner || '别家'}的将领，${p.where ? '在' + p.where : ''}被主角俘获，关押中`, want: '归顺主角，为主角效力' }; }
   if (kind === 'fig') { const D = (s.dossiers || {})[tg]; if (!D) return null; const now = figNow(s, tg) || {}; return { who: tg, key: 'fig:' + tg, sit: `${tg}，此刻${now.st || ''}${now.t ? '（' + now.t + '）' : ''}${D.temper ? '，为人' + D.temper : ''}${D.will ? '，出不出仕：' + D.will : ''}`, want: '出来为主角效力', D }; }
+  if (kind === 'amnesty') { const B = bandOf(s); return { who: `${geoCenter(s)}一带管剿匪的官员`, key: 'amn', sit: `主角聚众约${fmtN(bandMen(s), '人')}占着山头，官府追剿的风头${num(B.heat) || 0}${B.siege ? '，官军正往山寨去' : ''}，名声${Math.round(num(s.renown) || 0)}；剿了要花钱死人，招安了能省事也怕养虎为患`, want: `招安：授主角${amnestyTitle(s.clock.y)}之类的武职，部众改编成官军` }; }
   if (kind === 'recruit') { const v = (s.people || {})[tg]; if (!v) return null; return { who: tg, key: 'rec:' + tg, sit: `${tg}，${v.role || ''}${v.tie ? '，和主角是' + v.tie : ''}，对主角${(num(v.favor) ?? 0) >= 30 ? '亲近' : (num(v.favor) ?? 0) <= -30 ? '怨恨' : '平常'}${arr(v.traits).length ? '，为人' + arr(v.traits).join('、') : ''}`, want: '投到主角门下效力' }; }
   return null;
 }
@@ -8865,6 +8869,7 @@ async function parley(s, kind, tg, ask, said) {
     else if (kind === 'yield') { const f = arr(s.forces).find(x => x.name === tg); res = siegeWin(s, X.c, f, '被说动，开城归降'); }
     else if (kind === 'pris') { s.prisoners = arr(s.prisoners).filter(x => x.name !== tg); s.people = s.people || {}; s.people[tg] = { ...(s.people[tg] || {}), role: '降将', tie: '部将', favor: 20, seen: s.turn }; genOf(s, tg); res = `${tg}归顺，愿为你效力（可以派他统兵）`; }
     else if (kind === 'fig') { s.talent = s.talent || { y: s.clock.y, list: [] }; s.talent.list = arr(s.talent.list).concat([{ name: tg, real: true, y: s.clock.y, answered: true, arrived: true, here: true, traits: X.D.temper || '', qual: '名士', src: '当面说动' }]); touchFig(s, tg, '你当面说动的'); res = `${tg}被你说动，答应出来效力，下回就到你跟前听用`; }
+    else if (kind === 'amnesty') { bandOf(s).offer = { title: amnestyTitle(s.clock.y), ym }; res = `官府松了口，愿招安，授你${bandOf(s).offer.title}（在山寨那一栏点「受招安」才算数）`; }
     else if (kind === 'recruit') { const v = s.people[tg]; v.tie = '门客'; v.favor = Math.max(num(v.favor) ?? 0, 30); res = `${tg}答应投到你门下`; }
   } else {
     if (kind === 'dip' || kind === 'peace') { const D = dipOf(s, tg); D.att = Math.max(-100, D.att - 5); }
@@ -8877,6 +8882,154 @@ async function parley(s, kind, tg, ask, said) {
 function parleyBox(s, kind, tg, asks, label) { const k = kind + ':' + tg, L = arr(s.talkLog).filter(x => x.kind === kind && x.tg === tg).slice(-1)[0];
   return `<details class="oadd"><summary class="muted">当面说…</summary>${asks ? `<select data-pask="${esc(k)}">${asks.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('')}</select>` : ''}<textarea class="oin" data-psay="${esc(k)}" rows="3" style="width:100%" placeholder="写你要对他说的话：讲利害、许好处、引典故、动之以情……说得动说不动，看他的为人和你说得好不好"></textarea><button class="link" data-parley="${esc(kind)}" data-pt="${esc(tg)}">${esc(label || '去说')}</button></details>
     ${L ? `<div class="muted" style="font-size:12px">上回当面说${L.ask ? '「' + esc(L.ask) + '」' : ''}：${L.yes ? '说成了' : '没说动'}——${esc(L.who)}道：「${esc(L.reply)}」</div>` : ''}`; }
+/* ========== 草根线：自己的一队人（需求台账 R-147；2026-11-07 玩家：「骑马与砍杀的一分系统……山大王、流民帅、普通百姓……从草根崛起……单位会小一些，系统完全不一样……要跟前面一样长和有难度」）==========
+ *  · 队伍以人计：乡勇→刀手、弓手→精兵→骑兵；操练攒阅历，花钱升兵种（骑兵要马）；每月发饷吃粮，欠饷断粮就有人逃、士气掉；能带多少人看名望和头领的统御。
+ *  · 走动：照舆图往别处去（行军），路上照当地治安和你的恶名遇流寇、官军、商队、乡勇、难民；能打、能跑、能当面说。
+ *  · 打赢有缴获（钱、马）和俘虏；俘虏可收编、卖掉、放走。各村对你有好坏：招人看关系，劫村关系大坏、恶名涨。
+ *  · 头领：去酒肆寻好汉（DeepSeek 照当时当地出人，本事由它定、写依据），雇来的各有武艺、统御、谋略、医术和脾气心愿；欠饷、做他看不惯的事忠心掉，掉光就走。
+ *  · 差事：向乡老、地主、商人、县衙打听（DeepSeek 出人和来由，类型只有剿匪、护送、送信），赏钱由程序照本地行情和路程定，到了地方、打赢了才算办成。
+ *  · 往上走：人多了占山立寨、攻县城（军务页出征、围城）；也能当面说动官府招安。数目一律照账由程序算 ========== */
+const PT = { 乡勇: [1, 0.6], 刀手: [2, 1], 弓手: [2, 1], 精兵: [3, 1.6], 骑兵: [3, 2.2] }, PT_UP = { 乡勇: ['刀手', '弓手'], 刀手: ['精兵'], 弓手: ['精兵'], 精兵: ['骑兵'] };
+const partyF = s => arr(s.forces).find(f => f && f.party && myForce(s, f));
+const canParty = s => { const d = (() => { try { return myDomain(s).kind; } catch (_) { return 'none'; } })(); return !isRuler(s) && !(s.career && s.career.office) && !soldierOf(s) && ['none', 'stronghold', 'rebel'].includes(d); };
+const ptMen = P => Object.values(P.tiers || {}).reduce((a, b) => a + (b || 0), 0);
+const ptCap = (s, P) => Math.round(30 + Math.max(0, num(s.renown) || 0) / 2 + arr(P.heroes).reduce((a, h) => a + (num(h.tong) || 0) * 5, 0));
+const ptPay = (s, P) => { const E = econOf(s); if (!E) return null; const base = num(E.pay) || (num(E.wage) || 0) * 30; return Math.round(Object.entries(P.tiers).reduce((a, [k, n]) => a + n * base * (PT[k] ? PT[k][1] : 1) * 0.5, 0) + arr(P.heroes).reduce((a, h) => a + base * 2, 0)); };
+function ptSync(s, f) { const P = f.party, tot = ptMen(P), now = Math.max(0, Math.round(N0(f.troops) || 0)); if (tot && now !== tot) { const k = now / tot; let left = now; for (const t of Object.keys(P.tiers)) { P.tiers[t] = Math.floor(P.tiers[t] * k); left -= P.tiers[t]; } P.tiers['乡勇'] = (P.tiers['乡勇'] || 0) + Math.max(0, left); }
+  const m = ptMen(P), avg = m ? Object.entries(P.tiers).reduce((a, [t, n]) => a + n * (PT[t] ? PT[t][0] : 1), 0) / m : 1, wu = Math.max(0, ...arr(P.heroes).map(h => num(h.wu) || 0));
+  f.troops = m; f.quality = avg >= 2.3 || (avg >= 1.8 && wu >= 8) ? '精' : avg <= 1.4 && wu < 6 ? '弱' : '中'; return m; }
+function vilOf(s, p) { s.vill = s.vill || {}; const k = geoStem(p || ''); return (s.vill[k] = s.vill[k] || { rel: 0, used: {} }); }
+const ptHere = (s, f) => (f && f.at) || geoCenter(s);
+function ptNote(s, t) { const f = partyF(s); if (f) f.party.log = arr(f.party.log).concat([{ when: timeText(s.clock), t }]).slice(-14); s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: s.protagonist.name, what: t }]); return lifeNote(s, '队伍', t); }
+function partyStart(s) { if (!canParty(s)) { ORGMSG = '你这个身份不拉队伍'; return null; } if (partyF(s)) { ORGMSG = '已经有一队人了'; return null; } const E = econOf(s); if (!E || !E.wage) return needEcon();
+  const old = arr(s.forces).find(f => myForce(s, f) && !arr(f.units).length && N0(f.troops) > 0), here = geoCenter(s);
+  if (old) { old.party = { tiers: { 乡勇: Math.round(N0(old.troops)) }, xp: {}, heroes: [], pris: 0, horse: 0, log: [] }; old.leader = s.protagonist.name; ptSync(s, old); return ptNote(s, `把${old.name}${fmtN(N0(old.troops), '人')}整编成自己的队伍`); }
+  const cost = Math.round(E.wage * 3 * 10 * 100) / 100; if ((N0(s.money && s.money.cash) || 0) < cost) { ORGMSG = `拉起十个弟兄要安家钱${fmtN(cost, (s.money || {}).unit || '')}，现钱不够`; return null; }
+  cashAdd(s, -cost); const f = { name: (s.protagonist.name || '').slice(0, 1) + '家弟兄', leader: s.protagonist.name, owner: '你', troops: 10, at: here, status: '驻扎', morale: 60, grain: 10, party: { tiers: { 乡勇: 10 }, xp: {}, heroes: [], pris: 0, horse: 0, log: [] } };
+  s.forces = arr(s.forces).concat([f]); vilOf(s, here).used[Math.floor(ymOf(s.clock))] = 10; return ptNote(s, `在${here}拉起十个弟兄（安家钱${fmtN(cost, (s.money || {}).unit || '')}）`); }
+/** 招人：照本地户口和你在这村的人缘，一个月招得到的有数 */
+function ptRecruit(s, n) { const f = partyF(s); if (!f) return null; const E = econOf(s); if (!E || !E.wage) return needEcon(); n = Math.max(1, Math.min(200, parseInt(n, 10) || 0)); const here = ptHere(s, f), V = vilOf(s, here), ym = Math.floor(ymOf(s.clock));
+  if (V.rel < -20) { ORGMSG = `${here}的人恨你，没人肯跟你走`; return null; } const pop = N0(cityOf(s, here).pop); if (!pop) { delete s.popFail; return kickJob('pop', `${here}的户口还没推好，招得到多少人定不下来`, () => popInfer(s), `${here}的户口推好了，可以招人了`); }
+  const cap = Math.max(0, Math.round(Math.min(200, pop * 0.0005) * (1 + V.rel / 100))) - (V.used[ym] || 0); if (cap <= 0) { ORGMSG = `${here}这个月能招的青壮都招过了，换个地方或者下个月再来`; return null; }
+  if (ptMen(f.party) + Math.min(n, cap) > ptCap(s, f.party)) { ORGMSG = `你的名望和头领的统御只带得动${ptCap(s, f.party)}人`; return null; }
+  const k = Math.min(n, cap), cost = Math.round(E.wage * 3 * k * 100) / 100; if ((N0(s.money && s.money.cash) || 0) < cost) { ORGMSG = `招${k}人要安家钱${fmtN(cost, (s.money || {}).unit || '')}，现钱不够`; return null; }
+  cashAdd(s, -cost); V.used[ym] = (V.used[ym] || 0) + k; f.party.tiers['乡勇'] = (f.party.tiers['乡勇'] || 0) + k; f.troops = N0(f.troops) + k; ptSync(s, f); return ptNote(s, `在${here}招了${k}个乡勇（安家钱${fmtN(cost, (s.money || {}).unit || '')}）${k < n ? '，这里只招得到这么多' : ''}`); }
+function ptTrain(s) { const f = partyF(s); if (!f) return null; const ym = Math.floor(ymOf(s.clock)); if (f.party.trainYM === ym) { ORGMSG = '这个月已经操练过了'; return null; } f.party.trainYM = ym;
+  for (const t of Object.keys(f.party.tiers)) f.party.xp[t] = Math.min(100, (f.party.xp[t] || 0) + 25); f.morale = Math.max(0, (num(f.morale) ?? 60) - 3); return ptNote(s, '操练了一个月，弟兄们长了本事（也有些怨言）'); }
+function ptUpgrade(s, from, to, n) { const f = partyF(s); if (!f) return null; const P = f.party, E = econOf(s); if (!E || !E.wage) return needEcon(); if (!(PT_UP[from] || []).includes(to)) return null; n = Math.max(1, Math.min(P.tiers[from] || 0, parseInt(n, 10) || 0)); if (!n || !(P.tiers[from] > 0)) { ORGMSG = `没有${from}可升`; return null; }
+  if ((P.xp[from] || 0) < 60) { ORGMSG = `${from}的阅历还不够（${P.xp[from] || 0}，要六十），先操练、打几仗`; return null; }
+  if (to === '骑兵' && (P.horse || 0) < n) { ORGMSG = `升骑兵要马：现有${P.horse || 0}匹`; return null; }
+  const cost = Math.round(E.wage * 10 * (PT[to][0]) * n * 100) / 100; if ((N0(s.money && s.money.cash) || 0) < cost) { ORGMSG = `升${n}个${to}要${fmtN(cost, (s.money || {}).unit || '')}置办兵器甲胄，现钱不够`; return null; }
+  cashAdd(s, -cost); P.tiers[from] -= n; P.tiers[to] = (P.tiers[to] || 0) + n; if (to === '骑兵') P.horse -= n; P.xp[from] = Math.max(0, P.xp[from] - 30); ptSync(s, f); return ptNote(s, `${n}个${from}升作${to}（花${fmtN(cost, (s.money || {}).unit || '')}）`); }
+function ptFood(s, n) { const f = partyF(s); if (!f) return null; const E = econOf(s); if (!E || !E.rice) return needEcon(); n = Math.max(1, parseInt(n, 10) || 0); const cost = Math.round(E.rice * n * 100) / 100; if ((N0(s.money && s.money.cash) || 0) < cost) { ORGMSG = `买${n}石粮要${fmtN(cost, (s.money || {}).unit || '')}，现钱不够`; return null; }
+  cashAdd(s, -cost); f.grain = (N0(f.grain) || 0) + n; return ptNote(s, `在${ptHere(s, f)}买粮${n}石`); }
+/** 每月：发饷、吃粮、欠了就逃；头领忠心；俘虏也要吃 */
+function partyMonthly(s) { const f = partyF(s); if (!f) return []; const ym = Math.floor(ymOf(s.clock)), P = f.party; if (P.ym === ym) return []; P.ym = ym; ptSync(s, f); const out = [], men = ptMen(P);
+  const pay = ptPay(s, P); if (pay != null && men) { if ((N0(s.money && s.money.cash) || 0) >= pay) { cashAdd(s, -pay); } else { const run = Math.max(1, Math.round(men * 0.1)); f.troops = Math.max(0, men - run); ptSync(s, f); f.morale = Math.max(0, (num(f.morale) ?? 60) - 15); for (const h of arr(P.heroes)) h.loyal = (h.loyal ?? 50) - 10; out.push(`发不出饷，跑了${run}个弟兄`); } }
+  const eat = Math.round((men + (P.pris || 0)) * 0.9); if ((N0(f.grain) || 0) >= eat) f.grain = N0(f.grain) - eat; else { f.grain = 0; const run = Math.max(1, Math.round(men * 0.15)); f.troops = Math.max(0, N0(f.troops) - run); ptSync(s, f); f.morale = Math.max(0, (num(f.morale) ?? 60) - 20); out.push(`断了粮，饿跑了${run}个弟兄`); }
+  for (const h of arr(P.heroes).filter(h => (h.loyal ?? 50) < 10)) { P.heroes = P.heroes.filter(x => x !== h); out.push(`${h.name}看不惯你的做派，带着几个人走了`); f.troops = Math.max(0, N0(f.troops) - Math.min(5, ptMen(P))); ptSync(s, f); }
+  for (const t of out) ptNote(s, t); return out; }
+/** 路上遇事：照当地治安、你的恶名、队伍大小 */
+function ptEncounter(s, f, place) { const B = bandOf(s), E = econOf(s) || {}, ym = Math.floor(ymOf(s.clock)), men = ptMen(f.party), r = seeded(ym * 37 + (s.turn || 0) * 11 + men + String(place).length), G = (s.gov && s.gov.stats) || {}, an = num(G['治安']) ?? 50;
+  const heat = num(B.heat) || 0, w = [['流寇', 30 + (100 - an) / 2], ['官军', 5 + heat * 2], ['商队', 25], ['乡勇', 15], ['难民', 10 + (num(G['灾情']) || 0) / 3]], tot = w.reduce((a, x) => a + x[1], 0); let x = r * tot, k = w[0][0]; for (const [kk, v] of w) { if (x < v) { k = kk; break; } x -= v; }
+  const r2 = seeded(ym * 53 + men * 7 + k.length), n = k === '流寇' ? Math.max(5, Math.round(men * (0.4 + r2 * 0.9))) : k === '官军' ? Math.max(20, Math.round(men * (0.8 + heat / 40 + r2 * 0.4))) : k === '商队' ? Math.round(8 + r2 * 30) : k === '乡勇' ? Math.round(20 + r2 * 60) : Math.round(5 + r2 * 25);
+  s.enc = { kind: k, n, place, ym, value: k === '商队' ? Math.round((num(E.caravan) || 0) * (0.6 + r2)) : 0, q: k === '官军' ? '中' : k === '流寇' ? (r2 > 0.6 ? '中' : '弱') : '弱' };
+  return `${f.name}在${place}一带撞上${k === '商队' ? '一队客商（护卫约' + n + '人）' : k === '难民' ? '一伙逃难的（约' + n + '口）' : k + '约' + n + '人'}`; }
+function encFight(s) { const e = s.enc, f = partyF(s); if (!e || !f) return null; const E = econOf(s) || {}, B = bandOf(s), u = (s.money || {}).unit || '';
+  if (e.kind === '难民') { ORGMSG = '对逃难的百姓动刀，弟兄们不肯'; return null; }
+  const r = resolveBattle(s, { enemy: e.kind === '商队' ? '商队护卫' : e.kind, enemyTroops: e.n, enemyQuality: e.q, place: e.place, terrain: '平原', attacker: '我', surprise: !!e.ambush, field: true, ourForces: [f.name] }); if (!r) return null;
+  applyBattle(s, r); s.lastCampBattle = r; ptSync(s, f); s.enc = null; const won = /胜/.test(r.outcome) && !/败/.test(r.outcome), out = [];
+  const yi = Math.max(0, ...arr(f.party.heroes).map(h => num(h.yi) || 0)); if (yi && r.deadUs) { const back = Math.round(r.deadUs * yi * 0.03); f.troops = N0(f.troops) + back; ptSync(s, f); if (back) out.push(`郎中救回${back}个伤的`); }
+  if (won) { for (const t of Object.keys(f.party.tiers)) f.party.xp[t] = Math.min(100, (f.party.xp[t] || 0) + 15); const pris = Math.round(Math.max(0, e.n - r.deadThem) * 0.4); f.party.pris = (f.party.pris || 0) + pris;
+    let loot = e.kind === '商队' ? e.value : Math.round((num(E.wage) || 0) * e.n * (e.kind === '官军' ? 3 : 1)), horse = e.kind === '官军' ? Math.round(e.n * 0.1) : e.kind === '商队' ? Math.round(e.n * 0.2) : 0; cashAdd(s, loot); f.party.horse = (f.party.horse || 0) + horse;
+    if (e.kind === '官军') { B.heat = (num(B.heat) || 0) + 6; s.renown = (num(s.renown) || 0) + 5; } if (e.kind === '商队') { B.heat = (num(B.heat) || 0) + 4; vilOf(s, e.place).rel -= 5; for (const h of arr(f.party.heroes).filter(h => /侠|义|仁/.test(h.temper || ''))) h.loyal = (h.loyal ?? 50) - 8; }
+    if (e.kind === '乡勇') { vilOf(s, e.place).rel -= 25; B.heat = (num(B.heat) || 0) + 3; } if (e.kind === '流寇') { s.renown = (num(s.renown) || 0) + 2; vilOf(s, e.place).rel += 5; }
+    for (const h of arr(f.party.heroes)) h.loyal = Math.min(100, (h.loyal ?? 50) + 3);
+    const q = arr(s.quests).find(q => q.type === '剿匪' && q.state === '在办' && samePlace(q.target, e.place) && e.kind === '流寇'); if (q) out.push(questDone(s, q));
+    out.unshift(`打${e.kind === '商队' ? '劫了商队' : '赢了' + e.kind}：${r.outcome}，折${r.deadUs}人，缴获${fmtN(loot, u)}${horse ? '、马' + horse + '匹' : ''}，俘${pris}人`); }
+  else out.unshift(`和${e.kind}打了一仗：${r.outcome}，折了${r.deadUs}人`);
+  return ptNote(s, out.join('；')); }
+function encFlee(s) { const e = s.enc, f = partyF(s); if (!e || !f) return null; const P = f.party, men = ptMen(P), cav = (P.tiers['骑兵'] || 0) / Math.max(1, men), mou = Math.max(0, ...arr(P.heroes).map(h => num(h.mou) || 0));
+  const p = 0.45 + cav * 0.4 + mou * 0.03 - (e.n > men ? 0 : 0.1) - (e.kind === '官军' ? 0.1 : 0); if (seeded(Math.floor(ymOf(s.clock)) * 71 + men + e.n) < p) { s.enc = null; return ptNote(s, `避开了${e.kind}，绕路走了`); }
+  e.ambush = false; const r0 = encFightAs(s, true); return r0; }
+function encFightAs(s, caught) { const e = s.enc, f = partyF(s); const r = resolveBattle(s, { enemy: e.kind, enemyTroops: e.n, enemyQuality: e.q, place: e.place, terrain: '平原', attacker: '敌', surprise: caught, field: true, ourForces: [f.name] }); if (!r) { s.enc = null; return null; } applyBattle(s, r); s.lastCampBattle = r; ptSync(s, f); s.enc = null; return ptNote(s, `想跑没跑掉，被${e.kind}追上：我们${r.outcome}，折了${r.deadUs}人`); }
+function encLet(s) { const e = s.enc, f = partyF(s); if (!e || !f) return null; s.enc = null;
+  if (e.kind === '难民') { const n = Math.min(e.n, Math.max(0, ptCap(s, f.party) - ptMen(f.party))); if (n) { f.party.tiers['乡勇'] = (f.party.tiers['乡勇'] || 0) + n; f.troops = N0(f.troops) + n; ptSync(s, f); } s.renown = (num(s.renown) || 0) + 2; return ptNote(s, `收留了逃难的，挑了${n}个青壮入伙（多了几张嘴）`); }
+  if (e.kind === '官军' || e.kind === '流寇') return encFightAs(s, false);
+  return ptNote(s, `让${e.kind}过去了`); }
+/** 遇事时当面说：AI 照对方判 */
+async function encTalk(s, said) { const e = s.enc, f = partyF(s); if (!e || !f) return null; said = String(said || '').trim(); if (said.length < 6) { ORGMSG = '先写要对他们说的话'; return null; } if (e.talked) { ORGMSG = '已经说过了，他们不想再听'; return null; }
+  const want = e.kind === '流寇' ? (e.n < ptMen(f.party) ? '带着人马归顺主角，入伙' : '让主角过去，井水不犯河水') : e.kind === '官军' ? '放主角一伙过去，不拿人' : e.kind === '商队' ? '交一笔买路钱（货值的一成）' : e.kind === '乡勇' ? '让主角一伙过去，不动刀兵' : '跟主角走，入伙';
+  const { text } = await callClaude(`一局历史游戏。现在是${timeText(s.clock)}，在${e.place}一带。你扮演路上撞见主角一伙的${e.kind}的头目（约${e.n}人），照这样的人此刻会怎么想替他拿主意。
+主角：${s.protagonist.name}（${s.protagonist.role}），带着约${ptMen(f.party)}人${num(s.renown) ? '，有些名头' : ''}${(num(bandOf(s).heat) || 0) >= 20 ? '，官府正悬赏拿他' : ''}。
+主角要你：${want}
+主角的原话：「${cut(said, 600)}」
+照利害和说得动不动人判：人多势众的不怕吓唬，许的好处实在、说到心里的、讲义气投脾气的能说成；空话、吓唬又吓不住的说不成。
+只输出一个 JSON 对象：{"verdict":"允或不允","reply":"他回的话，一两句，用他的口吻","why":"他的真实盘算，一句"}`, null, { maxTokens: 600, temperature: 0.5, kind: '推演', detached: true, thinking: false, ds: true });
+  const d = parseJSON(text); if (!d) { ORGMSG = '没听清他们的回话，再说一次'; return null; } e.talked = true; const yes = /^允/.test(String(d.verdict || '').trim()) && !/不允/.test(String(d.verdict || '')), reply = one(d.reply, 120);
+  s.talkLog = arr(s.talkLog).concat([{ ym: Math.floor(ymOf(s.clock)), turn: s.turn || 0, kind: 'enc', tg: e.kind, who: e.kind + '头目', said: cut(said, 200), yes, reply, why: one(d.why, 60) }]).slice(-30);
+  if (!yes) return ptNote(s, `跟${e.kind}的头目说不拢。他道：「${reply}」`);
+  s.enc = null; if (e.kind === '流寇' && e.n < ptMen(f.party)) { const n = Math.min(e.n, Math.max(0, ptCap(s, f.party) - ptMen(f.party))); f.party.tiers['乡勇'] = (f.party.tiers['乡勇'] || 0) + n; f.troops = N0(f.troops) + n; ptSync(s, f); return ptNote(s, `说动了一股流寇，${n}人入伙。头目道：「${reply}」`); }
+  if (e.kind === '商队') { const g = Math.round(e.value * 0.1); cashAdd(s, g); bandOf(s).heat = (num(bandOf(s).heat) || 0) + 1; return ptNote(s, `商队交了买路钱${fmtN(g, (s.money || {}).unit || '')}。领队道：「${reply}」`); }
+  if (e.kind === '难民') return encLet(s);
+  if (e.kind === '乡勇') vilOf(s, e.place).rel += 5; return ptNote(s, `${e.kind}放你们过去了。对方道：「${reply}」`); }
+function ptPrisoners(s, act) { const f = partyF(s); if (!f) return null; const P = f.party, n = P.pris || 0, E = econOf(s); if (!n) { ORGMSG = '手上没有俘虏'; return null; } P.pris = 0;
+  if (act === '收编') { const k = Math.min(n, Math.max(0, ptCap(s, P) - ptMen(P))); P.tiers['乡勇'] = (P.tiers['乡勇'] || 0) + k; f.troops = N0(f.troops) + k; f.morale = Math.max(0, (num(f.morale) ?? 60) - 5); ptSync(s, f); return ptNote(s, `收编了${k}个俘虏${k < n ? '，带不动的放了' : ''}（人心还不稳）`); }
+  if (act === '卖') { if (!E || !E.wage) { P.pris = n; return needEcon(); } const g = Math.round(E.wage * 15 * n * 100) / 100; cashAdd(s, g); s.renown = Math.max(0, (num(s.renown) || 0) - 2); for (const h of arr(P.heroes).filter(h => /侠|义|仁/.test(h.temper || ''))) h.loyal = (h.loyal ?? 50) - 5; return ptNote(s, `把${n}个俘虏卖去矿上做苦力，得${fmtN(g, (s.money || {}).unit || '')}（名声坏了些）`); }
+  s.renown = (num(s.renown) || 0) + 2; return ptNote(s, `放了${n}个俘虏，各自回家（落了个仁义的名头）`); }
+function ptVillage(s, act) { const f = partyF(s); if (!f) return null; const E = econOf(s); if (!E || !E.protect) return needEcon(); const here = ptHere(s, f), V = vilOf(s, here), ym = Math.floor(ymOf(s.clock)), B = bandOf(s), u = (s.money || {}).unit || '';
+  if (V.actYM === ym) { ORGMSG = `这个月已经在${here}办过了`; return null; } V.actYM = ym;
+  if (act === '劫村') { const g = Math.round(E.protect * 3); cashAdd(s, g); f.grain = (N0(f.grain) || 0) + Math.round(ptMen(f.party) * 0.5); V.rel -= 40; B.heat = (num(B.heat) || 0) + 6; s.renown = Math.max(0, (num(s.renown) || 0) - 3); for (const h of arr(f.party.heroes).filter(h => /侠|义|仁/.test(h.temper || ''))) h.loyal = (h.loyal ?? 50) - 15; return ptNote(s, `洗劫了${here}，抢得${fmtN(g, u)}和些粮食；四乡切齿，官府悬赏加了码`); }
+  if (act === '勒索') { if (ptMen(f.party) < 30) { ORGMSG = '人太少，村里不怕你'; V.actYM = null; return null; } const g = Math.round(E.protect); cashAdd(s, g); V.rel -= 10; B.heat = (num(B.heat) || 0) + 2; return ptNote(s, `向${here}勒了一个月的孝敬${fmtN(g, u)}`); }
+  if (act === '帮工') { V.rel += 10; f.grain = (N0(f.grain) || 0) + Math.round(ptMen(f.party) * 0.3); return ptNote(s, `带弟兄帮${here}修堤收庄稼，村里管了饭，对你有了好感`); }
+  return null; }
+/** 酒肆寻好汉：DeepSeek 照当时当地出人 */
+async function ptSeekHero(s) { const f = partyF(s); if (!f) return null; const ym = Math.floor(ymOf(s.clock)), here = ptHere(s, f); if (f.party.seekYM === ym) { ORGMSG = '这个月已经打听过了'; return null; } const E = econOf(s); if (!E || !E.wage) return needEcon();
+  const { text } = await callClaude(`一局历史游戏。现在是${timeText(s.clock)}，${here}一带的酒肆、集市、码头。主角${s.protagonist.name}（${s.protagonist.role}，带着约${ptMen(f.party)}人）来寻好汉入伙。照这个年代这一带的风土，写一到两个此刻在这里、肯听他开价的江湖人物（虚构的，不用史书真人的名字；身份要合当时：逃兵、镖师、落第书生、游方郎中、猎户、盐枭、私塾先生……）。
+本事四样各写一到十的整数：wu 武艺、tong 统御、mou 谋略、yi 医术，照他的来历定，不要四样都高。temper 写脾气（两三个字，如：侠义、贪财、谨慎、暴躁）；wish 写他心里想要的（一句）；from 写来历（一句）。
+只输出一个 JSON 对象：{"heroes":[{"name":"","from":"","wu":null,"tong":null,"mou":null,"yi":null,"temper":"","wish":""}]}`, null, { maxTokens: 900, temperature: 0.8, kind: '推演', detached: true, thinking: false, ds: true });
+  const d = parseJSON(text); if (!d) { ORGMSG = '没打听到人，再去一次'; return null; } f.party.seekYM = ym; const sk = v => Math.max(1, Math.min(10, Math.round(num(v) || 1)));
+  f.party.cands = arr(d.heroes).slice(0, 2).filter(h => h && h.name && !/某/.test(h.name)).map(h => { const x = { name: one(h.name, 6), from: one(h.from, 40), wu: sk(h.wu), tong: sk(h.tong), mou: sk(h.mou), yi: sk(h.yi), temper: one(h.temper, 6), wish: one(h.wish, 40) }; x.price = Math.round(E.wage * 6 * (x.wu + x.tong + x.mou + x.yi) * 100) / 100; return x; });
+  return ptNote(s, f.party.cands.length ? `在${here}打听到：${f.party.cands.map(h => h.name + '（' + h.from + '）').join('、')}` : `在${here}没打听到合适的人`); }
+function ptHire(s, name) { const f = partyF(s); if (!f) return null; const c = arr(f.party.cands).find(h => h.name === name); if (!c) return null; if ((N0(s.money && s.money.cash) || 0) < c.price) { ORGMSG = `请${name}入伙要${fmtN(c.price, (s.money || {}).unit || '')}，现钱不够`; return null; }
+  if (arr(f.party.heroes).length >= 6) { ORGMSG = '头领已经六个，再多管不过来'; return null; } cashAdd(s, -c.price); f.party.heroes = arr(f.party.heroes).concat([{ ...c, loyal: 50, since: Math.floor(ymOf(s.clock)) }]); f.party.cands = f.party.cands.filter(h => h !== c);
+  s.people = s.people || {}; s.people[name] = { ...(s.people[name] || {}), role: c.from, tie: '头领', favor: 30, seen: s.turn, fic: true }; ptSync(s, f); return ptNote(s, `${name}入伙当了头领（${c.from}）`); }
+/** 差事：DeepSeek 出人和来由，类型、赏钱、办成的条件由程序定 */
+async function ptAskQuest(s) { const f = partyF(s); if (!f) return null; const ym = Math.floor(ymOf(s.clock)), here = ptHere(s, f), E = econOf(s); if (!E || !E.wage) return needEcon(); if (f.party.questYM === ym) { ORGMSG = '这个月已经打听过差事了'; return null; } if (arr(s.quests).filter(q => q.state === '在办').length >= 3) { ORGMSG = '手上已经有三件差事没办完'; return null; }
+  let near = []; try { near = mapUnits(s).L2.filter(u => u.lat).map(u => [u.n, campLi(s, here, u.n)]).filter(([, li]) => li && li >= 60 && li <= 500).sort((a, b) => a[1] - b[1]).slice(0, 8); } catch (_) { near = []; }
+  const { text } = await callClaude(`一局历史游戏。现在是${timeText(s.clock)}，${here}一带。主角${s.protagonist.name}（${s.protagonist.role}）带着约${ptMen(f.party)}人，在当地打听有没有活计。照这个年代这一带的实情，写一到两件此刻有人愿意出钱托付给他的差事。
+类型只能是：剿匪（附近有一股流寇害人，请他去剿）、护送（护一队货或一家人去别处）、送信（送一封要紧的信去别处）。
+giver 写托付的人（身份加姓，如「王家集的乡老」「盐商汪某」不行——要有姓有名或有姓有称呼，如「王乡老」「汪掌柜」）；target：剿匪写流寇盘踞的地方，护送、送信写去的地方，只能从这些地方里挑：${near.map(x => x[0]).join('、') || here}；why 写来由（一句）。
+只输出一个 JSON 对象：{"quests":[{"type":"","giver":"","target":"","why":""}]}`, null, { maxTokens: 800, temperature: 0.6, kind: '推演', detached: true, thinking: false, ds: true });
+  const d = parseJSON(text); if (!d) { ORGMSG = '没打听到差事，再去一次'; return null; } f.party.questYM = ym; let n = 0;
+  for (const q of arr(d.quests).slice(0, 2)) { const type = one(q.type, 2), tg = one(q.target, 16); if (!['剿匪', '护送', '送信'].includes(type) || !tg) continue; const li = campLi(s, here, tg) || 100;
+    const pay = Math.round(E.wage * (type === '剿匪' ? 40 : type === '护送' ? 15 + li / 10 : 5 + li / 20) * 100) / 100;
+    s.quests = arr(s.quests).concat([{ id: 'q' + ym + '_' + n++, type, giver: one(q.giver, 10), from: here, target: tg, why: one(q.why, 60), pay, state: '待接', ym }]).slice(-20); }
+  return ptNote(s, n ? `在${here}打听到${n}件差事` : `在${here}没打听到差事`); }
+function questTake(s, id) { const q = arr(s.quests).find(x => x.id === id && x.state === '待接'); if (!q) return null; q.state = '在办'; q.takeYM = Math.floor(ymOf(s.clock)); return ptNote(s, `接了${q.giver}的差事：${q.type}${q.type === '剿匪' ? '盘踞' + q.target + '的流寇' : '去' + q.target}（办成给${fmtN(q.pay, (s.money || {}).unit || '')}）`); }
+function questDone(s, q) { q.state = '办成'; cashAdd(s, q.pay); s.renown = (num(s.renown) || 0) + 3; vilOf(s, q.from).rel += 15; return `${q.giver}的差事办成了（${q.type}），得赏${fmtN(q.pay, (s.money || {}).unit || '')}，${q.from}一带对你有了好感`; }
+/** 到了地方：护送、送信办成；剿匪就撞上那股流寇 */
+function ptArrive(s, f, place) { const out = []; for (const q of arr(s.quests).filter(q => q.state === '在办' && samePlace(q.target, place))) { if (q.type === '剿匪') { s.enc = { kind: '流寇', n: Math.max(10, Math.round(ptMen(f.party) * 0.7)), place, ym: Math.floor(ymOf(s.clock)), q: '中', quest: q.id }; out.push(`到了${place}，找到了那股流寇`); } else out.push(questDone(s, q)); }
+  for (const q of arr(s.quests).filter(q => q.state === '在办' && Math.floor(ymOf(s.clock)) - q.takeYM > 6)) { q.state = '误了'; vilOf(s, q.from).rel -= 10; out.push(`${q.giver}的差事拖过了半年，误了`); }
+  return out; }
+function partyHtml(s) { if (!canParty(s) && !partyF(s)) return ''; const f = partyF(s), E = econOf(s), u = (s.money || {}).unit || '';
+  if (!f) return `<div class="h"><span class="seal">伙</span>拉队伍<span class="note">从十个弟兄做起：招人、操练、升兵种、发饷吃粮；路上遇事能打能跑能谈；接差事、寻好汉，一路往上走</span></div><div class="opost"><button class="link" data-ptx="start">拉起一队人</button></div>`;
+  const P = f.party, men = ptMen(P), here = ptHere(s, f), V = vilOf(s, here), pay = ptPay(s, P), e = s.enc, Q = arr(s.quests).filter(q => /待接|在办/.test(q.state));
+  return `<div class="h"><span class="seal">伙</span>${esc(f.name)}<span class="note">能带${ptCap(s, P)}人（三十打底，名望、头领统御往上加）；每月发饷吃粮，欠了就有人跑</span></div>
+    <div class="pl" style="font-size:13px">${Object.entries(P.tiers).filter(([, n]) => n > 0).map(([t, n]) => `${esc(t)}${n}${P.xp[t] ? `<span class="muted">（阅历${P.xp[t]}）</span>` : ''}`).join(' · ')} · 共${men}人 · 士气${Math.round(num(f.morale) ?? 60)} · 粮${fmtN(N0(f.grain) || 0, '石')}（够${Math.floor((N0(f.grain) || 0) / Math.max(1, (men + (P.pris || 0)) * 0.03))}日）· 马${P.horse || 0}匹${P.pris ? ' · 俘虏' + P.pris + '人' : ''}${pay != null ? ` · 月饷${fmtN(pay, u)}` : ''}</div>
+    <div class="muted" style="font-size:12px">在${esc(here)}：这里对你${V.rel >= 30 ? '亲近' : V.rel <= -30 ? '仇恨' : V.rel < 0 ? '提防' : '平常'}（${V.rel}）· 恶名（官府追剿的风头）${num(bandOf(s).heat) || 0} · 名望${Math.round(num(s.renown) || 0)}</div>
+    ${e ? `<div class="route" style="border-left:3px solid var(--zhu)"><b>路上遇事</b>：${esc(e.kind === '商队' ? '一队客商，护卫约' + e.n + '人' + (e.value ? '，货值约' + fmtN(e.value, u) : '') : e.kind === '难民' ? '一伙逃难的，约' + e.n + '口' : e.kind + '约' + e.n + '人')}（${esc(e.place)}）
+      <div class="opost">${e.kind !== '难民' ? `<button class="link" data-enc="fight">${e.kind === '商队' ? '劫了' : '打'}</button><button class="link" data-enc="flee">跑</button>` : ''}<button class="link" data-enc="let">${e.kind === '难民' ? '收留' : e.kind === '官军' || e.kind === '流寇' ? '硬闯' : '放过去'}</button></div>
+      ${e.talked ? '' : `<details class="oadd"><summary class="muted">当面说…</summary><textarea class="oin" data-psay="enc:${esc(e.kind)}" rows="2" style="width:100%" placeholder="对他们说什么：讲义气、许好处、吓唬……"></textarea><button class="link" data-enc="talk">去说</button></details>`}</div>` : ''}
+    <div class="opost"><input class="oin" id="ptN" type="number" min="1" style="width:4em" placeholder="人"><button class="link" data-ptx="recruit">在这里招人</button><button class="link" data-ptx="train">操练一个月</button><input class="oin" id="ptFoodN" type="number" min="1" style="width:4em" placeholder="石"><button class="link" data-ptx="food">买粮</button></div>
+    <div class="opost">${Object.entries(PT_UP).filter(([a]) => (P.tiers[a] || 0) > 0).flatMap(([a, L]) => L.map(b => `<button class="link" data-ptup="${esc(a)}" data-to="${esc(b)}" title="${esc(a)}阅历满六十才能升">${esc(a)}升${esc(b)}</button>`)).join('')}${Object.keys(PT_UP).some(a => (P.tiers[a] || 0) > 0) ? '<input class="oin" id="ptUpN" type="number" min="1" style="width:4em" placeholder="人">' : ''}</div>
+    ${P.pris ? `<div class="opost">俘虏${P.pris}人：<button class="link" data-ptpris="收编">收编</button><button class="link" data-ptpris="卖">卖去做苦力</button><button class="link" data-ptpris="放">放了</button></div>` : ''}
+    <div class="opost">在${esc(here)}：<button class="link" data-ptvil="帮工">帮村里干活</button><button class="link" data-ptvil="勒索">勒孝敬</button><button class="link" data-ptvil="劫村">洗劫</button><button class="link" data-ptx="seek">去酒肆寻好汉</button><button class="link" data-ptx="quest">打听差事</button></div>
+    ${arr(P.cands).length ? `<div class="list">${P.cands.map(h => `<div><b>${esc(h.name)}</b> <span class="muted">${esc(h.from)}；武${h.wu} 统${h.tong} 谋${h.mou} 医${h.yi}，${esc(h.temper)}，想要：${esc(h.wish)}</span> <button class="link" data-pthire="${esc(h.name)}">花${esc(fmtN(h.price, u))}请他入伙</button></div>`).join('')}</div>` : ''}
+    ${arr(P.heroes).length ? `<div class="h" style="font-size:14px">头领</div><div class="list">${P.heroes.map(h => `<div><b>${esc(h.name)}</b> <span class="muted">武${h.wu} 统${h.tong} 谋${h.mou} 医${h.yi} · ${esc(h.temper)} · 忠心${h.loyal ?? 50}</span></div>`).join('')}</div>` : ''}
+    ${Q.length ? `<div class="h" style="font-size:14px">差事</div><div class="list">${Q.map(q => `<div><b>${esc(q.giver)}</b>：${esc(q.type)}${q.type === '剿匪' ? '盘踞' + esc(q.target) + '的流寇' : '去' + esc(q.target)} <span class="muted">（${esc(q.why)}；赏${esc(fmtN(q.pay, u))}）</span>${q.state === '待接' ? `<button class="link" data-ptq="${esc(q.id)}">接下</button>` : ' <span class="att">在办</span>'}</div>`).join('')}</div>` : ''}
+    ${arr(P.log).length ? `<div class="list">${P.log.slice(-5).reverse().map(x => `<div class="muted" style="font-size:12px">${esc(x.when)}：${esc(x.t)}</div>`).join('')}</div>` : ''}
+    <div class="muted" style="font-size:12px">往别处去：军务页出征单上选地方「移驻」（路上会遇事）；人多了攻县城也在那里下令</div>`; }
 /* ========== 敌国之主、手下大臣和将领由 DeepSeek 扮演（需求台账 R-145；2026-11-07 玩家：「难道战争只有攻城？这样吧，让ds扮演敌对势力和手下大臣，主动操作他们」）==========
  *  打仗不止攻城：野战迎击、劫粮道、夜袭劫营、设伏、深沟固守、增兵、求和、离间，你和敌人都能用。
  *  每月后台请 DeepSeek 扮演每个和你交战的一家之主（照史料里他的为人、此刻兵力和战局），从定好的几样里挑一两件；程序照账核过（兵够不够、目标在不在）才落账：
@@ -11932,7 +12085,7 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), warMonthly2(s), mpMonthly(s), armsMonthly(s), levyMonthly(s), groupTick(s), dipMonthly(s)), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), warMonthly2(s), mpMonthly(s), armsMonthly(s), levyMonthly(s), groupTick(s), partyMonthly(s), dipMonthly(s)), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
       if (!s.yearSnap) s.yearSnap = yearSnap(s);
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
@@ -12521,7 +12674,7 @@ function pane(tab) {
     const caseH = arr(s.cases).length ? `<div class="h"><span class="seal">案</span>牵涉的案子</div><div class="list">${s.cases.map(c => `<div><span class="badge ${/结案/.test(c.stage) ? 'b-done' : /悬/.test(c.stage) ? 'b-bad' : 'b-doing'}">${esc(c.stage || '？')}</span> <b>${esc(c.name)}</b>（${esc(c.kind || '')}，你是${esc(c.role || '？')}）${c.facts ? `<div class="muted">已知：${esc(c.facts)}</div>` : ''}${c.suspects ? `<div class="muted">疑点：${esc(c.suspects)}</div>` : ''}${c.deadline ? `<div class="muted">限期：${esc(c.deadline)}</div>` : ''}</div>`).join('')}</div>` : '';
     return `${jailH}${gl}${caseH}${ACTS}<div class="facebox"><div class="who"><div class="n">${esc(p.name)}</div><div class="r">${esc(p.role)}${p.age != null ? ' · ' + p.age + '岁' : ''}</div><div class="w">${esc(timeText(s.clock))}　${esc(s.place.full)}</div></div></div>
       ${whoHtml(s)}
-      ${threatHtml(s)}${soldierHtml(s)}${campHtml(s)}
+      ${threatHtml(s)}${soldierHtml(s)}${campHtml(s)}${partyHtml(s)}
       ${domainPanel(s)}${fiscHtml(s)}${mercHtml(s)}${privHtml(s)}${newsHtml(s)}
       ${myDomain(s).kind === 'none' && isLandlord(s) ? landHtml(s) : ''}${isFem(s) ? femHtml(s) : ''}${myDomain(s).kind === 'none' && !isLandlord(s) && /佃|农|雇工|短工|长工|樵|渔|匠/.test(String(p.role || '')) ? `<div class="h"><span class="seal">工</span>生计</div><div class="opost"><button class="link" data-land="work">出去打短工（二十天）</button></div>` : ''}
       ${ms.length ? `<div class="tiles">${ms.map(([k, v]) => `<div class="tile" title="${esc(v.why)}"><div class="k">${esc(k)}</div><div class="v">${esc(v.value)}${arrow(v.delta)}</div>${v.delta && v.why ? `<div class="why">${esc(v.why)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted">开场后出现。</div>'}
@@ -13309,6 +13462,16 @@ document.addEventListener('click', async e => {
     const k = t.dataset.parley + ':' + t.dataset.pt, ask = ($(`[data-pask="${CSS.escape(k)}"]`) || {}).value || '', said = ($(`[data-psay="${CSS.escape(k)}"]`) || {}).value || '';
     PARLEY_P = 1; ORGMSG = '正在当面说，等他回话……'; render();
     try { await parley(S, t.dataset.parley, t.dataset.pt, ask, said); } catch (er) { if (!(er && er.code === 'cancelled')) ORGMSG = '没说成（' + errText(er) + '），再说一次'; } finally { PARLEY_P = null; }
+    try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && (t.dataset.ptx || t.dataset.ptup || t.dataset.ptpris || t.dataset.ptvil || t.dataset.pthire || t.dataset.ptq || t.dataset.enc) && !PARLEY_P) {   // 草根线（R-147）
+    const k = t.dataset.ptx, AS = ['seek', 'quest'].includes(k) || t.dataset.enc === 'talk';
+    if (AS) { PARLEY_P = 1; ORGMSG = k === 'seek' ? '在酒肆里打听……' : k === 'quest' ? '四处打听差事……' : '正在当面说，等他们回话……'; render(); }
+    try { if (k === 'start') partyStart(S); else if (k === 'recruit') ptRecruit(S, ($('#ptN') || {}).value); else if (k === 'train') ptTrain(S); else if (k === 'food') ptFood(S, ($('#ptFoodN') || {}).value);
+      else if (k === 'seek') await ptSeekHero(S); else if (k === 'quest') await ptAskQuest(S);
+      else if (t.dataset.ptup) ptUpgrade(S, t.dataset.ptup, t.dataset.to, ($('#ptUpN') || {}).value); else if (t.dataset.ptpris) ptPrisoners(S, t.dataset.ptpris); else if (t.dataset.ptvil) ptVillage(S, t.dataset.ptvil);
+      else if (t.dataset.pthire) ptHire(S, t.dataset.pthire); else if (t.dataset.ptq) questTake(S, t.dataset.ptq);
+      else if (t.dataset.enc === 'fight') encFight(S); else if (t.dataset.enc === 'flee') encFlee(S); else if (t.dataset.enc === 'let') encLet(S); else if (t.dataset.enc === 'talk') await encTalk(S, ($(`[data-psay^="enc:"]`) || {}).value || '');
+    } catch (er) { if (!(er && er.code === 'cancelled')) ORGMSG = '没办成（' + errText(er) + '），再试一次'; } finally { if (AS) PARLEY_P = null; }
     try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && (t.dataset.arms || t.dataset.levy || t.dataset.group)) {   // 甲械、舟师、封臣出兵、军团（R-139）
     if (t.dataset.arms === 'shop') armsBuild(S); else if (t.dataset.arms === 'ship') shipBuild(S, ($('#shipN') || {}).value); else if (t.dataset.levy) levyCall(S, t.dataset.levy);
