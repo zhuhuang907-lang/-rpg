@@ -33,6 +33,15 @@ const path = require('path');
       if (Math.abs(a1 - a2) / a2 > 0.08) bad.push(`大图的取景（${a1.toFixed(2)}）和屏幕（${a2.toFixed(2)}）不一样宽，两边会留白`);
       if (vb[2] < 900) bad.push('大图还按 640 宽画，一放大格子就成锯齿：' + vb[2]); }
     MAPZ.big = false;
+    // 2026-11-07 手机截图：「你在这里」的标记压住了自家城名（福州只剩「州」），本地图上一堆白方块没写县名
+    mk(921, '王审知', '闽王', '福州', '闽'); MAPZ.inited = false; render0();
+    { const sv = document.querySelector('.smap'), tx = [...sv.querySelectorAll('text')].filter(e => !e.closest('.mepin')).map(e => e.textContent), pin = sv.querySelector('.mepin circle:last-of-type');
+      if (!tx.includes('福州')) bad.push('开局本地图上自家城名没写出来（被标记压住）：' + tx.join('|'));
+      const lb = [...sv.querySelectorAll('text')].find(e => e.textContent === '福州');
+      if (pin && lb) { const a = pin.getBoundingClientRect(), c = lb.getBoundingClientRect(); if (!(a.right < c.left || a.left > c.right || a.bottom < c.top || a.top > c.bottom)) bad.push('标记和城名叠在一起'); }
+      const bare = [...sv.querySelectorAll('rect[data-mapu]')].map(e => e.dataset.mapu).filter(n => !tx.includes(n) && !tx.some(x => n.startsWith(x)));
+      const nearHome = bare.filter(n => !['闽县', '侯官县'].includes(n));   // 附郭县和州城同一处，方块被州城的点盖住
+      if (nearHome.length) bad.push('本地图上画了县城方块却没写名字：' + nearHome.join('、')); }
     return bad;
   });
   const all = out.concat(errs); console.log('ERRS', JSON.stringify(all)); await b.close(); process.exit(all.length ? 1 : 0);
