@@ -26,7 +26,8 @@ const { chromium } = require('playwright');
   const dec = await p.$('[data-war="declare"]'); if (dec) { await dec.click(); await p.waitForTimeout(500); } else log.push({ noDeclare: true });
   await snap('02-after-declare');
   // 连发几回
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 8; i++) {
+    if (i >= 5 && await p.evaluate(() => arr(S.battles).length > 0 || arr(S.campaigns).some(c => /得手|败回/.test(c.state)))) break;   // 机器慢时探报、围城晚一两回，最多再等三回
     if (await p.$('button[data-xwait]')) await p.click('button[data-xwait]', { timeout: 5000 }).catch(e => log.push({ waitErr: e.message.slice(0, 80) }));
     const v = await p.evaluate(() => (document.querySelector('#said') || {}).value || ''); if (!v.trim()) await p.fill('#said', '按兵不动，静候前方军报。');
     if (await p.evaluate(() => ($('#span') || {}).value) === 'auto') await p.selectOption('#span', 'month').catch(() => {});   // 静候军报：一回过一个月
@@ -38,6 +39,7 @@ const { chromium } = require('playwright');
   fs.writeFileSync(`${OUT}/warplay.json`, JSON.stringify({ log, errs }, null, 1));
   const fin = await p.evaluate(() => ({ sg: arr(S.chronicle).filter(c => /围潮州\d+日/.test(c.what || '')).map(c => c.what), b: arr(S.battles), terr: arr(S.territory).map(t => t.place), own: Object.keys(S.mapOwn || {}), w: arr(S.wars)[0] || {}, camp: arr(S.campaigns)[0] || {} })), bad = [];
   if (!log.some(x => /兵临城下|行军/.test((x.forces || []).join(' ')))) bad.push('兵马没开拔');
+  if (!fin.sg.length && !fin.b.length) console.log('LOG', JSON.stringify(log.filter(x => x.forces).map(x => [x.tag, x.clock, x.forces && x.forces[0], x.camp && x.camp[0], x.msg]).slice(-12)));
   if (!fin.sg.length && (!fin.b.length || !(fin.b[0].rounds || []).length || !/第1日/.test((fin.b[0].rounds[0] || {}).nm || ''))) bad.push('到了潮州没真打一仗、或战报不是逐日：' + JSON.stringify(fin.b).slice(0, 200));
   if ((fin.sg.length || (fin.b.length && /胜/.test(fin.b[0].outcome))) && (!fin.terr.some(x => /潮州/.test(x)) || !fin.own.some(x => /潮/.test(x)))) bad.push('打赢了潮州没归你、地图没记上：' + JSON.stringify([fin.terr, fin.own]));
   if ((fin.b.length || fin.sg.length) && !((fin.w.won || 0) + (fin.w.lost || 0) + (fin.w.took || []).length)) bad.push('打完一仗战争进度没记上：' + JSON.stringify(fin.w));
