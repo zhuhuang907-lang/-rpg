@@ -176,6 +176,8 @@ const checks = [
   ['打仗不止攻城：迎击、劫营、劫粮、设伏，野战不占城（需求台账 R-145）', /function foeOp\(/.test(src) && /function foeEngage\(/.test(src) && /function foeMarchTick\(/.test(src) && /const take = !b\.noTake && !b\.field/.test(src)],
   ['战争第一期：人力池、围城、将领阅历特质、占领厌战、停战、俘虏（需求台账 R-139）', /function mpOf\(s\)/.test(src) && /function siegeTick\(/.test(src) && /function siegeAct\(/.test(src) && /function genGain\(/.test(src) && /function warMonthly2\(s\)/.test(src) && /const truceOf = /.test(src) && /function prisonerAct\(/.test(src) && /function captiveAct\(/.test(src) && /warMonthly2\(s\), mpMonthly\(s\)/.test(src)],
   ['战争第一期后半：甲械工坊、缺甲打折、舟师过江、臣属出兵、军团战线、会同围城（需求台账 R-139）', /function armsBuild\(s\)/.test(src) && /function armsMonthly\(s\)/.test(src) && /function armsIssue\(/.test(src) && /const em = o\.f \? eqMul\(o\.f\) : 1/.test(src) && /function crossesYJ\(/.test(src) && /function shipBuild\(/.test(src) && /function levyCall\(/.test(src) && /function groupSet\(/.test(src) && /function groupTick\(/.test(src) && /const siegeMates = /.test(src) && /armsMonthly\(s\), levyMonthly\(s\), groupTick\(s\)/.test(src)],
+  ['当面说：玩家写说辞、DeepSeek 照对方为人判允不允、程序落账、说辞重画不丢（需求台账 R-148）', /async function parley\(s, kind, tg, ask, said\)/.test(src) && /function parleyBox\(/.test(src) && /主角的原话：/.test(src) && /引经据典说到他心里/.test(src) && /const keepD = \[\]/.test(src) && (src.match(/parleyBox\(s, '/g) || []).length >= 5],
+  ['和「吴」交战不把「吴越」当成在交战（名字互相包含）', /名字互相包含的只在不是另一家的时候才算/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

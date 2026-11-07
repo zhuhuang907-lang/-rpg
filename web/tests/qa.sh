@@ -73,6 +73,7 @@ start ai.js && {
   run "打仗不止攻城、敌国之主和手下大臣由 DeepSeek 扮演主动行事：敌军开拔走到真打、设伏劫粮劫营迎击、和书、奏章准驳落账、将领便宜行事（R-145）" 200 env PLAY="$ROOT/web/play.html" node rivals.js
   run "战争第一期：人力池募兵、围城每天涨进度出事粮尽投降俘将、强攻撤围真点、将领阅历特质、占领按月加分、厌战掉民心、停战毁约、俘虏赎放斩、陷敌将领赎回（R-139）" 200 env PLAY="$ROOT/web/play.html" node war1.js
   run "战争第一期后半：甲械工坊真点、缺甲打折、募兵领甲每月补甲、过长江要船造船真点、召臣属出兵真点半年回去、军团勾选编路派战线令守令攻、会同围城兵力合算一齐强攻（R-139）" 200 env PLAY="$ROOT/web/play.html" node war2.js
+  run "当面说：外交、议和、劝守将开城、劝俘虏归顺、写信请名士，玩家写说辞、DeepSeek 判允不允、允了落账不允态度掉、一月一回、说辞重画不丢；吴、吴越不混（R-148）" 200 env PLAY="$ROOT/web/play.html" node parley.js
   run "天下名录照这一年并立的各家做表，宗室以外的文武大臣都列上，有博查的逐个按名字核，不按清朝写死问法" 120 env PLAY="$ROOT/web/play.html" node roster.js
   run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js

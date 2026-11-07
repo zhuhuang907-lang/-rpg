@@ -16,7 +16,7 @@ const path = require('path');
     S.forces = [{ name: '威武军', leader: '王审知', owner: '你', troops: 10000, morale: 65, orgNow: 70, train: 60, grain: 300000, at: '福州', status: '驻守', units: [{ tpl: 'bu', men: 10000 }] },
       { name: '南路军', leader: '王延钧', owner: '你', troops: 6000, morale: 65, orgNow: 70, train: 60, grain: 200000, at: '漳州', status: '驻守' }];
     S.powers = [{ name: '南汉', leader: '刘䶮', seat: '广州', troops: '60000', stance: '敌' }, { name: '吴越', leader: '钱镠', seat: '杭州', troops: '40000', stance: '臣' }];
-    dipOf(S, '吴越').ties = ['臣属']; dipOf(S, '吴越').att = 30; warStart(S, '南汉', warCBs(S, '南汉')[0] || '', false);
+    S.groups = { 乡里: { value: 60, delta: 0, why: '' } }; dipOf(S, '吴越').ties = ['臣属']; dipOf(S, '吴越').att = 30; warStart(S, '南汉', warCBs(S, '南汉')[0] || '', false);
     VIEW = 'game'; TAB = 'army'; SIDE_FOLD = false; render(); });
   // 甲械：设工坊（真点）→ 花钱、每月出甲械
   { const bt = await p.$('[data-arms="shop"]'); if (!bt) bad.push('军务页没有「添设军器工坊」'); else { const t0 = await p.evaluate(() => S.realm.treasury); await bt.click(); await p.waitForTimeout(150); const r = await p.evaluate(() => ({ shops: armsOf(S).shops, tr: S.realm.treasury })); if (r.shops !== 1 || !(r.tr < t0)) bad.push('点了设工坊没设成或没花钱：' + JSON.stringify(r)); } }
@@ -40,7 +40,7 @@ const path = require('path');
   await p.evaluate(() => { S.forces[1].at = '漳州'; render(); });
   const fronts = await p.evaluate(() => [...document.querySelectorAll('#gpFront option')].map(o => o.value)); if (!fronts.length) bad.push('交战时军团没有战线可选'); else {
     for (const n of ['威武军', '南路军']) await p.check(`[data-gpf="${n}"]`); await p.fill('#gpName', '南路'); await p.selectOption('#gpFront', fronts[0]); await p.click('[data-group="攻"]'); await p.waitForTimeout(150);
-    const r = await p.evaluate(() => ({ g: S.groups, c: S.campaigns.map(c => c.force + '→' + c.target + ':' + c.state) })); const tg = fronts[0].split('—')[1];
+    const r = await p.evaluate(() => ({ g: S.armyGroups, soc: S.groups, c: S.campaigns.map(c => c.force + '→' + c.target + ':' + c.state) })); if (!r.soc || Array.isArray(r.soc) || !r.soc['乡里']) bad.push('编军团把「各方对你」冲掉了：' + JSON.stringify(r.soc)); const tg = fronts[0].split('—')[1];
     if (!r.g || !r.g.length || r.c.filter(x => x.includes('→' + tg)).length !== 2) bad.push('军团令攻没一齐出兵：' + JSON.stringify(r));
     const r2 = await p.evaluate(tg => { for (const c of S.campaigns) { c.state = '待探报'; } const [c1, c2] = S.campaigns; const G = { troops: 3000, quality: '中', owner: '南汉' }; campResolve(S, c1, G); campResolve(S, c2, G);
       const one = siegeRate(S, c1, S.forces.find(f => f.name === c1.force)); return { s1: c1.state, s2: c2.state, j: c2.joinOf, mates: siegeMates(S, c1).length }; }, tg);
