@@ -167,6 +167,8 @@ const checks = [
   ['GLM 写故事和推演、DeepSeek 做杂活、GLM 出错退回（需求台账 R-135）', /const routeOf = /.test(src) && /async function glmDirect\(input, opts = \{\}\)/.test(src) && /routeOf\(kind, plain\) === 'glm'/.test(src) && /GLM 没成，改由 DeepSeek/.test(src) && /provider: b\.provider === 'glm'/.test(server) && /'POST \/api\/glm-key'/.test(server)],
   ['博查多用（需求台账 R-138）', /const lookup = arr\(d\.lookup\)\.map\(x => one\(x, 24\)\)\.filter\(Boolean\)\.slice\(0, 16\)/.test(src) && /noFallback: true, count: 15/.test(server)],
   ['作战按天打、自创战法 AI 评估有上限（需求台账 R-141）', /function battleSim\(s, A, B, ctx\)/.test(src) && /const BTAC = \{/.test(src) && /async function tacEval\(s, name, desc\)/.test(src) && /orgHit: clampN\(d\.fx && d\.fx\.orgHit, 0, 40, 0\)/.test(src) && /const sim = battleSim\(s,/.test(src)],
+  ['外交卡、战局、补给线、战争进度与议和（需求台账 R-142）', /function dipAct\(s, name, act\)/.test(src) && /function dipMonthly\(s\)/.test(src) && /warMonthly\(s\), dipMonthly\(s\)/.test(src) && /function supplyLine\(s, f\)/.test(src) && /const warScore = w =>/.test(src) && /\$\{diploHtml\(s\)\}/.test(src)],
+  ['外交只给一方之主，寨主义军是绿林往来（需求台账 R-143）', /const dipRole = s =>/.test(src) && /if \(role === 'outlaw'\) return lulinHtml\(s\)/.test(src) && /function lulinAct\(s, name, act\)/.test(src) && /if \(dipRole\(s\) !== 'realm'\)/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

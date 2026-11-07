@@ -67,6 +67,7 @@ start ai.js && {
   run "读书人以上（宗室、读书人、乡绅）能看朝局、百姓看不到；这一年这一家的真官员不当撞名改掉、旧档改回原名（R-136、R-137）" 120 env PLAY="$ROOT/web/play.html" node court2.js
   run "GLM 写故事和推演、DeepSeek 做杂活、GLM 出错退回 DeepSeek、设置页填 GLM Key 改分工（R-135）" 120 env PLAY="$ROOT/web/play.html" node glm.js
   run "作战按天打：宽度、战术相克、组织度、追击合围、城破被俘；自创战法 AI 评估有上限、条件不合用不上；战报逐日；军务页真点（R-141）" 200 env PLAY="$ROOT/web/play.html" node battle.js
+  run "外交卡（修好结盟联姻称臣互市）、战局、补给线、战争进度与议和割地、敌国来犯；外交只给一方之主、寨主义军是绿林往来、商人大臣没有（R-142、R-143）" 200 env PLAY="$ROOT/web/play.html" node diplo.js
   run "天下名录照这一年并立的各家做表，宗室以外的文武大臣都列上，有博查的逐个按名字核，不按清朝写死问法" 120 env PLAY="$ROOT/web/play.html" node roster.js
   run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js
