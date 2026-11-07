@@ -167,13 +167,14 @@ const checks = [
   ['GLM 写故事和推演、DeepSeek 做杂活、GLM 出错退回（需求台账 R-135）', /const routeOf = /.test(src) && /async function glmDirect\(input, opts = \{\}\)/.test(src) && /routeOf\(kind, plain\) === 'glm'/.test(src) && /GLM 没成，改由 DeepSeek/.test(src) && /provider: b\.provider === 'glm'/.test(server) && /'POST \/api\/glm-key'/.test(server)],
   ['博查多用（需求台账 R-138）', /const lookup = arr\(d\.lookup\)\.map\(x => one\(x, 24\)\)\.filter\(Boolean\)\.slice\(0, 16\)/.test(src) && /noFallback: true, count: 15/.test(server)],
   ['作战按天打、自创战法 AI 评估有上限（需求台账 R-141）', /function battleSim\(s, A, B, ctx\)/.test(src) && /const BTAC = \{/.test(src) && /async function tacEval\(s, name, desc\)/.test(src) && /orgHit: clampN\(d\.fx && d\.fx\.orgHit, 0, 40, 0\)/.test(src) && /const sim = battleSim\(s,/.test(src)],
-  ['外交卡、战局、补给线、战争进度与议和（需求台账 R-142）', /function dipAct\(s, name, act\)/.test(src) && /function dipMonthly\(s\)/.test(src) && /warMonthly\(s\), dipMonthly\(s\)/.test(src) && /function supplyLine\(s, f\)/.test(src) && /const warScore = w =>/.test(src) && /\$\{diploHtml\(s\)\}/.test(src)],
+  ['外交卡、战局、补给线、战争进度与议和（需求台账 R-142）', /function dipAct\(s, name, act\)/.test(src) && /function dipMonthly\(s\)/.test(src) && /warMonthly\(s\), warMonthly2\(s\), mpMonthly\(s\), dipMonthly\(s\)/.test(src) && /function supplyLine\(s, f\)/.test(src) && /const warScore = w =>/.test(src) && /\$\{diploHtml\(s\)\}/.test(src)],
   ['外交只给一方之主，寨主义军是绿林往来（需求台账 R-143）', /const dipRole = s =>/.test(src) && /if \(role === 'outlaw'\) return lulinHtml\(s\)/.test(src) && /function lulinAct\(s, name, act\)/.test(src) && /if \(dipRole\(s\) !== 'realm'\)/.test(src)],
   ['别家的城照天下各方和地盘认主，大军开到不打就占不行（需求台账 R-144）', /function placeOwner\(s, place\)/.test(src) && /placeOwner\(s, place\)\.owner/.test(src)],
   ['资料没推好挡住的按钮点了当场去推（需求台账 R-144）', /function kickJob\(/.test(src) && (src.match(/kickJob\(/g) || []).length >= 4],
   ['「你在这里」的标记不压自家城名，本地图不画没名字的县城方块（需求台账 R-100）', /const PINB = /.test(src) && /boxes = PINB\.slice\(\)/.test(src) && /cty\.filter\(u => LBLD\.has\(u\.n\) \|\| special\(u\)/.test(src)],
   ['敌国之主、手下大臣由 DeepSeek 扮演，只从定好的几样里挑，人数程序算（需求台账 R-145）', /async function foePlan\(s\)/.test(src) && /async function memPlan\(s\)/.test(src) && /function foeExec\(/.test(src) && /function memoAct\(/.test(src) && (src.match(/ds: true \}\);/g) || []).length >= 2 && /extra\.ds && KEY\.has/.test(src) && /人数由程序照他的账算，你不写人数/.test(src)],
-  ['打仗不止攻城：迎击、劫营、劫粮、设伏，野战不占城（需求台账 R-145）', /function foeOp\(/.test(src) && /function foeEngage\(/.test(src) && /function foeMarchTick\(/.test(src) && /const take = !b\.field/.test(src)],
+  ['打仗不止攻城：迎击、劫营、劫粮、设伏，野战不占城（需求台账 R-145）', /function foeOp\(/.test(src) && /function foeEngage\(/.test(src) && /function foeMarchTick\(/.test(src) && /const take = !b\.noTake && !b\.field/.test(src)],
+  ['战争第一期：人力池、围城、将领阅历特质、占领厌战、停战、俘虏（需求台账 R-139）', /function mpOf\(s\)/.test(src) && /function siegeTick\(/.test(src) && /function siegeAct\(/.test(src) && /function genGain\(/.test(src) && /function warMonthly2\(s\)/.test(src) && /const truceOf = /.test(src) && /function prisonerAct\(/.test(src) && /function captiveAct\(/.test(src) && /warMonthly2\(s\), mpMonthly\(s\)/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

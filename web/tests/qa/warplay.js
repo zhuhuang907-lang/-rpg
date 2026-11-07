@@ -27,17 +27,19 @@ const { chromium } = require('playwright');
   await snap('02-after-declare');
   // 连发几回
   for (let i = 0; i < 5; i++) {
-    const xw = await p.$('button[data-xwait]'); if (xw) await xw.click();
+    if (await p.$('button[data-xwait]')) await p.click('button[data-xwait]', { timeout: 5000 }).catch(e => log.push({ waitErr: e.message.slice(0, 80) }));
     const v = await p.evaluate(() => (document.querySelector('#said') || {}).value || ''); if (!v.trim()) await p.fill('#said', '按兵不动，静候前方军报。');
+    if (await p.evaluate(() => ($('#span') || {}).value) === 'auto') await p.selectOption('#span', 'month').catch(() => {});   // 静候军报：一回过一个月
     await p.click('#bSend').catch(e => log.push({ sendErr: e.message }));
     await p.waitForFunction(() => !BUSY, null, { timeout: 240000 }).catch(() => log.push({ busyTimeout: i }));
     await p.waitForTimeout(800); await p.evaluate(() => { TAB = 'army'; render0(); }); await snap(`1${i}-turn`);
+    { if (await p.$('[data-siege="强攻"]')) { await p.click('[data-siege="强攻"]', { timeout: 5000 }).catch(e => log.push({ assaultErr: e.message.slice(0, 80) })); await p.waitForTimeout(400); await snap(`1${i}-assault`); } }   // 围城了就强攻（R-139：攻城改成围城，可强攻）
   }
   fs.writeFileSync(`${OUT}/warplay.json`, JSON.stringify({ log, errs }, null, 1));
-  const fin = await p.evaluate(() => ({ b: arr(S.battles), terr: arr(S.territory).map(t => t.place), own: Object.keys(S.mapOwn || {}), w: arr(S.wars)[0] || {}, camp: arr(S.campaigns)[0] || {} })), bad = [];
+  const fin = await p.evaluate(() => ({ sg: arr(S.chronicle).filter(c => /围潮州\d+日/.test(c.what || '')).map(c => c.what), b: arr(S.battles), terr: arr(S.territory).map(t => t.place), own: Object.keys(S.mapOwn || {}), w: arr(S.wars)[0] || {}, camp: arr(S.campaigns)[0] || {} })), bad = [];
   if (!log.some(x => /兵临城下|行军/.test((x.forces || []).join(' ')))) bad.push('兵马没开拔');
-  if (!fin.b.length || !(fin.b[0].rounds || []).length || !/第1日/.test((fin.b[0].rounds[0] || {}).nm || '')) bad.push('到了潮州没真打一仗、或战报不是逐日：' + JSON.stringify(fin.b).slice(0, 200));
-  if (fin.b.length && /胜/.test(fin.b[0].outcome) && (!fin.terr.some(x => /潮州/.test(x)) || !fin.own.some(x => /潮/.test(x)))) bad.push('打赢了潮州没归你、地图没记上：' + JSON.stringify([fin.terr, fin.own]));
-  if (fin.b.length && !((fin.w.won || 0) + (fin.w.lost || 0))) bad.push('打完一仗战争进度没记上：' + JSON.stringify(fin.w));
+  if (!fin.sg.length && (!fin.b.length || !(fin.b[0].rounds || []).length || !/第1日/.test((fin.b[0].rounds[0] || {}).nm || ''))) bad.push('到了潮州没真打一仗、或战报不是逐日：' + JSON.stringify(fin.b).slice(0, 200));
+  if ((fin.sg.length || (fin.b.length && /胜/.test(fin.b[0].outcome))) && (!fin.terr.some(x => /潮州/.test(x)) || !fin.own.some(x => /潮/.test(x)))) bad.push('打赢了潮州没归你、地图没记上：' + JSON.stringify([fin.terr, fin.own]));
+  if ((fin.b.length || fin.sg.length) && !((fin.w.won || 0) + (fin.w.lost || 0) + (fin.w.took || []).length)) bad.push('打完一仗战争进度没记上：' + JSON.stringify(fin.w));
   console.log('ERRS', JSON.stringify(bad.concat(errs.slice(0, 10)))); await b.close(); process.exit(bad.length || errs.length ? 1 : 0);
 })().catch(e => { console.log('ERRS', JSON.stringify(['崩了：' + e.message])); process.exit(1); });

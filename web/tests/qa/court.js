@@ -106,11 +106,11 @@ const { chromium } = require('playwright');
       c.forces = [{ name: '亲军', leader: me, troops: 3000, at: '江宁府', quality: '中', grain: 100000, morale: 60 }, { name: '测敌守军', owner: '测敌', leader: '敌首', at: '扬州府', troops: 1000, quality: '弱' }];
       c.powers = [{ name: '测敌', leader: '敌首', seat: '扬州府' }, { name: '测二', leader: '二首', seat: '镇江府' }];
       c.campaigns = [{ force: '亲军', mode: '攻', target: '扬州府', from: '江宁府', li: 120, turn: c.turn - 1, state: '待发' }];
-      const a0 = campaignTick(c, 0), st0 = c.campaigns[0].state, a1 = campaignTick(c, 10), r = { st0, a1, st1: c.campaigns[0].state, nb: c.battles.length, en: c.forces[1].troops };
-      c.campaigns = [{ force: '亲军', mode: '攻', target: '镇江府', from: c.forces[0].at, li: 60, turn: c.turn - 1, state: '待发' }]; campaignTick(c, 0); campaignTick(c, 5); r.st2 = c.campaigns[0].state; await campScout(c); r.st3 = c.campaigns[0].state; r.nb2 = c.battles.length;
+      const a0 = campaignTick(c, 0), st0 = c.campaigns[0].state, a1 = campaignTick(c, 10), st1 = c.campaigns[0].state; a1.push(String(siegeAct(c, '亲军', '强攻') || '') + arr(c.campNews).join('；'));   /* 到了先围城，再强攻（R-139） */ const r = { st0, a1, st1, nb: c.battles.length, en: c.forces[1].troops };
+      c.campaigns = [{ force: '亲军', mode: '攻', target: '镇江府', from: c.forces[0].at, li: 60, turn: c.turn - 1, state: '待发' }]; campaignTick(c, 0); campaignTick(c, 5); r.st2 = c.campaigns[0].state; await campScout(c); if (c.campaigns[0].state === '围城') siegeAct(c, '亲军', '强攻'); r.st3 = c.campaigns[0].state; r.nb2 = c.battles.length;
       c.forces[0].at = '江宁府'; c.forces.push({ name: '来犯军', owner: '测敌', at: '江宁府', status: '进犯', troops: 500, quality: '弱' }); const a3 = campaignTick(c, 1); r.atk = a3.some(t => /来攻/.test(t)); r.nb3 = c.battles.length; r.blk = campBlock(c); return r; });
-    if (v.st0 !== '行军' || v.nb !== 1 || !v.a1.some(t => /攻扬州府/.test(t)) || !(v.en < 1000)) bad('出征没照日子走到、没结算一仗：' + JSON.stringify(v).slice(0, 400));
-    if (v.st2 !== '待探报' || v.nb2 !== 2 || !/得手|败回/.test(v.st3)) bad('不知守军没派探报、或探报回来没打：' + JSON.stringify(v).slice(0, 400));
+    if (v.st0 !== '行军' || v.st1 !== '围城' || v.nb !== 1 || !v.a1.some(t => /扬州府/.test(t)) || !(v.en < 1000)) bad('出征没照日子走到、没结算一仗：' + JSON.stringify(v).slice(0, 400));
+    if (v.st2 !== '待探报' || v.nb2 !== 2 || !/得手|败回|围城/.test(v.st3)) bad('不知守军没派探报、或探报回来没打：' + JSON.stringify(v).slice(0, 400));
     if (!v.atk || v.nb3 !== 3 || !/军报/.test(v.blk)) bad('敌军来攻没结算、或军报没进写戏材料：' + JSON.stringify(v).slice(0, 400)); }
   // 皇帝：全国官员名册（名录和人事树合一、可搜）；诏令发出→传递→收到→执行→回报，忠诚操守差、记恨的会拖延打折虚报抗命（CLAUDE.md「人事与职权」全国名册、诏令五步）
   { const v = await p.evaluate(() => { TAB = 'court'; render(); const t = document.body.innerText; const c = JSON.parse(JSON.stringify(S));

@@ -2125,10 +2125,10 @@ function marchTargets(s, f) {
   return foes.concat(own);
 }
 function marchPanel(s, f) {
-  const c = arr(s.campaigns).find(x => x.force === f.name && /待发|行军|待探报/.test(x.state));
+  const c = arr(s.campaigns).find(x => x.force === f.name && /待发|行军|待探报|围城/.test(x.state));
   if (c) { const left = Math.max(0, Math.round((c.li || 0) - (c.done || 0))), pace = c.pace || campPace(s, f, c.paceTxt), days = c.state === '行军' ? Math.ceil(left / Math.max(1, pace)) : null;
-    return `<div class="route"><b>${c.mode === '攻' ? '进攻' : c.mode === '掠' ? '劫掠' : c.mode === '守' ? '移防' : c.mode === '迎' ? '迎击' + esc(c.foe || '') + '于' : c.mode === '营' ? '夜袭' + esc(c.foe || '') + '于' : c.mode === '伏' ? '设伏于' : '开赴'} ${esc(c.target)}</b>：${c.state === '待发' ? '下一回开拔' : c.state === '待探报' ? '兵临城下，正打探守军' : `还有约 ${left} 里、${days} 日`}${c.tactic ? ' · 战法：' + esc(c.tactic) : ''}
-      <div class="opost"><button class="link" data-xwait="${esc(days || 10)}">静候军报（这一回过 ${days && days > 30 ? '一季' : days && days > 10 ? '一个月' : '一旬'}）</button><button class="link" data-army="halt" data-f="${esc(f.name)}">撤回</button></div></div>`; }
+    return `<div class="route"><b>${c.mode === '攻' ? '进攻' : c.mode === '掠' ? '劫掠' : c.mode === '守' ? '移防' : c.mode === '迎' ? '迎击' + esc(c.foe || '') + '于' : c.mode === '营' ? '夜袭' + esc(c.foe || '') + '于' : c.mode === '伏' ? '设伏于' : '开赴'} ${esc(c.target)}</b>：${c.state === '待发' ? '下一回开拔' : c.state === '待探报' ? '兵临城下，正打探守军' : c.state === '围城' && c.siege ? `围城第 ${c.siege.days} 日，进度 ${Math.round(c.siege.prog)}%，守军约 ${fmtN(c.siege.g.troops, '人')}${c.siege.g.general ? '（' + esc(c.siege.g.general) + '）' : ''}，城防 ${c.siege.fort}，城中粮${c.siege.days > c.siege.food ? '已尽' : '还够约 ' + (c.siege.food - c.siege.days) + ' 日'}<div class="gbar"><i class="good" style="width:${Math.round(c.siege.prog)}%"></i></div>${arr(c.siege.log).slice(-3).map(x => `<div class="muted" style="font-size:12px">${esc(x)}</div>`).join('')}` : `还有约 ${left} 里、${days} 日`}${c.tactic ? ' · 战法：' + esc(c.tactic) : ''}
+      <div class="opost"><button class="link" data-xwait="${esc(days || 10)}">静候军报（这一回过 ${days && days > 30 ? '一季' : days && days > 10 ? '一个月' : '一旬'}）</button>${c.state === '围城' ? `<button class="link" data-siege="强攻" data-f="${esc(f.name)}" title="城墙破得越多越好打">强攻</button><button class="link" data-siege="撤围" data-f="${esc(f.name)}">撤围</button>` : `<button class="link" data-army="halt" data-f="${esc(f.name)}">撤回</button>`}</div></div>`; }
   const T = marchTargets(s, f); if (!T.length) return '';
   const opts = T.map(o => { const O = o.mine ? null : battleOdds(s, f, o.n, '攻'); return `<option value="${esc(o.n)}" data-li="${o.li}">${esc(o.n)}（${esc(o.owner)}，约${o.li}里、${o.days}日${O ? (O.unknown ? '，守军不详' : `，胜算约${O.p}%${O.guess ? '·守军推' : ''}${O.them ? '，守军约' + fmtN(O.them, '人') : '，无兵把守'}`) : ''}）</option>`; }).join('');
   return `<div class="route"><b>出征</b><span class="muted">（胜算照兵力、兵种、训练士气、粮草、地形、天候算；守军没探实的是照户口推的）</span>
@@ -2140,7 +2140,7 @@ function marchPanel(s, f) {
 function armyTab(s) {
   const T = arr(s.unitTypes), F = arr(s.forces), u = (s.money || {}).unit || '', can = isRuler(s) || F.some(f => myForce(s, f)) || !!myDomain(s).recruitCap;
   const tplOpts = T.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
-  return `${warAskHtml(s)}${warsHtml(s)}${foeHtml(s)}<div class="h" style="margin-top:6px"><span class="seal">兵</span>兵种<span class="note">照本朝兵制核定；名字和打法可以自己定</span></div>
+  return `${warAskHtml(s)}${warsHtml(s)}${foeHtml(s)}${war2Html(s)}<div class="h" style="margin-top:6px"><span class="seal">兵</span>兵种<span class="note">照本朝兵制核定；名字和打法可以自己定</span></div>
     ${T.length ? `<div class="tblwrap"><table class="tbl"><tr><th>兵种</th>${UT_FIELDS.map(([, n]) => `<th>${n}</th>`).join('')}</tr>${T.map(t => `<tr><td><b>${esc(t.name)}</b>${t.mine ? ' <span class="att">自定</span>' : ''}<div class="muted" style="font-size:11px">${esc(t.desc)}</div>${t.basis || t.est ? `<div class="gb"><span class="gr ${t.est ? 'inf' : 'rec'}">${t.est ? '推算' : '史载'}</span>人数、饷、粮：${esc(t.basis || '照本朝兵制推算')}</div>` : ''}${t.judge ? `<div class="gb">评估：${esc(t.judge)}</div>` : ''}</td>${UT_FIELDS.map(([k]) => `<td>${esc(t[k])}</td>`).join('')}</tr>`).join('')}</table></div>` : `<div class="muted">${utDue(s) ? '正在照本朝兵制核定……' : '还没有兵种。'}</div><button id="bUt">照本朝兵制核定兵种</button>`}
     <div class="opost"><input class="oin" id="utName" placeholder="新兵种名（如：车营、鸟铳手）"><input class="oin" id="utDesc" style="width:16em" placeholder="怎么编、使什么、怎么打"><button class="link" id="bUtAdd">定这个兵种</button></div>
     <div class="h"><span class="seal">军</span>各军<span class="note">组织度打一仗掉、歇着回；训练靠整训；欠饷缺粮掉士气</span></div>
@@ -2152,7 +2152,7 @@ function armyTab(s) {
         <div class="opost"><input class="oin" style="width:6em" type="number" min="1" data-asn="${esc(f.name)}" placeholder="人数/石数"><input class="oin" style="width:7em" data-ald="${esc(f.name)}" list="milPeople" placeholder="将领"><button class="link" data-army="split" data-f="${esc(f.name)}">分兵另立</button><button class="link" data-army="appoint" data-f="${esc(f.name)}">换将</button><button class="link" data-army="supply" data-f="${esc(f.name)}">拨粮（石）</button>${arr(s.forces).filter(g => g !== f && myForce(s, g)).length ? `<select data-amg="${esc(f.name)}">${arr(s.forces).filter(g => g !== f && myForce(s, g)).map(g => `<option>${esc(g.name)}</option>`).join('')}</select><button class="link" data-army="merge" data-f="${esc(f.name)}">并入</button>` : ''}</div>
         ${st.U.length && T.length > 1 ? `<div class="opost"><span class="muted">把上面选的兵种（数目照营数）改练成</span><select data-art="${esc(f.name)}">${tplOpts}</select><button class="link" data-army="retrain" data-f="${esc(f.name)}">改编</button></div>` : ''}</details>` : ''}</div>`; }).join('') : '<div class="muted">手下还没有兵马。</div>'}
     ${can && T.length ? `<div class="opost"><select data-aut="">${tplOpts}</select><input class="oin" style="width:4em" type="number" min="1" value="1" data-aun=""><button class="link" data-army="raise" data-f="">新编一军</button></div>` : ''}
-    ${arr(s.campaigns).length || arr(s.campNews).length ? `<div class="h"><span class="seal">行</span>行军与军报<span class="note">程序照日子、路程、兵力结算</span></div><div class="list">${arr(s.campaigns).filter(c => /待发|行军|待探报/.test(c.state)).map(c => `<div><b>${esc(c.force)}</b> ${c.mode === '攻' ? '进攻' : c.mode === '守' ? '移防' : '开赴'} ${esc(c.target)}：${c.state === '待发' ? '下一回开拔' : c.state === '待探报' ? '兵临城下，探报未回' : `约 ${Math.round(c.li || 0)} 里，已走 ${Math.round(c.done || 0)} 里，日行约 ${c.pace || '正在算'} 里`}</div>`).join('')}${arr(s.campNews).map(t => `<div class="muted">${esc(t)}</div>`).join('')}</div>` : ''}
+    ${arr(s.campaigns).length || arr(s.campNews).length ? `<div class="h"><span class="seal">行</span>行军与军报<span class="note">程序照日子、路程、兵力结算</span></div><div class="list">${arr(s.campaigns).filter(c => /待发|行军|待探报|围城/.test(c.state)).map(c => `<div><b>${esc(c.force)}</b> ${c.mode === '攻' ? '进攻' : c.mode === '守' ? '移防' : '开赴'} ${esc(c.target)}：${c.state === '待发' ? '下一回开拔' : c.state === '待探报' ? '兵临城下，探报未回' : `约 ${Math.round(c.li || 0)} 里，已走 ${Math.round(c.done || 0)} 里，日行约 ${c.pace || '正在算'} 里`}</div>`).join('')}${arr(s.campNews).map(t => `<div class="muted">${esc(t)}</div>`).join('')}</div>` : ''}
     ${battleHtml(s)}
     ${can ? techHtml(s) : ''}${can ? tacBookHtml(s) : ''}
     <datalist id="milPeople">${[...new Set(Object.keys(s.people || {}).filter(k => !(s.people[k] || {}).dead).concat(arr(s.household).filter(m => !m.dead).map(m => m.name)))].map(n => `<option value="${esc(n)}">`).join('')}</datalist>
@@ -2854,6 +2854,7 @@ function campResolve(s, c, est) {
     return out;
   }
   const T = /关|隘|口/.test(c.target) ? '关隘' : /府|州|县|城|郡|京/.test(c.target) || G.owner ? '城池' : '平原';
+  if ((c.terrain || T) === '城池' && !c.assault) return [siegeStart(s, c, f, { ...G, general: est && est.general, why: est && est.why })];   // 攻城改成围城（R-139）：每天涨进度，可强攻可撤围
   const r = resolveBattle(s, { enemy: G.who || G.owner || '守军', enemyTroops: G.troops, enemyQuality: G.quality, place: c.target, terrain: c.terrain || T, attacker: '我', surprise: !!c.surprise || c.tactic === '夜袭', tactic: c.tactic || '', ourForces: [f.name], basis: est ? est.why : '已知兵马' });
   if (!r) { c.state = '到达'; f.at = c.target; return out; }
   applyBattle(s, r);
@@ -2882,6 +2883,7 @@ function campaignTick(s, days) {
   for (const c of arr(s.campaigns)) {
     const f = arr(s.forces).find(x => x.name === c.force); if (!f) { if (/行军|待发/.test(c.state)) c.state = '散了'; continue; }
     if (c.state === '待发' && c.turn < s.turn) { if (/不成|没去|受阻|拒/.test(String(f.status || ''))) { c.state = '没发'; continue; } c.state = '行军'; c.done = 0; c.li = c.li || campLi(s, c.from || f.at, c.target) || 300; c.pace = campPace(s, f, c.paceTxt); f.status = '行军'; out.push(`${f.name}从${c.from || f.at}开拔，往${c.target}（约${c.li}里，日行约${c.pace}里）`); continue; }
+    if (c.state === '围城') { out.push(...siegeTick(s, c, f, days)); continue; }
     if (c.state !== '行军' || !days) continue;
     c.done = Math.min(c.li, (c.done || 0) + days * c.pace * ((num(f.morale) ?? 60) < 30 ? 0.6 : 1));
     { const A = arr(s.foeAmb).find(a => warOf(s, a.power) && nearRoute(s, c.from || f.at, c.target, a.place) <= 60); if (A) { s.foeAmb = arr(s.foeAmb).filter(x => x !== A);   // 路上中了敌军的埋伏（R-145）
@@ -2903,8 +2905,8 @@ function campaignTick(s, days) {
     applyBattle(s, r); g.troops = Math.max(0, N0(g.troops) - r.deadThem); if (/胜/.test(r.outcome) && !/败/.test(r.outcome)) g.status = '败退'; else if (r.lose) { g.status = '驻守'; if (r.virtual) { s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(r.lose)] = { owner: g.owner || r.enemy, turn: s.turn, why: '城破' }; } }
     s.lastCampBattle = r; out.push(`${g.name}来攻${g.at}：${r.outcome}，我伤亡${fmtN(r.deadUs, '人')}、敌${fmtN(r.deadThem, '人')}${r.lose ? '，丢了' + r.lose : ''}`);
   }
-  for (const c of arr(s.campaigns)) if (c.aid && /得手|到达|败回|散了|没发/.test(c.state)) actSet(s, z => z.id === c.aid, /得手|到达/.test(c.state) ? '办成' : '受阻', `${c.force}${c.state}`); else if (c.aid && /行军|待探报/.test(c.state)) actSet(s, z => z.id === c.aid, '在办', `${c.force}${c.state === '行军' ? '在路上' : '兵临城下'}`);
-  s.campaigns = arr(s.campaigns).filter(c => /待发|行军|待探报/.test(c.state) || s.turn - (c.turn || 0) < 6).slice(-20);
+  for (const c of arr(s.campaigns)) if (c.aid && /得手|到达|败回|散了|没发/.test(c.state)) actSet(s, z => z.id === c.aid, /得手|到达/.test(c.state) ? '办成' : '受阻', `${c.force}${c.state}`); else if (c.aid && /行军|待探报|围城/.test(c.state)) actSet(s, z => z.id === c.aid, '在办', `${c.force}${c.state === '行军' ? '在路上' : c.state === '围城' ? '围城' : '兵临城下'}`);
+  s.campaigns = arr(s.campaigns).filter(c => /待发|行军|待探报|围城/.test(c.state) || s.turn - (c.turn || 0) < 6).slice(-20);
   if (out.length) s.campNews = out; else s.campNews = [];
   return out.map(x => '军报：' + x);
 }
@@ -2921,10 +2923,10 @@ ${B.text || '（没搜到资料）'}
   s.campNews = arr(s.campNews).concat(out); s.chronicle = arr(s.chronicle).concat(out.map(t => ({ turn: s.turn, when: timeText(s.clock), who: c.force, what: t }))); return out.length;
 }
 function campBlock(s) {
-  const L = arr(s.campaigns).filter(c => /行军|待探报/.test(c.state)), N = arr(s.campNews), r = s.lastCampBattle && s.lastCampBattle.turn >= (s.turn || 0) ? s.lastCampBattle : null;
+  const L = arr(s.campaigns).filter(c => /行军|待探报|围城/.test(c.state)), N = arr(s.campNews), r = s.lastCampBattle && s.lastCampBattle.turn >= (s.turn || 0) ? s.lastCampBattle : null;
   const FN = arr(s.foeLog).filter(x => x.turn >= (s.turn || 0) - 1).map(x => x.power + x.what + (x.why ? '（他的盘算：' + x.why + '）' : '')), MN = arr(s.memos).filter(m => m.turn >= (s.turn || 0) - 1).map(m => `${m.who}上奏${m.act}${m.target ? '：' + m.target : ''}（${m.why}）——${m.state}`);
   if (!L.length && !N.length && !r && !FN.length && !MN.length) return '';
-  return '【军报（程序照日子、路程、兵力结算的，正文照此写，不改胜负伤亡、不改行程）】' + N.join('；') + (FN.length ? '\n敌方动静（敌国之主自己定的，已照账落地）：' + FN.join('；') : '') + (MN.length ? '\n手下上奏：' + MN.join('；') : '') + (L.length ? '\n在途：' + L.map(c => `${c.force}往${c.target}（${c.state === '待探报' ? '兵临城下，探报未回' : '还有约' + Math.round((c.li || 0) - (c.done || 0)) + '里'}）`).join('；') : '') + (r ? '\n' + battleBlock(r) : '');
+  return '【军报（程序照日子、路程、兵力结算的，正文照此写，不改胜负伤亡、不改行程）】' + N.join('；') + (FN.length ? '\n敌方动静（敌国之主自己定的，已照账落地）：' + FN.join('；') : '') + (MN.length ? '\n手下上奏：' + MN.join('；') : '') + (L.length ? '\n在途：' + L.map(c => `${c.force}往${c.target}（${c.state === '待探报' ? '兵临城下，探报未回' : c.state === '围城' && c.siege ? '围城第' + c.siege.days + '日，进度' + Math.round(c.siege.prog) + '%' : '还有约' + Math.round((c.li || 0) - (c.done || 0)) + '里'}）`).join('；') : '') + (r ? '\n' + battleBlock(r) : '');
 }
 /** 兵马的令（募编、整训、出征、驻守、裁撤）：写成下一步的命令，记下待办；募编的钱粮先估出来 */
 /* ========== 军令由程序当场办（2026-10-31 玩家：「没有这个系统，没有办法调兵遣将……士兵的数字是瞎编的……要跟大周列国志一样调兵遣将、训练兵种、发明科技」）：
@@ -2945,10 +2947,11 @@ function milDo(s, act, a, f, t) {
     if (!t) { ORGMSG = '先选兵种'; return null; } if (t.pay == null || !t.size) { ORGMSG = `「${t.name}」的编制、饷银还没核定，先核定兵种`; return null; }
     const n = Math.max(1, Math.min(200, parseInt(a.n, 10) || 1)), men = n * t.size;
     // 一个月能募的人有限：照地盘户口（没有地盘的照本地）
-    const pop = arr(s.territory).reduce((x, y) => x + (N0(y.pop) || 0), 0), cap = Math.max(isRuler(s) ? 3000 : 1000, Math.round(pop * 0.01)), got = (s.milRaised && s.milRaised.ym === ym ? s.milRaised.n : 0);
-    if (got + men > cap) { ORGMSG = `这个月能募的丁壮约${fmtN(cap, '人')}，已募${fmtN(got, '人')}，再募${fmtN(men, '人')}募不到这么多`; return null; }
+    const pop = arr(s.territory).reduce((x, y) => x + (N0(y.pop) || 0), 0), cap = Math.max(isRuler(s) ? 3000 : 1000, Math.round(pop * 0.01)), got = (s.milRaised && s.milRaised.ym === ym ? s.milRaised.n : 0), MP = isRuler(s) ? mpOf(s) : null;
+    if (MP && men > MP.pool) { ORGMSG = `可征的丁壮只剩${fmtN(MP.pool, '人')}（每月回${fmtN(Math.round(MP.max / 24), '人')}），募不到${fmtN(men, '人')}`; return null; }   // 人力池（R-139）
+    if (!MP && got + men > cap) { ORGMSG = `这个月能募的丁壮约${fmtN(cap, '人')}，已募${fmtN(got, '人')}，再募${fmtN(men, '人')}募不到这么多`; return null; }
     const cost = Math.round(men * t.pay * 2), Pd = !isRuler(s) ? domainPurse(s) : null, paid = Pd ? (Pd.have() >= cost ? (Pd.take(cost), `从${Pd.name}支${fmtN(cost, u)}`) : (ORGMSG = `钱不够：要${fmtN(cost, u)}，${Pd.name}只有${fmtN(Pd.have(), u)}`, null)) : milPay(s, cost); if (paid == null) return null;
-    s.milRaised = { ym, n: got + men };
+    s.milRaised = { ym, n: got + men }; if (MP) MP.pool -= men;
     if (!f) { f = { name: one(a.name, 16) || (t.name + '新军' + (arr(s.forces).filter(x => String(x.name).startsWith(t.name + '新军')).length || '')), leader: milWho(s, a.leader) ? a.leader : s.protagonist.name, at: geoCenter(s), units: [], status: '募编整训', train: 10, orgNow: 30, morale: 55, grain: 0 }; s.forces = arr(s.forces).concat([f]); }
     if (!arr(f.units).length && N0(f.troops) && f.baseMen == null) f.baseMen = Math.round(N0(f.troops));
     const m0 = forceStats(s, f).men; f.units = arr(f.units); uAdd(s, f, t.id, n);
@@ -3100,7 +3103,7 @@ function armyAct(s, act, a) {
     const line = `${f.name}${a.mode === '攻' ? '进攻' : a.mode === '守' ? '移驻防守' : a.mode === '掠' ? '下山劫掠' : a.mode === '伏' ? '往要道设伏：' : '开赴'}${one(a.target, 20)}${a.mode === '攻' && (TACTICS[a.tactic] || tacBookGet(s, a.tactic)) ? '（战法：' + a.tactic + '）' : ''}${a.li ? `，约${a.li}里` : ''}${arr(a.via).length ? '，取道' + a.via.slice(0, 5).join('、') : ''}${a.paceName ? `，${a.paceName}约${a.days}日可到` : ''}`;
     const ax = actNew(s, { type: '令', what: line, who: f.leader || '', src: '军务', perm: '统兵', ok: '能' });
     if (a.mode === '掠' && !myDomain(s).raid) { ORGMSG = '你这个身份不能去劫掠'; return null; }
-    s.campaigns = arr(s.campaigns).filter(c => !(c.force === f.name && /待发|行军|待探报/.test(c.state))).concat([{ force: f.name, mode: a.mode === '攻' ? '攻' : a.mode === '守' ? '守' : a.mode === '掠' ? '掠' : a.mode === '伏' ? '伏' : '行', target: one(a.target, 20), from: f.at || geoCenter(s), li: num(a.li) || null, paceTxt: a.pace || '', turn: s.turn, state: '待发', aid: ax.id, tactic: TACTICS[a.tactic] || tacBookGet(s, a.tactic) ? a.tactic : '' }]);
+    s.campaigns = arr(s.campaigns).filter(c => !(c.force === f.name && /待发|行军|待探报|围城/.test(c.state))).concat([{ force: f.name, mode: a.mode === '攻' ? '攻' : a.mode === '守' ? '守' : a.mode === '掠' ? '掠' : a.mode === '伏' ? '伏' : '行', target: one(a.target, 20), from: f.at || geoCenter(s), li: num(a.li) || null, paceTxt: a.pace || '', turn: s.turn, state: '待发', aid: ax.id, tactic: TACTICS[a.tactic] || tacBookGet(s, a.tactic) ? a.tactic : '' }]);
     s.armyPending = arr(s.armyPending).concat([{ act, line: '下令：' + line + '。', turn: s.turn, force: f.name, aid: ax.id, done: true }]).slice(-12);
     ORGMSG = '军令已下：下一回开拔，程序照日子行军，到了就照那里的守军打'; return '下令：' + line + '。'; }
   const r = milDo(s, act, a, f, t); if (!r) return null;
@@ -7681,8 +7684,9 @@ function btSide(s, o) {
   const st = o.f ? forceStats(s, o.f) : {}, U = arr(st.U), men = Math.max(0, Math.round(o.men || st.men || N0(o.f && o.f.troops) || 0));
   const share = re => U.length ? U.filter(x => re.test(x.t.name + (x.t.kind || ''))).reduce((a, x) => a + x.men, 0) / Math.max(1, U.reduce((a, x) => a + x.men, 0)) : 0;
   const q = /精/.test(o.quality || '') ? 1.3 : /弱|疲|新/.test(o.quality || '') ? 0.7 : 1, base = 50 * q;
-  const ld = o.leader ? ((s.people || {})[o.leader] || {}).stats || {} : {}, tong = (ld['统兵'] || {}).v ?? 45, mou = (ld['谋略'] || {}).v ?? 45;
-  return { name: o.name, men, reserve: 0, atk: st.atk ?? base, def: st.def ?? base, shock: st.shock ?? base, mob: st.mob ?? (o.cav ? 60 : 45), org: num(o.f && o.f.orgNow) ?? st.org0 ?? 70, morale: num(o.f && o.f.morale) ?? 60, train: num(o.f && o.f.train) ?? 55,
+  const ld = o.leader ? ((s.people || {})[o.leader] || {}).stats || {} : {}, tong = ((ld['统兵'] || {}).v ?? 45) + genLv(s, o.leader) * 3, mou = (ld['谋略'] || {}).v ?? 45;
+  const mj = genHas(s, o.leader, '猛将') ? 1.08 : 1;   // 将领特质（R-139）
+  return { name: o.name, men, reserve: 0, atk: (st.atk ?? base) * mj, def: st.def ?? base, shock: st.shock ?? base, mob: st.mob ?? (o.cav ? 60 : 45), org: num(o.f && o.f.orgNow) ?? st.org0 ?? 70, morale: num(o.f && o.f.morale) ?? 60, train: num(o.f && o.f.train) ?? 55,
     cav: o.cav != null ? o.cav : share(/骑|马/), rng: o.rng != null ? o.rng : share(/弓|弩|铳|炮|射/), supply: o.supply ?? 1, leader: o.leader || '', tong, mou, pref: OLD_TAC[o.tac] || o.tac || '', custom: o.custom || null, dead: 0, caught: 0 };
 }
 /** 主将挑这一天的战术：玩家指定的先用（用得上的话），自创战法照成功率，其余照统兵挑最合用的 */
@@ -8475,8 +8479,9 @@ function warStart(s, owner, cb, surprise) {
   if (warOf(s, owner)) { ORGMSG = `已经和${owner}交战了`; return null; }
   if (role === 'none') { ORGMSG = '你没有兵权政权，谈不上对别家宣战'; return null; }
   if (role === 'officer' && !surprise) { s.warReq = arr(s.warReq).filter(x => x.with !== owner).concat([{ with: owner, cb, ym }]); return lifeNote(s, '军国', `上疏请讨${owner}（${cb}），等朝廷下个月批复`); }
-  const P = arr(s.powers).find(p => p && (p.name === owner || String(owner).includes(p.name)));
-  const w = { with: owner, cb: surprise ? '' : cb, declared: !surprise, since: ym, state: '交战', won: 0, lost: 0, took: [], surprise: !!surprise, by: role, allies: dipAllies(s, owner) }; s.wars = arr(s.wars).concat([w]);
+  const P = arr(s.powers).find(p => p && (p.name === owner || String(owner).includes(p.name))), tb = truceOf(s, owner);
+  if (tb) { s.renown = Math.max(0, (num(s.renown) || 0) - 30); for (const D of Object.values(s.diplo || {})) D.att = Math.max(-100, D.att - 20); delete s.truce[owner]; }   // 停战期内毁约（R-139）
+  const w = { with: owner, truceBreak: !!tb, cb: surprise ? '' : cb, declared: !surprise, since: ym, state: '交战', won: 0, lost: 0, took: [], surprise: !!surprise, by: role, allies: dipAllies(s, owner) }; s.wars = arr(s.wars).concat([w]);
   if (s.diplo && s.diplo[owner]) s.diplo[owner].att = -80; if (surprise) for (const D of Object.values(s.diplo || {})) D.att = Math.max(-100, D.att - 15);   // 不宣而战，各家都冷
   if (P) P.stance = '敌'; s.warLog = arr(s.warLog).concat([{ ym, atk: '你', def: owner, how: surprise ? '不宣而战' : '宣战' }]).slice(-30);
   const k = surprise ? -12 : (WAR_CB[cb] || [0])[0]; s.renown = Math.max(0, (num(s.renown) || 0) + (surprise ? -12 : k * 2));
@@ -8606,9 +8611,9 @@ function lulinHtml(s) {
 }
 function warPeace(s, owner, term, agreed) {
   const w = warOf(s, owner); if (!w) { ORGMSG = `没有和${owner}交战`; return null; } const ym = Math.floor(ymOf(s.clock)); if (!agreed && w.askYM === ym) { ORGMSG = '这个月刚遣使议过和'; return null; } w.askYM = ym;
-  const score = warScore(w), need = term === '割地' ? 6 : term === '称臣' ? 4 : term === '纳币' ? 2 : -2, ok = !!agreed || score >= need || seeded(ym * 17 + owner.length) < 0.15;
+  const score = warScore(w), need = term === '割地' ? 6 : term === '称臣' ? 4 : term === '纳币' ? 2 : -2, ok = !!agreed || score >= need - Math.floor((w.exhThem || 0) / 25) || seeded(ym * 17 + owner.length) < 0.15;
   if (!ok) return lifeNote(s, '军国', `遣使往${owner}议和（${term === '称臣' ? '令其称臣' : term === '纳币' ? '令其纳币' : '罢兵'}），对方不肯`);
-  w.state = '议和'; w.end = ym; const P = arr(s.powers).find(p => p && (p.name === owner || String(owner).includes(p.name)));
+  w.state = '议和'; w.end = ym; s.truce = { ...(s.truce || {}), [owner]: ym + 24 };   /* 两年停战（R-139） */ const P = arr(s.powers).find(p => p && (p.name === owner || String(owner).includes(p.name)));
   if (P) P.stance = term === '称臣' ? '臣属' : '和'; if (s.diplo && s.diplo[owner]) { const D = s.diplo[owner]; D.att = term === '罢兵' ? -20 : -35; if (term === '称臣') D.ties = [...new Set(D.ties.concat(['臣属']))]; }
   let ceded = ''; if (term === '割地') { const F = warFronts(s, owner); if (F.length) { ceded = F[0].b; s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(ceded)] = { owner: '你', turn: s.turn, why: '割让' }; if (!arr(s.territory).some(x => samePlace(x.place, ceded))) s.territory = arr(s.territory).concat([{ place: ceded, pop: null, troops: null, grain: null, loyalty: 30, note: `${owner}割让` }]); } } if (term === '纳币') { const g = Math.round(((s.realm && N0(s.realm.revenue)) || 100000) * 0.05); if (s.realm && N0(s.realm.treasury) != null) s.realm.treasury = N0(s.realm.treasury) + g; else cashAdd(s, g); }
   return lifeNote(s, '军国', `与${owner}议和：${term === '割地' ? `${owner}割让${ceded}` : term === '称臣' ? `${owner}称臣纳贡` : term === '纳币' ? `${owner}纳币求和` : '各自罢兵'}`);
@@ -8626,6 +8631,7 @@ function warNote(s, owner, won, took, lost) { const w = warOf(s, owner); if (!w)
 function warAskHtml(s) {
   const A = s.warAsk; if (!A) return ''; const role = warRole(s), cbs = warCBs(s, A.owner);
   return `<div class="ccard" style="margin:6px 0"><div class="ct">对${esc(A.owner)}用兵：先定名分</div>
+    ${truceOf(s, A.owner) ? `<div style="color:#a33;font-size:13px">和${esc(A.owner)}还在停战期内（议和时约定两年）：这时开战是毁约，名声大跌、天下各家都冷你</div>` : ''}
     <div class="muted" style="font-size:12px">${role === 'officer' ? '你是朝廷命官，不能自己宣战：可以奏请朝廷（下个月批复），或者擅自用兵（擅启边衅，打完要被问罪）' : '名分正的名声涨、军心振；名分弱的朝野有非议；不宣而战头一仗是奇袭，可天下都说你失信'}</div>
     <div class="opost">${role === 'officer' ? cbs.filter(c => c !== '开疆拓土').map(c => `<button class="link" data-war="ask" data-cb="${esc(c)}">奏请以「${esc(c)}」讨伐</button>`).join('') : cbs.map(c => `<button class="link" data-war="declare" data-cb="${esc(c)}" title="${esc((WAR_CB[c] || [0, ''])[1])}">以「${esc(c)}」宣战</button>`).join('')}<button class="link" data-war="surprise">${role === 'officer' ? '擅自用兵' : '不宣而战'}</button><button class="link" data-war="cancel">作罢</button></div></div>`;
 }
@@ -8638,7 +8644,7 @@ function supplyLine(s, f) {
   const k0 = bd <= 150 ? 1 : bd <= 400 ? 0.85 : bd <= 800 ? 0.7 : 0.55, k = f.cutTill != null && f.cutTill >= Math.floor(ymOf(s.clock)) ? k0 * 0.7 : k0; return { k, li: bd, from: best, cut: k < k0 };   // 粮道被劫（R-145）再打七折
 }
 /** 战争进度：打赢的仗、拿下的城、盟友；正的对你有利（−10 到 +10） */
-const warScore = w => Math.max(-10, Math.min(10, (w.won || 0) - (w.lost || 0) + arr(w.took).length * 2 + arr(w.allies).length - arr(w.lostCities).length * 2));
+const warScore = w => Math.max(-10, Math.min(10, (w.won || 0) - (w.lost || 0) + arr(w.took).length * 2 + arr(w.allies).length - arr(w.lostCities).length * 2 + Math.trunc(w.occ || 0)));   // 占着城按月加（R-139）
 /** 战线：你的州府和敌方州府挨着的地方（相距不到两百五十里），各写两边的兵 */
 function warFronts(s, enemy) {
   try { const M = mapUnits(s), pol = String(pol0(s) || ''), mineU = M.L2.filter(u => { const r = M.reg(u); return r && pol && (pol.includes(r.name) || r.name.includes(pol)); }), enU = M.L2.filter(u => { const r = M.reg(u); return r && (r.name === enemy || r.name.includes(enemy) || enemy.includes(r.name)); });
@@ -8655,6 +8661,95 @@ function warsHtml(s) {
       <div class="opost"><button class="link" data-war="peace" data-to="${esc(w.with)}" data-term="罢兵">议和罢兵</button>${sc >= 2 ? `<button class="link" data-war="peace" data-to="${esc(w.with)}" data-term="纳币">令其纳币</button>` : ''}${sc >= 4 ? `<button class="link" data-war="peace" data-to="${esc(w.with)}" data-term="称臣">令其称臣</button>` : ''}${sc >= 6 && F.length ? `<button class="link" data-war="peace" data-to="${esc(w.with)}" data-term="割地">令其割让${esc(F[0].b)}</button>` : ''}</div></div>`; }).join('')}
     ${arr(s.forces).filter(f => myForce(s, f)).map(f => ({ f, sl: supplyLine(s, f) })).filter(x => x.sl.k < 1).map(x => `<div class="muted" style="font-size:12px">${esc(x.f.name)}离最近的自家城池（${esc(x.sl.from)}）约${x.sl.li}里，补给只到${Math.round(x.sl.k * 100)}%：打仗打折，每月有逃散病亡</div>`).join('')}`;
 }
+/* ========== 战争第一期（需求台账 R-139；设计/08_大系统重做.md；2026-11-07 玩家：「整个打仗的系统太少了……完全学习一下十字军之王和钢铁雄心」）==========
+ *  · 兵源：人力池照治下丁壮三成（十字军之王的征召、钢铁雄心的人力），募兵从池里出，每月回二十四分之一；户口没推出来的照旧按月限额。
+ *  · 将领：照人物的统兵谋略打仗；打一仗攒阅历，四十点升一级（统兵加三，至多五级）；照战绩得特质：善攻城、善守城、猛将；会被俘。
+ *  · 攻城（十字军之王式）：兵临城下探实守军后不再一仗定输赢，改为围城：每天涨进度（城防越高越慢；兵多、带攻城器械、主将善攻城都快），
+ *    守军粮尽后加快；围城中途出事（疫病、内应开门、城墙崩坏、守军出城突击）；可以强攻（城墙破得越多越好打）、也可以撤围；进度满了守军开城投降，守将被俘。
+ *  · 占领与厌战：占着敌城每月加战争进度；打得越久、死伤越多越厌战，民心和士气往下掉；对方厌战高了更肯议和。
+ *  · 停战：议和后两年停战，期内再开战名声大跌、各家都冷。
+ *  · 俘虏：被俘的将领可以索赎金、放还（对方态度好转）、处斩（对方记仇、各家畏惧）。数目都由程序照账算 ========== */
+const SIEGE_EV = [['疫病', 0.05, '营中起了疫病，折了些人'], ['内应', 0.025, '城中有人夜开城门接应'], ['墙崩', 0.04, '连日攻打，城墙崩了一段'], ['突击', 0.05, '守军出城突击']];
+const genOf = (s, n) => { if (!n) return null; s.gens = s.gens || {}; return (s.gens[n] = s.gens[n] || { xp: 0, lv: 0, traits: [], w: 0, l: 0, sieges: 0, holds: 0 }); };
+const genLv = (s, n) => (n && s.gens && s.gens[n] ? s.gens[n].lv || 0 : 0);
+const genHas = (s, n, t) => !!(n && s.gens && s.gens[n] && arr(s.gens[n].traits).includes(t));
+function genGain(s, n, won, kind) { const g = genOf(s, n); if (!g || n === '' ) return; g.xp += won ? 20 : 8; if (won) g.w++; else g.l++; if (won && kind === 'siege') g.sieges++; if (won && kind === 'hold') g.holds++;
+  const lv = Math.min(5, Math.floor(g.xp / 40)); const up = lv > (g.lv || 0); g.lv = lv;
+  const T = new Set(arr(g.traits)); if (g.sieges >= 2) T.add('善攻城'); if (g.holds >= 2) T.add('善守城'); if (g.w >= 5 && g.w >= g.l * 2) T.add('猛将'); g.traits = [...T];
+  return up ? `${n}历练有成，升到${lv}级` : ''; }
+/** 人力池：治下丁壮三成可征；募兵从池里扣，每月回上限的二十四分之一 */
+function mpOf(s) { let max = 0, known = 0; for (const p of myPlaces(s)) { const d = N0(cityOf(s, p).ding); if (d) { max += d; known++; } } if (!known) return null; max = Math.round(max * 0.3);
+  s.mp = s.mp && s.mp.max ? s.mp : { pool: Math.round(max * 0.5), max, ym: Math.floor(ymOf(s.clock)) }; s.mp.max = max; s.mp.pool = Math.min(s.mp.pool, max); return s.mp; }
+function mpMonthly(s) { const M = mpOf(s); if (!M) return []; const ym = Math.floor(ymOf(s.clock)); if (M.ym === ym) return []; const k = Math.max(1, ym - (M.ym || ym)); M.ym = ym; M.pool = Math.min(M.max, Math.round(M.pool + M.max / 24 * Math.min(6, k))); return []; }
+/** 围城开始：守军照探报或已知兵马 */
+function siegeStart(s, c, f, G) { const fort = num(cityOf(s, c.target).cheng) ?? 50;
+  c.state = '围城'; c.siege = { prog: 0, days: 0, fort, food: Math.round(60 + fort * 0.6), g: { troops: Math.round(N0(G.troops) || 0), quality: G.quality || '中', who: G.who || G.owner || '守军', owner: G.owner || '', general: G.general || '', why: G.why || '' }, log: [] };
+  f.at = c.target; f.status = '围城'; return `${f.name}围了${c.target}：守军约${fmtN(c.siege.g.troops, '人')}${c.siege.g.general ? '，守将' + c.siege.g.general : ''}，城防${fort}，城中存粮约够${c.siege.food}日`; }
+function siegeRate(s, c, f) { const S0 = c.siege, men = N0(f.troops) || 0, r = Math.max(0.5, Math.min(2, Math.sqrt(men / Math.max(200, S0.g.troops)))), eng = forceStats(s, f).U.some(x => /炮|砲|器械|攻城|云梯|投石/.test(x.t.name + (x.t.desc || ''))) ? 1.4 : 1, gs = genHas(s, f.leader, '善攻城') ? 1.3 : 1;
+  return 100 / (30 + S0.fort * 0.9) * r * eng * gs * (S0.days > S0.food ? 2 : 1); }
+/** 围城每过一段日子：涨进度、出事、粮尽；满了开城投降 */
+function siegeTick(s, c, f, days) {
+  const S0 = c.siege, out = []; if (!S0 || !days) return out; const ym = Math.floor(ymOf(s.clock));
+  for (let d = 0; d < days; d += 10) { const step = Math.min(10, days - d); S0.days += step; S0.prog = Math.min(100, S0.prog + siegeRate(s, c, f) * step);
+    for (const [k, p, txt] of SIEGE_EV) { if (seeded(ym * 101 + S0.days * 7 + k.length * 13 + c.target.length) >= p * step / 10 * (k === '内应' && S0.days > S0.food ? 3 : 1)) continue;
+      if (k === '疫病') { const lost = Math.round((N0(f.troops) || 0) * 0.03); f.troops = Math.max(0, N0(f.troops) - lost); if (arr(f.units).length) uShrink(s, f, f.troops / Math.max(1, f.troops + lost)); S0.log.push(`第${S0.days}日，${txt}（约${lost}人）`); }
+      else if (k === '内应') { S0.prog = Math.min(100, S0.prog + 30); S0.log.push(`第${S0.days}日，${txt}`); }
+      else if (k === '墙崩') { S0.prog = Math.min(100, S0.prog + 15); S0.log.push(`第${S0.days}日，${txt}`); }
+      else if (k === '突击' && S0.g.troops > 300) { const r = resolveBattle(s, { enemy: S0.g.who + '突击之兵', enemyOwner: S0.g.owner, enemyTroops: Math.round(S0.g.troops * 0.3), enemyQuality: S0.g.quality, place: c.target, terrain: '平原', attacker: '敌', surprise: true, field: true, ourForces: [f.name] });
+        if (r) { applyBattle(s, r); S0.g.troops = Math.max(0, S0.g.troops - r.deadThem); S0.log.push(`第${S0.days}日，${txt}：我军${r.outcome}，我伤亡${r.deadUs}、敌${r.deadThem}`); } } }
+    if (S0.days > S0.food) S0.g.troops = Math.max(0, Math.round(S0.g.troops * 0.97));   // 城中粮尽，守军逃散饿死
+    if (S0.prog >= 100 || S0.g.troops <= 0) { out.push(siegeWin(s, c, f, '开城投降')); return out; } }
+  out.push(`${f.name}围${c.target}第${S0.days}日，进度${Math.round(S0.prog)}%${S0.days > S0.food ? '，城中粮尽' : ''}${S0.log.length ? '；' + S0.log.slice(-2).join('；') : ''}`); return out; }
+function siegeWin(s, c, f, how) { const S0 = c.siege, t = c.target, ym = Math.floor(ymOf(s.clock));
+  if (!arr(s.territory).some(x => samePlace(x.place, t))) s.territory = arr(s.territory).concat([{ place: t, pop: null, troops: Math.round((N0(f.troops) || 0) * 0.1), grain: null, loyalty: 30, note: `第${s.turn}回围城${how}` }]);
+  s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(t)] = { owner: '你', turn: s.turn, why: '围城' + how }; if (S0.g.owner) warNote(s, S0.g.owner, true, t, '');
+  for (const g of arr(s.forces).filter(g => !myForce(s, g) && samePlace(g.at, t) && !g.march)) g.troops = 0;
+  if (S0.g.general) s.prisoners = arr(s.prisoners).filter(p => p.name !== S0.g.general).concat([{ name: S0.g.general, owner: S0.g.owner, ym, where: t }]);
+  const up = genGain(s, f.leader, true, 'siege'); f.status = '驻守'; c.state = '得手';
+  const line = `${f.name}围${t}${S0.days}日，守军${how}，拿下${t}${S0.g.general ? '，俘守将' + S0.g.general : ''}${up ? '；' + up : ''}`;
+  s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: f.name, what: line }]); return line; }
+/** 强攻：城墙破得越多越好打；撤围 */
+function siegeAct(s, fname, act) {
+  const c = arr(s.campaigns).find(x => x.force === fname && x.state === '围城'), f = arr(s.forces).find(x => x.name === fname); if (!c || !f) { ORGMSG = '没有在围的城'; return null; }
+  if (act === '撤围') { c.state = '撤围'; f.status = '驻扎'; return lifeNote(s, '军国', `${f.name}撤了${c.target}之围`); }
+  const S0 = c.siege, r = resolveBattle(s, { enemy: S0.g.who, enemyOwner: S0.g.owner, enemyTroops: S0.g.troops, enemyQuality: S0.g.quality, place: c.target, terrain: '城池', attacker: '我', breach: S0.prog, surprise: false, ourForces: [f.name], noTake: true });
+  if (!r) return null; applyBattle(s, r); S0.g.troops = Math.max(0, S0.g.troops - r.deadThem); s.lastCampBattle = r;
+  const won = /大胜|小胜/.test(r.outcome); const t = won ? siegeWin(s, c, f, '被攻破') : `强攻${c.target}不下：${r.outcome}，我伤亡${fmtN(r.deadUs, '人')}、敌${fmtN(r.deadThem, '人')}`;
+  if (!won) { S0.prog = Math.min(99, S0.prog + 5); genGain(s, f.leader, false); }
+  s.campNews = arr(s.campNews).concat([t]); return lifeNote(s, '军国', t); }
+/** 每月：占领加进度、厌战、停战到期 */
+function warMonthly2(s) {
+  const out = [], ym = Math.floor(ymOf(s.clock)); if (s.war2YM === ym) return out; const k = s.war2YM == null ? 1 : Math.max(1, Math.min(6, ym - s.war2YM)); s.war2YM = ym;
+  for (const w of arr(s.wars).filter(w => w && w.state === '交战')) {
+    const held = arr(w.took).filter(t => arr(s.territory).some(x => samePlace(x.place, t))).length, lost = arr(w.lostCities).filter(t => !arr(s.territory).some(x => samePlace(x.place, t))).length;
+    w.occ = Math.max(-10, Math.min(10, (w.occ || 0) + (held - lost) * 0.5 * k));
+    w.exh = Math.min(100, (w.exh || 0) + 1.5 * k); w.exhThem = Math.min(100, (w.exhThem || 0) + 1.5 * k + held * k);
+    const G = (s.gov && s.gov.stats) || {}; if (w.exh >= 30 && G['民心'] != null) G['民心'] = Math.max(0, G['民心'] - Math.round(w.exh / 30) * k);
+    if (w.exh >= 40) for (const f of arr(s.forces).filter(f => myForce(s, f))) f.morale = Math.max(0, (num(f.morale) ?? 60) - Math.round(w.exh / 40) * k);
+    if (w.exh >= 60 && !w.exhWarn) { w.exhWarn = true; out.push(`与${w.with}的仗打得太久，国中厌战，民心士气都在往下掉`); } }
+  return out;
+}
+const purseAdd = (s, v) => { if (s.realm && N0(s.realm.treasury) != null) s.realm.treasury = N0(s.realm.treasury) + v; else cashAdd(s, v); };
+/** 被敌方俘去的自家将领：出赎金赎回（照一年进项的百分之二，对方地盘大的多要） */
+function captiveAct(s, name) { const c = arr(s.captive).find(x => x.name === name); if (!c) return null; const rev = annualRev(s); if (!rev) { delete s.fiFail; return kickJob('fisc', '国计底账还没推好，赎金定不下来', () => fiscalDS(s), '国计底账推好了，可以赎人了'); }
+  const P = realmPowers(s).find(x => x.name === c.owner) || {}, amt = Math.round(rev * 0.02 * Math.min(3, prefsOf(P) / myPrefs(s))), paid = milPay(s, amt); if (paid == null) return null;
+  s.captive = s.captive.filter(x => x !== c); const f = arr(s.forces).find(x => x.name === c.force && myForce(s, x)); if (f) f.leader = name; return lifeNote(s, '军国', `出赎金（${paid}）从${c.owner || '敌营'}赎回${name}${f ? '，仍统' + f.name : ''}`); }
+const truceOf = (s, who) => { const T = (s.truce || {})[who]; return T != null && T > Math.floor(ymOf(s.clock)) ? T : null; };
+function prisonerAct(s, name, act) {
+  const p = arr(s.prisoners).find(x => x.name === name); if (!p) return null; const D = p.owner ? dipOf(s, p.owner) : null;
+  if (act === '赎金') { const rev = annualRev(s); if (!rev) { delete s.fiFail; return kickJob('fisc', '国计底账还没推好，赎金定不下来', () => fiscalDS(s), '国计底账推好了，可以再开价了'); }
+    const P = realmPowers(s).find(x => x.name === p.owner) || {}, amt = Math.round(rev * 0.02 * Math.min(3, prefsOf(P) / myPrefs(s))); purseAdd(s, amt); s.prisoners = s.prisoners.filter(x => x !== p); if (D) D.att = Math.min(100, D.att + 5);
+    return lifeNote(s, '军国', `${p.owner || '对方'}出赎金${fmtN(amt, (s.money || {}).unit || '')}赎回${name}`); }
+  if (act === '放还') { s.prisoners = s.prisoners.filter(x => x !== p); if (D) D.att = Math.min(100, D.att + 15); s.renown = (num(s.renown) || 0) + 5; return lifeNote(s, '军国', `厚待${name}，放还${p.owner || ''}：对方感念，名声涨了`); }
+  if (act === '处斩') { s.prisoners = s.prisoners.filter(x => x !== p); if (D) D.att = Math.max(-100, D.att - 40); for (const d of Object.values(s.diplo || {})) d.att = Math.max(-100, d.att - 5); s.dread = (num(s.dread) || 0) + 10; return lifeNote(s, '军国', `斩${name}：${p.owner || '对方'}切齿，各家畏你狠辣`); }
+  return null; }
+function war2Html(s) {
+  const M = mpOf(s), P = arr(s.prisoners), G = Object.entries(s.gens || {}).filter(([n, g]) => g.xp > 0 || arr(s.forces).some(f => myForce(s, f) && f.leader === n)), W = arr(s.wars).filter(w => w && w.state === '交战');
+  return `${M ? `<div class="cr"><span>可征丁壮</span><b>${fmtN(M.pool, '人')}</b><span class="muted" style="font-size:12px">（上限${fmtN(M.max, '人')}：治下丁壮三成；每月回${fmtN(Math.round(M.max / 24), '人')}；募兵从这里出）</span></div>` : ''}
+    ${W.length ? `<div class="muted" style="font-size:12px">${W.map(w => `对${esc(w.with)}：占领加分${(w.occ || 0).toFixed(1)}，我方厌战${Math.round(w.exh || 0)}、对方厌战${Math.round(w.exhThem || 0)}`).join('；')}</div>` : ''}
+    ${G.length ? `<div class="h"><span class="seal">将</span>将领<span class="note">打仗攒阅历升级（统兵加三）；照战绩得特质</span></div><div class="list">${G.map(([n, g]) => `<div><b>${esc(n)}</b> ${g.lv || 0}级（阅历${g.xp}）· 胜${g.w}败${g.l}${arr(g.traits).length ? ' · ' + g.traits.map(esc).join('、') : ''}</div>`).join('')}</div>` : ''}
+    ${arr(s.captive).length ? `<div class="h"><span class="seal">陷</span>陷敌的将领</div>${arr(s.captive).map(c => `<div class="affair"><b>${esc(c.name)}</b> <span class="muted">被${esc(c.owner || '敌')}俘去</span><div class="opost"><button class="link" data-capt="1" data-n="${esc(c.name)}">出赎金赎回</button></div></div>`).join('')}` : ''}
+    ${P.length ? `<div class="h"><span class="seal">俘</span>俘虏</div>${P.map(p => `<div class="affair"><b>${esc(p.name)}</b> <span class="muted">${esc(p.owner || '')}的将领，${esc(p.where || '')}被俘</span><div class="opost"><button class="link" data-pris="赎金" data-n="${esc(p.name)}">索赎金</button><button class="link" data-pris="放还" data-n="${esc(p.name)}">放还</button><button class="link" data-pris="处斩" data-n="${esc(p.name)}">处斩</button></div></div>`).join('')}` : ''}`; }
 /* ========== 敌国之主、手下大臣和将领由 DeepSeek 扮演（需求台账 R-145；2026-11-07 玩家：「难道战争只有攻城？这样吧，让ds扮演敌对势力和手下大臣，主动操作他们」）==========
  *  打仗不止攻城：野战迎击、劫粮道、夜袭劫营、设伏、深沟固守、增兵、求和、离间，你和敌人都能用。
  *  每月后台请 DeepSeek 扮演每个和你交战的一家之主（照史料里他的为人、此刻兵力和战局），从定好的几样里挑一两件；程序照账核过（兵够不够、目标在不在）才落账：
@@ -8680,7 +8775,7 @@ function foeNote(s, pw, act, what, why, ok) { const ym = foeYM(s); s.foeLog = ar
 async function foePlan(s) {
   const X = foeInfo(s); if (!X.length) { s.foeYM = foeYM(s); return 0; }
   const mineF = arr(s.forces).filter(f => myForce(s, f) && N0(f.troops) > 0), cities = myPlaces(s), H = arr(s.foeLog).filter(x => x.ym >= foeYM(s) - 3).map(x => `${x.power}${x.what}`).slice(-8);
-  const txt = X.map(({ w, P, tot, avail, F }) => `· ${w.with}：主事的${P.leader || '（史料无名）'}${P.note ? '，' + cut(P.note, 40) : ''}；兵约${tot != null ? fmtN(tot, '人') : '不详'}，还能调的约${avail != null ? fmtN(avail, '人') : '不详'}；都城${P.seat || '不详'}；战局${warScore(w) > 0 ? '主角占上风' : warScore(w) < 0 ? '他占上风' : '相持'}（主角胜${w.won || 0}败${w.lost || 0}${arr(w.took).length ? '，主角取了' + w.took.join('、') : ''}${arr(w.lostCities).length ? '，主角丢了' + w.lostCities.join('、') : ''}）；两家挨着的地方：${F.map(f => '他的' + f.b + '—主角的' + f.a + '（约' + f.li + '里）').join('、') || '不挨着'}；他在外的兵马：${foeArmies(s).filter(g => g.owner === w.with).map(g => `${g.name}${fmtN(N0(g.troops), '人')}在${g.at}${g.march ? '，往' + g.march.to : ''}`).join('；') || '无'}`).join('\n');
+  const txt = X.map(({ w, P, tot, avail, F }) => `· ${w.with}：主事的${P.leader || '（史料无名）'}${P.note ? '，' + cut(P.note, 40) : ''}；兵约${tot != null ? fmtN(tot, '人') : '不详'}，还能调的约${avail != null ? fmtN(avail, '人') : '不详'}；都城${P.seat || '不详'}；战局${warScore(w) > 0 ? '主角占上风' : warScore(w) < 0 ? '他占上风' : '相持'}，他国中厌战${Math.round(w.exhThem || 0)}（满一百）、主角厌战${Math.round(w.exh || 0)}（主角胜${w.won || 0}败${w.lost || 0}${arr(w.took).length ? '，主角取了' + w.took.join('、') : ''}${arr(w.lostCities).length ? '，主角丢了' + w.lostCities.join('、') : ''}）；两家挨着的地方：${F.map(f => '他的' + f.b + '—主角的' + f.a + '（约' + f.li + '里）').join('、') || '不挨着'}；他在外的兵马：${foeArmies(s).filter(g => g.owner === w.with).map(g => `${g.name}${fmtN(N0(g.troops), '人')}在${g.at}${g.march ? '，往' + g.march.to : ''}`).join('；') || '无'}`).join('\n');
   const { text } = await callClaude(`你扮演跟主角交战的各家之主（照史料里此人的为人、谋略和他此刻的处境），替他们定这个月的军国大计。现在是${timeText(s.clock)}。
 主角：${s.protagonist.name}（${s.protagonist.role}）。主角的兵马：${mineF.map(f => { const sl = supplyLine(s, f); return `${f.name}${fmtN(N0(f.troops), '人')}驻${f.at || geoCenter(s)}（${f.status || ''}${sl.k < 1 ? '，离自家城池约' + sl.li + '里，粮道长' : ''}）`; }).join('；') || '无'}。主角的城池：${cities.slice(0, 14).join('、') || '不详'}
 ${H.length ? '近几个月各家已经做的：' + H.join('；') + '\n' : ''}跟主角交战的：
@@ -8749,7 +8844,7 @@ function foeMarchTick(s, days) {
 function foeOp(s, act, gname, fname, quiet) {
   const f = arr(s.forces).find(x => x.name === fname && myForce(s, x)), g = foeArmies(s).find(x => x.name === gname), ym = foeYM(s);
   if (!f) { ORGMSG = '先挑一支归你调的兵'; return null; } if (!g) { ORGMSG = '这支敌军已经散了或走了'; return null; }
-  if (arr(s.campaigns).some(c => c.force === f.name && /待发|行军|待探报/.test(c.state))) { ORGMSG = `${f.name}已经有军令在身`; return null; }
+  if (arr(s.campaigns).some(c => c.force === f.name && /待发|行军|待探报|围城/.test(c.state))) { ORGMSG = `${f.name}已经有军令在身`; return null; }
   const li = campLi(s, f.at || geoCenter(s), g.at); if (li == null) { ORGMSG = '找不到去那里的路'; return null; }
   if (act === '劫粮') { if (li > 800) { ORGMSG = `${g.name}离${f.name}约${li}里，轻骑够不着`; return null; } if (f.raidYM === ym) { ORGMSG = `${f.name}这个月已经派过轻骑了`; return null; } f.raidYM = ym;
     const st = forceStats(s, f), p = 0.35 + (g.march ? 0.2 : 0) + (st.mob != null ? st.mob / 250 : 0.1) - (li > 400 ? 0.15 : 0), ok = seeded(ym * 53 + f.name.length * 7 + g.name.length) < p; f.orgNow = Math.max(0, (num(f.orgNow) ?? 60) - 8);
@@ -8806,7 +8901,7 @@ function genExec(s, o, G) {
   const who = one(o && o.who, 10), f = (G || memGens(s)).find(x => x.leader === who), act = one(o && o.act, 4), why = one(o && o.why, 60); if (!f || !GEN_ACTS[act]) return null;
   const say = t => { s.genLog = arr(s.genLog).concat([{ ym: memYM(s), turn: s.turn || 0, who, act, what: t, why }]).slice(-30); s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who, what: t }]); s.campNews = arr(s.campNews).concat([t]); return t; };
   if (s.genFree === false) return act === '按兵' ? null : say(`${who}请示要${act}${o.target ? one(o.target, 16) : ''}，你没许他便宜行事，按兵待命`);
-  if (arr(s.campaigns).some(c => c.force === f.name && /待发|行军|待探报/.test(c.state))) return null;
+  if (arr(s.campaigns).some(c => c.force === f.name && /待发|行军|待探报|围城/.test(c.state))) return null;
   if (act === '按兵') return null;
   if (act === '固守') { f.status = '固守'; f.fortYM = memYM(s); return say(`${who}在${f.at}深沟高垒，固守待敌`); }
   const r = foeOp(s, act, one(o.target, 20), f.name, true); return r ? say(`${who}便宜行事：${act === '劫粮' ? r : `率${f.name}${act}${one(o.target, 20)}`}`) : null;
@@ -9706,7 +9801,7 @@ function cardBlock(s) {
   const d = identityOf(s), mo = s.money || {}, u = mo.unit || '两', w = s.world || {};
   const near = livePeople(s).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 6).map(([k, v]) => k + (v.tie || v.role ? '（' + one(v.tie || v.role, 10) + '）' : ''));
   const acts = arr(s.acts).filter(a => !/办成|驳回|搁下|没有下文/.test(a.state || '')).slice(-5).map(a => `${a.id}「${a.type}」${one(a.what, 48)}（${a.state || '待办'}）`);
-  const camp = arr(s.campaigns).filter(c => /待发|行军|待探报/.test(c.state || '')).slice(-2).map(c => `${c.force || ''}${c.mode || '行'}${c.target || ''}（${c.state}）`);
+  const camp = arr(s.campaigns).filter(c => /待发|行军|待探报|围城/.test(c.state || '')).slice(-2).map(c => `${c.force || ''}${c.mode || '行'}${c.target || ''}（${c.state}）`);
   const press = arr(s.press).filter(z => z.state === '临门').slice(0, 2).map(z => one(z.title || z.text, 30));
   const ev = arr(w.events).slice(-3).map(x => `${x.y}年${x.m ? x.m + '月' : ''}${one(x.text, 30)}`);
   const orgs = arr(s.orgs).filter(o => o && !o.gone && (o.head === s.protagonist.name || arr(o.members).includes(s.protagonist.name)));
@@ -10218,7 +10313,7 @@ function resolveBattle(s, b) {
   const ourQ = mine.reduce((a, f) => a + N0(f.troops) * (arr(f.units).length ? (forcePower(s, f, b.attacker === '我') || Q(f.quality)) : Q(f.quality)), 0) / ours;
   const grainDays = mine.some(f => f.virtual) ? 30 : mine.reduce((a, f) => a + (N0(f.grain) || 0), 0) / Math.max(1, ours * 0.02);
   const supplyUs = grainDays < 5 ? 0.6 : grainDays < 15 ? 0.85 : 1, supplyThem = /缺/.test(b.enemySupply || '') ? 0.75 : 1;
-  const T = b.terrain || '', defBonus = /城/.test(T) ? 2.4 : /关/.test(T) ? 2.5 : /山/.test(T) ? 1.4 : /河/.test(T) ? 1.3 : 1;
+  const T = b.terrain || '', defBonus = /城/.test(T) ? 2.4 * (1 - Math.min(90, num(b.breach) || 0) / 150) : /关/.test(T) ? 2.5 : /山/.test(T) ? 1.4 : /河/.test(T) ? 1.3 : 1;
   // 地形宽窄：关隘、城下、山路一次摆得开的人有限，多出来的兵用不上（像战场宽度）
   const width = /关/.test(T) ? 4000 : /城/.test(T) ? 12000 : /山|谷|林/.test(T) ? 8000 : /河|渡/.test(T) ? 10000 : Infinity;
   const engU = Math.min(ours, width), engT = Math.min(N0(b.enemyTroops), width);
@@ -10236,10 +10331,11 @@ function resolveBattle(s, b) {
   const lead = mine.filter(f => !f.virtual).sort((x, y) => N0(y.troops) - N0(x.troops))[0] || null, slU = lead ? supplyLine(s, lead) : { k: 1 }, cust0 = b.custom ? tacBookGet(s, b.custom) : (b.tactic && tacBookGet(s, b.tactic)), custNo = cust0 ? tacUsable(s, cust0, lead, T) : '', cust = custNo ? null : cust0;   // 自创战法这里用不上（地形、季节、兵种、谋略不够）就照常打，战报里写明
   const us = btSide(s, { name: '我军', f: lead, men: ours, quality: lead ? lead.quality : b.ourQuality, leader: lead ? lead.leader : '', tac: cust ? '' : b.tactic, custom: cust, supply: supplyUs * tired * slU.k }), them = btSide(s, { name: b.enemy || '敌军', men: N0(b.enemyTroops), quality: b.enemyQuality, leader: b.enemyLeader || '', supply: supplyThem, cav: /骑|胡|虏|蒙|契丹|女真|突厥|鞑/.test((b.enemy || '') + (b.enemyType || '')) ? 0.4 : null });
   if (b.surprise) { if (b.attacker === '我') them.org *= 0.6; else us.org *= 0.6; }
-  const sim = battleSim(s, b.attacker === '我' ? us : them, b.attacker === '我' ? them : us, { terrain: T, wx: WX, fort: (cityOf(s, b.place || '') || {}).cheng, seed: (s.turn || 0) * 31 + ours % 997 + N0(b.enemyTroops) % 991 });
+  if (b.attacker === '敌' && /城/.test(T) && lead && genHas(s, lead.leader, '善守城')) us.def *= 1.15;
+  const sim = battleSim(s, b.attacker === '我' ? us : them, b.attacker === '我' ? them : us, { terrain: T, wx: WX, fort: (() => { const v = (cityOf(s, b.place || '') || {}).cheng; return v == null ? v : v * (1 - Math.min(90, num(b.breach) || 0) / 100); })(), seed: (s.turn || 0) * 31 + ours % 997 + N0(b.enemyTroops) % 991 });
   const flip = { 大胜: '大败', 小胜: '小败', 相持: '相持', 小败: '小胜', 大败: '大胜' }, outcome = b.attacker === '我' ? sim.outcome : flip[sim.outcome];
   const deadUs = us.dead + (us.caught || 0), deadThem = them.dead + (them.caught || 0);
-  const take = !b.field && b.attacker === '我' && /大胜|小胜/.test(outcome) && b.place ? b.place : '';   // 野战、劫营、设伏不占城（R-145）
+  const take = !b.noTake && !b.field && b.attacker === '我' && /大胜|小胜/.test(outcome) && b.place ? b.place : '';   // 野战、劫营、设伏不占城（R-145）
   const lose = !b.field && b.attacker === '敌' && /大败/.test(outcome) && b.place ? b.place : '';
   const r0 = { ...b, ours, ourForces: mine.map(f => f.name), virtual: mine.some(f => f.virtual), odds: Math.round(pWin * 100), outcome, deadUs: b.tactic === '围城' ? Math.round(deadUs * 0.5) : deadUs, deadThem, take, lose, turn: s.turn + 1, tacWhy: TM[1] };
   r0.wx = WX.txt; r0.tired = tired < 1; r0.days = sim.days.map(d => ({ d: d.d, us: b.attacker === '我' ? d.ta : d.tb, them: b.attacker === '我' ? d.tb : d.ta, du: b.attacker === '我' ? d.kA : d.kB, dt: b.attacker === '我' ? d.kB : d.kA, usMen: (b.attacker === '我' ? d.A : d.B).men, usOrg: (b.attacker === '我' ? d.A : d.B).org, thMen: (b.attacker === '我' ? d.B : d.A).men, thOrg: (b.attacker === '我' ? d.B : d.A).org, note: d.note }));
@@ -10263,6 +10359,10 @@ function applyBattle(s, r) {
   if (r.take && !arr(s.territory).some(x => x.place === r.take)) s.territory = arr(s.territory).concat([{ place: r.take, pop: null, troops: Math.round(r.ours * 0.1), grain: null, loyalty: 30, note: `第${r.turn}回打下` }]);
   if (r.lose) s.territory = arr(s.territory).filter(x => x.place !== r.lose);
   if (!r.virtual && (r.take || r.lose)) { s.mapOwn = s.mapOwn || {}; if (r.take) s.mapOwn[geoStem(r.take)] = { owner: '你', turn: r.turn, why: '打下' }; if (r.lose) s.mapOwn[geoStem(r.lose)] = { owner: String(r.enemyOwner || r.enemy || '敌').replace(/(守军|军|兵)$/, '') || '敌', turn: r.turn, why: '丢了' }; }
+  { const won = /胜/.test(r.outcome) && !/败/.test(r.outcome), ld = mine.slice().sort((a, b) => N0(b.troops) - N0(a.troops))[0];   // 将领阅历、厌战、主将被俘（R-139）
+    if (ld && ld.leader && ld.leader !== s.protagonist.name) { const up = genGain(s, ld.leader, won, r.attacker === '敌' && /城/.test(r.terrain || '') ? 'hold' : ''); if (up) r.genUp = up;
+      if (/大败/.test(r.outcome) && seeded((s.turn || 0) * 17 + String(ld.leader).length * 31 + N0(r.deadUs) % 97) < 0.15) { const w0 = arr(s.wars).find(w => w && w.state === '交战' && String(r.enemy || '').includes(w.with)); s.captive = arr(s.captive).concat([{ name: ld.leader, owner: w0 ? w0.with : String(r.enemyOwner || ''), force: ld.name, ym: Math.floor(ymOf(s.clock)) }]); r.capt = ld.leader; ld.leader = s.protagonist.name; } }
+    for (const w of arr(s.wars)) if (w && w.state === '交战' && String(r.enemy || '').includes(w.with)) { w.exh = Math.min(100, (w.exh || 0) + N0(r.deadUs) / Math.max(1, myTroopsAll(s) + N0(r.deadUs)) * 30); w.exhThem = Math.min(100, (w.exhThem || 0) + N0(r.deadThem) / Math.max(1, N0(r.enemyTroops)) * 15); } }
   s.battles = arr(s.battles).concat([{ turn: r.turn, when: timeText(s.clock), place: r.place, enemy: r.enemy, ours: r.ours, theirs: r.enemyTroops, outcome: r.outcome, deadUs: r.deadUs, deadThem: r.deadThem, take: r.take, lose: r.lose, terrain: r.terrain, tactic: r.tactic || '', tacWhy: r.tacWhy || '', rounds: r.rounds || [], forces: arr(r.ourForces).join('、') }]).slice(-40);
   return r;
 }
@@ -11705,7 +11805,7 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), dipMonthly(s)), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), warMonthly2(s), mpMonthly(s), dipMonthly(s)), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
       if (!s.yearSnap) s.yearSnap = yearSnap(s);
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
@@ -13073,6 +13173,9 @@ document.addEventListener('click', async e => {
   if (S && !BUSY && t.id === 'bReform' && !REFORM_P) { ORGMSG = '正在拟定章程……'; REFORM_P = 1; render(); try { await reformStart(S, ($('#refName') || {}).value || '', ($('#refBody') || {}).value || ''); } catch (er) { ORGMSG = '没推行成：' + errText(er); } REFORM_P = null; try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.threat) { threatAct(S, t.dataset.threat); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.rebel) { rebelAct(S, t.dataset.rebel); try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && (t.dataset.siege || t.dataset.pris || t.dataset.capt)) {   // 围城、俘虏（R-139）
+    if (t.dataset.siege) siegeAct(S, t.dataset.f, t.dataset.siege); else if (t.dataset.pris) prisonerAct(S, t.dataset.n, t.dataset.pris); else captiveAct(S, t.dataset.n);
+    try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && (t.dataset.fop || t.dataset.memo || t.dataset.poff || t.dataset.gfree)) {   // 敌情、奏章（R-145）
     if (t.dataset.fop) foeOp(S, t.dataset.fop, t.dataset.g, ($(`[data-fopf="${CSS.escape(t.dataset.g)}"]`) || {}).value || '');
     else if (t.dataset.memo) memoAct(S, t.dataset.memo, t.dataset.mv);
@@ -13151,7 +13254,7 @@ document.addEventListener('click', async e => {
         if (ow && warRole(S) !== 'none' && myDomain(S).kind !== 'stronghold' && !warOf(S, ow)) { S.warAsk = { force: f0, target: tg, owner: ow, tactic: v(`[data-xtac="${CSS.escape(f0)}"]`), pace, li, days: f1 && li ? Math.max(1, Math.round(li / campPace(S, f1, pace))) : null }; ORGMSG = `${tg}归${ow}：先定名分——宣战、不宣而战，还是作罢`; render(); return; } }
       const line = armyAct(S, 'march', { force: f0, target: tg, mode: ds.mode, tactic: ds.mode === '攻' ? v(`[data-xtac="${CSS.escape(f0)}"]`) : '', pace, li, paceName: pace || '常行', days: f1 && li ? Math.max(1, Math.round(li / campPace(S, f1, pace))) : null });
       if (line) { const ta = $('#said'); if (ta) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + line; try { await store.save(S); } catch (_) {} } render(); return; }
-    if (ds.army === 'halt') { const c = arr(S.campaigns).find(x => x.force === f0 && /待发|行军|待探报/.test(x.state)); if (c) { c.state = '没发'; const f1 = arr(S.forces).find(x => x.name === f0); if (f1) f1.status = '驻守'; actSet(S, z => z.id === c.aid, '搁下', '撤回'); ORGMSG = `${f0}撤回，不去${c.target}了`; } try { await store.save(S); } catch (_) {} render(); return; }
+    if (ds.army === 'halt') { const c = arr(S.campaigns).find(x => x.force === f0 && /待发|行军|待探报|围城/.test(x.state)); if (c) { c.state = '没发'; const f1 = arr(S.forces).find(x => x.name === f0); if (f1) f1.status = '驻守'; actSet(S, z => z.id === c.aid, '搁下', '撤回'); ORGMSG = `${f0}撤回，不去${c.target}了`; } try { await store.save(S); } catch (_) {} render(); return; }
     const line = armyAct(S, ds.army, { force: f0, tpl: v(`[data-aut="${CSS.escape(f0)}"]`), n: big ? v(`[data-asn="${CSS.escape(f0)}"]`) : v(`[data-aun="${CSS.escape(f0)}"]`), target: ds.army === 'merge' ? v(`[data-amg="${CSS.escape(f0)}"]`) : v(`[data-atg="${CSS.escape(f0)}"]`), mode: ds.mode, tactic: v(`[data-atac="${CSS.escape(f0)}"]`), leader: v(`[data-ald="${CSS.escape(f0)}"]`), to: v(`[data-art="${CSS.escape(f0)}"]`) });
     if (line) { const ta = $('#said'); if (ta) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + line; try { await store.save(S); } catch (_) {} }
     render(); return;
