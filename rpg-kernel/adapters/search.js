@@ -28,7 +28,7 @@ const DEFAULT_CONFIG = {
     tavily: { apiKey: '', depth: 'basic' },
     serper: { apiKey: '', gl: 'cn', hl: 'zh-cn' },
     bing: { apiKey: '', market: 'zh-CN' },
-    bocha: { apiKey: '', count: 5 },
+    bocha: { apiKey: '', count: 10 },   // 2026-11-07 玩家：「增加 bocha 的用量」
   },
 };
 
@@ -252,7 +252,7 @@ const PROVIDERS = {
       let json, status, lastErr;
       for (const host of process.env.BOCHA_BASE ? [process.env.BOCHA_BASE] : ['https://api.bocha.cn', 'https://api.bochaai.com']) {   // BOCHA_BASE 只给测试用
         try {
-          ({ json, status } = await http(host + '/v1/web-search', { method: 'POST', headers: { Authorization: `Bearer ${cfg.apiKey}` }, body: { query: q, count: Number(cfg.count) || 5, summary: true, freshness: 'noLimit' } }));
+          ({ json, status } = await http(host + '/v1/web-search', { method: 'POST', headers: { Authorization: `Bearer ${cfg.apiKey}` }, body: { query: q, count: Math.max(10, Number(cfg.count) || 10), summary: true, freshness: 'noLimit' } }));
           lastErr = null; break;
         } catch (e) { lastErr = e; if (/HTTP 4\d\d/.test(String(e.message))) break; }
       }

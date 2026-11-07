@@ -2499,10 +2499,13 @@ async function quickCall({ system, prompt, temperature = 0.7, maxTokens = 1500 }
 }
 
 /** 聊天式玩法：整段对话交给当前选定的 AI，流式回传 */
-async function chatCall({ messages, system = '', maxTokens = 8000, temperature = 0.8, onDelta, json = true, thinking = false, fast = false }) {
+async function chatCall({ messages, system = '', maxTokens = 8000, temperature = 0.8, onDelta, json = true, thinking = false, fast = false, provider = '' }) {
   const saved = await loadAdapterConfig();
-  const aid = saved.selected || 'deepseek';
-  const { adapter, config: cfg0 } = await resolveAdapter(aid, saved.configs?.[aid] || {});
+  // 分工（需求台账 R-135）：页面说这一件交给 GLM，就用存着的 GLM 配置走 OpenAI 兼容接口；没配 GLM 照旧用选定的（DeepSeek）
+  const glm = provider === 'glm' ? (saved.configs || {}).glm : null;
+  if (provider === 'glm' && !(glm && glm.apiKey)) throw new Error('还没填 GLM 的 Key');
+  const aid = glm ? 'openai-compatible' : (saved.selected || 'deepseek');
+  const { adapter, config: cfg0 } = await resolveAdapter(aid, glm ? { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', ...glm } : (saved.configs?.[aid] || {}));
   if (!adapter || adapter.id === 'skeleton') throw new Error('还没接上 AI：请先在首页填好 DeepSeek 的 Key');
   // 核对史实这类要想清楚的活：这一次打开思考模式（更准，慢一些）
   const config = { ...cfg0, ...(thinking ? { thinking: true } : {}), ...(fast ? { fast: true } : {}) };

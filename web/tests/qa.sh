@@ -35,6 +35,7 @@ run() {   # $1 = 名字，$2 = 超时秒，$3... = 命令；输出里必须没�
 }
 say "构建"; (cd "$ROOT" && python3 web/build.py 2>&1) | tail -3; [ ${PIPESTATUS[0]} -eq 0 ] || { bad "构建失败（页面脚本有语法错误）"; echo "有不合格项，不许发布"; exit 1; }
 echo $$ > /tmp/rpg-qa.lock   # 完整测试跑着时不许别处重新构建（build.py 照这个锁拒绝），免得测到一半页面被换掉
+FP0=$(bash "$ROOT/scripts/fingerprint.sh")   # 这一轮测的是哪一份源码（需求台账 R-132）
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
 say "江山时序：本机服务替玩家下到 data/cache/jiangshan、只认两个文件、不是地图数据不收、下过不再下"; JS=$(node "$ROOT/web/tests/jsmapsrv.js" 2>&1 | tail -1); echo "$JS"; echo "$JS" | grep -q "ERRS \[\]" || bad "江山时序下载"
@@ -42,6 +43,7 @@ say "端口被占：别的程序占着往后挪、游戏已经开着不另开"; 
 KEYVAL= start ai.js && run "填 Key：粘贴、保存、换 Key、型号、博查、开关、输入不丢" 300 node keyflow.js
 start ai.js && {
   run "巡检（开局 + 三回合 + 十个侧栏）" 600 node tour.js
+  run "桌面版：本机服务存 GLM Key、试连、转交 GLM、清除（R-135）" 200 node glmsrv.js
   run "家业（流民开局现钱不离谱、逐项立账）" 600 node estate.js
   run "军队：募兵进账、守城有战报、出战扣伤亡、离谱数目交账房" 600 node army.js
   run "后宅子嗣、政令、经济账：纳妾、有孕生产、政令月结、只报一项不丢" 900 node family.js
@@ -63,6 +65,8 @@ start ai.js && {
   run "舆图不留圆圈和空白、不串年代（后世府名、总管府、改名后旧名并存）、放大后治所都写名字、府名写全、大图照屏幕宽高" 300 env PLAY="$ROOT/web/play.html" node mapfix.js
   run "正文紧扣玩家这一步：结尾再交代原话、主角身份、前几步、上一回停在哪、字数；字数超出一半或不到一半打回改稿（R-134）" 120 env PLAY="$ROOT/web/play.html" node narr.js
   run "读书人以上（宗室、读书人、乡绅）能看朝局、百姓看不到；这一年这一家的真官员不当撞名改掉、旧档改回原名（R-136、R-137）" 120 env PLAY="$ROOT/web/play.html" node court2.js
+  run "GLM 写故事和推演、DeepSeek 做杂活、GLM 出错退回 DeepSeek、设置页填 GLM Key 改分工（R-135）" 120 env PLAY="$ROOT/web/play.html" node glm.js
+  run "作战按天打：宽度、战术相克、组织度、追击合围、城破被俘；自创战法 AI 评估有上限、条件不合用不上；战报逐日；军务页真点（R-141）" 200 env PLAY="$ROOT/web/play.html" node battle.js
   run "天下名录照这一年并立的各家做表，宗室以外的文武大臣都列上，有博查的逐个按名字核，不按清朝写死问法" 120 env PLAY="$ROOT/web/play.html" node roster.js
   run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js
@@ -132,5 +136,5 @@ if [ -z "${QUICK:-}" ]; then
 fi
 echo; [ $FAIL -eq 0 ] && echo "全部通过" || echo "有不合格项，不许发布"
 # 全部通过就记下源码指纹；提交时 scripts/check.sh 核对（需求台账 R-132）
-[ $FAIL -eq 0 ] && bash "$ROOT/scripts/fingerprint.sh" > "$ROOT/.qa-pass"
+[ $FAIL -eq 0 ] && [ "$(bash "$ROOT/scripts/fingerprint.sh")" = "$FP0" ] && echo "$FP0" > "$ROOT/.qa-pass"   # 指纹在开头构建完就记下；测试跑着时源码又改了的，不算通过
 exit $FAIL
