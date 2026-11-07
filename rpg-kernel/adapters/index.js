@@ -39,7 +39,7 @@ async function saveAdapterConfig({ selected, configs }) {
   const merged = { ...(cur.configs || {}) };
   for (const [id, c] of Object.entries(configs || {})) {
     const m = { ...(merged[id] || {}) };
-    for (const [k, v] of Object.entries(c || {})) if (v !== '' && v != null) m[k] = typeof v === 'string' ? v.trim() : v;
+    for (const [k, v] of Object.entries(c || {})) { if (v === null) { delete m[k]; continue; } if (v !== '' && v != null) m[k] = typeof v === 'string' ? v.trim() : v; }   // null 表示删掉这一项（清除 GLM Key 用）
     merged[id] = m;
   }
   const next = {
@@ -235,8 +235,9 @@ async function openaiChat({ system, prompt, messages, temperature, maxTokens, on
   if (cfg.fast && /deepseek/i.test(base + model)) { const f = await fastModelFor(cfg, model); if (f && f !== model) { model = f; usingFast = true; } }
   const isDeepseek = /deepseek/i.test(base) || /deepseek/i.test(model);
   const thinking = cfg.thinking === true || cfg.thinking === 'on';
-  let sendThinkingFlag = isDeepseek && !isThinkingModel(model);
-  let useJsonMode = !!wantJson && isDeepseek;
+  const isGlm = /bigmodel|z\.ai|zhipu/i.test(base) || /^glm/i.test(model);   // 智谱 GLM：也认 thinking 开关和 JSON 模式
+  let sendThinkingFlag = (isDeepseek && !isThinkingModel(model)) || isGlm;
+  let useJsonMode = !!wantJson && (isDeepseek || isGlm);
   let budget = maxTokens ?? 3000;
   if (thinking) budget = Math.min(16000, Math.max(budget * 2, 4000));   // 思考也算在额度里，但别要得太多被服务端拒
   let switched = '';

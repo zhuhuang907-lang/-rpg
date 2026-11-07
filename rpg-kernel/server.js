@@ -318,7 +318,7 @@ const routes = {
     const patch = { model, baseUrl: saved.baseUrl || 'https://api.deepseek.com' };
     if (k) patch.apiKey = k;
     if (k || b.model) await adapters.saveAdapterConfig({ selected: 'deepseek', configs: { deepseek: patch } });
-    if (bk) await search.saveConfig({ providers: { bocha: { apiKey: bk, count: 8 } } });   // 先存 Key，试搜通了才改用博查：Key 不对时照旧用维基，不至于每回都搜不到
+    if (bk) await search.saveConfig({ providers: { bocha: { apiKey: bk, count: 10 } } });   // 先存 Key，试搜通了才改用博查：Key 不对时照旧用维基，不至于每回都搜不到
     const out = { ok: true, saved: { deepseek: !!k, model, bocha: !!bk } };
     // 试连与保存分开：试连失败也不影响已保存的 Key，只如实告诉玩家原因
     if (k || b.model) {
@@ -360,6 +360,29 @@ const routes = {
     const models = await adapters.listModels(cfg);
     return { ok: true, models, current: cfg.model || '' };
   },
+  /* GLM（智谱）的 Key：存、试连、列型号（需求台账 R-135）。Key 只存在本机 data/adapter-config.json，不进仓库 */
+  async 'POST /api/glm-key'(body) {
+    const b = body || {}, clean = v => String(v || '').replace(/[\uFF01-\uFF5E]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[\s\u200B-\u200D\uFEFF\u3000]+/g, '').replace(/^["'“”‘’「」]+|["'“”‘’「」]+$/g, '').replace(/^Bearer/i, '');
+    const k = clean(b.apiKey), saved = (await adapters.loadAdapterConfig()).configs?.glm || {};
+    if (b.clear) { await adapters.saveAdapterConfig({ configs: { glm: { apiKey: null } } }); return { ok: true, cleared: true }; }
+    if (k && !/^[\x21-\x7e]+$/.test(k)) return { ok: false, why: 'GLM Key 里有中文或全角字符，请从智谱开放平台重新复制' };
+    const baseUrl = String(b.baseUrl || saved.baseUrl || 'https://open.bigmodel.cn/api/paas/v4').trim().replace(/\/+$/, '');
+    if (!/^https:\/\//.test(baseUrl) && !/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(baseUrl)) return { ok: false, why: '接口地址要以 https:// 开头' };
+    if (baseUrl !== (saved.baseUrl || 'https://open.bigmodel.cn/api/paas/v4') && !k && saved.apiKey) return { ok: false, why: '换了接口地址，要连同 Key 一起填' };
+    const model = String(b.model || saved.model || '').trim();
+    if (!k && !saved.apiKey) return { ok: false, why: '没有填 GLM 的 Key' };
+    await adapters.saveAdapterConfig({ configs: { glm: { ...(k ? { apiKey: k } : {}), model, baseUrl } } });
+    const cfg = (await adapters.loadAdapterConfig()).configs.glm, out = { ok: true, saved: { glm: true, model, baseUrl } };
+    if (!model) { try { out.models = await adapters.listModels(cfg); } catch (e) { out.models = []; out.why = '列不出型号：' + String(e.message || e).slice(0, 160); } return out; }
+    try { const t0 = Date.now(); const r = await engine.chatCall({ provider: 'glm', messages: [{ role: 'user', content: '只回答两个字：正常' }], maxTokens: 20, temperature: 0, json: false }); out.test = { ok: /\S/.test(r.text), ms: Date.now() - t0 }; }
+    catch (e) { out.test = { ok: false, why: String(e.message || e).split(' :: ')[0].slice(0, 300) }; }
+    return out;
+  },
+  async 'POST /api/glm-models'() {
+    const cfg = (await adapters.loadAdapterConfig()).configs?.glm || {};
+    if (!cfg.apiKey) return { ok: false, why: '先填 GLM 的 Key 才能列出型号' };
+    try { return { ok: true, models: await adapters.listModels({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', ...cfg }), current: cfg.model || '' }; } catch (e) { return { ok: false, why: String(e.message || e).slice(0, 200) }; }
+  },
   async 'GET /api/quick-status'() {
     const saved = await adapters.loadAdapterConfig();
     const aid = saved.selected || 'deepseek';
@@ -372,6 +395,7 @@ const routes = {
       keyTail: c.apiKey ? String(c.apiKey).slice(-4) : '',
       search: scfg.provider, hasBocha: !!bochaKey && !readStatus().bochaOff, bochaSaved: !!bochaKey, bochaOff: !!readStatus().bochaOff, bochaTail: bochaKey ? String(bochaKey).slice(-4) : '', bochaTestOk: scfg.provider === 'bocha', lookup: LOOKUP_STATUS,
       lastTest: readStatus().lastTest || null,
+      glm: (() => { const g = (saved.configs || {}).glm || {}; return { has: !!g.apiKey, model: g.model || '', tail: g.apiKey ? String(g.apiKey).slice(-4) : '', baseUrl: g.baseUrl || '' }; })(),
     };
   },
   'GET /api/health': async () => ({ ok: true, node: process.version }),
@@ -457,7 +481,7 @@ const routes = {
     const id = 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const job = { status: 'running', text: '', error: null, at: Date.now() };
     LLM_JOBS.set(id, job);
-    engine.chatCall({ messages: msgs, system: String(b.system || '').slice(0, 60000), maxTokens: Math.min(16000, Number(b.maxTokens) || 8000), json: b.json !== false, temperature: Number.isFinite(Number(b.temperature)) ? Number(b.temperature) : 0.8, thinking: b.thinking === true, fast: b.fast === true, onDelta: t => { if (job.status === 'cancelled') { const e = new Error('玩家停下了'); e.stopStream = true; throw e; } if (job.status === 'running') job.text = String(t || ''); } })
+    engine.chatCall({ messages: msgs, system: String(b.system || '').slice(0, 60000), maxTokens: Math.min(16000, Number(b.maxTokens) || 8000), json: b.json !== false, temperature: Number.isFinite(Number(b.temperature)) ? Number(b.temperature) : 0.8, thinking: b.thinking === true, fast: b.fast === true, provider: b.provider === 'glm' ? 'glm' : '', onDelta: t => { if (job.status === 'cancelled') { const e = new Error('玩家停下了'); e.stopStream = true; throw e; } if (job.status === 'running') job.text = String(t || ''); } })
       .then(r => { if (job.status === 'running') { job.status = 'done'; job.text = r.text; job.truncated = r.truncated; recordTest(true); } })
       .catch(e => { if (job.status === 'running') { job.status = 'error'; job.error = String(e && e.message || e).slice(0, 400); recordTest(false, job.error); logErr('[llm]', job.error); } });
     for (const [k, j] of LLM_JOBS) if (Date.now() - j.at > 3600e3) LLM_JOBS.delete(k);
@@ -470,7 +494,7 @@ const routes = {
     const both = !!(body || {}).both;
     // 分工：天下大势（朝政、战事、大事）归维基；人物、当年当地的光景归博查（博查没搜到再退回维基）
     const WORLD = new Set((Array.isArray((body || {}).world) ? body.world : []).map(q => String(q || '').trim().slice(0, 60)));
-    const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean).slice(0, 10);
+    const qs = (Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean).slice(0, 16);
     if (!qs.length) return { ok: true, results: [] };
     const cfg = await search.loadConfig();
     const isBocha = await bochaOn();
@@ -594,7 +618,7 @@ const routes = {
     const qs = [...new Set((Array.isArray((body || {}).queries) ? body.queries : []).map(q => String(q || '').trim().slice(0, 60)).filter(Boolean))].slice(0, 24);
     if (!(await bochaOn())) return { ok: true, bochaOn: false, results: [] };
     const FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节|第[一二三四五六七八九十百\d]+章/i;
-    const one0 = q => Promise.race([bochaSlot(() => search.search(q, { provider: 'bocha', noFallback: true, count: 10 })).catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: '超时' }), 25000))]);
+    const one0 = q => Promise.race([bochaSlot(() => search.search(q, { provider: 'bocha', noFallback: true, count: 15 })).catch(e => ({ results: [], error: String(e && e.message || e) })), new Promise(r => setTimeout(() => r({ results: [], error: '超时' }), 25000))]);
     // 慢了、被限流、网络抖了的再试一次；一次只并发四条，免得被博查限流
     const one = async q => { const r = await one0(q); if ((r.results || []).length || !r.error || /Key|401|403|余额|鉴权/.test(r.error)) return r; await new Promise(z => setTimeout(z, 1500)); return one0(q); };
     const rs = []; for (let i = 0; i < qs.length; i += 4) rs.push(...await Promise.all(qs.slice(i, i + 4).map(one)));

@@ -38,7 +38,7 @@ const path = require('path');
   // 营数整数、缺额、总数对得上
   const u = await p.evaluate(() => { const r = resolveBattle(S, { enemy: '吴军', enemyTroops: 8000, enemyQuality: '中', place: '汀州', terrain: '平原', attacker: '我', ourForces: ['威武军'], tactic: '正攻' }); applyBattle(S, r); const f = S.forces[0], st = forceStats(S, f); TAB = 'army'; render0(); return { r, units: f.units, troops: f.troops, men: st.men, txt: document.body.innerText }; });
   if (u.units.some(x => x.n !== Math.round(x.n))) bad.push('营数有小数：' + JSON.stringify(u.units));
-  if (Math.abs(u.men - Number(u.troops)) > 1 || Math.abs(u.men - u.r.rounds[2].us) > 1) bad.push(`总数和战报对不上：账上${u.troops}、编成${u.men}、战报剩${u.r.rounds[2].us}`);
+  if (Math.abs(u.men - Number(u.troops)) > 1 || Math.abs(u.men - u.r.rounds[u.r.rounds.length - 1].us) > 1) bad.push(`总数和战报对不上：账上${u.troops}、编成${u.men}、战报剩${u.r.rounds[u.r.rounds.length - 1].us}`);
   if (/\d+\.\d+营/.test(u.txt)) bad.push('页面上营数有小数');
   // 战斗数值
   const M = await p.evaluate(() => { const go = (a, bb, T, tac, att) => { S.forces[0] = { name: '威武军', leader: '王审知', owner: '你', troops: a, morale: 60, orgNow: 70, train: 60, grain: 99999, at: '福州', status: '驻守', units: [{ tpl: 'bu', men: a }] }; S.turn = 3; return resolveBattle(S, { enemy: '敌', enemyTroops: bb, enemyQuality: '中', place: '汀州', terrain: T, attacker: att || '我', ourForces: ['威武军'], tactic: tac }); };

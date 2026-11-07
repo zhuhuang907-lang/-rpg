@@ -1643,7 +1643,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261105223222';
+const BUILD = '20261107041759';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.6.9', military: 'V5', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -1724,7 +1724,99 @@ async function dsKey() {
   if (!k && MODE === 'local') { try { const r = await api('/api/dskey', {}); if (r.ok && r.key) { k = r.key; lsSet('hrpg:dskey', k); } } catch (_) { /* 服务也不在 */ } }
   return k;
 }
+/* ========== GLM（智谱）：写故事、辅助搜索、要结构要准的活交给它（需求台账 R-135；2026-11-07 玩家：「以后用 glm 来写故事和辅助搜索……deepseek 干不担心结构和幻觉的活」）==========
+ *  按活分工（ROUTES）：写故事（写戏、改稿、编剧）、推演记账史料（裁定、推演、记账、研读、检索、审校、评定、档案……）默认 GLM；审读文笔、编书这些不怕格式出错、不怕编的杂活默认 DeepSeek。设置页能改。
+ *  没填 GLM Key、或 GLM 出错（不通、限流、余额），自动退回 DeepSeek 再来一次，不让玩家看到报错 */
+let GLM = { has: false, model: '', tail: '', base: '' };
+const GLM_BASES = [['https://open.bigmodel.cn/api/paas/v4', '智谱开放平台（open.bigmodel.cn）'], ['https://api.z.ai/api/paas/v4', 'Z.ai 国际站（api.z.ai）']];
+const ROUTE_CATS = [['story', '写故事（正文、改稿、编剧）'], ['struct', '推演、记账、史料表、核查、辅助搜索'], ['light', '审读文笔、编书这些杂活']];
+const ROUTE_DEF = { story: 'glm', struct: 'glm', light: 'ds' };
+const routeCat = (kind, plain) => /^(写戏|改稿|编剧|play|turn)$/.test(kind) || (plain && kind === '写戏') ? 'story' : /^(审读|编书|chapter|book-?)$/.test(kind) ? 'light' : 'struct';
+const routeOf = (kind, plain) => { if (GLM.has && !KEY.has) return 'glm'; const r = (SETTINGS.route || {})[routeCat(kind, plain)] || ROUTE_DEF[routeCat(kind, plain)]; return r === 'glm' && GLM.has ? 'glm' : 'ds'; };
+function glmWebRefresh() { const k = lsGet('hrpg:glmkey') || ''; GLM = { has: !!k, tail: k.slice(-4), model: lsGet('hrpg:glmmodel') || '', base: lsGet('hrpg:glmbase') || GLM_BASES[0][0] }; }
+let GLMMSG = '', GLM_MODELS = [];
+/** 设置页：GLM 的 Key、接口、型号，和每样活交给谁（需求台账 R-135） */
+function glmBox() {
+  const R = SETTINGS.route || {};
+  return `<div class="h"><span class="seal">智</span>GLM（智谱）<span class="note">写故事、推演、辅助搜索交给它；没填就全用 DeepSeek</span></div>
+    ${GLM.has ? `<div class="muted" style="font-size:13px">✓ 已填 GLM Key（尾号 ${esc(GLM.tail)}）${GLM.model ? '，型号 ' + esc(GLM.model) : '，<b>还没选型号</b>'}</div>` : '<div class="muted" style="font-size:13px">到智谱开放平台申请 API Key，粘贴在这里点「保存并试连」。Key 只存在你自己的电脑或浏览器里。</div>'}
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px"><input id="gKey" type="password" autocomplete="off" placeholder="${GLM.has ? '换一个 Key（不换就空着）' : '粘贴 GLM 的 API Key'}" style="flex:1;min-width:180px">
+      <select id="gBase">${GLM_BASES.map(([u, n]) => `<option value="${u}" ${(GLM.base || GLM_BASES[0][0]) === u ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px"><select id="gModel">${[GLM.model].concat(GLM_MODELS).filter((x, i, a) => x && a.indexOf(x) === i).map(m => `<option value="${esc(m)}" ${m === GLM.model ? 'selected' : ''}>${esc(m)}</option>`).join('') || '<option value="">（先列出型号）</option>'}</select>
+      <button class="link" id="bGlmModels">列出型号</button><button id="bGlmSave">保存并试连</button>${GLM.has ? '<button class="link" id="bGlmClear">清除 GLM Key</button>' : ''}</div>
+    ${GLMMSG ? `<div class="muted" style="font-size:13px;margin-top:4px">${esc(GLMMSG)}</div>` : ''}
+    <div class="muted" style="font-size:13px;margin-top:8px">每样活交给谁${GLM.has ? '' : '（填了 GLM 才生效）'}：</div>
+    ${ROUTE_CATS.map(([k, n]) => `<div class="row" style="gap:6px;margin-top:2px"><span style="flex:1;font-size:13px">${n}</span><select id="rt-${k}">${[['glm', 'GLM'], ['ds', 'DeepSeek']].map(([v, l]) => `<option value="${v}" ${(R[k] || ROUTE_DEF[k]) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}
+    <div class="muted" style="font-size:12px;margin-top:4px">GLM 那边出错（不通、限流、余额不足）时，这一件自动改由 DeepSeek 再写一次。</div>`;
+}
+async function glmModels() {
+  GLMMSG = '正在列出型号……'; render();
+  try {
+    if (MODE === 'local') { const r = await api('/api/glm-models', {}); if (!r.ok) throw new Error(r.why); GLM_MODELS = arr(r.models); }
+    else { const k = lsGet('hrpg:glmkey') || ''; if (!k) throw new Error('先填 GLM 的 Key'); const base = (lsGet('hrpg:glmbase') || GLM_BASES[0][0]).replace(/\/+$/, ''); const res = await fetch(base + '/models', { headers: { authorization: 'Bearer ' + k } }); if (!res.ok) throw new Error('HTTP ' + res.status); const j = await res.json(); GLM_MODELS = arr(j && j.data).map(m => m.id).filter(Boolean); }
+    GLMMSG = GLM_MODELS.length ? `列出 ${GLM_MODELS.length} 个型号，选一个再点「保存并试连」` : '没列出型号：可以直接在智谱平台上看型号名，选不到就先保存，回头再列';
+  } catch (e) { GLMMSG = '列不出型号：' + String(e.message || e).slice(0, 120); }
+  render();
+}
+async function glmSave(clear) {
+  const k = ((($('#gKey') || {}).value) || '').trim(), base = (($('#gBase') || {}).value) || GLM_BASES[0][0], model = (($('#gModel') || {}).value) || GLM.model || '';
+  GLMMSG = clear ? '正在清除……' : '正在保存、试连……'; render();
+  try {
+    if (MODE === 'local') {
+      const r = await api('/api/glm-key', clear ? { clear: true } : { apiKey: k, baseUrl: base, model });
+      if (!r.ok) throw new Error(r.why); if (r.models) GLM_MODELS = arr(r.models);
+      await refreshKey();
+      GLMMSG = clear ? '已清除，全部改用 DeepSeek' : r.test ? (r.test.ok ? `✓ 已存好，试连通了（${Math.round((r.test.ms || 0) / 1000)} 秒）` : '已存好，试连没通：' + r.test.why) : r.why || (GLM_MODELS.length ? '已存好 Key：选一个型号再点「保存并试连」' : '已存好 Key');
+    } else {
+      if (clear) { lsSet('hrpg:glmkey', null); lsSet('hrpg:glmmodel', null); }
+      else { if (k) lsSet('hrpg:glmkey', k.replace(/^Bearer\s*/i, '')); lsSet('hrpg:glmbase', base); if (model) lsSet('hrpg:glmmodel', model); }
+      glmWebRefresh();
+      if (!clear && GLM.has && GLM.model) { try { await glmDirect([{ role: 'user', content: '只回答两个字：正常' }], { json: false, maxTokens: 20, temperature: 0 }); GLMMSG = '✓ 已存好，试连通了'; } catch (e) { GLMMSG = '已存好，试连没通：' + String(e.message || e).slice(0, 120) + '（GLM 不允许浏览器直连的话，网页版用不了 GLM，会自动改用 DeepSeek；桌面版不受影响）'; } }
+      else GLMMSG = clear ? '已清除，全部改用 DeepSeek' : GLM.model ? '已存好' : '已存好 Key：点「列出型号」选一个';
+    }
+  } catch (e) { GLMMSG = '没存上：' + String(e.message || e).slice(0, 160); }
+  render();
+}
+document.addEventListener('click', e => { const id = e.target && e.target.id; if (id === 'bGlmSave') glmSave(false); else if (id === 'bGlmClear') glmSave(true); else if (id === 'bGlmModels') glmModels(); });
+document.addEventListener('change', e => { const id = e.target && e.target.id || ''; if (/^rt-(story|struct|light)$/.test(id)) { SETTINGS.route = { ...(SETTINGS.route || {}), [id.slice(3)]: e.target.value }; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); } });
+async function glmKey() { let k = lsGet('hrpg:glmkey') || ''; return k; }
+/** 浏览器直连 GLM（网页版；桌面版本机服务连不上时也走这条）：OpenAI 兼容接口，流式取回 */
+async function glmDirect(input, opts = {}) {
+  const key = await glmKey(); if (!key) throw { code: 'local', message: '还没填 GLM 的 Key' };
+  const base = (lsGet('hrpg:glmbase') || GLM.base || GLM_BASES[0][0]).replace(/\/+$/, ''), model = GLM.model || lsGet('hrpg:glmmodel') || '';
+  if (!model) throw { code: 'local', message: '还没选 GLM 的型号：到「设置」里列出型号选一个' };
+  const messages = [...(opts.system ? [{ role: 'system', content: opts.system }] : []), ...(Array.isArray(input) ? input : [{ role: 'user', content: String(input) }])];
+  let json = opts.json !== false, sendThink = true, budget = opts.maxTokens || 8000; if (opts.thinking) budget = Math.min(16000, Math.max(budget * 2, 4000));
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const body = { model, messages, max_tokens: budget, stream: true };
+    if (sendThink) body.thinking = { type: opts.thinking ? 'enabled' : 'disabled' };
+    if (json) body.response_format = { type: 'json_object' };
+    if (!opts.thinking) body.temperature = Math.min(1, opts.temperature ?? 0.9);
+    const ac = new AbortController(), onAbort = () => ac.abort();
+    if (opts.signal) { if (opts.signal.aborted) throw { code: 'cancelled' }; opts.signal.addEventListener('abort', onAbort, { once: true }); }
+    try {
+      let res;
+      try { res = await fetch(base + '/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key }, body: JSON.stringify(body), signal: ac.signal }); }
+      catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; throw { code: 'local', net: true, message: '连不上 GLM（浏览器直连被拦或断网）' }; }
+      if (!res.ok) { const raw = await res.text().catch(() => '');
+        if (json && res.status === 400 && /response_format|json/i.test(raw)) { json = false; continue; }
+        if (sendThink && res.status === 400 && /thinking|unknown|extra|unrecognized/i.test(raw)) { sendThink = false; continue; }
+        throw { code: 'local', message: `GLM 返回出错（HTTP ${res.status}）${res.status === 401 ? '：Key 不对或失效' : res.status === 429 ? '：太频繁或余额不足' : ''}` }; }
+      const rd = res.body.getReader(), dec = new TextDecoder(); let buf = '', content = '', finish = null;
+      for (;;) { let r; try { r = await rd.read(); } catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; throw { code: 'local', net: true, message: '和 GLM 的连接中途断了' }; }
+        if (r.done) break; buf += dec.decode(r.value, { stream: true }); let i;
+        while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (!line.startsWith('data:')) continue; const d = line.slice(5).trim(); if (d === '[DONE]') continue;
+          let j; try { j = JSON.parse(d); } catch (_) { continue; } const ch = j.choices && j.choices[0]; if (!ch) continue;
+          if (ch.delta && ch.delta.content) { content += ch.delta.content; opts.onText && opts.onText({ text: content, delta: ch.delta.content }); } if (ch.finish_reason) finish = ch.finish_reason; } }
+      if (!content.trim() && budget < 16000) { budget = Math.min(16000, Math.max(budget * 2, 4000)); continue; }
+      if (!content.trim()) throw { code: 'local', message: 'GLM 没给出正文' };
+      return { text: content, truncated: finish === 'length' };
+    } finally { if (opts.signal) opts.signal.removeEventListener('abort', onAbort); }
+  }
+  throw { code: 'local', message: 'GLM 连续几次没给出正文' };
+}
 async function directSample(input, opts = {}) {
+  if (opts.provider === 'glm') return glmDirect(input, opts);
   const key = await dsKey(); if (!key) throw { code: 'local', message: '还没填 DeepSeek Key：请在首页粘贴 Key 点保存' };
   const messages = [...(opts.system ? [{ role: 'system', content: opts.system }] : []), ...(Array.isArray(input) ? input : [{ role: 'user', content: String(input) }])];
   const base = /^deepseek-(chat|reasoner)$/.test(KEY.model || '') || !KEY.model ? 'deepseek-v4-pro' : KEY.model;
@@ -1776,6 +1868,7 @@ async function directSample(input, opts = {}) {
 const netFail = m => /连不上|连接超时|连接被|中途断开|找不到服务器|没有联网权限|证书|代理|fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|一直没写完|九十秒没有动静|TimeoutError|aborted/i.test(String(m || '')) && !/HTTP (40[0-3]|429)|Key 不对|余额/.test(String(m || ''));
 /** 桌面版写剧情：先走游戏程序；它连不上 DeepSeek 而浏览器连得上，就自动改由浏览器直连，以后都这样 */
 async function deskSample(input, opts = {}) {
+  if (opts.provider === 'glm') { try { return await localSample(input, opts); } catch (e) { if (!e || e.code === 'cancelled' || !netFail(e.message)) throw e; return glmDirect(input, opts); } }
   if (DS_DIRECT && !opts.resumeJob) return directSample(input, opts);
   try { return await localSample(input, opts); }
   catch (e) {
@@ -1794,7 +1887,7 @@ function localSample(input, opts = {}) {
     if (opts.signal) { if (opts.signal.aborted) return onAbort(); opts.signal.addEventListener('abort', onAbort, { once: true }); }
     try {
       if (!job) {
-        const r = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast });
+        const r = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast, provider: opts.provider || '' });
         if (!r.ok) return reject({ code: 'local', message: r.why || '没发出去' });
         job = r.job;
         if (stopped) { api('/api/llm-stop', { job }).catch(() => {}); return; }
@@ -1809,7 +1902,7 @@ function localSample(input, opts = {}) {
         if (j.text && j.text !== last) { last = j.text; opts.onText && opts.onText({ text: last, delta: '' }); }
         if (j.status === 'done') return resolve({ text: j.text, truncated: !!j.truncated });
         // 游戏服务半路重启过（任务丢了）：重新发一次，不让这一回作废
-        if (!j.ok && /不存在|过期/.test(j.why || '') && restarts < 2) { restarts++; const r2 = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast }).catch(() => null); if (r2 && r2.ok) { job = r2.job; opts.onJob && opts.onJob(job); continue; } }
+        if (!j.ok && /不存在|过期/.test(j.why || '') && restarts < 2) { restarts++; const r2 = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast, provider: opts.provider || '' }).catch(() => null); if (r2 && r2.ok) { job = r2.job; opts.onJob && opts.onJob(job); continue; } }
         if (j.status === 'error' || !j.ok) return reject({ code: 'local', message: plainWhy(j.error || j.why) || '没写成' });
         if (j.status === 'cancelled') return reject({ code: 'cancelled' });
       }
@@ -2223,7 +2316,7 @@ function within(p, ms, dflt = null) {
   return Promise.race([p, cap]).finally(() => clearTimeout(t));
 }
 async function callClaude(input, onReply, extra, tier) {
-  if (DSM() && !KEY.has) throw { code: 'no_key', message: '还没填 DeepSeek 的 Key：在首页把 Key 粘贴进去点「保存」' };
+  if (DSM() && !KEY.has && !GLM.has) throw { code: 'no_key', message: '还没填 DeepSeek 或 GLM 的 Key：在首页把 Key 粘贴进去点「保存」' };
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
   const det = extra && extra.detached;
   if (!det && TURN && TURN.signal.aborted) throw { code: 'cancelled' };
@@ -2245,6 +2338,12 @@ async function callClaude(input, onReply, extra, tier) {
   // 审校（拿材料对史实）、审读（挑情理毛病）是照单核对的活，也交给快型号：一回合省下一两分钟，写正文、推演、记账照旧用原型号
   if (DSM() && /^(检索|核任期|研读|审校|审读)$/.test(kind)) extra = { ...extra, fast: true, thinking: false };
   if (DSM() && plain && extra && extra.temperature > 1.0) extra = { ...extra, temperature: 1.0 };
+  // 分工：这一件交给 GLM 还是 DeepSeek（需求台账 R-135）；GLM 出错（不是玩家停下）自动退回 DeepSeek 再来一次
+  if (DSM() && routeOf(kind, plain) === 'glm') {
+    const gx = { ...(extra || {}), provider: 'glm', fast: false };
+    try { const r = await SAMPLE(input, { ...opts, ...gx, onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined }); logRaw(kind + '（GLM）', r && r.text, r && r.truncated); return r; }
+    catch (e) { if (e && (e.code === 'cancelled' || (TURN && TURN.signal.aborted && !det))) throw e; noteErr('GLM 没成，改由 DeepSeek', (kind || '') + '：' + String((e && e.message) || e).slice(0, 200)); CTL = new AbortController(); if (TURN && !det) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); } opts.signal = CTL.signal; }
+  }
   try {
     const r = await SAMPLE(input, { ...opts, ...(DSM() ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
     logRaw(kind, r && r.text, r && r.truncated);
@@ -3131,7 +3230,7 @@ function marchPanel(s, f) {
   const opts = T.map(o => { const O = o.mine ? null : battleOdds(s, f, o.n, '攻'); return `<option value="${esc(o.n)}" data-li="${o.li}">${esc(o.n)}（${esc(o.owner)}，约${o.li}里、${o.days}日${O ? (O.unknown ? '，守军不详' : `，胜算约${O.p}%${O.guess ? '·守军推' : ''}${O.them ? '，守军约' + fmtN(O.them, '人') : '，无兵把守'}`) : ''}）</option>`; }).join('');
   return `<div class="route"><b>出征</b><span class="muted">（胜算照兵力、兵种、训练士气、粮草、地形、天候算；守军没探实的是照户口推的）</span>
     <div class="opost"><select data-xtg="${esc(f.name)}">${opts}</select>
-    <select data-xtac="${esc(f.name)}" title="战法">${Object.entries(TACTICS).map(([k, v]) => `<option value="${k}" title="${esc(v)}">${k}</option>`).join('')}</select>
+    <select data-xtac="${esc(f.name)}" title="战法">${Object.entries(TACTICS).map(([k, v]) => `<option value="${k}" title="${esc(v)}">${k}</option>`).join('')}${arr(s.tacBook).filter(x => x && x.ok).map(x => `<option value="自创：${esc(x.name)}" title="${esc(x.desc)}">自创：${esc(x.name)}</option>`).join('')}</select>
     <select data-xpace="${esc(f.name)}"><option value="">常行</option><option value="急行">急行（快一半，疲兵打折）</option><option value="缓行">缓行</option></select></div>
     <div class="opost"><button class="link" data-army="go" data-mode="攻" data-f="${esc(f.name)}">进攻</button><button class="link" data-army="go" data-mode="守" data-f="${esc(f.name)}">移驻</button>${myDomain(s).raid ? `<button class="link" data-army="go" data-mode="掠" data-f="${esc(f.name)}">劫掠</button>` : ''}</div></div>`;
 }
@@ -3152,7 +3251,7 @@ function armyTab(s) {
     ${can && T.length ? `<div class="opost"><select data-aut="">${tplOpts}</select><input class="oin" style="width:4em" type="number" min="1" value="1" data-aun=""><button class="link" data-army="raise" data-f="">新编一军</button></div>` : ''}
     ${arr(s.campaigns).length || arr(s.campNews).length ? `<div class="h"><span class="seal">行</span>行军与军报<span class="note">程序照日子、路程、兵力结算</span></div><div class="list">${arr(s.campaigns).filter(c => /待发|行军|待探报/.test(c.state)).map(c => `<div><b>${esc(c.force)}</b> ${c.mode === '攻' ? '进攻' : c.mode === '守' ? '移防' : '开赴'} ${esc(c.target)}：${c.state === '待发' ? '下一回开拔' : c.state === '待探报' ? '兵临城下，探报未回' : `约 ${Math.round(c.li || 0)} 里，已走 ${Math.round(c.done || 0)} 里，日行约 ${c.pace || '正在算'} 里`}</div>`).join('')}${arr(s.campNews).map(t => `<div class="muted">${esc(t)}</div>`).join('')}</div>` : ''}
     ${battleHtml(s)}
-    ${can ? techHtml(s) : ''}
+    ${can ? techHtml(s) : ''}${can ? tacBookHtml(s) : ''}
     <datalist id="milPeople">${[...new Set(Object.keys(s.people || {}).filter(k => !(s.people[k] || {}).dead).concat(arr(s.household).filter(m => !m.dead).map(m => m.name)))].map(n => `<option value="${esc(n)}">`).join('')}</datalist>
     ${arr(s.armyPending).length ? `<div class="h"><span class="seal">令</span>军令（已办的照账办了；也写进了下一步）</div><div class="list">${s.armyPending.map(x => `<div>${esc(x.line)}</div>`).join('')}</div>` : ''}
     ${ORGMSG ? `<div class="muted">${esc(ORGMSG)}</div>` : ''}`;
@@ -4015,6 +4114,46 @@ function techMonthly(s, months) {
 }
 function techBlock(s) { const T = s.tech; if (!T || (!arr(T.done).length && !T.cur)) return ''; const A = techAll(s);
   return `【科技（程序结算；只写已成的，在研的写成还没成）】已成：${arr(T.done).map(id => (A.find(x => x.id === id) || {}).name).filter(Boolean).join('、') || '无'}${T.cur ? `；在研：${T.cur.name}（还要${T.cur.left}个月）` : ''}`; }
+/* ========== 战法簿（需求台账 R-141）：玩家自创的战法交给 AI 照年代、地形、季节、兵种评估，程序照评估结果在阵上结算（效果有上限）========== */
+const tacBookGet = (s, name) => { const n = String(name || '').replace(/^自创：/, ''); return arr(s.tacBook).find(x => x && x.ok && x.name === n) || null; };
+const clampN = (v, lo, hi, d) => { const x = num(v); return x == null ? d : Math.max(lo, Math.min(hi, x)); };
+async function tacEval(s, name, desc) {
+  name = one(name, 12); desc = one(desc, 160); if (!name || !desc) { ORGMSG = '战法要有名字，也要写怎么打'; return null; }
+  const d0 = await callClaude(`一局讲究史实的历史游戏里，主角（${s.protagonist.role || ''}，${timeText(s.clock)}，${s.place.polity || ''}）想在阵上用一个自创的战法「${name}」：${desc}
+照这个年代的兵器、工艺、兵制、真实战例判断：能不能用（这个年代做不到的、离谱的直说不能，比如宋以前没有火炮）；要什么条件才用得上（地形：平原、丘陵、山地、林泽、河渡、城池、关隘里挑；季节；要骑兵、弓弩多少成；要几天准备、多少钱粮；统帅谋略起码要到哪一品）；
+成功的把握（百分之几，照史例和难度；统帅谋略高的程序另加）；成了这一仗有什么好处（攻、守各乘多少；一下打掉敌军几成组织度、几成士气；敌军伤亡乘多少）；不成吃什么亏（攻、守各乘多少）；类似的史例。
+只输出一个 JSON 对象：{"ok":true,"why":"","terrain":[],"season":[],"cav":null,"rng":null,"prepDays":null,"cost":null,"mou":"","p":null,"fx":{"atk":null,"def":null,"orgHit":null,"moraleHit":null,"casualty":null},"fail":{"atk":null,"def":null},"history":""}`, null, { maxTokens: 1200, temperature: 0.2, kind: '研读', thinking: false });
+  const d = parseJSON(d0 && d0.text); if (!d) { ORGMSG = '没评估出来，再点一次'; return null; }
+  if (d.ok !== true) { ORGMSG = `「${name}」这个年代用不了：${one(d.why, 80)}`; s.tacBook = arr(s.tacBook).filter(x => x.name !== name).concat([{ name, desc, ok: false, why: one(d.why, 80), at: s.turn }]); return null; }
+  // 效果有上限：攻、守最多一倍四；一下打掉组织度最多四十、士气最多三十；敌伤亡最多一倍六；不成的代价最少打六折
+  const T = ['平原', '丘陵', '山地', '林泽', '河渡', '城池', '关隘'];
+  const x = { name, desc, ok: true, why: one(d.why, 80), history: one(d.history, 60), at: s.turn,
+    terrain: arr(d.terrain).map(v => one(v, 4)).filter(v => T.includes(v)), season: arr(d.season).map(v => one(v, 2)).filter(v => /春|夏|秋|冬/.test(v)),
+    cav: clampN(d.cav, 0, 1, 0), rng: clampN(d.rng, 0, 1, 0), prepDays: clampN(d.prepDays, 0, 60, 0), cost: clampN(d.cost, 0, 1e7, 0), mou: PGRADE.some(([w]) => w === String(d.mou || '').trim()) ? String(d.mou).trim() : '',
+    p: clampN(d.p, 5, 85, 40), fx: { atk: clampN(d.fx && d.fx.atk, 0.8, 1.4, 1), def: clampN(d.fx && d.fx.def, 0.8, 1.4, 1), orgHit: clampN(d.fx && d.fx.orgHit, 0, 40, 0), moraleHit: clampN(d.fx && d.fx.moraleHit, 0, 30, 0), casualty: clampN(d.fx && d.fx.casualty, 1, 1.6, 1) },
+    fail: { atk: clampN(d.fail && d.fail.atk, 0.6, 1, 0.85), def: clampN(d.fail && d.fail.def, 0.6, 1, 0.9) } };
+  s.tacBook = arr(s.tacBook).filter(y => y.name !== name).concat([x]).slice(-30);
+  ORGMSG = `「${name}」可以用：成功约${x.p}成${x.terrain.length ? '，' + x.terrain.join('、') + '用得上' : ''}${x.cost ? '，每次约花' + fmtN(x.cost, (s.money || {}).unit || '') : ''}。出征时在战法里选「自创：${name}」`;
+  return x;
+}
+/** 自创战法这一仗用不用得上：地形、季节、兵种、统帅谋略 */
+function tacUsable(s, x, f, terrain) {
+  if (!x || !x.ok) return '还没评估、或这个年代用不了';
+  const T = btTerrain(terrain || ''), st = f ? btSide(s, { f, men: N0(f.troops), leader: f.leader }) : null, m = s.clock.m || 6, sea = m <= 3 ? '春' : m <= 6 ? '夏' : m <= 9 ? '秋' : '冬';
+  if (x.terrain.length && !x.terrain.includes(T)) return `要在${x.terrain.join('、')}才用得上（这里是${T}）`;
+  if (x.season.length && !x.season.includes(sea)) return `要${x.season.join('、')}天才用得上`;
+  if (st && x.cav && st.cav < x.cav) return `骑兵要占${Math.round(x.cav * 100)}%以上`;
+  if (st && x.rng && st.rng < x.rng) return `弓弩要占${Math.round(x.rng * 100)}%以上`;
+  if (st && x.mou && gradeV(x.mou) && st.mou < gradeV(x.mou) - 5) return `统帅谋略要到「${x.mou}」`;
+  return '';
+}
+function tacBookHtml(s) {
+  const B = arr(s.tacBook), u = (s.money || {}).unit || '';
+  return `<div class="h"><span class="seal">策</span>战法簿<span class="note">阵上每天双方主将各出一手；被克的那一方当天打折。自创的交给 AI 照年代评估，成没成照把握结算</span></div>
+    <details class="fold"><summary>常用战术（${Object.keys(BTAC).length}）</summary><div class="list">${Object.entries(BTAC).map(([k, v]) => `<div><b>${esc(k)}</b> <span class="muted">${esc(v.why)}；攻×${v.atk}、守×${v.def}；克「${esc(v.beats)}」</span></div>`).join('')}</div></details>
+    ${B.length ? `<div class="list">${B.slice().reverse().map(x => `<div><b>${esc(x.name)}</b> ${x.ok ? `<span class="att onpath">可用</span> <span class="muted">成功约${x.p}成；成了攻×${x.fx.atk}、守×${x.fx.def}${x.fx.orgHit ? '、敌组织度−' + x.fx.orgHit : ''}${x.fx.moraleHit ? '、敌士气−' + x.fx.moraleHit : ''}${x.fx.casualty > 1 ? '、敌伤亡×' + x.fx.casualty : ''}；不成攻×${x.fail.atk}${x.terrain.length ? '；' + x.terrain.join('、') : ''}${x.season.length ? '；' + x.season.join('') + '天' : ''}${x.cav ? '；骑兵' + Math.round(x.cav * 100) + '%' : ''}${x.mou ? '；谋略' + x.mou : ''}${x.cost ? '；每次约' + fmtN(x.cost, u) : ''}${x.history ? '。史例：' + x.history : ''}</span>` : `<span class="att b-bad">用不了</span> <span class="muted">${esc(x.why)}</span>`}<div class="muted" style="font-size:12px">${esc(x.desc)}</div></div>`).join('')}</div>` : ''}
+    <div class="opost"><input class="oin" id="tacName" placeholder="战法名（如：火牛阵）" style="width:8em"><input class="oin" style="width:16em" id="tacDesc" placeholder="怎么打（如：夜里牛角缚刀、尾上灌油点火，驱牛冲营）"><button class="link" id="bTacEval">请 AI 评估</button></div>`;
+}
 async function techInvent(s, name, desc) {
   name = one(name, 12); if (!name) { ORGMSG = '写上要发明的东西'; return null; }
   const { text } = await callClaude(`一局讲究史实的历史游戏里，主角（${s.protagonist.role || ''}，${timeText(s.clock)}，${s.place.polity || ''}）想研制「${name}」${desc ? '：' + one(desc, 80) : ''}。
@@ -4037,10 +4176,12 @@ function armyAct(s, act, a) {
   const u = (s.money || {}).unit || '', f = a.force ? arr(s.forces).find(x => x.name === a.force) : null, t = a.tpl ? UT(s, a.tpl) : null;
   if (f && act !== 'raise' && !myForce(s, f)) { ORGMSG = `${f.name}不归你调（${f.leader || '别人'}统）`; return null; }
   if (act === 'march') { if (!f || !a.target) { ORGMSG = '先写往哪里'; return null; }
-    const line = `${f.name}${a.mode === '攻' ? '进攻' : a.mode === '守' ? '移驻防守' : a.mode === '掠' ? '下山劫掠' : '开赴'}${one(a.target, 20)}${a.mode === '攻' && TACTICS[a.tactic] ? '（战法：' + a.tactic + '）' : ''}${a.li ? `，约${a.li}里` : ''}${arr(a.via).length ? '，取道' + a.via.slice(0, 5).join('、') : ''}${a.paceName ? `，${a.paceName}约${a.days}日可到` : ''}`;
+    // 自创战法：照评估要的钱粮当场支（准备器械、牛、火油……），钱不够这道令不下
+    { const cx = a.mode === '攻' ? tacBookGet(s, a.tactic) : null; if (cx && cx.cost) { const paid = milPay(s, Math.round(cx.cost)); if (paid == null) return null; } }
+    const line = `${f.name}${a.mode === '攻' ? '进攻' : a.mode === '守' ? '移驻防守' : a.mode === '掠' ? '下山劫掠' : '开赴'}${one(a.target, 20)}${a.mode === '攻' && (TACTICS[a.tactic] || tacBookGet(s, a.tactic)) ? '（战法：' + a.tactic + '）' : ''}${a.li ? `，约${a.li}里` : ''}${arr(a.via).length ? '，取道' + a.via.slice(0, 5).join('、') : ''}${a.paceName ? `，${a.paceName}约${a.days}日可到` : ''}`;
     const ax = actNew(s, { type: '令', what: line, who: f.leader || '', src: '军务', perm: '统兵', ok: '能' });
     if (a.mode === '掠' && !myDomain(s).raid) { ORGMSG = '你这个身份不能去劫掠'; return null; }
-    s.campaigns = arr(s.campaigns).filter(c => !(c.force === f.name && /待发|行军|待探报/.test(c.state))).concat([{ force: f.name, mode: a.mode === '攻' ? '攻' : a.mode === '守' ? '守' : a.mode === '掠' ? '掠' : '行', target: one(a.target, 20), from: f.at || geoCenter(s), li: num(a.li) || null, paceTxt: a.pace || '', turn: s.turn, state: '待发', aid: ax.id, tactic: TACTICS[a.tactic] ? a.tactic : '' }]);
+    s.campaigns = arr(s.campaigns).filter(c => !(c.force === f.name && /待发|行军|待探报/.test(c.state))).concat([{ force: f.name, mode: a.mode === '攻' ? '攻' : a.mode === '守' ? '守' : a.mode === '掠' ? '掠' : '行', target: one(a.target, 20), from: f.at || geoCenter(s), li: num(a.li) || null, paceTxt: a.pace || '', turn: s.turn, state: '待发', aid: ax.id, tactic: TACTICS[a.tactic] || tacBookGet(s, a.tactic) ? a.tactic : '' }]);
     s.armyPending = arr(s.armyPending).concat([{ act, line: '下令：' + line + '。', turn: s.turn, force: f.name, aid: ax.id, done: true }]).slice(-12);
     ORGMSG = '军令已下：下一回开拔，程序照日子行军，到了就照那里的守军打'; return '下令：' + line + '。'; }
   const r = milDo(s, act, a, f, t); if (!r) return null;
@@ -5349,7 +5490,7 @@ async function getRuling(s, said) {
     if (sc) { const t = s.turn + 1; s.shapes = arr(s.shapes).filter(x => x.turn !== t).concat([{ turn: t, type: sc.type, where: one(sc.where, 30), cast: sc.cast.map(x => x.name).join('、') || '无', end: one(sc.end, 40) }]).slice(-6); }
     const bt = d.battle && typeof d.battle === 'object' && /是|有|真/.test(String(d.battle.fight || '')) ? { enemy: one(d.battle.enemy, 20), enemyTroops: N0(d.battle.enemyTroops), enemyQuality: one(d.battle.enemyQuality, 2), enemySupply: one(d.battle.enemySupply, 2), place: one(d.battle.place, 16), terrain: one(d.battle.terrain, 6), attacker: /敌/.test(d.battle.attacker || '') ? '敌' : '我', surprise: /有|是/.test(d.battle.surprise || ''), ourForces: arr(d.battle.ourForces).map(x => one(x, 20)).filter(Boolean), ourTroops: N0(d.battle.ourTroops), ourSide: one(d.battle.ourSide, 20), ourQuality: one(d.battle.ourQuality, 2), basis: one(d.battle.basis, 60) } : null;
     const acts = arr(d.acts).filter(x => x && x.what).slice(0, 6).map((x, i) => { const t = /问/.test(x.type || '') ? '问' : /计|谋|盘算/.test(x.type || '') ? '计' : /请|申/.test(x.type || '') ? '请' : /试|越|冒/.test(x.type || '') || /越权/.test(x.ok || '') ? '试' : '令'; return { tmp: one(x.tmp, 4) || 't' + (i + 1), type: t, what: one(x.what, 80), who: one(x.who, 16), to: one(x.to, 16), perm: one(x.perm, 40), ok: one(x.ok, 8) }; });
-    const lookup = arr(d.lookup).map(x => one(x, 24)).filter(Boolean).slice(0, 10);
+    const lookup = arr(d.lookup).map(x => one(x, 24)).filter(Boolean).slice(0, 16);
     return { lookup, lookTxt: ledgerLookup(s, lookup, said), acts, battle: bt, realPeople: arr(d.realPeople).map(x => one(x, 12)).filter(x => x.length >= 2).slice(0, 4), scene: sc && (sc.beats.length || sc.cast.length) ? sc : null, places: arr(d.places).map(x => one(x, 10)).filter(x => x.length >= 2).slice(0, 4), brief: ['institutions', 'people', 'terms', 'interests', 'details'].map(k => [k, cut(bf[k], 260)]).filter(([, v]) => v), search: arr(d.search).map(x => one(x, 40)).filter(x => x.length >= 2).slice(0, 6), steps: d.steps.filter(x => x && x.what).slice(0, 4).map(x => ({ what: one(x.what, 50), who: one(x.who, 20), cost: one(x.cost, 50), time: one(x.time, 20), ok: /不能|办不到/.test(x.ok || '') ? '办不到' : /难|代价/.test(x.ok || '') ? '有代价' : '能', why: one(x.why, 90) })), risks: arr(d.risks).map(x => one(x, 60)).filter(Boolean).slice(0, 3), alt: one(d.alt, 80) };
   } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
 }
@@ -8591,7 +8732,89 @@ function tacticMul(tac, T, f, s) { const st = f ? forceStats(s, f) : {}, tr = f 
   if (tac === '围城') return /城/.test(T) ? [1.1, '围城断粮，守军渐困'] : [0.95, '野地围不住'];
   if (tac === '坚守') return [1.0, ''];
   return [1, '']; }
+/* ========== 作战（需求台账 R-141；2026-11-07 玩家：「具体作战的细节你要设计好，可以效仿钢铁雄心，不过可以有更多玩家的创意战术，可以由 ai 评估」）==========
+ *  一仗按天打（野战最多八天，攻城最多二十天）：
+ *   战场宽度照地形（平原一万二、丘陵九千、山地六千、林泽七千、河渡八千、城下一万、关隘三千）——摆不开的兵作预备队，前面打掉了再补上去；
+ *   每天双方主将各出一手战术（冲阵、坚阵、两翼夹击、弓弩齐射、骑兵突击、诱敌深入、夜袭、火攻、收缩），统兵高的挑得准；战术相克：被克的那一方这一天打折；
+ *   每天各掉组织度（阵型、号令还在不在）和兵力：攻的照兵种的攻、冲击，守的照守、地形、城防；补给、士气、天候、训练都折进去；
+ *   组织度先打光的一方撤；机动强、骑兵多的一方追击多杀；夹击得手、对方机动低，被围的还要被俘；八天还没分出来的，攻方收兵；
+ *  玩家自创的战法（战法簿）由 AI 照年代、地形、季节、兵种评估：成没成看成功率（统帅谋略对敌将），成了照评估的效果加（有上限），败了照评估的代价扣 */
+const BT_W = { 平原: 12000, 丘陵: 9000, 山地: 6000, 林泽: 7000, 河渡: 8000, 城池: 10000, 关隘: 3000 };
+const BT_FX = { 平原: { atk: 1, def: 1.1, cav: 1.2 }, 丘陵: { atk: 0.9, def: 1.15, cav: 0.9 }, 山地: { atk: 0.75, def: 1.35, cav: 0.6 }, 林泽: { atk: 0.8, def: 1.2, cav: 0.6 }, 河渡: { atk: 0.7, def: 1.25, cav: 0.8 }, 城池: { atk: 0.6, def: 2.2, cav: 0.5 }, 关隘: { atk: 0.5, def: 2.6, cav: 0.4 } };
+const btTerrain = T => /关/.test(T || '') ? '关隘' : /城/.test(T || '') ? '城池' : /河|渡|江|水/.test(T || '') ? '河渡' : /林|泽|沼|苇/.test(T || '') ? '林泽' : /山|谷|岭/.test(T || '') ? '山地' : /丘|坡|冈|塬/.test(T || '') ? '丘陵' : '平原';
+// 战术：atk 攻、def 守、org 对方组织度多掉、ok 什么时候用得上、beats 克哪一手（被克的那方这一天打七五折）
+const BTAC = {
+  冲阵: { atk: 1.2, def: 0.9, beats: '诱敌深入', why: '正面冲击敌阵' },
+  坚阵: { atk: 0.85, def: 1.3, beats: '冲阵', why: '结阵固守、以逸待劳' },
+  两翼夹击: { atk: 1.25, def: 0.95, org: 1.2, ok: (a, T) => a.mob >= 50 && !/关隘|城池/.test(T), beats: '坚阵', why: '分兵绕击两翼' },
+  弓弩齐射: { atk: 1.15, def: 1.05, ok: a => a.rng >= 0.15, beats: '冲阵', why: '弓弩齐发压住冲锋' },
+  骑兵突击: { atk: 1.35, def: 0.85, org: 1.3, ok: (a, T) => a.cav >= 0.2 && /平原|丘陵/.test(T), beats: '弓弩齐射', why: '铁骑冲阵' },
+  诱敌深入: { atk: 1.1, def: 1.1, ok: a => a.mou >= 55, beats: '骑兵突击', why: '佯败诱敌入伏' },
+  夜袭: { atk: 1.3, def: 0.8, org: 1.4, ok: a => a.train >= 60, beats: '收缩', why: '夜袭敌营' },
+  火攻: { atk: 1.45, def: 0.9, org: 1.5, ok: (a, T, W) => !/雨|雪/.test(W || '') && /林泽|河渡|丘陵|平原/.test(T) && a.mou >= 60, beats: '坚阵', why: '顺风纵火' },
+  收缩: { atk: 0.7, def: 1.25, ok: a => a.org < 40, beats: '两翼夹击', why: '收拢阵脚、且战且退' },
+};
+const OLD_TAC = { 正攻: '冲阵', 包抄: '两翼夹击', 设伏: '诱敌深入', 夜袭: '夜袭', 坚守: '坚阵', 围城: '坚阵' };
+const btRng = seed => { let a = (Math.abs(Math.round(seed)) % 2147483647) || 1; return () => { a = a + 0x6D2B79F5 | 0; let x = Math.imul(a ^ a >>> 15, 1 | a); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; };
+/** 一边的兵：照编成和统帅算出来；没编成的照「精、弱」三档 */
+function btSide(s, o) {
+  const st = o.f ? forceStats(s, o.f) : {}, U = arr(st.U), men = Math.max(0, Math.round(o.men || st.men || N0(o.f && o.f.troops) || 0));
+  const share = re => U.length ? U.filter(x => re.test(x.t.name + (x.t.kind || ''))).reduce((a, x) => a + x.men, 0) / Math.max(1, U.reduce((a, x) => a + x.men, 0)) : 0;
+  const q = /精/.test(o.quality || '') ? 1.3 : /弱|疲|新/.test(o.quality || '') ? 0.7 : 1, base = 50 * q;
+  const ld = o.leader ? ((s.people || {})[o.leader] || {}).stats || {} : {}, tong = (ld['统兵'] || {}).v ?? 45, mou = (ld['谋略'] || {}).v ?? 45;
+  return { name: o.name, men, reserve: 0, atk: st.atk ?? base, def: st.def ?? base, shock: st.shock ?? base, mob: st.mob ?? (o.cav ? 60 : 45), org: num(o.f && o.f.orgNow) ?? st.org0 ?? 70, morale: num(o.f && o.f.morale) ?? 60, train: num(o.f && o.f.train) ?? 55,
+    cav: o.cav != null ? o.cav : share(/骑|马/), rng: o.rng != null ? o.rng : share(/弓|弩|铳|炮|射/), supply: o.supply ?? 1, leader: o.leader || '', tong, mou, pref: OLD_TAC[o.tac] || o.tac || '', custom: o.custom || null, dead: 0, caught: 0 };
+}
+/** 主将挑这一天的战术：玩家指定的先用（用得上的话），自创战法照成功率，其余照统兵挑最合用的 */
+function btPick(a, b, T, W, day, rnd) {
+  if (day === 1 && a.custom) return '自创';
+  const can = k => { const x = BTAC[k]; return !x.ok || x.ok(a, T, W); };
+  if (a.pref && BTAC[a.pref] && can(a.pref) && (day === 1 || rnd() < 0.5)) return a.pref;
+  const L = Object.keys(BTAC).filter(can); if (!L.length) return '冲阵';
+  // 统兵高的看得出对方惯用哪手，挑克它的；低的随手
+  if (rnd() * 100 < a.tong) { const k = L.find(k => BTAC[k].beats === b.last); if (k) return k; }
+  return L[Math.floor(rnd() * L.length)];
+}
+/** 打一仗：A 是攻方。返回每天的经过和结局 */
+function battleSim(s, A, B, ctx) {
+  const T = btTerrain(ctx.terrain), FX = BT_FX[T], W = BT_W[T], wx = ctx.wx || { atk: 1, def: 1, txt: '' }, rnd = btRng(ctx.seed || 1), fort = T === '城池' ? 0.8 + (num(ctx.fort) ?? 50) / 250 : 1;
+  const days = [], maxD = T === '城池' ? 20 : 8;
+  for (const x of [A, B]) { x.front = Math.min(x.men, W); x.reserve = x.men - x.front; }
+  let end = null;
+  for (let d = 1; d <= maxD && !end; d++) {
+    const ta = btPick(A, B, T, wx.txt, d, rnd), tb = btPick(B, A, T, wx.txt, d, rnd), note = [];
+    const fxOf = (x, k) => { if (k !== '自创') return BTAC[k]; const c = x.custom, okp = rnd() * 100 < Math.max(5, Math.min(95, (c.p || 50) + (x.mou - 50) * 0.4)); x.customOk = okp; note.push(`${x.name}${okp ? '施' : '行'}「${c.name}」${okp ? '得手' : '没成'}`); return okp ? { atk: c.fx.atk, def: c.fx.def, org: 1, hit: c.fx } : { atk: c.fail.atk, def: c.fail.def, org: 1 }; };
+    const xa = fxOf(A, ta), xb = fxOf(B, tb), ca = ta !== '自创' && BTAC[ta].beats === tb ? 0.75 : 1, cb = tb !== '自创' && BTAC[tb].beats === ta ? 0.75 : 1;
+    if (ca < 1) note.push(`${B.name}的${tb}克住了${A.name}的${ta}`); if (cb < 1) note.push(`${A.name}的${ta}克住了${B.name}的${tb}`);
+    const pw = (x, xf, c, att) => x.front / 1000 * ((att ? x.atk * 0.6 + x.shock * 0.4 : x.atk * 0.7 + x.shock * 0.3) / 50) * xf.atk * c * x.supply * (0.5 + x.morale / 200) * (0.6 + x.org / 250) * (1 + (x.tong - 50) / 250) * (att ? FX.atk * wx.atk * (x.cav > 0.2 ? FX.cav : 1) : 1);
+    const dv = (x, xf, c, att) => x.front / 1000 * (x.def / 50) * xf.def * c * (att ? 1 : FX.def * fort * wx.def);
+    const pA = pw(A, xa, ca, true), pB = pw(B, xb, cb, false), dA = dv(A, xa, ca, true), dB = dv(B, xb, cb, false);
+    const rA = pA / Math.max(0.01, dB), rB = pB / Math.max(0.01, dA), j = () => 0.85 + rnd() * 0.3;
+    let oB = 16 * rA * (xa.org || 1) * j(), oA = 16 * rB * (xb.org || 1) * j();
+    if (xa.hit && A.customOk) { oB += xa.hit.orgHit || 0; B.morale = Math.max(0, B.morale - (xa.hit.moraleHit || 0)); }
+    if (xb.hit && B.customOk) { oA += xb.hit.orgHit || 0; A.morale = Math.max(0, A.morale - (xb.hit.moraleHit || 0)); }
+    const kB = Math.round(Math.min(B.front, B.front * 0.02 * rA * j() * (xa.hit && A.customOk ? (xa.hit.casualty || 1) : 1))), kA = Math.round(Math.min(A.front, A.front * 0.02 * rB * j() * (xb.hit && B.customOk ? (xb.hit.casualty || 1) : 1)));
+    B.org = Math.max(0, B.org - oB); A.org = Math.max(0, A.org - oA); B.front -= kB; A.front -= kA; B.dead += kB; A.dead += kA;
+    for (const x of [A, B]) { const add = Math.min(x.reserve, Math.max(0, W - x.front)); x.front += add; x.reserve -= add; x.men = x.front + x.reserve; x.last = x === A ? ta : tb; if (x.reserve > 0 && add) x.org = Math.min(100, x.org + 3); }
+    days.push({ d, ta, tb, kA, kB, A: { men: A.men, org: Math.round(A.org) }, B: { men: B.men, org: Math.round(B.org) }, note: note.join('；') });
+    if (B.org <= 0 && A.org <= 0) end = B.org <= A.org ? 'B' : 'A'; else if (B.org <= 0) end = 'B'; else if (A.org <= 0) end = 'A';
+  }
+  // 撤退与追击：机动强、骑兵多的追得狠；夹击得手、对方机动低的被围、被俘
+  const chase = (w, l, wt) => { const enc = /两翼夹击|骑兵突击/.test(wt || '') && w.mob > l.mob + 10 && T !== '城池' && T !== '关隘'; const k = Math.round(l.men * Math.min(0.5, 0.04 + w.cav * 0.15 + (enc ? 0.2 : 0))); const cap = enc ? Math.round((l.men - k) * 0.25) : 0; l.dead += k; l.caught = cap; l.men = Math.max(0, l.men - k - cap); return { k, cap, enc }; };
+  let pursuit = null; if (end === 'B') pursuit = chase(A, B, A.last); else if (end === 'A') pursuit = chase(B, A, B.last);
+  // 城破：守军大半被俘、余下死伤溃散（守城的组织度打光就是城破）
+  if (end === 'B' && T === '城池' && B.men > 0) { const cap = Math.round(B.men * 0.6), k = Math.round(B.men * 0.25); B.caught = (B.caught || 0) + cap; B.dead += k; B.men = Math.max(0, B.men - cap - k); pursuit = Object.assign(pursuit || {}, { fall: true }); }
+  const lossA = A.dead / Math.max(1, A.dead + A.men), lossB = (B.dead + B.caught) / Math.max(1, B.dead + B.caught + B.men);
+  const outcome = !end ? '相持' : end === 'B' ? (lossB > 0.3 || (pursuit && pursuit.enc) ? '大胜' : '小胜') : (lossA > 0.3 || (pursuit && pursuit.enc) ? '大败' : '小败');
+  return { days, outcome, end, pursuit, terrain: T, width: W, A: { men: A.men, dead: A.dead, caught: A.caught || 0, org: Math.round(A.org) }, B: { men: B.men, dead: B.dead, caught: B.caught || 0, org: Math.round(B.org) }, customOk: A.customOk };
+}
 function battleRounds(r) {
+  if (arr(r.days).length) {   // 按天打的：一天一行，末了追击、被俘
+    const L = r.days.map(d => ({ nm: `第${d.d}日 我${d.us === '自创' ? '施自创战法' : d.us}，敌${d.them === '自创' ? '施计' : d.them}`, du: d.du, dt: d.dt, us: d.usMen, th: d.thMen, uo: d.usOrg, to: d.thOrg, note: d.note }));
+    const su = L.reduce((a, x) => a + x.du, 0), st = L.reduce((a, x) => a + x.dt, 0), last = L[L.length - 1] || { us: r.ours, th: N0(r.enemyTroops) };
+    if (r.deadUs - su > 0 || r.deadThem - st > 0) L.push({ nm: /胜/.test(r.outcome) ? (r.encircled ? '追击合围' : '追击') : /败/.test(r.outcome) ? (r.encircled ? '被围溃散' : '溃退') : '收兵', du: Math.max(0, r.deadUs - su), dt: Math.max(0, r.deadThem - st), us: Math.max(0, r.ours - r.deadUs), th: Math.max(0, N0(r.enemyTroops) - r.deadThem), note: r.caughtThem ? `俘敌${r.caughtThem}人` : r.caughtUs ? `被俘${r.caughtUs}人` : '' });
+    return L;
+  }
   const W = { 大胜: [[0.4, 0.45, 0.15], [0.25, 0.35, 0.4]], 小胜: [[0.4, 0.45, 0.15], [0.3, 0.4, 0.3]], 相持: [[0.35, 0.5, 0.15], [0.35, 0.5, 0.15]], 小败: [[0.3, 0.4, 0.3], [0.4, 0.45, 0.15]], 大败: [[0.25, 0.35, 0.4], [0.4, 0.45, 0.15]] }[r.outcome] || [[0.34, 0.33, 0.33], [0.34, 0.33, 0.33]];
   let us = r.ours, th = N0(r.enemyTroops) || 0; const names = ['接战', '鏖战', /胜/.test(r.outcome) ? '追击' : /败/.test(r.outcome) ? '溃退' : '收兵'];
   let su = 0, st = 0;
@@ -8599,10 +8822,10 @@ function battleRounds(r) {
 }
 function battleHtml(s) {
   const L = arr(s.battles).filter(b => b && arr(b.rounds).length).slice(-3).reverse(); if (!L.length) return '';
-  return `<div class="h"><span class="seal">战</span>战况<span class="note">一仗三合：接战、鏖战、追击；照兵力、兵种、训练士气、地形、战法结算</span></div>` + L.map(b => { const a0 = b.ours || 1, t0 = N0(b.theirs) || 1, mx = Math.max(a0, t0);
+  return `<div class="h"><span class="seal">战</span>战况<span class="note">一天一天打：每天双方各出一手战术，掉兵力也掉组织度，组织度先打光的一方撤；照兵种、统帅、地形、补给、天候、战法结算</span></div>` + L.map(b => { const a0 = b.ours || 1, t0 = N0(b.theirs) || 1, mx = Math.max(a0, t0);
     return `<div class="affair"><b>${esc(b.when || '')} ${esc(b.place || '')}之战</b> <span class="att ${/败/.test(b.outcome) ? 'b-bad' : /胜/.test(b.outcome) ? 'onpath' : ''}">${esc(b.outcome)}</span> <span class="muted">${esc(b.terrain || '')}${b.tactic ? ' · 战法：' + esc(b.tactic) : ''}${b.tacWhy ? '（' + esc(b.tacWhy) + '）' : ''}</span>
       <div class="muted" style="font-size:12px">我方 ${esc(fmtN(a0, '人'))}${b.forces ? '（' + esc(b.forces) + '）' : ''} 对 ${esc(b.enemy || '敌')} ${esc(fmtN(t0, '人'))}</div>
-      ${b.rounds.map(x => `<div style="display:grid;grid-template-columns:3em 1fr 1fr;gap:6px;align-items:center;font-size:12px"><span>${esc(x.nm)}</span><div class="gbar" title="我方剩${x.us}，这一合伤亡${x.du}"><i class="good" style="width:${Math.round(x.us / mx * 100)}%"></i></div><div class="gbar" title="敌方剩${x.th}，这一合伤亡${x.dt}"><i class="bad" style="width:${Math.round(x.th / mx * 100)}%"></i></div></div><div class="muted" style="font-size:11px;margin-left:3.5em">我折${fmtN(x.du)}、剩${fmtN(x.us)}；敌折${fmtN(x.dt)}、剩${fmtN(x.th)}</div>`).join('')}</div>`; }).join('');
+      ${b.rounds.map(x => `<div style="display:grid;grid-template-columns:${x.nm.length > 4 ? '1fr' : '3em 1fr 1fr'};gap:6px;align-items:center;font-size:12px"><span>${esc(x.nm)}</span>${x.nm.length > 4 ? '</div><div style="display:grid;grid-template-columns:3em 1fr 1fr;gap:6px;align-items:center;font-size:12px"><span></span>' : ''}<div class="gbar" title="我方剩${x.us}，这一合伤亡${x.du}"><i class="good" style="width:${Math.round(x.us / mx * 100)}%"></i></div><div class="gbar" title="敌方剩${x.th}，这一合伤亡${x.dt}"><i class="bad" style="width:${Math.round(x.th / mx * 100)}%"></i></div></div><div class="muted" style="font-size:11px;margin-left:3.5em">我折${fmtN(x.du)}、剩${fmtN(x.us)}${x.uo != null ? '（组织度' + x.uo + '）' : ''}；敌折${fmtN(x.dt)}、剩${fmtN(x.th)}${x.to != null ? '（组织度' + x.to + '）' : ''}${x.note ? '。' + esc(x.note) : ''}</div>`).join('')}</div>`; }).join('');
 }
 /** 局面页上直接摆出：你治下的城（城池卡和能办的事）、你的兵马（人数、驻地、来历），不用到地图里去翻 */
 /** 名义上奉你为宗主、实际自治的：账上对你称臣、附庸、藩属、羁縻的别家，和这一年图上在你疆域里头另成一家的藩镇——朝廷对他们只能下诏、册封、调停，不能直接派官征税 */
@@ -10740,12 +10963,19 @@ function resolveBattle(s, b) {
   const TM = b.tactic ? tacticMul(b.tactic, T, mine.find(f => !f.virtual) || null, s) : [1, ''];
   if (b.tactic === '坚守' && b.attacker !== '我') pu *= 1.3; else pu *= TM[0];
   if (b.tactic === '围城') { pu *= 1; }
-  const { pWin, outcome, lossUs, lossThem } = clashCore(pu, pt, seeded((s.turn || 0) * 31 + ours % 997 + N0(b.enemyTroops) % 991), ours, N0(b.enemyTroops));
-  const deadUs = Math.round(ours * lossUs), deadThem = Math.round(N0(b.enemyTroops) * lossThem);
+  const { pWin } = clashCore(pu, pt, 0.5, ours, N0(b.enemyTroops));   // 只拿来报战前胜算；胜负伤亡照下面一天一天打出来
+  // 按天打（需求台账 R-141）：我方照主力那支的编成和统帅，敌方照推演给的精粗和主将；补给、天候、疲兵折进去
+  const lead = mine.filter(f => !f.virtual).sort((x, y) => N0(y.troops) - N0(x.troops))[0] || null, cust0 = b.custom ? tacBookGet(s, b.custom) : (b.tactic && tacBookGet(s, b.tactic)), custNo = cust0 ? tacUsable(s, cust0, lead, T) : '', cust = custNo ? null : cust0;   // 自创战法这里用不上（地形、季节、兵种、谋略不够）就照常打，战报里写明
+  const us = btSide(s, { name: '我军', f: lead, men: ours, quality: lead ? lead.quality : b.ourQuality, leader: lead ? lead.leader : '', tac: cust ? '' : b.tactic, custom: cust, supply: supplyUs * tired }), them = btSide(s, { name: b.enemy || '敌军', men: N0(b.enemyTroops), quality: b.enemyQuality, leader: b.enemyLeader || '', supply: supplyThem, cav: /骑|胡|虏|蒙|契丹|女真|突厥|鞑/.test((b.enemy || '') + (b.enemyType || '')) ? 0.4 : null });
+  if (b.surprise) { if (b.attacker === '我') them.org *= 0.6; else us.org *= 0.6; }
+  const sim = battleSim(s, b.attacker === '我' ? us : them, b.attacker === '我' ? them : us, { terrain: T, wx: WX, fort: (cityOf(s, b.place || '') || {}).cheng, seed: (s.turn || 0) * 31 + ours % 997 + N0(b.enemyTroops) % 991 });
+  const flip = { 大胜: '大败', 小胜: '小败', 相持: '相持', 小败: '小胜', 大败: '大胜' }, outcome = b.attacker === '我' ? sim.outcome : flip[sim.outcome];
+  const deadUs = us.dead + (us.caught || 0), deadThem = them.dead + (them.caught || 0);
   const take = b.attacker === '我' && /大胜|小胜/.test(outcome) && b.place ? b.place : '';
   const lose = b.attacker === '敌' && /大败/.test(outcome) && b.place ? b.place : '';
   const r0 = { ...b, ours, ourForces: mine.map(f => f.name), virtual: mine.some(f => f.virtual), odds: Math.round(pWin * 100), outcome, deadUs: b.tactic === '围城' ? Math.round(deadUs * 0.5) : deadUs, deadThem, take, lose, turn: s.turn + 1, tacWhy: TM[1] };
-  r0.wx = WX.txt; r0.tired = tired < 1; r0.rounds = battleRounds(r0); return r0;
+  r0.wx = WX.txt; r0.tired = tired < 1; r0.days = sim.days.map(d => ({ d: d.d, us: b.attacker === '我' ? d.ta : d.tb, them: b.attacker === '我' ? d.tb : d.ta, du: b.attacker === '我' ? d.kA : d.kB, dt: b.attacker === '我' ? d.kB : d.kA, usMen: (b.attacker === '我' ? d.A : d.B).men, usOrg: (b.attacker === '我' ? d.A : d.B).org, thMen: (b.attacker === '我' ? d.B : d.A).men, thOrg: (b.attacker === '我' ? d.B : d.A).org, note: d.note }));
+  r0.terrain2 = sim.terrain; if (cust0) { r0.custom = cust0.name; r0.customOk = custNo ? null : !!sim.customOk; r0.tacWhy = custNo ? `「${cust0.name}」这里用不上：${custNo}` : sim.customOk ? `「${cust0.name}」得手` : `「${cust0.name}」没成`; } r0.width = sim.width; r0.caughtUs = us.caught || 0; r0.caughtThem = them.caught || 0; r0.encircled = !!(sim.pursuit && sim.pursuit.enc); r0.rounds = battleRounds(r0); return r0;
 }
 function battleBlock(r) {
   if (!r) return '';
@@ -12565,7 +12795,7 @@ function webKeyBox() {
     </div></div>
     ${KEYMSG ? `<div class="${/✓/.test(KEYMSG) ? 'banner' : 'err'}">${esc(KEYMSG)}</div>` : ''}`;
 }
-async function refreshKey() { try { const q = await api('/api/quick-status'); if (q.lookup) LOOKST = q.lookup; KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '', search: q.search || '', bocha: !!q.hasBocha, bochaSaved: !!q.bochaSaved, bochaTestOk: q.bochaTestOk !== false, bochaOff: !!q.bochaOff, bochaTail: q.bochaTail || '', bad: q.hasKey && q.lastTest && q.lastTest.ok === false && /401|403|Key 不对|没有权限|Unauthorized|Authentication/i.test(q.lastTest.why || '') && !/402|余额/.test(q.lastTest.why || '') ? q.lastTest.why : '', poor: q.hasKey && q.lastTest && q.lastTest.ok === false && /402|余额/.test(q.lastTest.why || '') }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
+async function refreshKey() { try { const q = await api('/api/quick-status'); if (q.lookup) LOOKST = q.lookup; if (q.glm) GLM = { has: !!q.glm.has, model: q.glm.model || '', tail: q.glm.tail || '', base: q.glm.baseUrl || '' }; KEY = { has: !!q.hasKey, tail: q.keyTail || '', model: q.modelName || '', search: q.search || '', bocha: !!q.hasBocha, bochaSaved: !!q.bochaSaved, bochaTestOk: q.bochaTestOk !== false, bochaOff: !!q.bochaOff, bochaTail: q.bochaTail || '', bad: q.hasKey && q.lastTest && q.lastTest.ok === false && /401|403|Key 不对|没有权限|Unauthorized|Authentication/i.test(q.lastTest.why || '') && !/402|余额/.test(q.lastTest.why || '') ? q.lastTest.why : '', poor: q.hasKey && q.lastTest && q.lastTest.ok === false && /402|余额/.test(q.lastTest.why || '') }; } catch (_) { KEY = { has: false, tail: '', model: '' }; } }
 /* ========== 网页版账号（名字 + 密码，不用邮箱手机号；只存在这个浏览器里） ========== */
 let ACCTMSG = '';
 const accounts = () => { try { return JSON.parse(localStorage.getItem('hrpg:accounts') || '{}') || {}; } catch (_) { return {}; } };
@@ -12968,7 +13198,8 @@ function pane(tab) {
   }
   return `<div class="h" style="margin-top:6px"><span class="seal">设</span>设置</div>
     <label class="muted" for="sLen">戏里每回正文多长</label>
-    <select id="sLen">${[['short', '短（四五百字）'], ['normal', '标准（八百到一千五百字）'], ['long', '长（一千五百到两千字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    <select id="sLen">${[['short', '短（三四百字）'], ['normal', '标准（六百到一千字）'], ['long', '长（一千二到一千八百字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    ${DSM() ? glmBox() : ''}
     
     <p class="muted" style="font-size:13px;margin-top:10px">每回合都会：${MODE !== 'none' ? `联网查这一回涉及的真人、事件、年份（${MODE !== 'local' ? (BOCHA_KEY ? '博查 + 维基百科' : '维基百科') : KEY.bocha ? '博查 + 维基百科' : '维基百科；填博查 Key 资料更多'}）；` : ''}${DSM() ? '写正文前先深度构思；' : ''}天下的事照史书往下走；写完核实史实、记账。这些关掉剧情就会失真，所以不能关。</p>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">联网查资料眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}
     
@@ -13625,6 +13856,7 @@ document.addEventListener('click', async e => {
   if (t.id === 'bUt' && S && !BUSY) { ORGMSG = '核定中……'; render(); try { await buildUnitTypes(S); ORGMSG = ''; } catch (er) { ORGMSG = '没核定成：' + errText(er); } try { await store.save(S); } catch (_) {} render(); return; }
   if (t.id === 'bUtAdd' && S && !BUSY) { const nm0 = ($('#utName') || {}).value || '', de = ($('#utDesc') || {}).value || ''; ORGMSG = '核定中……'; render(); try { const r = await addUnitType(S, nm0, de); if (r) ORGMSG = `定下了：${r.name}`; } catch (er) { ORGMSG = '没核定成：' + errText(er); } try { await store.save(S); } catch (_) {} render(); return; }
   if (ds.tech && S) { if (BUSY) { ORGMSG = '这一回还在写，写完再定'; render(); return; } techStart(S, ds.tech); try { await store.save(S); } catch (_) {} render(); return; }
+  if (t.id === 'bTacEval' && S && !BUSY) { ORGMSG = '请 AI 照这个年代评估这个战法……'; render(); try { await tacEval(S, ($('#tacName') || {}).value || '', ($('#tacDesc') || {}).value || ''); } catch (er) { ORGMSG = '没评估成：' + errText(er); } try { await store.save(S); } catch (_) {} render(); return; }
   if (t.id === 'bTechInv' && S && !BUSY) { ORGMSG = '问一问这个年代做不做得出来……'; render(); try { await techInvent(S, ($('#techName') || {}).value || '', ($('#techDesc') || {}).value || ''); } catch (er) { ORGMSG = '没判断成：' + errText(er); } try { await store.save(S); } catch (_) {} render(); return; }
   if (ds.xwait && S) { const d = num(ds.xwait) || 10, sp = $('#span'); if (sp) sp.value = d > 30 ? 'season' : d > 10 ? 'month' : 'xun'; const ta = $('#said'); if (ta && !/静候/.test(ta.value)) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + '按兵不动，静候前方军报。'; ORGMSG = '已把这一回的时长调好、写进下一步，点「发出」就过日子等军报'; render(); return; }
   if (ds.army && S) {
@@ -13867,7 +14099,7 @@ render();
   } else {
     try { if (!location.protocol.startsWith('http')) throw 0; const h = await api('/api/health'); if (h && h.ok) { MODE = 'local'; SAMPLE = deskSample; watchUpdate(); await refreshKey(); try { const r = await api('/api/hpacks'); RUNHIST = arr(r.packs).filter(p => p && Array.isArray(p.range) && Array.isArray(p.events)); } catch (_) { RUNHIST = []; } } } catch (_) { MODE = 'none'; }
     // 没有本机游戏程序（在线打开、或把网页存到电脑上双击打开）：网页版，浏览器直接连 DeepSeek，只要填 Key
-    if (MODE !== 'local') { MODE = 'web'; SAMPLE = directSample; webKeyRefresh(); webWatchUpdate(); }
+    if (MODE !== 'local') { MODE = 'web'; SAMPLE = directSample; webKeyRefresh(); glmWebRefresh(); webWatchUpdate(); }
   }
   READY = true;
   const last = lsGet('hrpg:last');

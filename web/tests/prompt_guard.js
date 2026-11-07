@@ -164,6 +164,9 @@ const checks = [
   ['开局一次查齐时不被「正忙二十秒自动放开」放开（需求台账 R-119）', /if \(!TURN && !PREP && Date\.now\(\) - THINK_T0 > 20000\)/.test(src)],
   ['读书人以上能看朝局、百姓看不到（需求台账 R-136）', /function seesCourt\(s\)/.test(src) && /if \(seesCourt\(s\)\) T\.push\(\['court'/.test(src) && /seesCourt\(s\) && \(!s\.org \|\|/.test(src)],
   ['这一年这一家的真官员不当撞名改掉、旧档改回（需求台账 R-137）', /function markRealPerson\(s, n\)/.test(src) && /same: true/.test(src) && /async function clashUndo\(s\)/.test(src) && /id: 'clashundo'/.test(src)],
+  ['GLM 写故事和推演、DeepSeek 做杂活、GLM 出错退回（需求台账 R-135）', /const routeOf = /.test(src) && /async function glmDirect\(input, opts = \{\}\)/.test(src) && /routeOf\(kind, plain\) === 'glm'/.test(src) && /GLM 没成，改由 DeepSeek/.test(src) && /provider: b\.provider === 'glm'/.test(server) && /'POST \/api\/glm-key'/.test(server)],
+  ['博查多用（需求台账 R-138）', /const lookup = arr\(d\.lookup\)\.map\(x => one\(x, 24\)\)\.filter\(Boolean\)\.slice\(0, 16\)/.test(src) && /noFallback: true, count: 15/.test(server)],
+  ['作战按天打、自创战法 AI 评估有上限（需求台账 R-141）', /function battleSim\(s, A, B, ctx\)/.test(src) && /const BTAC = \{/.test(src) && /async function tacEval\(s, name, desc\)/.test(src) && /orgHit: clampN\(d\.fx && d\.fx\.orgHit, 0, 40, 0\)/.test(src) && /const sim = battleSim\(s,/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
