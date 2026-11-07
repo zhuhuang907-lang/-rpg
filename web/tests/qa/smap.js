@@ -20,8 +20,9 @@ const { chromium } = require('playwright');
   await p.waitForFunction(() => POLY['qing-1820'] || POLY_ERR['qing-1820'], null, { timeout: 60000 }).catch(() => {});
   { const e = await p.evaluate(() => POLY_ERR['qing-1820'] || (POLY['qing-1820'] ? '' : '没下')); if (e) bad('府界没下成：' + e); }
   // 头一回打开舆图：先看自己这一带，到县（府州照真界，名字写在地块上，治所单标）
-  const r0 = await p.evaluate(() => { TAB = 'map'; SIDE_FOLD = false; MAPZ.inited = false; render(); const sv = document.querySelector('.smap'); return { m: MAPZ.mode, cty: [...sv.querySelectorAll('rect[data-mapu]')].map(e => e.dataset.mapu), lbl: sv.textContent, poly: [...sv.querySelectorAll('path[data-mapu]')].map(e => e.dataset.mapu), area: [...sv.querySelectorAll('.arealbl')].map(e => e.textContent), views: document.querySelectorAll('[data-mapview]').length }; });
-  if (r0.m !== 'near' || r0.cty.length < 12 || !r0.cty.includes('江都县') || !/甘泉|仪征/.test(r0.lbl) || !r0.poly.includes('扬州府') || !r0.area.includes('扬州府') || !r0.views) bad('舆图开头不是本地到县：' + JSON.stringify({ ...r0, lbl: r0.lbl.slice(0, 200) }));
+  const r0 = await p.evaluate(() => { TAB = 'map'; SIDE_FOLD = false; MAPZ.inited = false; render(); const sv = document.querySelector('.smap'); return { m: MAPZ.mode, cty: [...sv.querySelectorAll('rect[data-mapu]')].map(e => e.dataset.mapu), lbl: sv.textContent, shown: [...sv.querySelectorAll('text')].map(e => e.textContent).join('|'), poly: [...sv.querySelectorAll('path[data-mapu]')].map(e => e.dataset.mapu), area: [...sv.querySelectorAll('.arealbl')].map(e => e.textContent), views: document.querySelectorAll('[data-mapview]').length }; });
+  { const bare = r0.cty.filter(n => !r0.shown.split('|').includes(n)); if (bare.length) bad('本地图上画了县城方块却没写名字（玩家截图：一堆白方块没名字）：' + bare.join('、')); }   // 2026-11-07
+  if (r0.m !== 'near' || r0.cty.length < 5 || !r0.cty.includes('江都县') || !/甘泉|仪征/.test(r0.lbl) || !r0.poly.includes('扬州府') || !r0.area.includes('扬州府') || !r0.views) bad('舆图开头不是本地到县：' + JSON.stringify({ ...r0, lbl: r0.lbl.slice(0, 200) }));
   { const c = await p.evaluate(() => { const sv = document.querySelector('.smap'); const l = sv.querySelector('.cntyline'); return { d: l ? l.getAttribute('d').length : 0, x: /✕/.test(sv.textContent) }; });
     if (c.d < 50) bad('府州里的县与县之间没画虚线：' + JSON.stringify(c)); if (c.x) bad('不通的地方还画了线、打了叉（玩家说不通的不画）'); }
   await SHOT('near0');

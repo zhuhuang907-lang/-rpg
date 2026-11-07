@@ -169,6 +169,9 @@ const checks = [
   ['作战按天打、自创战法 AI 评估有上限（需求台账 R-141）', /function battleSim\(s, A, B, ctx\)/.test(src) && /const BTAC = \{/.test(src) && /async function tacEval\(s, name, desc\)/.test(src) && /orgHit: clampN\(d\.fx && d\.fx\.orgHit, 0, 40, 0\)/.test(src) && /const sim = battleSim\(s,/.test(src)],
   ['外交卡、战局、补给线、战争进度与议和（需求台账 R-142）', /function dipAct\(s, name, act\)/.test(src) && /function dipMonthly\(s\)/.test(src) && /warMonthly\(s\), dipMonthly\(s\)/.test(src) && /function supplyLine\(s, f\)/.test(src) && /const warScore = w =>/.test(src) && /\$\{diploHtml\(s\)\}/.test(src)],
   ['外交只给一方之主，寨主义军是绿林往来（需求台账 R-143）', /const dipRole = s =>/.test(src) && /if \(role === 'outlaw'\) return lulinHtml\(s\)/.test(src) && /function lulinAct\(s, name, act\)/.test(src) && /if \(dipRole\(s\) !== 'realm'\)/.test(src)],
+  ['别家的城照天下各方和地盘认主，大军开到不打就占不行（需求台账 R-144）', /function placeOwner\(s, place\)/.test(src) && /placeOwner\(s, place\)\.owner/.test(src)],
+  ['资料没推好挡住的按钮点了当场去推（需求台账 R-144）', /function kickJob\(/.test(src) && (src.match(/kickJob\(/g) || []).length >= 4],
+  ['「你在这里」的标记不压自家城名，本地图不画没名字的县城方块（需求台账 R-100）', /const PINB = /.test(src) && /boxes = PINB\.slice\(\)/.test(src) && /cty\.filter\(u => LBLD\.has\(u\.n\) \|\| special\(u\)/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

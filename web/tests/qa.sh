@@ -43,6 +43,7 @@ say "端口被占：别的程序占着往后挪、游戏已经开着不另开"; 
 KEYVAL= start ai.js && run "填 Key：粘贴、保存、换 Key、型号、博查、开关、输入不丢" 300 node keyflow.js
 start ai.js && {
   run "巡检（开局 + 三回合 + 十个侧栏）" 600 node tour.js
+  run "打仗全程实玩：宣战出兵、开拔、兵临城下、探报、真打一仗、拿下城、地盘地图记上、战争进度加分；别家的城不许不打就占（R-144）" 400 node warplay.js
   run "桌面版：本机服务存 GLM Key、试连、转交 GLM、清除（R-135）" 200 node glmsrv.js
   run "家业（流民开局现钱不离谱、逐项立账）" 600 node estate.js
   run "军队：募兵进账、守城有战报、出战扣伤亡、离谱数目交账房" 600 node army.js
@@ -68,6 +69,7 @@ start ai.js && {
   run "GLM 写故事和推演、DeepSeek 做杂活、GLM 出错退回 DeepSeek、设置页填 GLM Key 改分工（R-135）" 120 env PLAY="$ROOT/web/play.html" node glm.js
   run "作战按天打：宽度、战术相克、组织度、追击合围、城破被俘；自创战法 AI 评估有上限、条件不合用不上；战报逐日；军务页真点（R-141）" 200 env PLAY="$ROOT/web/play.html" node battle.js
   run "外交卡（修好结盟联姻称臣互市）、战局、补给线、战争进度与议和割地、敌国来犯；外交只给一方之主、寨主义军是绿林往来、商人大臣没有（R-142、R-143）" 200 env PLAY="$ROOT/web/play.html" node diplo.js
+  run "按钮都有效果：资料没推好挡住的按钮点了当场去推、推好就能用；没填内容的按钮说清楚缺什么（R-144）" 300 env PLAY="$ROOT/web/play.html" node buttons.js
   run "天下名录照这一年并立的各家做表，宗室以外的文武大臣都列上，有博查的逐个按名字核，不按清朝写死问法" 120 env PLAY="$ROOT/web/play.html" node roster.js
   run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js
