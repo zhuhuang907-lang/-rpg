@@ -46,14 +46,21 @@ const path = require('path');
   if (await click('[data-pthire="尚让"]', '请入伙')) { const r = await ev(() => ({ h: arr(partyF(S).party.heroes).map(h => h.name), cap: ptCap(S, partyF(S).party) })); if (!r.h.includes('尚让')) bad.push('请好汉入伙没成：' + JSON.stringify(r)); }
   // 差事：打听、接下、送信到了办成
   await ev(() => { REPLY = { quests: [{ type: '送信', giver: '王乡老', target: '濮州', why: '儿子在濮州做工，家里有急事' }] }; render(); });
-  if (await click('[data-ptx="quest"]', '打听差事')) { if (!(await ev(() => arr(S.quests).length))) bad.push('打听差事没打听到'); }
-  { const id = await ev(() => (arr(S.quests)[0] || {}).id); if (id && await click(`[data-ptq="${id}"]`, '接下差事')) { const r = await ev(() => { const f = partyF(S); const c0 = S.money.cash; const out = ptArrive(S, f, '濮州'); return { out, st: S.quests[0].state, got: S.money.cash > c0 }; }); if (r.st !== '办成' || !r.got) bad.push('送信到了地方差事没办成：' + JSON.stringify(r)); } }
+  if (await click('[data-ptx="quest"]', '打听差事')) { if (!(await ev(() => arr(S.ptQuests).length))) bad.push('打听差事没打听到'); }
+  { const id = await ev(() => (arr(S.ptQuests)[0] || {}).id); if (id && await click(`[data-ptq="${id}"]`, '接下差事')) { const r = await ev(() => { const f = partyF(S); const c0 = S.money.cash; const out = ptArrive(S, f, '濮州'); return { out, st: S.ptQuests[0].state, got: S.money.cash > c0 }; }); if (r.st !== '办成' || !r.got) bad.push('送信到了地方差事没办成：' + JSON.stringify(r)); } }
   // 行军路上遇事、停步
   { const r = await ev(() => { const f = partyF(S); S.enc = null; S.campaigns = [{ force: f.name, mode: '守', target: '汴州', from: '曹州', li: 2000, pace: 30, state: '行军', done: 0, turn: S.turn - 1 }]; let got = false; for (let i = 0; i < 12 && !got; i++) { campaignTick(S, 10); got = !!S.enc; } const d1 = S.campaigns[0].done; campaignTick(S, 10); return { got, paused: S.campaigns[0].done === d1 }; });
     if (!r.got) bad.push('走了一百二十天路一回事都没遇上'); else if (!r.paused) bad.push('路上遇事没了结，队伍照走'); }
   // 每月：发不出饷就逃；头领忠心掉光就走
   { const r = await ev(() => { const f = partyF(S); S.enc = null; S.money.cash = 0; f.party.heroes[0].loyal = 5; const n0 = ptMen(f.party); S.clock.m = (S.clock.m % 12) + 1; const out = partyMonthly(S); return { n0, n1: ptMen(f.party), h: f.party.heroes.length, out }; });
     if (!(r.n1 < r.n0)) bad.push('发不出饷没人跑：' + JSON.stringify(r)); if (r.h) bad.push('头领忠心掉光了还没走'); }
+  // 占山立寨、修寨、每月出息；恶名到了官府派兵追，走到了真打
+  await ev(() => { const f = partyF(S); f.party.tiers['乡勇'] = 60; f.troops = ptMen(f.party); S.renown = 60; S.money.cash = 5000; S.enc = null; S.campaigns = []; f.at = '曹州'; render(); });
+  if (await click('[data-base="found"]', '占山立寨')) { const r = await ev(() => ({ b: S.base, org: orgsLive(S).some(o => /山寨/.test(o.kind)) })); if (!r.b || !r.org) bad.push('占山立寨没立成：' + JSON.stringify(r)); }
+  { const c0 = await ev(() => S.money.cash); if (await click('[data-base="粮仓"]', '修粮仓')) { const r = await ev(() => ({ lv: S.base.lv['粮仓'], c: S.money.cash })); if (r.lv !== 1 || !(r.c < c0)) bad.push('修粮仓没修成或没花钱：' + JSON.stringify(r)); } }
+  { const r = await ev(() => { const f = partyF(S), g0 = N0(f.grain) || 0; S.clock.m = (S.clock.m % 12) + 1; baseMonthly(S); return { g0, g1: f.grain }; }); if (!(r.g1 > r.g0)) bad.push('有粮仓，每月没囤粮：' + JSON.stringify(r)); }
+  { const r = await ev(() => { bandOf(S).heat = 25; S.huntYM = null; const out = huntMonthly(S); const H = S.forces.find(g => g.hunt); const b0 = arr(S.battles).length; for (let i = 0; i < 8 && arr(S.battles).length === b0; i++) campaignTick(S, 10); return { out, H: !!H, b: arr(S.battles).length - b0 }; });
+    if (!r.H) bad.push('恶名到了二十五，官府没派兵追：' + JSON.stringify(r.out)); else if (!r.b) bad.push('追剿的官军走到了没打'); }
   // 山大王：当面说招安
   await ev(() => { S.protagonist.role = '山大王'; S.forces = [{ name: '山寨弟兄', leader: S.protagonist.name, owner: '你', troops: 300, at: '曹州', status: '驻守' }]; REPLY = { verdict: '允', reply: '朝廷念你等本是良民，许以自新。', why: '剿之费力' }; render(); });
   { const has = await ev(() => !!document.querySelector('[data-psay="amnesty:官府"]')); if (!has) bad.push('山大王没有「托人向官府说招安」的框（身份：' + (await ev(() => myDomain(S).kind)) + '）'); else {

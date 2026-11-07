@@ -64,6 +64,7 @@ function opening() {
 function answer(p, last, json) {
   // 敌国之主、手下大臣由 DeepSeek 扮演（R-145）：敌国照战局进攻主角离他最近的城，大臣请犒军，将领固守
   if (p.includes('你扮演跟主角交战的各家之主')) { const pw = (p.match(/· ([^：\n]+)：主事的/) || [])[1] || '', city = ((p.match(/主角的城池：([^、\n]+)/) || [])[1] || '').replace(/等$/, ''); return JSON.stringify({ orders: pw ? [{ power: pw, act: city ? '进攻' : '按兵', target: city, share: 0.3, term: '', general: '', why: '趁其不备' }] : [] }); }
+  if (p.includes('照这个官这个月真会落到他头上的公事')) return JSON.stringify({ duties: [{ kind: '断案', title: '审一桩争田的案子', who: '王秀才', why: '积了半年' }], bribe: { who: '', ask: '', kind: '' } });   // 臣子线（R-149）
   if (p.includes('来寻好汉入伙')) return JSON.stringify({ heroes: [{ name: '赵大刀', from: '逃兵', wu: 7, tong: 4, mou: 3, yi: 1, temper: '豪爽', wish: '有口饱饭' }] });   // 草根线（R-147）
   if (p.includes('在当地打听有没有活计')) { const tg = ((p.match(/只能从这些地方里挑：([^、；\n]+)/) || [])[1] || '').trim(); return JSON.stringify({ quests: tg ? [{ type: '送信', giver: '王乡老', target: tg, why: '家书' }] : [] }); }
   if (p.includes('路上撞见主角一伙')) return JSON.stringify({ verdict: '不允', reply: '少废话！', why: '不信' });
