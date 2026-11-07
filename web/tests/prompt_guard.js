@@ -172,6 +172,8 @@ const checks = [
   ['别家的城照天下各方和地盘认主，大军开到不打就占不行（需求台账 R-144）', /function placeOwner\(s, place\)/.test(src) && /placeOwner\(s, place\)\.owner/.test(src)],
   ['资料没推好挡住的按钮点了当场去推（需求台账 R-144）', /function kickJob\(/.test(src) && (src.match(/kickJob\(/g) || []).length >= 4],
   ['「你在这里」的标记不压自家城名，本地图不画没名字的县城方块（需求台账 R-100）', /const PINB = /.test(src) && /boxes = PINB\.slice\(\)/.test(src) && /cty\.filter\(u => LBLD\.has\(u\.n\) \|\| special\(u\)/.test(src)],
+  ['敌国之主、手下大臣由 DeepSeek 扮演，只从定好的几样里挑，人数程序算（需求台账 R-145）', /async function foePlan\(s\)/.test(src) && /async function memPlan\(s\)/.test(src) && /function foeExec\(/.test(src) && /function memoAct\(/.test(src) && (src.match(/ds: true \}\);/g) || []).length >= 2 && /extra\.ds && KEY\.has/.test(src) && /人数由程序照他的账算，你不写人数/.test(src)],
+  ['打仗不止攻城：迎击、劫营、劫粮、设伏，野战不占城（需求台账 R-145）', /function foeOp\(/.test(src) && /function foeEngage\(/.test(src) && /function foeMarchTick\(/.test(src) && /const take = !b\.field/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
