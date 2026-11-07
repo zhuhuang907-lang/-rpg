@@ -37,6 +37,12 @@ const path = require('path');
     S.forces[1].status = '驻守'; S.forces = S.forces.filter(f => !f.foe).concat([{ name: '南汉别部', owner: '南汉', leader: '', troops: 6000, quality: '中', at: '潮州', status: '行军', foe: true, march: { from: '潮州', to: '泉州', li: 300, done: 0, pace: 35 } }]);
     const t0 = S.territory.length; let L1 = ''; for (let i = 0; i < 4; i++) L1 += campaignTick(S, 10).join('；');
     if (!/兵临泉州/.test(L1) || !/来攻泉州|泉州.*(丢|守)/.test(L1 + JSON.stringify(S.lastCampBattle || {}))) bad.push('敌军走到泉州没打：' + L1);
+    // 3b. 城里没兵：先围一个月（留出救援），下个月还没援兵才丢城
+    { S.territory.push({ place: '建州', troops: null }); S.forces = S.forces.filter(f => !f.foe).concat([{ name: '南汉偏师', owner: '南汉', troops: 3000, at: '建州', status: '进犯', foe: true }]);
+      const before = (cityOf(S, '建州') || {}).pop; const L2 = campaignTick(S, 1).join('；');
+      if (!before) { if (!/围了建州/.test(L2) || !S.territory.some(t => t.place === '建州')) bad.push('城里没兵，敌军一到就丢城，没留救援的时候：' + L2);
+        S.clock.m = (S.clock.m % 12) + 1; const L3 = campaignTick(S, 1).join('；'); if (S.territory.some(t => t.place === '建州')) bad.push('围了一个月没援兵，城还没丢：' + L3); }
+      S.forces = S.forces.filter(f => f.name !== '南汉偏师'); }
     // 4. 劫粮：你的兵远离自家城池，粮道被断
     const far = { name: '偏师', leader: '王延禀', owner: '你', troops: 5000, at: '广州', status: '驻扎', grain: 40000, morale: 60 }; S.forces.push(far); const g0 = far.grain;
     let cut = false; for (let k = 0; k < 6 && !cut; k++) { S.clock.m = (S.clock.m % 12) + 1; S.foeYM = null; REPLY = { orders: [{ power: '南汉', act: '劫粮', target: '偏师', share: 0.1, why: '断其粮道' }] }; await foePlan(S); cut = far.grain < g0; }

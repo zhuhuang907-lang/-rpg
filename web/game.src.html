@@ -2894,10 +2894,11 @@ function campaignTick(s, days) {
   }
   out.push(...foeMarchTick(s, days));   // 敌军照路程往前走（R-145）
   // 敌军来攻：别家标着进犯、来攻的兵马，到了你的地盘或你的兵马所在
-  for (const g of arr(s.forces).filter(x => x && !myForce(s, x) && /进犯|来攻|攻打|围攻|南下|北上|东进|西进/.test(x.status || '') && N0(x.troops) > 0 && x.lastAtkYM !== ym)) {
+  for (const g of arr(s.forces).filter(x => x && !myForce(s, x) && /进犯|来攻|攻打|围攻|围城|南下|北上|东进|西进/.test(x.status || '') && N0(x.troops) > 0 && x.lastAtkYM !== ym)) {
     const mineHere = arr(s.forces).filter(f => myForce(s, f) && samePlace(f.at, g.at) && N0(f.troops) > 0), land = arr(s.territory).find(t => samePlace(t.place, g.at)) || (myPlaces(s).some(p => samePlace(p, g.at)) ? { place: g.at, troops: (() => { const cp = N0((cityOf(s, g.at) || {}).pop); return cp ? Math.round(cp * 0.01) : null; })(), militia: true } : null);   // 自家城里没驻兵的，照户口有乡勇守城（R-145）
     if (!mineHere.length && !land) continue; g.lastAtkYM = ym;
-    const r = resolveBattle(s, { enemy: g.name, enemyOwner: g.owner, enemyTroops: N0(g.troops), enemyQuality: g.quality || '中', enemySupply: g.cutTill >= ym ? '缺' : '', place: g.at, terrain: '城池', attacker: '敌', surprise: false, tactic: mineHere.some(f => f.status === '固守') ? '坚守' : '', ourForces: mineHere.map(f => f.name), ourTroops: mineHere.length ? null : N0(land && land.troops) || null, ourSide: land ? land.place + (land.militia ? '乡勇' : '守军') : '' });
+    const r = !mineHere.length && !N0(land && land.troops) ? null : resolveBattle(s, { enemy: g.name, enemyOwner: g.owner, enemyTroops: N0(g.troops), enemyQuality: g.quality || '中', enemySupply: g.cutTill >= ym ? '缺' : '', place: g.at, terrain: '城池', attacker: '敌', surprise: false, tactic: mineHere.some(f => f.status === '固守') ? '坚守' : '', ourForces: mineHere.map(f => f.name), ourTroops: mineHere.length ? null : N0(land && land.troops) || null, ourSide: land ? land.place + (land.militia ? '乡勇' : '守军') : '' });
+    if (!r && land && !mineHere.length && g.owner && g.siegeYM !== ym && g.siegeYM == null) { g.siegeYM = ym; g.status = '围城'; g.lastAtkYM = ym; out.push(`${g.name}围了${g.at}，城中没有兵，最多撑到下个月，速发援兵`); continue; }   // 城里没兵的先围一个月，留出救援的时候
     if (!r) { if (land && !mineHere.length && g.owner) { s.territory = arr(s.territory).filter(t => !samePlace(t.place, g.at)); s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(g.at)] = { owner: g.owner, turn: s.turn, why: '无兵把守被占' }; warNote(s, g.owner, false, '', g.at); g.status = '驻守'; out.push(`${g.name}兵临${g.at}，城里无兵把守，${g.at}丢了`); } continue; }
     applyBattle(s, r); g.troops = Math.max(0, N0(g.troops) - r.deadThem); if (/胜/.test(r.outcome) && !/败/.test(r.outcome)) g.status = '败退'; else if (r.lose) { g.status = '驻守'; if (r.virtual) { s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(r.lose)] = { owner: g.owner || r.enemy, turn: s.turn, why: '城破' }; } }
     s.lastCampBattle = r; out.push(`${g.name}来攻${g.at}：${r.outcome}，我伤亡${fmtN(r.deadUs, '人')}、敌${fmtN(r.deadThem, '人')}${r.lose ? '，丢了' + r.lose : ''}`);
@@ -12721,9 +12722,10 @@ function bgJobs(s0, d, g) {
     { id: 'orgseek', msg: '查人事树上空着的要紧位子此刻是谁在任', due: () => orgSeekDue(s0), run: async () => { s0.orgSeekAt = s0.turn; let k = await orgTableDS(s0, s0.org.nodes, true, true); orgVacantFix(s0); if (orgSeekDue0(s0)) k += await orgSeekReal(s0, s0.org.nodes); orgVacantFix(s0); if (k) orgFillReal(s0); return k; }, needs: ['org'] },
     { id: 'orgfuture', msg: '照史书把往后几年的人事更替列成表', due: () => orgFutureDue(s0), run: () => orgFutureDS(s0), needs: ['org'] },
     { id: 'career', msg: '照史料查人事树上真人的历任官职', due: () => careerDue(s0), run: () => careerFill(s0).catch(e => { s0.carFail = s0.turn; throw e; }), needs: ['org'] },
+    { id: 'scout', msg: '派探马打探守军虚实', due: () => scoutDue(s0), run: () => campScout(s0).catch(e => { s0.scFail = s0.turn; throw e; }) },
+    // 排在探报后面：先把眼前这一仗打完，再定敌国下个月怎么走（2026-11-07 云端测试慢，探报被挤到五回以后）
     { id: 'foe', msg: '敌国之主定这个月的进退', due: () => foeDue(s0), run: () => foePlan(s0).catch(e => { s0.foeFail = s0.turn; throw e; }) },
     { id: 'memo', msg: '手下大臣、将领议这个月的事', due: () => memDue(s0), run: () => memPlan(s0).catch(e => { s0.memFail = s0.turn; throw e; }) },
-    { id: 'scout', msg: '派探马打探守军虚实', due: () => scoutDue(s0), run: () => campScout(s0).catch(e => { s0.scFail = s0.turn; throw e; }) },
     { id: 'exam', msg: '照史书举行这一科、查真实的进士名录', due: () => examDue(s0), run: () => examTick(s0).catch(e => { s0.exFail = s0.turn; throw e; }) },
     { id: 'skills', msg: '照出身定属性和本事', due: () => sbDue(s0), run: () => buildSkills(s0).catch(e => { s0.sbFail = s0.turn; throw e; }), ex: true },
     { id: 'local', msg: '打听此地的行情、差事、能招的人', due: () => placeDue(s0), run: () => buildLocal(s0).catch(e => { s0.localFail = s0.turn; throw e; }), ex: true },
