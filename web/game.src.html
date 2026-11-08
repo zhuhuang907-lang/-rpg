@@ -8839,6 +8839,7 @@ function parleyCtx(s, kind, tg, ask) {
     return { who: `${c.target}守将${S0.g.general || ''}`, key: 'yield:' + c.target, sit: `守${c.target}（属${S0.g.owner || '别家'}），城中守军约${fmtN(S0.g.troops, '人')}，被主角围了${S0.days}日，城墙破损${Math.round(S0.prog)}%，城中粮${S0.days > S0.food ? '已尽' : '还够约' + (S0.food - S0.days) + '日'}`, want: `开城归降`, c }; }
   if (kind === 'pris') { const p = arr(s.prisoners).find(x => x.name === tg); if (!p) return null; return { who: `被俘的${p.owner || ''}将领${tg}`, key: 'pris:' + tg, sit: `${tg}原是${p.owner || '别家'}的将领，${p.where ? '在' + p.where : ''}被主角俘获，关押中`, want: '归顺主角，为主角效力' }; }
   if (kind === 'fig') { const D = (s.dossiers || {})[tg]; if (!D) return null; const now = figNow(s, tg) || {}; return { who: tg, key: 'fig:' + tg, sit: `${tg}，此刻${now.st || ''}${now.t ? '（' + now.t + '）' : ''}${D.temper ? '，为人' + D.temper : ''}${D.will ? '，出不出仕：' + D.will : ''}`, want: '出来为主角效力', D }; }
+  if (kind === 'sue') { const L = hhOf(s).levy; if (!L) return null; return { who: `${geoCenter(s)}的县官`, key: 'sue', sit: `${s.protagonist.name}（${s.protagonist.role}）告${L.who}额外加派${fmtN(L.amt, (s.money || {}).unit || '')}；县官和${L.who}${/胥吏/.test(L.who) ? '是上下级，胥吏是他手下的人' : '平日有往来，豪强在地方上有势力'}`, want: '判这笔加派不合法，免了' }; }
   if (kind === 'impeach') { const I = s.impeach, O = offOf(s); if (!I) return null; return { who: `审这件参案的上官（或皇帝）`, key: 'imp', sit: `${I.by}参主角${s.career.office || ''}「${I.charge}」；主角今年考成${Math.round(O.kc)}${s.career.evaluation ? '，上次评' + s.career.evaluation : ''}${O.graft ? '，风闻收过别人的钱' : ''}${s.career.faction ? '，是' + s.career.faction + '的人' : ''}`, want: '驳回参本，不加追究' }; }
   if (kind === 'memo2') { const c = s.career || {}; return { who: `${c.superior || '朝廷（皇帝和阁部）'}`, key: 'memo2', sit: `主角任${c.office || ''}${c.rank ? '（' + c.rank + '）' : ''}，在${geoCenter(s)}；他上疏言事`, want: '采纳主角奏疏里的建言（嘉纳）' }; }
   if (kind === 'amnesty') { const B = bandOf(s); return { who: `${geoCenter(s)}一带管剿匪的官员`, key: 'amn', sit: `主角聚众约${fmtN(bandMen(s), '人')}占着山头，官府追剿的风头${num(B.heat) || 0}${B.siege ? '，官军正往山寨去' : ''}，名声${Math.round(num(s.renown) || 0)}；剿了要花钱死人，招安了能省事也怕养虎为患`, want: `招安：授主角${amnestyTitle(s.clock.y)}之类的武职，部众改编成官军` }; }
@@ -8872,6 +8873,7 @@ async function parley(s, kind, tg, ask, said) {
     else if (kind === 'yield') { const f = arr(s.forces).find(x => x.name === tg); res = siegeWin(s, X.c, f, '被说动，开城归降'); }
     else if (kind === 'pris') { s.prisoners = arr(s.prisoners).filter(x => x.name !== tg); s.people = s.people || {}; s.people[tg] = { ...(s.people[tg] || {}), role: '降将', tie: '部将', favor: 20, seen: s.turn }; genOf(s, tg); res = `${tg}归顺，愿为你效力（可以派他统兵）`; }
     else if (kind === 'fig') { s.talent = s.talent || { y: s.clock.y, list: [] }; s.talent.list = arr(s.talent.list).concat([{ name: tg, real: true, y: s.clock.y, answered: true, arrived: true, here: true, traits: X.D.temper || '', qual: '名士', src: '当面说动' }]); touchFig(s, tg, '你当面说动的'); res = `${tg}被你说动，答应出来效力，下回就到你跟前听用`; }
+    else if (kind === 'sue') { hhOf(s).levy = null; res = '县官准了状子，免了这笔加派'; }
     else if (kind === 'impeach') { s.impeach = null; res = '参本驳回，不加追究'; }
     else if (kind === 'memo2') { const O = offOf(s), sup = shituSup(s); O.kc = Math.min(100, O.kc + 5); s.renown = (num(s.renown) || 0) + 5; if (sup && s.people && s.people[sup]) s.people[sup].favor = (num(s.people[sup].favor) ?? 0) + 5; res = '奏疏蒙嘉纳'; }
     else if (kind === 'amnesty') { bandOf(s).offer = { title: amnestyTitle(s.clock.y), ym }; res = `官府松了口，愿招安，授你${bandOf(s).offer.title}（在山寨那一栏点「受招安」才算数）`; }
@@ -9133,6 +9135,73 @@ function offHtml(s) { if (!isOfficer(s)) return ''; const O = offOf(s), D = arr(
     ${F ? `<div class="affair"><b>${esc(F.leader)}</b>想拉你入${esc(F.fac)}<div class="opost"><button class="link" data-facinv="yes">入伙</button><button class="link" data-facinv="no">婉拒</button></div></div>` : ''}
     ${parleyBox(s, 'memo2', '上', null, '上疏言事')}
     ${arr(O.log).length ? `<div class="list">${O.log.slice(-5).reverse().map(x => `<div class="muted" style="font-size:12px">${esc(x.when)}：${esc(x.t)}</div>`).join('')}</div>` : ''}`; }
+/* ========== 百姓线：一家的日子（需求台账 R-146 第三期；2026-11-07 玩家：「普通人的系统要增加，太少了……只给一个壳子」）==========
+ *  · 每月一家人吃穿（照家里人口、本地米价工钱，程序算），现钱不够就挨饿，饿上两个月有人病倒；
+ *  · 佃田：向地主佃几亩种，交押租，秋收照亩产、米价、租率、年景分到手；一家能种多少看人手；
+ *  · 借贷：向钱庄、地主借，照本地月息滚利，一年到期；到期还不上，债主逼债——有田卖田抵债，没田就得卖身为奴或者逃荒；
+ *  · 胥吏、豪强：有田的人家每月可能被胥吏加派、被豪强逼占，交了就是钱，不交可以写状子告官（当面说，AI 判）；
+ *  · 往上走：捐个出身（照本朝捐纳的价）；往下掉：逃荒成流民（就能拉队伍落草）、投军当兵 ========== */
+const isCommoner = s => { try { return !isRuler(s) && !isOfficer(s) && myDomain(s).kind === 'none' && !partyF(s) && !soldierOf(s); } catch (_) { return false; } };
+const hhOf = s => (s.hh2 = s.hh2 || { debt: [], lease: 0, hunger: 0, log: [] });
+const hhMouths = s => 1 + arr(s.household).filter(m => m && !m.dead).length;
+const hhHands = s => 1 + arr(s.household).filter(m => m && !m.dead && (num(m.age) == null || (num(m.age) >= 14 && num(m.age) <= 60)) && !/妻|妾|母|女|婢/.test(m.relation || '')).length;
+function hhNote(s, t) { const H = hhOf(s); H.log = arr(H.log).concat([{ when: timeText(s.clock), t }]).slice(-14); return lifeNote(s, '家计', t); }
+function hhNeed(s) { const E = econOf(s); if (!E || !E.rice || !E.wage) return null; const n = hhMouths(s); return Math.round((n * 0.9 * E.rice + n * E.wage * 2) * 100) / 100; }
+function hhMonthly(s) { if (!isCommoner(s)) return []; const H = hhOf(s), E = econOf(s), ym = Math.floor(ymOf(s.clock)), m = s.clock.m || 1, out = [], u = (s.money || {}).unit || ''; if (!E || H.ym === ym) return []; H.ym = ym;
+  const need = hhNeed(s); if (need != null) { const cash = N0(s.money && s.money.cash) || 0; if (cash >= need) { cashAdd(s, -need); H.hunger = 0; } else { cashAdd(s, -cash); H.hunger = (H.hunger || 0) + 1; out.push(`一家${hhMouths(s)}口这个月吃穿要${fmtN(need, u)}，钱不够，挨了饿`); if (H.hunger >= 2) { const sick = arr(s.household).find(x => x && !x.dead && !x.sick); if (sick) { sick.sick = true; out.push(`${sick.relation || ''}${sick.name}饿病了`); } } } }
+  if (H.lease && (m === 9 || m === 10) && H.harvestY !== s.clock.y) { H.harvestY = s.clock.y; const zai = num(((s.gov || {}).stats || {})['灾情']) ?? 20, yr = Math.max(0.3, 1 - Math.max(0, zai - 20) / 100), g = Math.round(H.lease * (E.yield || 0) * (E.rice || 0) * (1 - (E.rentRate || 0.5)) * yr * 100) / 100; cashAdd(s, g); out.push(`佃的${H.lease}亩收了秋，交了租，到手约${fmtN(g, u)}${yr < 1 ? '（年景不好）' : ''}`); }
+  for (const d of arr(H.debt)) { d.amt = Math.round(d.amt * (1 + (d.rate || 0.03)) * 100) / 100; }
+  const due = arr(H.debt).find(d => ym >= d.due && !d.pressed); if (due) { due.pressed = true; out.push(`${due.from}来逼债：连本带利${fmtN(due.amt, u)}，限一个月还清`); }
+  const over = arr(H.debt).find(d => d.pressed && ym >= d.due + 1); if (over) { H.debt = H.debt.filter(d => d !== over); if (s.land && s.land.mu > 0 && E.landPrice) { const mu = Math.min(s.land.mu, Math.ceil(over.amt / E.landPrice)); s.land.mu -= mu; out.push(`还不上${over.from}的债，${mu}亩田被收去抵债`); } else { H.bonded = over.from; s.protagonist.role = `${over.from}家的佃仆（抵债）`; out.push(`还不上${over.from}的债，只好卖身到他家做佃仆抵债`); } }
+  if (s.land && s.land.mu > 0 && seeded(ym * 43 + s.land.mu) < 0.12 && !H.levy) { H.levy = { amt: Math.round(E.wage * 10 * (1 + s.land.mu / 50) * 100) / 100, who: seeded(ym * 3) < 0.5 ? '县里的胥吏' : '本地豪强', ym }; out.push(`${H.levy.who}上门加派${fmtN(H.levy.amt, u)}`); }
+  for (const t of out) hhNote(s, t); return out; }
+function hhAct(s, act, arg) { const H = hhOf(s), E = econOf(s), u = (s.money || {}).unit || '', ym = Math.floor(ymOf(s.clock)); if (!E || !E.wage) return needEcon();
+  if (act === 'borrow') { const v = Math.round(num(arg) || 0); if (!(v > 0)) { ORGMSG = '写上借多少'; return null; } if (arr(H.debt).reduce((a, d) => a + d.amt, 0) + v > E.wage * 30 * 24) { ORGMSG = '欠的太多，钱庄、地主都不肯再借'; return null; }
+    const from = arr(H.debt).length % 2 ? '本地地主' : '钱庄'; H.debt = arr(H.debt).concat([{ from, amt: v, rate: num(E.interest) || 0.03, ym, due: ym + 12 }]); cashAdd(s, v); return hhNote(s, `向${from}借了${fmtN(v, u)}，月息${Math.round((num(E.interest) || 0.03) * 1000) / 10}分，一年为期`); }
+  if (act === 'repay') { const d = arr(H.debt).sort((a, b) => a.due - b.due)[0]; if (!d) { ORGMSG = '没欠债'; return null; } const cash = N0(s.money && s.money.cash) || 0, pay = Math.min(cash, d.amt); if (!(pay > 0)) { ORGMSG = '没钱还'; return null; } cashAdd(s, -pay); d.amt = Math.round((d.amt - pay) * 100) / 100; if (d.amt <= 0) H.debt = H.debt.filter(x => x !== d); return hhNote(s, `还${d.from}${fmtN(pay, u)}${d.amt > 0 ? `，还欠${fmtN(d.amt, u)}` : '，两清了'}`); }
+  if (act === 'lease') { const n = Math.round(num(arg) || 0); if (!(n > 0)) { ORGMSG = '写上佃几亩'; return null; } const cap = hhHands(s) * 10; if (H.lease + n > cap) { ORGMSG = `家里${hhHands(s)}个劳力，最多种${cap}亩`; return null; } if (!E.landPrice) return needEcon();
+    const dep = Math.round(n * E.landPrice * 0.05 * 100) / 100; if ((N0(s.money && s.money.cash) || 0) < dep) { ORGMSG = `佃${n}亩要押租${fmtN(dep, u)}，现钱不够`; return null; } cashAdd(s, -dep); H.lease += n; return hhNote(s, `向本地地主佃了${n}亩（押租${fmtN(dep, u)}），秋收交${Math.round((E.rentRate || 0.5) * 100)}%的租`); }
+  if (act === 'levyPay') { const L = H.levy; if (!L) return null; if ((N0(s.money && s.money.cash) || 0) < L.amt) { ORGMSG = '钱不够交'; return null; } cashAdd(s, -L.amt); H.levy = null; return hhNote(s, `忍气交了${L.who}的加派${fmtN(L.amt, u)}`); }
+  if (act === 'juan') { if (!E.juan) return needEcon(); if (H.juan) { ORGMSG = '已经捐过了'; return null; } if ((N0(s.money && s.money.cash) || 0) < E.juan) { ORGMSG = `捐个出身要${fmtN(E.juan, u)}，现钱不够`; return null; } cashAdd(s, -E.juan); H.juan = true; s.renown = (num(s.renown) || 0) + 10; s.protagonist.role = `${s.protagonist.role}（捐了出身）`; return hhNote(s, `花${fmtN(E.juan, u)}捐了个出身，见官不用跪了，乡里也高看一眼`); }
+  if (act === 'flee') { const old = s.protagonist.role; s.protagonist.role = '逃荒的流民'; H.lease = 0; H.debt = []; H.levy = null; return hhNote(s, `撇下${old}的营生，拖家带口逃荒去了（欠的债也顾不上了；成了流民，可以拉人落草）`); }
+  if (act === 'enlist') { const old = s.protagonist.role; s.protagonist.role = '营中兵卒'; s.rank = { lv: 0, merit: 0, side: 'army' }; s.career = { office: '', rank: '' }; return hhNote(s, `由${old}投军，吃了粮当兵`); }
+  return null; }
+function hhHtml(s) { if (!isCommoner(s)) return ''; const H = hhOf(s), E = econOf(s), u = (s.money || {}).unit || '', need = hhNeed(s), debt = arr(H.debt).reduce((a, d) => a + d.amt, 0);
+  return `<div class="h"><span class="seal">家</span>一家的日子<span class="note">每月吃穿照人口和米价算；佃田秋收分粮；借了债一年到期，还不上卖田卖身</span></div>
+    <div class="pl" style="font-size:13px">一家${hhMouths(s)}口（劳力${hhHands(s)}）${need != null ? ` · 每月吃穿约${fmtN(need, u)}` : ''} · 现钱${fmtN(N0(s.money && s.money.cash) || 0, u)}${H.lease ? ` · 佃田${H.lease}亩` : ''}${s.land && s.land.mu ? ` · 自家田${s.land.mu}亩` : ''}${debt ? ` · <b style="color:#a33">欠债${fmtN(debt, u)}</b>` : ''}${H.hunger ? ` · <b style="color:#a33">挨饿${H.hunger}个月</b>` : ''}</div>
+    ${H.levy ? `<div class="affair"><b>${esc(H.levy.who)}</b>上门加派${esc(fmtN(H.levy.amt, u))}<div class="opost"><button class="link" data-hh="levyPay">忍气交了</button></div>${parleyBox(s, 'sue', H.levy.who, null, '写状子告官')}</div>` : ''}
+    <div class="opost"><input class="oin" id="hhAmt" type="number" min="1" style="width:6em" placeholder="多少"><button class="link" data-hh="borrow">借钱</button><button class="link" data-hh="repay">还债</button><button class="link" data-hh="lease" title="填亩数">佃田</button></div>
+    <div class="opost">${E && E.juan ? `<button class="link" data-hh="juan">捐个出身（约${esc(fmtN(E.juan, u))}）</button>` : ''}<button class="link" data-hh="enlist">投军</button><button class="link" data-hh="flee">逃荒</button></div>
+    ${arr(H.debt).length ? `<div class="muted" style="font-size:12px">${H.debt.map(d => `欠${esc(d.from)}${esc(fmtN(d.amt, u))}，${d.due - Math.floor(ymOf(s.clock)) > 0 ? '还有' + (d.due - Math.floor(ymOf(s.clock))) + '个月到期' : '已到期'}`).join('；')}</div>` : ''}
+    ${arr(H.log).length ? `<div class="list">${H.log.slice(-4).reverse().map(x => `<div class="muted" style="font-size:12px">${esc(x.when)}：${esc(x.t)}</div>`).join('')}</div>` : ''}`; }
+/* ========== 财政第二期：借债与商路（需求台账 R-146 第二期）==========
+ *  · 借债：国库不够可以向富商、寺院、钱庄借（照一年进项定能借多少），月月付息，两年到期还本；寺院借钱要免它的杂税；到期还不上就失信：名声大跌、一年里商税少两成、再借不到；
+ *  · 商路：和相邻的别家开一条商路（花钱修路设关），每条让商税多一成；和那家开战就断，断了民心掉 ========== */
+const LOAN_SRC = { 富商: [0.02, '富商巨贾'], 寺院: [0.01, '寺院（要免它的杂税）'], 钱庄: [0.03, '钱庄票号'] };
+function loanTake(s, from, amt) { const F = s.fisc, rev = annualRev(s), ym = Math.floor(ymOf(s.clock)); if (myDomain(s).kind !== 'realm') { ORGMSG = '借国债是一方之主的事'; return null; } if (!F || !rev) { delete s.fiFail; return kickJob('fisc', '国计底账还没推好，能借多少定不下来', () => fiscalDS(s), '国计底账推好了，可以借了'); }
+  if (!LOAN_SRC[from]) return null; if (F.noLoanTill != null && ym < F.noLoanTill) { ORGMSG = '你失过信，眼下没人肯借'; return null; } const v = Math.round(num(amt) || 0), owe = arr(F.loans).reduce((a, l) => a + l.amt, 0);
+  if (!(v > 0)) { ORGMSG = '写上借多少'; return null; } if (owe + v > rev * 0.6) { ORGMSG = `已欠${fmtN(owe, F.unit)}，再借就超过一年进项的六成，借不出来`; return null; }
+  F.loans = arr(F.loans).concat([{ from, amt: v, rate: LOAN_SRC[from][0], ym, due: ym + 24 }]); fiscTreasury(s).add(v); if (from === '寺院') F.templeFree = true;
+  return lifeNote(s, '国计', `向${LOAN_SRC[from][1]}借了${fmtN(v, F.unit)}，月息${LOAN_SRC[from][0] * 100}分，两年还本`); }
+function loanRepay(s) { const F = s.fisc; if (!F) return null; const l = arr(F.loans).sort((a, b) => a.due - b.due)[0]; if (!l) { ORGMSG = '没欠债'; return null; } const T = fiscTreasury(s), pay = Math.min(T.get(), l.amt); if (!(pay > 0)) { ORGMSG = '国库空了，还不了'; return null; }
+  T.add(-pay); l.amt -= pay; if (l.amt <= 0) F.loans = F.loans.filter(x => x !== l); if (!arr(F.loans).some(x => x.from === '寺院')) F.templeFree = false; return lifeNote(s, '国计', `还${l.from}${fmtN(pay, F.unit)}${l.amt > 0 ? '，还欠' + fmtN(l.amt, F.unit) : '，两清'}`); }
+function loanMonthly(s) { const F = s.fisc; if (!F || !arr(F.loans).length) return []; const ym = Math.floor(ymOf(s.clock)); if (F.loanYM === ym) return []; F.loanYM = ym; const out = [], T = fiscTreasury(s);
+  const int = Math.round(F.loans.reduce((a, l) => a + l.amt * l.rate, 0)); if (int) { T.add(-int); out.push(`付国债利息${fmtN(int, F.unit)}`); }
+  for (const l of F.loans.filter(l => ym >= l.due)) { if (T.get() >= l.amt) { T.add(-l.amt); F.loans = F.loans.filter(x => x !== l); out.push(`到期还了${l.from}的本钱${fmtN(l.amt, F.unit)}`); }
+    else { F.loans = F.loans.filter(x => x !== l); F.noLoanTill = ym + 24; F.distrust = ym + 12; s.renown = Math.max(0, (num(s.renown) || 0) - 15); out.push(`欠${l.from}的${fmtN(l.amt, F.unit)}到期还不上，失了信：名声大跌，一年里商贾裹足、商税少两成，两年借不到钱`); } }
+  if (!F.loans.some(x => x.from === '寺院')) F.templeFree = false; return out; }
+function routeOpen(s, power) { const F = s.fisc, rev = annualRev(s); if (myDomain(s).kind !== 'realm') { ORGMSG = '开商路是一方之主的事'; return null; } if (!F || !rev) { delete s.fiFail; return kickJob('fisc', '国计底账还没推好', () => fiscalDS(s), '国计底账推好了，可以开商路了'); }
+  if (warOf(s, power)) { ORGMSG = `正和${power}交战，商路开不了`; return null; } if (arr(F.routes).some(r => r.to === power && !r.cut)) { ORGMSG = `和${power}已经通了商路`; return null; } if (arr(F.routes).filter(r => !r.cut).length >= 4) { ORGMSG = '已经开了四条商路'; return null; }
+  if (!warFronts(s, power).length) { ORGMSG = `${power}和你地界不挨着，商路通不过去`; return null; }
+  const cost = Math.round(rev * 0.02), paid = milPay(s, cost); if (paid == null) return null; F.routes = arr(F.routes).filter(r => r.to !== power).concat([{ to: power, ym: Math.floor(ymOf(s.clock)) }]);
+  return lifeNote(s, '国计', `和${power}开了一条商路（修路设关${paid}）：往来客商多了，商税涨一成`); }
+function routeMonthly(s) { const F = s.fisc; if (!F) return []; const out = []; for (const r of arr(F.routes).filter(r => !r.cut && warOf(s, r.to))) { r.cut = true; const G = (s.gov && s.gov.stats) || {}; if (G['民心'] != null) G['民心'] = Math.max(0, G['民心'] - 3); out.push(`和${r.to}开了战，商路断了，商民叫苦`); } return out; }
+function econ2Html(s) { const F = s.fisc; if (!F || myDomain(s).kind !== 'realm') return ''; const u = F.unit, owe = arr(F.loans).reduce((a, l) => a + l.amt, 0), ym = Math.floor(ymOf(s.clock)), N = realmPowers(s).filter(p => !warOf(s, p.name) && warFronts(s, p.name).length && !arr(F.routes).some(r => r.to === p.name && !r.cut)).slice(0, 6);
+  return `<div class="h" style="font-size:14px">国债与商路</div>
+    ${owe ? `<div class="muted" style="font-size:12px">欠国债${esc(fmtN(owe, u))}：${F.loans.map(l => `${esc(l.from)}${esc(fmtN(l.amt, u))}（${l.due - ym}个月后到期）`).join('；')}</div>` : ''}${F.distrust > ym ? '<div style="color:#a33;font-size:12px">失信未复，商税少两成</div>' : ''}
+    <div class="opost"><input class="oin" id="loanAmt" type="number" min="1" style="width:7em" placeholder="借多少">${Object.entries(LOAN_SRC).map(([k, v]) => `<button class="link" data-loan="${k}" title="月息${v[0] * 100}分">向${k}借</button>`).join('')}${owe ? '<button class="link" data-loan="repay">还债</button>' : ''}</div>
+    ${arr(F.routes).length ? `<div class="muted" style="font-size:12px">商路：${F.routes.map(r => esc(r.to) + (r.cut ? '（断了）' : '')).join('、')}</div>` : ''}
+    ${N.length ? `<div class="opost">${N.map(p => `<button class="link" data-route="${esc(p.name)}">和${esc(p.name)}开商路</button>`).join('')}</div>` : ''}`; }
 /* ========== 敌国之主、手下大臣和将领由 DeepSeek 扮演（需求台账 R-145；2026-11-07 玩家：「难道战争只有攻城？这样吧，让ds扮演敌对势力和手下大臣，主动操作他们」）==========
  *  打仗不止攻城：野战迎击、劫粮道、夜袭劫营、设伏、深沟固守、增兵、求和、离间，你和敌人都能用。
  *  每月后台请 DeepSeek 扮演每个和你交战的一家之主（照史料里他的为人、此刻兵力和战局），从定好的几样里挑一两件；程序照账核过（兵够不够、目标在不在）才落账：
@@ -9365,9 +9434,9 @@ function fiscalMonthly(s) {
   const season = m === 6 ? 0.4 : m === 10 ? 0.6 : 0;
   if (season) { R['田赋'] = Math.round((B.tianfu || 0) * season * popK * farm * taxK * leak); why['田赋'] = `${m === 6 ? '夏税' : '秋粮'}：户口${Math.round(popK * 100)}%、年景${Math.round(farm * 100)}%、${P.tax}赋、吏治折损${Math.round((1 - leak) * 100)}%`; }
   if (B.dingyi) { R['丁役'] = Math.round(B.dingyi / 12 * popK * taxK * leak * (P.yao === '轻' ? 0.7 : P.yao === '重' ? 1.3 : 1)); }
-  if (B.shang) { R['商税'] = Math.round(B.shang / 12 * (shang / 50) * Math.min(1.2, an / 60) * leak * (P.yan === '通商' ? 1.15 : 1)); why['商税'] = `商业${Math.round(shang)}、治安${Math.round(an)}`; }
+  if (B.shang) { const rt = arr(F.routes).filter(r => !r.cut).length, dis = F.distrust != null && F.distrust > ym ? 0.8 : 1; R['商税'] = Math.round(B.shang / 12 * (shang / 50) * Math.min(1.2, an / 60) * leak * (P.yan === '通商' ? 1.15 : 1) * (1 + rt * 0.1) * dis); why['商税'] = `商业${Math.round(shang)}、治安${Math.round(an)}${rt ? '、商路' + rt + '条' : ''}${dis < 1 ? '、失信' : ''}`; }   /* 商路、失信（R-146） */
   if (B.yan) { R['盐课'] = Math.round(B.yan / 12 * (P.yan === '官卖' ? 1.25 : P.yan === '通商' ? 0.6 : 1) * leak); why['盐课'] = P.yan; }
-  if (B.cha) R['榷利'] = Math.round(B.cha / 12 * leak); if (B.za) R['杂税'] = Math.round(B.za / 12 * leak * taxK);
+  if (B.cha) R['榷利'] = Math.round(B.cha / 12 * leak); if (B.za) R['杂税'] = Math.round(B.za / 12 * leak * taxK * (F.templeFree ? 0.9 : 1));
   const revSum = Object.values(R).reduce((a, b) => a + b, 0);
   if (P.coin === '减重') { R['铸钱余利'] = Math.round(((B.tianfu || 0) + (B.shang || 0)) / 12 * 0.15); why['铸钱余利'] = '新钱减重，铸息归公'; }
   const tk = F.troops0 ? myTroops(s) / F.troops0 : 1; if (B.jun) { X['军费'] = Math.round(B.jun / 12 * Math.max(0.2, tk)); why['军费'] = `兵额${Math.round(tk * 100)}%`; }
@@ -9422,7 +9491,7 @@ function fiscHtml(s) {
     ${L ? `<div class="ccard"><div class="ct">上月收支（净${L.net >= 0 ? '余' : '亏'}${esc(fmtN(Math.abs(L.net), u))}）</div>${row(L.R, '+')}${row(L.X, '−')}</div>` : '<div class="muted" style="font-size:12px">下个月起每月结一回收支</div>'}
     <div class="opost">${sel('tax', ['轻', '常', '重'])}</div>${realm ? `<div class="opost">${sel('yan', ['官卖', '照旧', '通商'])}</div><div class="opost">${sel('coin', ['足值', '减重'])}</div><div class="opost">${sel('yao', ['轻', '常', '重'])}</div><div class="opost"><button class="link" data-fisc="cp">${P.cp ? '罢常平仓' : '设常平仓'}</button></div>` : ''}
     <div class="opost"><span class="muted">工程</span>${Object.entries(WORK_KINDS).map(([k, K]) => `<button class="link" data-work="${k}" title="${esc(K[3])}">${esc(K[0])}</button>`).join('')}</div>
-    ${arr(F.works).length ? `<div class="list">${F.works.slice(-6).map(w => `<div>${esc(w.name)} <span class="att">${esc(w.state)}</span> <span class="muted">${w.state === '在修' ? `${w.done}/${w.months}个月，每月${esc(fmtN(w.monthly, u))}` : ''}</span></div>`).join('')}</div>` : ''}`;
+    ${arr(F.works).length ? `<div class="list">${F.works.slice(-6).map(w => `<div>${esc(w.name)} <span class="att">${esc(w.state)}</span> <span class="muted">${w.state === '在修' ? `${w.done}/${w.months}个月，每月${esc(fmtN(w.monthly, u))}` : ''}</span></div>`).join('')}</div>` : ''}${econ2Html(s)}`;
 }
 /** 没有省、道一级的年代（隋、秦汉郡县）照大地域归拢州府 */
 const BIGREG = [['关中', 105.5, 111, 33.6, 36.2], ['河东', 110.4, 114.6, 34.6, 40.6], ['山东', 116.2, 122.8, 34.4, 38.2], ['河北', 113.6, 120.5, 35.6, 42.5], ['河南', 110.9, 117.6, 32, 35.6], ['淮南', 114, 121.5, 30.6, 34.4], ['江南', 114.6, 122.8, 24.5, 30.6], ['巴蜀', 101.5, 110.5, 26.5, 33.6], ['荆湖', 108.5, 114.6, 24.8, 32], ['岭南', 103.5, 118, 17, 25.2], ['陇右', 92, 105.5, 32, 41.5]];
@@ -12188,7 +12257,7 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), warMonthly2(s), mpMonthly(s), armsMonthly(s), levyMonthly(s), groupTick(s), partyMonthly(s), baseMonthly(s), huntMonthly(s), offMonthly(s), dipMonthly(s)), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), warMonthly2(s), mpMonthly(s), armsMonthly(s), levyMonthly(s), groupTick(s), partyMonthly(s), baseMonthly(s), huntMonthly(s), offMonthly(s), hhMonthly(s), loanMonthly(s), routeMonthly(s), dipMonthly(s)), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
       if (!s.yearSnap) s.yearSnap = yearSnap(s);
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
@@ -12777,7 +12846,7 @@ function pane(tab) {
     const caseH = arr(s.cases).length ? `<div class="h"><span class="seal">案</span>牵涉的案子</div><div class="list">${s.cases.map(c => `<div><span class="badge ${/结案/.test(c.stage) ? 'b-done' : /悬/.test(c.stage) ? 'b-bad' : 'b-doing'}">${esc(c.stage || '？')}</span> <b>${esc(c.name)}</b>（${esc(c.kind || '')}，你是${esc(c.role || '？')}）${c.facts ? `<div class="muted">已知：${esc(c.facts)}</div>` : ''}${c.suspects ? `<div class="muted">疑点：${esc(c.suspects)}</div>` : ''}${c.deadline ? `<div class="muted">限期：${esc(c.deadline)}</div>` : ''}</div>`).join('')}</div>` : '';
     return `${jailH}${gl}${caseH}${ACTS}<div class="facebox"><div class="who"><div class="n">${esc(p.name)}</div><div class="r">${esc(p.role)}${p.age != null ? ' · ' + p.age + '岁' : ''}</div><div class="w">${esc(timeText(s.clock))}　${esc(s.place.full)}</div></div></div>
       ${whoHtml(s)}
-      ${threatHtml(s)}${soldierHtml(s)}${campHtml(s)}${partyHtml(s)}${offHtml(s)}
+      ${threatHtml(s)}${soldierHtml(s)}${campHtml(s)}${partyHtml(s)}${offHtml(s)}${hhHtml(s)}
       ${domainPanel(s)}${fiscHtml(s)}${mercHtml(s)}${privHtml(s)}${newsHtml(s)}
       ${myDomain(s).kind === 'none' && isLandlord(s) ? landHtml(s) : ''}${isFem(s) ? femHtml(s) : ''}${myDomain(s).kind === 'none' && !isLandlord(s) && /佃|农|雇工|短工|长工|樵|渔|匠/.test(String(p.role || '')) ? `<div class="h"><span class="seal">工</span>生计</div><div class="opost"><button class="link" data-land="work">出去打短工（二十天）</button></div>` : ''}
       ${ms.length ? `<div class="tiles">${ms.map(([k, v]) => `<div class="tile" title="${esc(v.why)}"><div class="k">${esc(k)}</div><div class="v">${esc(v.value)}${arrow(v.delta)}</div>${v.delta && v.why ? `<div class="why">${esc(v.why)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted">开场后出现。</div>'}
@@ -13566,6 +13635,9 @@ document.addEventListener('click', async e => {
     const k = t.dataset.parley + ':' + t.dataset.pt, ask = ($(`[data-pask="${CSS.escape(k)}"]`) || {}).value || '', said = ($(`[data-psay="${CSS.escape(k)}"]`) || {}).value || '';
     PARLEY_P = 1; ORGMSG = '正在当面说，等他回话……'; render();
     try { await parley(S, t.dataset.parley, t.dataset.pt, ask, said); } catch (er) { if (!(er && er.code === 'cancelled')) ORGMSG = '没说成（' + errText(er) + '），再说一次'; } finally { PARLEY_P = null; }
+    try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && (t.dataset.hh || t.dataset.loan || t.dataset.route)) {   // 百姓线、国债商路（R-146）
+    if (t.dataset.hh) hhAct(S, t.dataset.hh, ($('#hhAmt') || {}).value); else if (t.dataset.loan) { if (t.dataset.loan === 'repay') loanRepay(S); else loanTake(S, t.dataset.loan, ($('#loanAmt') || {}).value); } else routeOpen(S, t.dataset.route);
     try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && (t.dataset.base || t.dataset.duty || t.dataset.brib || t.dataset.imp || t.dataset.facinv)) {   // 山寨、臣子线（R-147、R-149）
     if (t.dataset.base) { if (t.dataset.base === 'found') baseFound(S); else baseBuild(S, t.dataset.base); } else if (t.dataset.duty) dutyAct(S, t.dataset.duty, t.dataset.way);

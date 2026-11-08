@@ -76,6 +76,7 @@ start ai.js && {
   run "当面说：外交、议和、劝守将开城、劝俘虏归顺、写信请名士，玩家写说辞、DeepSeek 判允不允、允了落账不允态度掉、一月一回、说辞重画不丢；吴、吴越不混（R-148）" 200 env PLAY="$ROOT/web/play.html" node parley.js
   run "草根线：拉队伍、招人看户口人缘与上限、操练升兵种、买粮发饷欠了就逃、行军遇事停步、打跑放说、俘虏收编卖放、村子帮工勒索洗劫、酒肆寻好汉请入伙忠心掉光就走、打听差事接下办成、占山立寨修寨每月出息、恶名到了官府派兵追来真打、山大王说招安，全真点（R-147）" 200 env PLAY="$ROOT/web/play.html" node party.js
   run "臣子线：公事挑办法定成败、考成国势变、收钱回绝、被参认罪说情自辩、上疏言事、派系拉人、误期扣分、年底评等第卓异两回劣罢官，全真点（R-149）" 200 env PLAY="$ROOT/web/play.html" node off.js
+  run "百姓线与国债商路：一家吃穿挨饿病倒、佃田秋收、借还债到期卖身、加派交了告官、捐出身、逃荒成流民能拉队伍、投军；借国债上限付息失信、开商路商税涨开战就断，全真点（R-146）" 200 env PLAY="$ROOT/web/play.html" node hh.js
   run "天下名录照这一年并立的各家做表，宗室以外的文武大臣都列上，有博查的逐个按名字核，不按清朝写死问法" 120 env PLAY="$ROOT/web/play.html" node roster.js
   run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js
