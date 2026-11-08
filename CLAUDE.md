@@ -17,7 +17,7 @@
 2. 更新 `STATUS.md`。
 3. 跑完整测试 `QUICK=1 bash web/tests/qa.sh`（全按钮真点、地图、人物……约一个半小时；两套不能同时跑）。全过了它会记下源码指纹。
 4. 提交时 `scripts/check.sh` 自动拦截（git 钩子 `scripts/hooks/pre-commit`）：源码在完整测试之后改过、护栏或规则回归没过、三个版本不是同一次构建、台账缺栏，一律拒绝提交。不许绕过。
-5. 推送后：claude.ai artifact 重新发布；桌面版看 GitHub Actions「打包 Windows 版」有没有成功。
+5. 推送后：claude.ai artifact 重新发布；桌面版看 GitHub Actions「打包 Windows 版」有没有成功；汇报里写网页版网址（https://raw.githack.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/web/play.html，连玩家自己的 DeepSeek，不是 claude.ai 版；R-158）。
 
 ## 硬规矩（附理由）
 - 每个按钮必须有真点它的测试。理由：只调函数测不出「点了没反应、整页按钮全失灵」。
