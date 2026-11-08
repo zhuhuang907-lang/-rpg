@@ -1,9 +1,13 @@
 # 历史模拟 RPG
 
-## 网页版（不用安装）
+## 网页版（不用安装，连 DeepSeek）
 
-在 claude.ai 登录后打开：https://claude.ai/artifact/5Ee1nY93Uqezf3uyrX74nQ
-用你自己的 Claude 账号写剧情，不用 DeepSeek Key；存档存在账号里。源码在 `web/`（`game.src.html` 是源文件，`python3 web/build.py` 嵌入农历月表生成 `index.html`）。
+用浏览器打开：https://raw.githack.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/web/play.html
+（第一次打开会先出一页英文提示「One more step」，点 **Open the page** 就进游戏。）
+在页面上粘贴自己的 DeepSeek Key 就能玩；Key 和存档只存在你这台电脑的浏览器里。
+每次发新版，[Releases 页面](https://github.com/zhuhuang907-lang/-rpg/releases/tag/latest) 也写着这一版的网页版链接，还附了能下载到本机的 `HistoryRPG-web.html`。
+
+claude.ai 版（用 Claude 账号写剧情，不连 DeepSeek，查资料等功能有限）：https://claude.ai/artifact/J2HB8eoRis5kyxRiqYMxwj
 
 ## 下载就玩（Windows）
 
