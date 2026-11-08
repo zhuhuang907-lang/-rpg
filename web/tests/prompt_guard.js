@@ -184,6 +184,7 @@ const checks = [
   ['百姓线：一家吃穿、佃田秋收、借债逼债卖田卖身、胥吏加派告官、捐出身、投军、逃荒（需求台账 R-146）', /function hhMonthly\(s\)/.test(src) && /function hhAct\(/.test(src) && /kind === 'sue'/.test(src) && /\$\{hhHtml\(s\)\}/.test(src)],
   ['国债与商路：借债付息到期失信、商路涨商税开战就断（需求台账 R-146）', /function loanTake\(/.test(src) && /function loanMonthly\(s\)/.test(src) && /function routeOpen\(/.test(src) && /function routeMonthly\(s\)/.test(src) && /商路、失信（R-146）/.test(src) && /hhMonthly\(s\), loanMonthly\(s\), routeMonthly\(s\)/.test(src)],
   ['政治：议事会挑人派差、封臣契约、派系逼宫、律法（需求台账 R-146 第四期）', /function councilSet\(/.test(src) && /function councilMonthly\(s\)/.test(src) && /function contractSet\(/.test(src) && /function contractMonthly\(s\)/.test(src) && /function factionMonthly\(s\)/.test(src) && /function ultimatumAct\(/.test(src) && /function lawSet\(/.test(src) && /\$\{politicsHtml\(s\)\}/.test(src) && /kind === 'faction'/.test(src) && /councilMonthly\(s\), contractMonthly\(s\), factionMonthly\(s\)/.test(src)],
+  ['扯旗称王：有山寨、打下县城、人到一千立国号，接到一方之主（需求台账 R-147）', /function crownSelf\(/.test(src) && /data-crown=/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

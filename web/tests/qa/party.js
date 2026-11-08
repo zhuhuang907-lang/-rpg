@@ -61,8 +61,11 @@ const path = require('path');
   { const r = await ev(() => { const f = partyF(S), g0 = N0(f.grain) || 0; S.clock.m = (S.clock.m % 12) + 1; baseMonthly(S); return { g0, g1: f.grain }; }); if (!(r.g1 > r.g0)) bad.push('有粮仓，每月没囤粮：' + JSON.stringify(r)); }
   { const r = await ev(() => { bandOf(S).heat = 25; S.huntYM = null; const out = huntMonthly(S); const H = S.forces.find(g => g.hunt); const b0 = arr(S.battles).length; for (let i = 0; i < 8 && arr(S.battles).length === b0; i++) campaignTick(S, 10); return { out, H: !!H, b: arr(S.battles).length - b0 }; });
     if (!r.H) bad.push('恶名到了二十五，官府没派兵追：' + JSON.stringify(r.out)); else if (!r.b) bad.push('追剿的官军走到了没打'); }
+  // 扯旗称王：有山寨、打下县城、人到一千
+  await ev(() => { const f = partyF(S); f.party.tiers['乡勇'] = 1200; f.troops = ptMen(f.party); S.territory = [{ place: '濮州', troops: 100 }]; S.forces = S.forces.filter(g => !g.hunt); S.enc = null; render(); });
+  await p.fill('#crownName', '齐'); if (await click('[data-crown]', '扯旗称王')) { const r = await ev(() => ({ ruler: isRuler(S), pol: S.place.polity, role: S.protagonist.role, war: arr(S.wars).map(w => w.with) })); if (!r.ruler || r.pol !== '齐' || !r.war.includes('唐')) bad.push('扯旗称王没成一方之主、或原朝廷没开战：' + JSON.stringify(r)); }
   // 山大王：当面说招安
-  await ev(() => { S.protagonist.role = '山大王'; S.forces = [{ name: '山寨弟兄', leader: S.protagonist.name, owner: '你', troops: 300, at: '曹州', status: '驻守' }]; REPLY = { verdict: '允', reply: '朝廷念你等本是良民，许以自新。', why: '剿之费力' }; render(); });
+  await ev(() => { S.protagonist.role = '山大王'; S.place.polity = '唐'; S.idm = ''; S.wars = []; S.base = null; S.forces = [{ name: '山寨弟兄', leader: S.protagonist.name, owner: '你', troops: 300, at: '曹州', status: '驻守' }]; REPLY = { verdict: '允', reply: '朝廷念你等本是良民，许以自新。', why: '剿之费力' }; render(); });
   { const has = await ev(() => !!document.querySelector('[data-psay="amnesty:官府"]')); if (!has) bad.push('山大王没有「托人向官府说招安」的框（身份：' + (await ev(() => myDomain(S).kind)) + '）'); else {
     await ev(() => { document.querySelector('[data-psay="amnesty:官府"]').closest('details').open = true; }); await p.fill('[data-psay="amnesty:官府"]', '我等聚啸山林，实因饥寒所迫，若蒙朝廷开恩，愿为国家守土。'); await click('[data-parley="amnesty"]', '说招安'); if (!(await ev(() => !!bandOf(S).offer))) bad.push('说动官府招安，没有招安的回话'); } }
   const all = bad.concat(errs); console.log('ERRS', JSON.stringify(all)); await b.close(); process.exit(all.length ? 1 : 0);

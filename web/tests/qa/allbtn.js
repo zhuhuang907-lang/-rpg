@@ -1,0 +1,36 @@
+// 各身份全按钮普查（需求台账 R-144、R-146、R-147、R-149；玩家：「很多系统根本没有任何效果，只是像一个按钮一样」）：
+// 一方之主、地方官、山大王（带队伍）、佃农四种身份，各页侧栏每个按钮从同一个起点点一下，比点前点后：账变了、写进了输入框、给了说法、或者什么都没变；
+// 页面出错、点了什么都没变（又不是翻页、收起这类）的算不合格
+const { chromium } = require('playwright');
+const path = require('path');
+(async () => {
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1280, height: 1000 } });
+  const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
+  await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof partyStart === 'function');
+  const ECON = { unit: '贯', rice: 1.2, wage: 0.1, landPrice: 8, yield: 2, rentRate: 0.5, caravan: 500, ransom: 300, protect: 20, cloth: 1, interest: 0.03, myLand: 0, feast: 60, opera: 30, incense: 10, doctor: 20, pay: 1, payOff: 3, juan: 50 };
+  const IDS = {
+    一方之主: E => { S = newSave({ name: '王审知', gender: '男', age: 59, role: '闽王', real: true, gregorianYear: 921, month: 6, day: 1, place: '福州', polity: '闽' }); S.money = { cash: 300000, unit: '贯' }; S.realm = { treasury: 800000 }; S.fisc = { kind: 'realm', unit: '贯', base: { tianfu: 600000, shang: 200000, jun: 300000, feng: 100000 }, pol: { tax: '常', yan: '照旧', coin: '足值', cp: false, yao: '常' }, works: [], kc: { due: 0, paid: 0 }, price: 100 };
+      S.forces = [{ name: '威武军', leader: '王审知', owner: '你', troops: 15000, morale: 65, orgNow: 70, train: 60, grain: 120000, at: '福州', status: '驻守' }]; S.renown = 300; S.policyPts = 20; S.gov = { scope: 'realm', stats: { 民心: 50, 腐败: 40, 治安: 50 }, keys: ['民心', '腐败', '治安'] };
+      S.powers = [{ name: '南汉', leader: '刘䶮', seat: '广州', troops: '60000', stance: '冷' }, { name: '吴越', leader: '钱镠', seat: '杭州', troops: '40000', stance: '和' }]; },
+    地方官: E => { S = newSave({ name: '郑板桥', gender: '男', age: 50, role: '潍县知县', real: true, gregorianYear: 1748, month: 3, day: 1, place: '潍县', polity: '清' }); S.career = { office: '潍县知县', rank: '正七品', superior: '莱州知府' }; S.money = { cash: 800, unit: '贯' }; S.gov = { scope: 'local', stats: { 民心: 55, 治安: 50, 积案: 30, 灾情: 40, 腐败: 30 }, keys: ['民心', '治安', '积案', '灾情', '腐败'] };
+      S.duties = [{ id: 'd1', kind: '断案', title: '争田案', who: '王秀才', ym: Math.floor(ymOf(S.clock)), state: '待办' }]; S.bribe = { who: '汪掌柜', ask: '缓盐课', kind: '免税', amt: 30, ym: 1 }; },
+    山大王: E => { S = newSave({ name: '黄巢', gender: '男', age: 30, role: '山大王', real: false, gregorianYear: 874, month: 3, day: 1, place: '曹州', polity: '唐' }); S.money = { cash: 3000, unit: '贯' };
+      S.forces = [{ name: '黄家弟兄', leader: '黄巢', owner: '你', troops: 80, at: '曹州', status: '驻扎', grain: 200, morale: 60, party: { tiers: { 乡勇: 60, 刀手: 20 }, xp: { 乡勇: 70 }, heroes: [], pris: 5, horse: 3, log: [] } }]; S.renown = 40; S.enc = { kind: '商队', n: 12, place: '曹州', ym: 1, q: '弱', value: 300 }; },
+    佃农: E => { S = newSave({ name: '张三', gender: '男', age: 30, role: '佃农', real: false, gregorianYear: 1757, month: 3, day: 1, place: '江都', polity: '清' }); S.money = { cash: 60, unit: '贯' }; S.household = [{ name: '张王氏', relation: '妻', age: 28 }, { name: '张大', relation: '子', age: 15 }]; }
+  };
+  const setup = id => p.evaluate(([id, ECON]) => { const IDS = window.__IDS; IDS[id](); S.chat = [{ role: 'gm', text: '开场' }]; S.turn = 3; S.econ = { ...ECON, unit: S.money.unit }; S.popEst = { k: popKey(S), m: {} }; for (const pl of [geoCenter(S)]) S.popEst.m[pl] = { pop: 300000, nong: 50, shang: 50, cheng: 50 };
+    ORGMSG = ''; ERRMSG = ''; callClaude = async () => ({ text: '{}' }); VIEW = 'game'; SIDE_FOLD = false; }, [id, ECON]);
+  await p.evaluate(src => { window.__IDS = eval('(' + src + ')'); }, '{' + Object.entries(IDS).map(([k, f]) => `${JSON.stringify(k)}: ${f.toString()}`).join(',') + '}');
+  const res = {}, bad = [], SKIP = /^(＋|－|⛶|跟着我|大图|收回|回到正文|关闭|展开|收起|×|✕)$|^(本地（到县）|天下)$/;
+  for (const id of Object.keys(IDS)) { await setup(id); const tabs = (await p.evaluate(() => tabsFor(S).map(x => x[0]))).filter(t => /^(board|people|estate|trade|power|court|army|career|skill)$/.test(t));
+    for (const tab of tabs) { await setup(id); await p.evaluate(t => { TAB = t; render0(); }, tab); const n = await p.$$eval('.side .pane button', xs => xs.length);
+      for (let i = 0; i < n; i++) { await setup(id); await p.evaluate(t => { TAB = t; render0(); }, tab);
+        const info = await p.evaluate(i => { const x = document.querySelectorAll('.side .pane button')[i]; if (!x) return null; const lab = (x.textContent || '').trim().slice(0, 18), ds = Object.keys(x.dataset).join(','); window.__dig = () => JSON.stringify([S, ($('#said') || {}).value || '']).length + '|' + JSON.stringify(S).slice(0, 0); window.__b4 = JSON.stringify(S); window.__said = ($('#said') || {}).value || ''; window.__msg = (ORGMSG || '') + (ERRMSG || ''); window.__tab = TAB; return { lab, ds, dis: x.disabled, inDetails: !!x.closest('details:not([open])') }; }, i);
+        if (!info || info.dis || SKIP.test(info.lab) || /^(tab|xwait)$/.test(info.ds)) continue;
+        try { await p.evaluate(i => { const x = document.querySelectorAll('.side .pane button')[i]; const d = x.closest('details'); if (d) d.open = true; x.click(); }, i); await p.waitForTimeout(200); await p.waitForFunction(() => !(window.PARLEY_P), null, { timeout: 5000 }).catch(() => {}); } catch (e) { (res[id] = res[id] || []).push({ tab, ...info, r: '出错 ' + e.message.slice(0, 60) }); continue; }
+        const r = await p.evaluate(() => { const B4 = JSON.parse(window.__b4), keys = [...new Set(Object.keys(S).concat(Object.keys(B4)))].filter(k => !/^(saved|savedAt|ts|updated|updatedAt|lastSave|v|ver|id|turnLog|perf|errs|errLog|bgLog|sub)$/.test(k) && JSON.stringify(S[k]) !== JSON.stringify(B4[k])); window.__keys = keys; const ch = keys.length > 0, said = (($('#said') || {}).value || '') !== window.__said, msg = ((ORGMSG || '') + (ERRMSG || '')) !== window.__msg, nav = TAB !== window.__tab || !!document.querySelector('.modal, .ovl, .pop') || JSON.stringify(S.sub) !== JSON.stringify(JSON.parse(window.__b4).sub); return RENDER_ERR ? '画不出：' + RENDER_ERR : ch ? '账变了' : said ? '写进输入框' : msg ? '给了说法：' + (ORGMSG || ERRMSG).slice(0, 30) : nav ? '翻页' : '没变'; });
+        (res[id] = res[id] || []).push({ tab, lab: info.lab, ds: info.ds, r, keys: await p.evaluate(() => window.__keys) }); if (/^(没变|画不出|出错)/.test(r)) bad.push(`${id}·${tab}「${info.lab}」：${r}`); } } }
+  require('fs').writeFileSync(process.env.OUT || 'allbtn.json', JSON.stringify({ res, errs }, null, 1));
+  const tot = Object.values(res).reduce((a, x) => a + x.length, 0); console.log('点了', tot, '个按钮');
+  const all = bad.concat(errs.slice(0, 10)); console.log('ERRS', JSON.stringify(all)); await b.close(); process.exit(all.length ? 1 : 0);
+})().catch(e => { console.log('ERRS', JSON.stringify(['崩了：' + e.message])); process.exit(1); });

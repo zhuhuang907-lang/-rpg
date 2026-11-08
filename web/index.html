@@ -1643,7 +1643,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261108003043';
+const BUILD = '20261108012939';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.6.10', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -3202,6 +3202,7 @@ function affairsHtml(s, can) {
 /** 军务页：兵种（照本朝兵制核定）、各军编成与合计、军令 */
 function techHtml(s) {
   const T = s.tech || {}, A = techAll(s), av = techAvail(s), u = (s.money || {}).unit || '';
+  if (!(isRuler(s) || arr(s.forces).some(f => myForce(s, f)))) return '';   /* 没有兵马地盘的研究不了，不摆按钮（2026-11-08 按钮普查） */
   return `<div class="h"><span class="seal">技</span>科技<span class="note">照这个年代开放；一次研究一样，按月支钱</span></div>
     ${arr(T.done).length ? `<div class="pl" style="font-size:13px"><span>已成</span>${arr(T.done).map(id => (A.find(x => x.id === id) || {}).name).filter(Boolean).map(esc).join('、')}</div>` : ''}
     ${T.cur ? `<div class="pl" style="font-size:13px"><span>在研</span><b>${esc(T.cur.name)}</b>，还要 ${esc(T.cur.left)} 个月（每月支 ${esc(fmtN(Math.round(T.cur.cost / T.cur.months), u))}）</div>` : ''}
@@ -9676,11 +9677,12 @@ function diploHtml(s) {
   const role = dipRole(s); if (role === 'outlaw') return lulinHtml(s); if (role !== 'realm') return '';
   if (!realmsAt(s.clock.y, s.clock.m) && !arr(s.powers).length) return '';
   const PW = realmPowers(s).filter(p => p.name), can = true, rows = PW.map(P => ({ P, D: dipOf(s, P.name), li: dipGeo(s, P) })).sort((a, b) => (a.li ?? 9e9) - (b.li ?? 9e9));
+  const kidOK = arr(s.household).some(m => m && /子|女/.test(m.relation || '') && !/孙/.test(m.relation || '') && !m.dead && (num(m.age) == null || (num(m.age) >= 13 && num(m.age) <= 35)) && !/妻|夫|已嫁|已娶/.test(m.note || ''));   /* 没有能联姻的子女就不摆联姻（按钮普查） */
   const card = ({ P, D, li }) => { const W = warOf(s, P.name);
     return `<div class="ccard" style="margin:4px 0"><div class="ct">${P.col ? swatch(P.col) : ''}${esc(P.name)} <span class="muted" style="font-size:12px">${esc(P.leader || '')}${P.seat ? ' · 都' + esc(P.seat) : ''}${P.land ? ' · ' + esc(P.land) : ''}${li ? ' · 距你约' + li + '里' : ''}</span></div>
       <div class="cr"><span>对你</span><b>${W ? '交战中' : esc(dipWord(D.att))}</b></div>${D.ties.length ? `<div class="cr"><span>关系</span><b>${esc(D.ties.join('、'))}</b></div>` : ''}${P.troops ? `<div class="cr"><span>兵力</span><b>${esc(P.troops)}</b></div>` : ''}
       ${D.gain ? `<div class="muted" style="font-size:12px">纳贡、互市累计进项 ${esc(fmtN(D.gain, (s.money || {}).unit || ''))}</div>` : ''}${D.pend ? `<div class="muted" style="font-size:12px">使者在路上：${esc(D.pend.act)}</div>` : ''}${arr(D.log).length ? `<div class="muted" style="font-size:12px">${esc(D.log[D.log.length - 1].t)}</div>` : ''}
-      ${can && !D.pend && !W ? `<div class="opost">${['修好', '结盟', '联姻', '称臣', '互市'].filter(a => !D.ties.includes(a === '结盟' ? '盟' : a === '称臣' ? '臣属' : a === '联姻' ? '姻' : a)).map(a => `<button class="link" data-dip="${a}" data-dn="${esc(P.name)}" title="${esc(DIP_ACTS[a])}">${a}</button>`).join('')}${D.ties.length ? `<button class="link" data-dip="断交" data-dn="${esc(P.name)}">断交</button>` : ''}</div>` : ''}${can && !D.pend ? (W ? parleyBox(s, 'peace', P.name, PARLEY_PEACE, '遣使议和') : parleyBox(s, 'dip', P.name, PARLEY_DIP.filter(a => !D.ties.includes(a === '结盟' ? '盟' : a === '称臣' ? '臣属' : a === '联姻' ? '姻' : a)), '遣使去说')) : ''}</div>`; };
+      ${can && !D.pend && !W ? `<div class="opost">${['修好', '结盟', '联姻', '称臣', '互市'].filter(a => (a !== '联姻' || kidOK) && !D.ties.includes(a === '结盟' ? '盟' : a === '称臣' ? '臣属' : a === '联姻' ? '姻' : a)).map(a => `<button class="link" data-dip="${a}" data-dn="${esc(P.name)}" title="${esc(DIP_ACTS[a])}">${a}</button>`).join('')}${D.ties.length ? `<button class="link" data-dip="断交" data-dn="${esc(P.name)}">断交</button>` : ''}</div>` : ''}${can && !D.pend ? (W ? parleyBox(s, 'peace', P.name, PARLEY_PEACE, '遣使议和') : parleyBox(s, 'dip', P.name, PARLEY_DIP.filter(a => (a !== '联姻' || kidOK) && !D.ties.includes(a === '结盟' ? '盟' : a === '称臣' ? '臣属' : a === '联姻' ? '姻' : a)), '遣使去说')) : ''}</div>`; };
   const near = rows.slice(0, 8), far = rows.slice(8);
   return `<div class="h"><span class="seal">使</span>外交<span class="note">${can ? '遣使修好、结盟、联姻、令其称臣、开互市；使者照路程走，下个月起回报，答不答应看他对你的态度、你的名声、双方兵力' : '你不是一方之主，只能看各家对你的态度'}</span></div>${near.map(card).join('')}${far.length ? `<details class="fold"><summary>更远的 ${far.length} 家</summary>${far.map(card).join('')}</details>` : ''}`;
 }
@@ -10137,7 +10139,7 @@ function partyHtml(s) { if (!canParty(s) && !partyF(s)) return ''; const f = par
     ${arr(P.heroes).length ? `<div class="h" style="font-size:14px">头领</div><div class="list">${P.heroes.map(h => `<div><b>${esc(h.name)}</b> <span class="muted">武${h.wu} 统${h.tong} 谋${h.mou} 医${h.yi} · ${esc(h.temper)} · 忠心${h.loyal ?? 50}</span></div>`).join('')}</div>` : ''}
     ${Q.length ? `<div class="h" style="font-size:14px">差事</div><div class="list">${Q.map(q => `<div><b>${esc(q.giver)}</b>：${esc(q.type)}${q.type === '剿匪' ? '盘踞' + esc(q.target) + '的流寇' : '去' + esc(q.target)} <span class="muted">（${esc(q.why)}；赏${esc(fmtN(q.pay, u))}）</span>${q.state === '待接' ? `<button class="link" data-ptq="${esc(q.id)}">接下</button>` : ' <span class="att">在办</span>'}</div>`).join('')}</div>` : ''}
     ${arr(P.log).length ? `<div class="list">${P.log.slice(-5).reverse().map(x => `<div class="muted" style="font-size:12px">${esc(x.when)}：${esc(x.t)}</div>`).join('')}</div>` : ''}
-    ${s.base ? `<div class="h" style="font-size:14px">山寨（${esc(s.base.place)}）</div><div class="opost">${Object.entries(BASE_B).map(([k, v]) => `<button class="link" data-base="${k}" title="${esc(v[2])}">${esc(v[0])}（${s.base.lv[k]}/3）</button>`).join('')}</div>` : men >= 50 ? `<div class="opost"><button class="link" data-base="found">在${esc(here)}占山立寨</button></div>` : ''}
+    ${s.base ? `<div class="h" style="font-size:14px">山寨（${esc(s.base.place)}）</div><div class="opost">${Object.entries(BASE_B).map(([k, v]) => `<button class="link" data-base="${k}" title="${esc(v[2])}">${esc(v[0])}（${s.base.lv[k]}/3）</button>`).join('')}</div>${!isRuler(s) ? `<div class="opost"><input class="oin" id="crownName" style="width:5em" placeholder="国号"><button class="link" data-crown="1" title="有山寨、打下一座县城、人到一千">扯旗称王</button></div>` : ''}` : men >= 50 ? `<div class="opost"><button class="link" data-base="found">在${esc(here)}占山立寨</button></div>` : ''}
     <div class="muted" style="font-size:12px">往别处去：军务页出征单上选地方「移驻」（路上会遇事）；人多了攻县城也在那里下令；恶名到十五，官府会派兵追你</div>`; }
 /* ========== 草根线后续：山寨经营、官府派兵追你的队伍（需求台账 R-147）==========
  *  · 人到五十可以占山立寨：寨子有寨墙（官军来剿多一层守）、粮仓（每月囤粮）、校场（每月阅历）、马厩（每月养出马），花钱慢慢修；
@@ -10357,6 +10359,15 @@ function politicsHtml(s) { if (!isRuler(s)) return ''; const C = councilOf(s), C
     ${F.length ? `<div class="muted" style="font-size:12px">朝中派系：${F.map(f => `${esc(f.name)}（${esc(f.leader)}，势力${factionPower(s, f)}，怨气${Math.round(num(f.grudge) || 0)}）`).join('；')}</div>` : ''}
     <div class="h" style="font-size:14px">律法</div><div class="opost">王权「${['', '弱', '中', '强'][L.crown]}」<button class="link" data-law="crown" data-v="up">加强</button><button class="link" data-law="crown" data-v="down">放宽</button> · 继承「${esc(L.succ)}」<button class="link" data-law="succ" data-v="${L.succ === '嫡长' ? '择贤' : '嫡长'}">改为${L.succ === '嫡长' ? '择贤' : '嫡长'}</button></div>
     ${V.length ? `<div class="h" style="font-size:14px">封臣契约</div>${V.map(([n, D]) => `<div class="opost">${esc(n)}：贡赋兵役「${esc(D.contract || '常')}」${Object.keys(CONTRACT).filter(k => k !== (D.contract || '常')).map(k => `<button class="link" data-contract="${esc(n)}" data-k="${k}">改${k}</button>`).join('')} <span class="muted">（对你${esc(dipWord(D.att))}）</span></div>`).join('')}` : ''}`; }
+/** 扯旗称王（需求台账 R-147）：有了山寨、打下一座县城、人到一千，就能立国号称王，接到一方之主那条线；原来的朝廷当即视你为敌 */
+function crownSelf(s, name) { const f = partyF(s); name = String(name || '').trim().replace(/[国王]+$/, '').slice(0, 3);
+  if (!f || !s.base) { ORGMSG = '先占山立寨'; return null; } if (ptMen(f.party) < 1000) { ORGMSG = `人马不到一千（眼下${ptMen(f.party)}），扯不起王旗`; return null; }
+  const city = arr(s.territory).find(t => t && t.place && /县|州|府|城/.test(t.place + (cityOf(s, t.place).hh ? '城' : ''))); if (!city) { ORGMSG = '先打下一座县城（军务页出征、围城）'; return null; } if (!name) { ORGMSG = '写个国号（一到三个字）'; return null; }
+  const old = String(s.place.polity || '').replace(/[（(].*$/, ''), cash = N0(s.money && s.money.cash) || 0; s.place.polity = name; s.protagonist.role = `${name}王`; s.idm = 'warlord'; s.realm = { ...(s.realm || {}), treasury: Math.round(cash) };
+  if (!arr(s.territory).some(t => samePlace(t.place, s.base.place))) s.territory = arr(s.territory).concat([{ place: s.base.place, troops: Math.round(ptMen(f.party) * 0.1), loyalty: 50, note: '山寨' }]);
+  if (old && old !== name && !warOf(s, old)) { s.powers = arr(s.powers).filter(p => p.name !== old).concat([{ name: old, leader: '', stance: '敌', note: '你起兵自立的那个朝廷' }]); s.wars = arr(s.wars).concat([{ with: old, cb: '起兵', declared: true, since: Math.floor(ymOf(s.clock)), state: '交战', won: 0, lost: 0, took: [], by: '你' }]); }
+  bandOf(s).heat = 0; s.renown = (num(s.renown) || 0) + 20; s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: s.protagonist.name, what: `据${city.place}扯旗，国号「${name}」，自称${name}王` }]);
+  return lifeNote(s, '称王', `据${city.place}扯旗，国号「${name}」，自称${name}王；${old ? old + '朝廷视你为叛逆，' : ''}往后国势、朝局、外交、军务都照一方之主来`); }
 /* ========== 敌国之主、手下大臣和将领由 DeepSeek 扮演（需求台账 R-145；2026-11-07 玩家：「难道战争只有攻城？这样吧，让ds扮演敌对势力和手下大臣，主动操作他们」）==========
  *  打仗不止攻城：野战迎击、劫粮道、夜袭劫营、设伏、深沟固守、增兵、求和、离间，你和敌人都能用。
  *  每月后台请 DeepSeek 扮演每个和你交战的一家之主（照史料里他的为人、此刻兵力和战局），从定好的几样里挑一两件；程序照账核过（兵够不够、目标在不在）才落账：
@@ -14798,6 +14809,7 @@ document.addEventListener('click', async e => {
   if (S && !BUSY && (t.dataset.hh || t.dataset.loan || t.dataset.route)) {   // 百姓线、国债商路（R-146）
     if (t.dataset.hh) hhAct(S, t.dataset.hh, ($('#hhAmt') || {}).value); else if (t.dataset.loan) { if (t.dataset.loan === 'repay') loanRepay(S); else loanTake(S, t.dataset.loan, ($('#loanAmt') || {}).value); } else routeOpen(S, t.dataset.route);
     try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && t.dataset.crown) { crownSelf(S, ($('#crownName') || {}).value || ''); try { await store.save(S); } catch (_) {} render(); return; }   // 扯旗称王（R-147）
   if (S && !BUSY && (t.dataset.base || t.dataset.duty || t.dataset.brib || t.dataset.imp || t.dataset.facinv)) {   // 山寨、臣子线（R-147、R-149）
     if (t.dataset.base) { if (t.dataset.base === 'found') baseFound(S); else baseBuild(S, t.dataset.base); } else if (t.dataset.duty) dutyAct(S, t.dataset.duty, t.dataset.way);
     else if (t.dataset.brib) bribeAct(S, t.dataset.brib === 'yes'); else if (t.dataset.imp) impeachAct(S, t.dataset.imp); else facInviteAct(S, t.dataset.facinv === 'yes');
