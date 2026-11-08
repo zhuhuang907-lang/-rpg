@@ -79,6 +79,7 @@ start ai.js && {
   run "百姓线与国债商路：一家吃穿挨饿病倒、佃田秋收、借还债到期卖身、加派交了告官、捐出身、逃荒成流民能拉队伍、投军；借国债上限付息失信、开商路商税涨开战就断，全真点（R-146）" 200 env PLAY="$ROOT/web/play.html" node hh.js
   run "政治：议事会挑人派差每月见效怨恨打折、封臣契约重了进项多不满到头叛离、派系逼宫答应收买拒绝起兵当面说服、律法要威望一年一回王权强田赋多派系怨，全真点（R-146）" 200 env PLAY="$ROOT/web/play.html" node pol.js
   run "各身份全按钮普查：一方之主、地方官、山大王、佃农各页侧栏每个按钮真点，不许页面出错、不许点了什么都不变（R-144）" 600 env PLAY="$ROOT/web/play.html" node allbtn.js
+  run "新月结、面板各自兜底：队伍家计朝局的账坏了页面照画、月结照走（R-151）" 100 env PLAY="$ROOT/web/play.html" node safe.js
   run "天下名录照这一年并立的各家做表，宗室以外的文武大臣都列上，有博查的逐个按名字核，不按清朝写死问法" 120 env PLAY="$ROOT/web/play.html" node roster.js
   run "年岁不许人人三十：记账给的岁数不收、账上一排同一个整十岁数没依据的挑出来交 DeepSeek 照经历重推" 120 env PLAY="$ROOT/web/play.html" node age30.js
   run "家室合常情：成年富户贵族照常情补上妻妾子女仆婢（标推算写依据、不写某），年岁不合常理的当场改" 600 node household.js

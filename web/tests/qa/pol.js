@@ -19,12 +19,13 @@ const path = require('path');
     window.REPLY = { verdict: '允', reply: '大王既如此说，臣等不敢再争。', why: '惧兵威' }; window.callClaude = async () => ({ text: JSON.stringify(REPLY) });
     VIEW = 'game'; TAB = 'court'; SIDE_FOLD = false; render(); });
   await setup();
-  // 议事会：宰相黄滔安抚民心
-  await p.selectOption('[data-cseat="宰相"]', '黄滔'); await p.selectOption('[data-ctask="宰相"]', '安抚民心');
-  if (await click('[data-council="宰相"]', '定宰相')) { const r = await ev(() => S.council['宰相']); if (!r || r.who !== '黄滔' || r.task !== '安抚民心') bad.push('议事会挑人派差没记上：' + JSON.stringify(r)); }
-  { const r = await ev(() => { const m0 = S.gov.stats['民心']; S.clock.m++; councilMonthly(S); return { m0, m1: S.gov.stats['民心'] }; }); if (!(r.m1 > r.m0)) bad.push('宰相黄滔（理政八十）安抚民心，民心没涨：' + JSON.stringify(r)); }
+  // 中枢差遣：照人事树，宰辅（节度判官黄滔）安抚民心
+  await p.selectOption('[data-ctask="宰辅"]', '安抚民心');
+  if (await click('[data-council="宰辅"]', '派宰辅差遣')) { const r = await ev(() => ({ c: S.council['宰辅'], h: seatHolder(S, '宰辅') })); if (!r.c || r.c.task !== '安抚民心' || r.h.who !== '黄滔') bad.push('中枢差遣没照人事树找到宰辅、或差遣没记上：' + JSON.stringify(r)); }
+  { const t = await ev(() => document.querySelector('.side .pane').innerText); if (/议事会|最后通牒|封臣|国债/.test(t)) bad.push('朝局页还有不合中国制度的说法'); }
+  { const r = await ev(() => { const m0 = S.gov.stats['民心']; S.clock.m++; councilMonthly(S); return { m0, m1: S.gov.stats['民心'] }; }); if (!(r.m1 > r.m0)) bad.push('宰辅黄滔（理政八十）安抚民心，民心没涨：' + JSON.stringify(r)); }
   // 对你怨恨的人办事打折：同样的本事，徐寅（怨恨）不如黄滔
-  { const r = await ev(() => { S.council = { 宰相: { who: '徐寅', task: '安抚民心' } }; const m0 = S.gov.stats['民心']; S.clock.m++; councilMonthly(S); const d1 = S.gov.stats['民心'] - m0; S.council = { 宰相: { who: '黄滔', task: '安抚民心' } }; const m1 = S.gov.stats['民心']; S.clock.m++; councilMonthly(S); return { xu: d1, huang: S.gov.stats['民心'] - m1 }; }); if (!(r.xu < r.huang)) bad.push('对你怨恨的人办事没打折：' + JSON.stringify(r)); }
+  { const r = await ev(() => { S.council = { 宰辅: { who: '徐寅', task: '安抚民心' } }; const m0 = S.gov.stats['民心']; S.clock.m++; councilMonthly(S); const d1 = S.gov.stats['民心'] - m0; S.council = { 宰辅: { who: '黄滔', task: '安抚民心' } }; const m1 = S.gov.stats['民心']; S.clock.m++; councilMonthly(S); return { xu: d1, huang: S.gov.stats['民心'] - m1 }; }); if (!(r.xu < r.huang)) bad.push('对你怨恨的人办事没打折：' + JSON.stringify(r)); }
   // 封臣契约：定重 → 进项多、他不满；太重叛离
   await ev(() => render());
   { const a0 = await ev(() => dipOf(S, '吴越').att); if (await click('[data-contract="吴越"][data-k="重"]', '改重')) { const r = await ev(() => ({ c: dipOf(S, '吴越').contract, a: dipOf(S, '吴越').att })); if (r.c !== '重' || !(r.a < a0)) bad.push('封臣契约改重没生效或他没不满：' + JSON.stringify(r)); } }

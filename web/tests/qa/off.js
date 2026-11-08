@@ -14,9 +14,10 @@ const path = require('path');
     S.gov = { scope: 'local', stats: { 民心: 55, 治安: 50, 积案: 30, 灾情: 40, 腐败: 30 } }; S.people = { 王知府: { favor: 10, role: '莱州知府' }, 李御史: { favor: -60, role: '御史' } };
     S.factions = [{ name: '清流', leader: '刘统勋' }];
     window.REPLY = { duties: [{ kind: '赈灾', title: '城东饥民聚在县衙前讨粮', who: '张乡约', why: '去年旱' }, { kind: '断案', title: '审王李两家争田案', who: '王秀才', why: '积了半年' }], bribe: { who: '盐商汪掌柜', ask: '把他欠的盐课缓一缓', kind: '免税' } };
-    window.callClaude = async () => ({ text: JSON.stringify(REPLY) }); VIEW = 'game'; TAB = 'board'; SIDE_FOLD = false; render(); });
-  if (!(await ev(() => isOfficer(S) && dutyDue(S)))) bad.push('知县这个月没排上公事');
-  await ev(async () => { await dutyPlan(S); render(); });
+    window.callClaude = async () => ({ text: JSON.stringify(REPLY) }); VIEW = 'game'; TAB = 'career'; SIDE_FOLD = false; S.gov = null; render(); });   // 先当京官那样没有时政：另拟本职公务
+  if (!(await ev(() => isOfficer(S) && dutyDue(S)))) bad.push('没有时政的官这个月没排上公事');
+  await ev(async () => { await dutyPlan(S); S.gov = { scope: 'local', stats: { 民心: 55, 治安: 50, 积案: 30, 灾情: 40, 腐败: 30 }, keys: ['民心', '治安', '积案', '灾情', '腐败'] }; render(); });
+  if (await ev(() => dutyDue(S))) bad.push('有了时政还另拟本职公务（两套重了）');
   { const r = await ev(() => ({ d: arr(S.duties).length, b: !!S.bribe })); if (r.d !== 2 || !r.b) bad.push('公事、送钱的人没拟出来：' + JSON.stringify(r)); }
   const ids = await ev(() => S.duties.map(d => d.id));
   { const k0 = await ev(() => offOf(S).kc); if (await click(`[data-duty="${ids[0]}"][data-way="严办"]`, '严办')) { const r = await ev(id => ({ st: S.duties.find(d => d.id === id).state, kc: offOf(S).kc }), ids[0]); if (!/办成|没办好/.test(r.st) || r.kc === k0) bad.push('严办公事没出结果、考成没变：' + JSON.stringify(r)); } }
@@ -36,6 +37,17 @@ const path = require('path');
   await ev(() => { S.facInvite = { fac: '清流', leader: '刘统勋', ym: 1 }; render(); }); if (await click('[data-facinv="yes"]', '入伙')) { if ((await ev(() => S.career.faction)) !== '清流') bad.push('入了派系没记上'); }
   // 误期：下个月重拟时，上个月没办的算误了
   { const r = await ev(async () => { S.duties = arr(S.duties).concat([{ id: 'old1', kind: '催科', title: '旧事', ym: Math.floor(ymOf(S.clock)), state: '待办' }]); S.clock.m += 1; await dutyPlan(S); return arr(S.duties).map(d => d.id + ':' + d.state); }); if (!r.includes('old1:误了')) bad.push('上个月没办的公事没算误期：' + JSON.stringify(r)); }
+  // 时政上直接定办法，算进考成
+  await ev(() => { S.affairs = [{ id: 'af1', title: '城东饥民聚众讨粮', area: '民生', desc: '去年旱', due: Math.floor(ymOf(S.clock)) + 2, state: '待办', ways: [] }]; TAB = 'court'; render(); });
+  { const k0 = await ev(() => offOf(S).kc); if (await click('[data-affw="af1"][data-way="宽办"]', '时政宽办')) { const r = await ev(() => ({ st: S.affairs[0].state, kc: offOf(S).kc })); if (!/办妥|办砸/.test(r.st) || r.kc === k0) bad.push('时政定办法没出结果、没算进考成：' + JSON.stringify(r)); } }
+  // 升迁、罢官改到人事树上
+  { const r = await ev(() => { S.org = { nodes: [{ id: 'root', name: '清', depth: 0, posts: [] }, { id: 'n1', name: '潍县', depth: 3, posts: [{ title: '知县', holder: '郑板桥' }] }, { id: 'n2', name: '莱州府', depth: 2, posts: [{ title: '知府', holder: '' }] }] };
+      S.shitu = { favor: 40, net: 40, log: [], ask: { ym: Math.floor(ymOf(S.clock)) - 1, to: '莱州府知府', rank: '从四品', p: 100, why: '' } }; S.clock.m++; shituMonthly(S);
+      const t1 = { off: S.career.office, xian: S.org.nodes[1].posts[0].holder, fu: S.org.nodes[2].posts[0].holder };
+      S.impeach = { by: '李御史', charge: '贪墨', ym: Math.floor(ymOf(S.clock)) - 3 }; offOf(S).ym = null; offMonthly(S); return { t1, t2: { off: S.career.office, fu: S.org.nodes[2].posts[0].holder, log: arr(S.careerLog).map(x => x.what) } }; });
+    if (r.t1.off !== '莱州府知府' || r.t1.xian === '郑板桥' || r.t1.fu !== '郑板桥') bad.push('保举升了知府，人事树上没换位子：' + JSON.stringify(r.t1));
+    if (r.t2.off || r.t2.fu === '郑板桥' || !r.t2.log.some(x => /罢官/.test(x))) bad.push('被参罢官，人事树上还坐着、履历没记：' + JSON.stringify(r.t2)); }
+  await ev(() => { S.career = { office: '潍县知县', rank: '正七品', superior: '莱州知府' }; S.protagonist.role = '潍县知县'; TAB = 'career'; render(); });
   // 年底考成：卓异；两回劣罢官
   { const r = await ev(() => { const O = offOf(S); O.kc = 90; S.gov.stats['积案'] = 0; S.clock.m = 12; O.ym = null; O.kcY = null; S.impeach = null; offMonthly(S); const g1 = S.career.evaluation;
       O.kc = 5; S.gov.stats['民心'] = 10; S.gov.stats['积案'] = 80; S.clock.y++; O.ym = null; offMonthly(S); O.kc = 5; S.clock.y++; O.ym = null; S.impeach = null; offMonthly(S); return { g1, office: S.career.office, role: S.protagonist.role }; });
