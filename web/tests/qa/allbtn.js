@@ -1,5 +1,5 @@
 // 各身份全按钮普查（需求台账 R-144、R-146、R-147、R-149；玩家：「很多系统根本没有任何效果，只是像一个按钮一样」）：
-// 一方之主、地方官、山大王（带队伍）、佃农四种身份，各页侧栏每个按钮从同一个起点点一下，比点前点后：账变了、写进了输入框、给了说法、或者什么都没变；
+// 一方之主、地方官、山大王（带队伍）、佃农，加商人、兵丁、读书人、女子、吏员、流民、皇子、王爷、门阀（R-153），各页侧栏每个按钮从同一个起点点一下，比点前点后：账变了、写进了输入框、给了说法、或者什么都没变；
 // 页面出错、点了什么都没变（又不是翻页、收起这类）的算不合格
 const { chromium } = require('playwright');
 const path = require('path');
@@ -16,7 +16,17 @@ const path = require('path');
       S.duties = [{ id: 'd1', kind: '断案', title: '争田案', who: '王秀才', ym: Math.floor(ymOf(S.clock)), state: '待办' }]; S.bribe = { who: '汪掌柜', ask: '缓盐课', kind: '免税', amt: 30, ym: 1 }; },
     山大王: E => { S = newSave({ name: '黄巢', gender: '男', age: 30, role: '山大王', real: false, gregorianYear: 874, month: 3, day: 1, place: '曹州', polity: '唐' }); S.money = { cash: 3000, unit: '贯' };
       S.forces = [{ name: '黄家弟兄', leader: '黄巢', owner: '你', troops: 80, at: '曹州', status: '驻扎', grain: 200, morale: 60, party: { tiers: { 乡勇: 60, 刀手: 20 }, xp: { 乡勇: 70 }, heroes: [], pris: 5, horse: 3, log: [] } }]; S.renown = 40; S.enc = { kind: '商队', n: 12, place: '曹州', ym: 1, q: '弱', value: 300 }; },
-    佃农: E => { S = newSave({ name: '张三', gender: '男', age: 30, role: '佃农', real: false, gregorianYear: 1757, month: 3, day: 1, place: '江都', polity: '清' }); S.money = { cash: 60, unit: '贯' }; S.household = [{ name: '张王氏', relation: '妻', age: 28 }, { name: '张大', relation: '子', age: 15 }]; }
+    佃农: E => { S = newSave({ name: '张三', gender: '男', age: 30, role: '佃农', real: false, gregorianYear: 1757, month: 3, day: 1, place: '江都', polity: '清' }); S.money = { cash: 60, unit: '贯' }; S.household = [{ name: '张王氏', relation: '妻', age: 28 }, { name: '张大', relation: '子', age: 15 }]; },
+    /* 2026-11-08 玩家：「其他的身份呢」——再加七种身份（R-153） */
+    商人: E => { S = newSave({ name: '汪景和', gender: '男', age: 41, role: '布商', real: false, gregorianYear: 1757, month: 3, day: 1, place: '扬州', polity: '清' }); S.money = { cash: 2000, unit: '贯' }; },
+    兵丁: E => { S = newSave({ name: '李过', gender: '男', age: 22, role: '营中兵丁', real: false, gregorianYear: 1640, month: 3, day: 1, place: '西安', polity: '明' }); S.money = { cash: 20, unit: '贯' }; },
+    读书人: E => { S = newSave({ name: '吴敬梓', gender: '男', age: 30, role: '生员', real: false, gregorianYear: 1757, month: 3, day: 1, place: '南京', polity: '清' }); S.money = { cash: 100, unit: '贯' }; S.skills = { 文墨: { lv: 50, xp: 0 } }; },
+    女子: E => { S = newSave({ name: '沈宜修', gender: '女', age: 24, role: '绣娘', real: false, gregorianYear: 1757, month: 3, day: 1, place: '苏州', polity: '清' }); S.money = { cash: 80, unit: '贯' }; },
+    吏员: E => { S = newSave({ name: '宋江', gender: '男', age: 35, role: '县衙书吏', real: false, gregorianYear: 1120, month: 3, day: 1, place: '郓城', polity: '宋' }); S.money = { cash: 200, unit: '贯' }; S.liPath = { y: 1118, need: 6 }; },
+    流民: E => { S = newSave({ name: '刘六', gender: '男', age: 28, role: '逃荒的流民', real: false, gregorianYear: 1640, month: 3, day: 1, place: '米脂', polity: '明' }); S.money = { cash: 5, unit: '贯' }; },
+    皇子: E => { S = newSave({ name: '爱新觉罗允祥', gender: '男', age: 26, role: '皇十三子', real: false, gregorianYear: 1712, month: 3, day: 1, place: '北京', polity: '清' }); S.money = { cash: 3000, unit: '贯' }; S.household = [{ relation: '兄', name: '胤礽', age: 38 }, { relation: '兄', name: '胤禛', age: 34 }]; },
+    王爷: E => { S = newSave({ name: '朱棣', gender: '男', age: 30, role: '燕王', real: false, gregorianYear: 1390, month: 3, day: 1, place: '北平', polity: '明' }); S.money = { cash: 5000, unit: '贯' }; },
+    门阀: E => { S = newSave({ name: '王导', gender: '男', age: 24, role: '琅琊王氏子弟', real: false, gregorianYear: 300, month: 3, day: 1, place: '洛阳', polity: '晋' }); S.money = { cash: 2000, unit: '贯' }; S.protagonist.ident = { chushen: '琅琊王氏，士族' }; S.household = [{ relation: '长子', name: '王悦', age: 16 }]; }
   };
   const setup = id => p.evaluate(([id, ECON]) => { const IDS = window.__IDS; IDS[id](); S.chat = [{ role: 'gm', text: '开场' }]; S.turn = 3; S.econ = { ...ECON, unit: S.money.unit }; S.popEst = { k: popKey(S), m: {} }; for (const pl of [geoCenter(S)]) S.popEst.m[pl] = { pop: 300000, nong: 50, shang: 50, cheng: 50 };
     ORGMSG = ''; ERRMSG = ''; callClaude = async () => ({ text: '{}' }); VIEW = 'game'; SIDE_FOLD = false; }, [id, ECON]);
