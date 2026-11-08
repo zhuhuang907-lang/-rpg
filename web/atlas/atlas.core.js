@@ -485,7 +485,8 @@ const ATLAS = (function () {
         const k = edgeKindByYear(e, y);
         if (k === 4) continue;
         const v = e[0] === u ? e[1] : e[0];
-        const d = hav(NODES[u], NODES[v]);
+        if (opt.avoid && v !== b && opt.avoid(NODES[v], v)) continue;   // 行军绕开敌军把守的地方
+        const d = opt.cost ? opt.cost(NODES[u], NODES[v], k, hav(NODES[u], NODES[v])) : hav(NODES[u], NODES[v]) * (opt.w ? (opt.w[k] || 1) : 1);   // 行军照路况加权：山路、关隘走得慢，最短路照时间不照里数
         if (dist[u] + d < dist[v]) { dist[v] = dist[u] + d; prev[v] = u; prevEdge[v] = e; push([dist[v], v]); }
       }
     }
@@ -497,7 +498,7 @@ const ATLAS = (function () {
     const legs = [];
     for (let i = 1; i < chain.length; i++) {
       const e = prevEdge[chain[i]];
-      legs.push({ a: chain[i - 1], b: chain[i], k: edgeKindByYear(e, y), km: hav(NODES[chain[i - 1]], NODES[chain[i]]) });
+      const k = edgeKindByYear(e, y); legs.push({ a: chain[i - 1], b: chain[i], k, km: hav(NODES[chain[i - 1]], NODES[chain[i]]), via: k === 1 && e[3] >= 0 && T.passes[e[3]] ? T.passes[e[3]].n : null });
     }
     for (const s of pre) legs.unshift({ a: null, b: null, k: s.k, km: hav(s.from, s.to) });
     for (const s of post) legs.push({ a: null, b: null, k: s.k, km: hav(s.from, s.to) });
