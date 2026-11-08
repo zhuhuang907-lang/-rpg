@@ -67,6 +67,8 @@ function answer(p, last, json) {
   if (p.includes('照这个官这个月真会落到他头上的公事')) return JSON.stringify({ duties: [{ kind: '断案', title: '审一桩争田的案子', who: '王秀才', why: '积了半年' }], bribe: { who: '', ask: '', kind: '' } });   // 臣子线（R-149）
   if (p.includes('来寻好汉入伙')) return JSON.stringify({ heroes: [{ name: '赵大刀', from: '逃兵', wu: 7, tong: 4, mou: 3, yi: 1, temper: '豪爽', wish: '有口饱饭' }] });   // 草根线（R-147）
   if (p.includes('在当地打听有没有活计')) { const tg = ((p.match(/只能从这些地方里挑：([^、；\n]+)/) || [])[1] || '').trim(); return JSON.stringify({ quests: tg ? [{ type: '送信', giver: '王乡老', target: tg, why: '家书' }] : [] }); }
+  if (p.includes('说一门门当户对的亲事') || p.includes('挑一位驸马')) return JSON.stringify({ name: '张承业', family: '本地殷实人家，读书出身', why: '门当户对' });   // 女子说亲（R-153）
+  if (p.includes('在宫廷里的处境')) return JSON.stringify({ favor: '中', faction: '低', suspect: '中', why: '史载其时不甚得宠' });   // 真人宗室处境（R-157）
   if (p.includes('把主角关起来的')) return JSON.stringify({ verdict: '允', reply: '看你是条汉子，钱少些也罢。', why: '贪钱' });   // 江湖：被俘当面说（R-152）
   if (p.includes('路上撞见主角一伙')) return JSON.stringify({ verdict: '不允', reply: '少废话！', why: '不信' });
   if (p.includes('听主角当面（或主角的使者）跟你说话')) return JSON.stringify({ verdict: '不允', reply: '容某再思之。', why: '未见其利' });   // 当面说（R-148）

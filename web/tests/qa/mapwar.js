@@ -31,7 +31,7 @@ const path = require('path');
       const m = await ev(() => { campaignTick(S, 6); const c = S.campaigns.find(c => c.force === '左卫军'), f = S.forces[0]; TAB = 'map'; MAPZ.mode = 'near'; MAPZ.c = { lon: 110, lat: 34.5 }; MAPZ.span = 3; MAPC.k = ''; render(); const sv = document.querySelector('.smap'); return { pos: c.pos, at: f.at, done: c.done, wr: sv ? sv.querySelectorAll('polyline.wroute').length : 0 }; });
       if (!m.pos || m.at === '长安') bad.push('走了六天兵马还在长安：' + JSON.stringify(m)); if (m.wr < 2) bad.push('图上没画行军路线（走过的实线、没走的虚线）'); } }
   // 关上有敌军：先在关下打（关隘地形），打不下停在关前
-  { await setup(); const r = await ev(() => { S.forces.push({ name: '郑军', owner: '郑', leader: '', troops: 40000, quality: '精', at: '潼关', status: '驻守', foe: true }); armyAct(S, 'march', { force: '左卫军', target: '洛阳', mode: '守' }); S.turn++; campaignTick(S, 0);
+  { await setup(); const r = await ev(() => { S.forces.push({ name: '郑军', owner: '郑', leader: '', troops: 40000, quality: '精', at: '潼关', status: '驻守', foe: true }); armyAct(S, 'march', { force: '左卫军', target: '洛阳', mode: '攻' });   /* 进攻不绕道，硬闯潼关（移驻会绕开，见 finish.js） */ S.turn++; campaignTick(S, 0);
       let n = []; for (let i = 0; i < 8; i++) { n = n.concat(campaignTick(S, 3)); const c = S.campaigns.find(c => c.force === '左卫军'); if (c.state !== '行军') break; }
       const c = S.campaigns.find(c => c.force === '左卫军'), bt = arr(S.battles).slice(-1)[0] || {}; return { st: c.state, at: S.forces[0].at, n: n.join('；'), terr: (S.lastCampBattle || {}).terrain || bt.terrain }; });
     if (!/潼关/.test(r.n) || !/关下/.test(r.n)) bad.push('关上有敌军，没在关下打：' + r.n.slice(0, 300));
