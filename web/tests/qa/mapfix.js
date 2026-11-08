@@ -42,6 +42,22 @@ const path = require('path');
       const bare = [...sv.querySelectorAll('rect[data-mapu]')].map(e => e.dataset.mapu).filter(n => !tx.includes(n) && !tx.some(x => n.startsWith(x)));
       const nearHome = bare.filter(n => !['闽县', '侯官县'].includes(n));   // 附郭县和州城同一处，方块被州城的点盖住
       if (nearHome.length) bad.push('本地图上画了县城方块却没写名字：' + nearHome.join('、')); }
+    // 2026-11-08 玩家：「地图的错误太多这个难以接受」。截图查出：开局图以湖广为中心京城挤在边上；关隘方块、河名压在城名上；外国今名山脉；京城州名被标记挡掉；州界一格格台阶
+    const ov = (a, c) => !(a.right <= c.left + 1 || a.left >= c.right - 1 || a.bottom <= c.top + 1 || a.top >= c.bottom - 1);
+    for (const [y, who, role, pl, pol, cap] of [[1640, '朱由检', '皇帝', '北京', '明', '顺天府'], [630, '李世民', '皇帝', '长安', '唐', '雍州'], [951, '郭威', '皇帝', '开封', '后周', '开封府']]) {
+      S = newSave({ name: who, gender: '男', age: 40, role, real: true, gregorianYear: y, month: 6, day: 1, place: pl, polity: pol }); S.chat = [{ role: 'gm', text: '开场' }]; VIEW = 'game'; TAB = 'map'; SIDE_FOLD = false; MAPZ.inited = false; MAPC.k = ''; render0();
+      const h = hereXY(S); if (h && h.lat && (Math.abs(MAPZ.c.lat - h.lat) > 1 || Math.abs(MAPZ.c.lon - h.lon) > 1.5)) bad.push(`${y} 年开局图没以${pl}为中心：${MAPZ.c.lon},${MAPZ.c.lat}`);
+      const sv = document.querySelector('.smap'), T = [...sv.querySelectorAll('text')].filter(e => !e.closest('.mepin'));
+      if (!T.some(e => e.textContent === cap)) bad.push(`${y} 年开局图上京城${cap}没写名字`);
+      const city = T.filter(e => e.getAttribute('fill') === '#1f1f1f' || e.classList.contains('arealbl')), other = T.filter(e => /italic/.test(e.getAttribute('font-style') || '') || e.getAttribute('fill') === '#5b3a1a' || e.getAttribute('fill') === '#2f6fa8' || e.getAttribute('fill') === '#7a5a30');
+      for (const o of other) { const a = o.getBoundingClientRect(); const c = city.find(e => ov(a, e.getBoundingClientRect())); if (c) { bad.push(`${y} 年「${o.textContent}」压在城名「${c.textContent}」上`); break; } }
+      const passR = [...sv.querySelectorAll('rect[rx="2"]')].map(e => e.getBoundingClientRect()); for (const r of passR) { const c = city.find(e => ov(r, e.getBoundingClientRect())); if (c) { bad.push(`${y} 年关隘方块压在城名「${c.textContent}」上`); break; } }
+      for (let i = 0; i < passR.length; i++) for (let j = i + 1; j < passR.length; j++) if (ov(passR[i], passR[j])) { bad.push(`${y} 年两个关隘方块叠在一起`); i = passR.length; break; }
+      MAPZ.mode = 'world'; MAPC.k = ''; render0();
+      const W2 = [...document.querySelectorAll('.smap text')].map(e => e.textContent).join('|');
+      const fx = W2.match(/布雷因斯|扬阿林|咸镜|若开|哈萨克|雅布洛诺夫|旁遮普|山脈|萨彦岭|喀喇昆仑山脉/); if (fx) bad.push(`${y} 年天下图上有外国今名或繁体山名：${fx[0]}`);
+      const steps = (document.querySelector('.smap').innerHTML.match(/v3\.5|h3\.5/g) || []).length; if (steps > 50) bad.push(`${y} 年州界还是一格格台阶（${steps} 段）`);
+      MAPZ.mode = 'near'; }
     return bad;
   });
   const all = out.concat(errs); console.log('ERRS', JSON.stringify(all)); await b.close(); process.exit(all.length ? 1 : 0);
