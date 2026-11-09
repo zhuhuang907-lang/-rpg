@@ -228,10 +228,13 @@ const checks = [
   ['史事月份不默认六月：只记到季的排季末、只记到年的排年末（历史准确性）', evMonthOK],
   ['史料数据完整：政权不漏列、在位年不倒置、年号次序不乱、生卒不倒置（R-160）', histOK],
   ['称呼照时代：王爷、军机处、总督、巡抚、八旗、清代衣冠与满洲称呼都有年代限制（R-161）', /王爷\|千岁爷/.test(src) && /军机处\|军机大臣/.test(src) && /巡抚/.test(src) && /总督/.test(src) && /八旗\|旗人/.test(src) && /皇阿玛\|皇额娘/.test(src)],
-  ['朝臣互谋：DS 照各人利益与性情私下动作，程序照账落地（R-162）', /function intrigueMonthly/.test(src) && /function applyIntrigues/.test(src) && /INTR_OPS/.test(src) && /intrigueDue/.test(src) && /他会反：/.test(src)],
-  ['奏章票拟与六科封驳：内阁拟、六科驳、你批红或下特旨（R-162）', /draft = PM\.who/.test(src) && /m\.block/.test(src) && /data-mv="特旨"/.test(src) && /封驳/.test(src)],
-  ['胜算照真实地形：关隘、河渡、山地、丘陵都算进去（R-162）', /T === '关隘' \? 2\.5/.test(src) && /terrainAt\(u\)/.test(src) && /战场只摆得开/.test(src)],
-  ['行军路线风险：关卡守军、渡河船、山路、天候、沿途拦截（R-162）', /function routeRisk/.test(src) && /可能出来拦截/.test(src) && /routeRisk\(s, RT, f, tgt\)/.test(src)],
+  ['朝臣互谋：DS 照各人利益与性情私下动作，程序照账落地（R-163）', /function intrigueMonthly/.test(src) && /function applyIntrigues/.test(src) && /INTR_OPS/.test(src) && /intrigueDue/.test(src) && /他会反：/.test(src)],
+  ['奏章票拟与六科封驳：内阁拟、六科驳、你批红或下特旨（R-163）', /draft = PM\.who/.test(src) && /m\.block/.test(src) && /data-mv="特旨"/.test(src) && /封驳/.test(src)],
+  ['胜算照真实地形：关隘、河渡、山地、丘陵都算进去（R-163）', /T === '关隘' \? 2\.5/.test(src) && /terrainAt\(u\)/.test(src) && /战场只摆得开/.test(src)],
+  ['行军路线风险：关卡守军、渡河船、山路、天候、沿途拦截（R-163）', /function routeRisk/.test(src) && /可能出来拦截/.test(src) && /routeRisk\(s, RT, f, tgt\)/.test(src)],
+  ['继承法六种：嫡长/择贤/均分/幼子/兄终弟及/选举（R-164）', /SUCC_LAWS/.test(src) && /'均分'/.test(src) && /'幼子'/.test(src) && /'兄终弟及'/.test(src) && /'选举'/.test(src)],
+  ['法理宣称：登记后可作宣战名分（R-164）', /function claimAdd/.test(src) && /data-claim/.test(src) && /法理/.test(src)],
+  ['长局记忆：清掉的旧正文留摘要，正文材料带早年旧事（R-164）', /memoryCore/.test(src) && /function memoryBlock/.test(src) && /早年旧事/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

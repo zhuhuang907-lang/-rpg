@@ -1644,7 +1644,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261109173510';
+const BUILD = '20261109185522';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.7.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2121,7 +2121,7 @@ function archiveBlock(s, text) {
 const GEO_OUT = (k, v) => k === 'geo' && v && v.src === 'local' ? undefined : v;
 const saveJSON = s => JSON.stringify(s, GEO_OUT);
 function shrink(s) {
-  const slim = (x, keep) => { if (!x || !x.chat) return; x.chat.forEach((c, i) => { if (i < x.chat.length - keep && c.text) { c.text = ''; c.extra = null; } }); if (x.chat.length > 400) x.chat = x.chat.slice(-400); };
+  const slim = (x, keep) => { if (!x || !x.chat) return; x.chat.forEach((c, i) => { if (i < x.chat.length - keep && c.text) { if (x === s) s.memoryCore = arr(s.memoryCore).concat([`${c.when || ''}${c.who ? c.who + '：' : ''}${cut(c.text, 140)}`]).slice(-60); c.text = ''; c.extra = null; } }); if (x.chat.length > 400) x.chat = x.chat.slice(-400); };
   slim(s, 30);
   if (s.prev) { slim(s.prev, 4); s.prev.prev = null; for (const k of ['inst', 'research', 'almanac', 'locals', 'searchedQ', 'searchedYears', 'wikiDone', 'geo', 'gazetteer', 'dossiers']) delete s.prev[k]; }
   // 维基正文只给当回合用：早几回合的留个开头
@@ -5198,6 +5198,11 @@ function setHeir(s, name) {
   for (const x of sons) if (x.name !== name && (num(x.age) || 0) >= 12) { const dep = x.name === prev || (!prev && x.name === dflt); favorAdj(s, x.name, dep ? -5 : -3, dep ? '嗣位被夺' : '没被立为嗣'); const m2 = kidMother(s, x); if (m2) favorAdj(s, m2, dep ? -5 : -2, '儿子没被立为嗣'); if (dep) out.push(`${x.name}${m2 ? '和生母' + m2 : ''}心怀怨望`); }
   if (passed) { s.renown = Math.max(0, (num(s.renown) || 0) - 3); out.push(`越过${passed.relation}${passed.name}，有违嫡长之礼，物议纷纷`); s.home = s.home || { harmony: null }; if (s.home.harmony != null) s.home.harmony = Math.max(0, s.home.harmony - 8); }
   else if (s.home && s.home.harmony != null) s.home.harmony = Math.min(100, s.home.harmony + 2);
+  const succLaw = lawsOf(s).succ;
+  if (succLaw === '均分') { s.splitHeir = true; out.push('本朝行诸子均分，一纸立嗣不能止争，诸子各分家业'); }
+  else if (succLaw === '幼子') { const yg = sons.slice().sort((a, b) => (num(a.age) || 0) - (num(b.age) || 0))[0]; if (yg && yg.name !== name) { s.renown = Math.max(0, (num(s.renown) || 0) - 2); out.push('本朝旧俗幼子守灶，越过幼子立长，部众不服'); } }
+  else if (succLaw === '兄终弟及') out.push('本朝行兄终弟及，你的儿子未必能继，兄弟才是嗣位之选');
+  else if (succLaw === '选举') { s.renown = Math.max(0, (num(s.renown) || 0) - 5); out.push('本朝行宗室大臣推举，你以私意立嗣，清议不服'); }
   const loser = prev || (passed ? passed.name : '');
   if (isRuler(s) && loser) { s.factions = arr(s.factions); let F = s.factions.find(f => f && (f.leader === loser || String(f.members || '').includes(loser)));
     if (!F) { F = { name: loser + '一党', leader: loser, members: loser + (kidMother(s, sons.find(x => x.name === loser) || {}) ? '、' + kidMother(s, sons.find(x => x.name === loser)) : ''), stance: '不服废立', grudge: 0 }; s.factions.push(F); }
@@ -9779,11 +9784,23 @@ const warOf = (s, who) => { if (!who) return null; const W = arr(s.wars).filter(
   /* 名字互相包含的只在不是另一家的时候才算（2026-11-07 查实：和「吴」交战，「吴越」也被当成在交战） */ const names = new Set(arr(s.powers).map(p => p && p.name).concat((() => { try { return realmPowers(s).map(p => p.name); } catch (_) { return []; } })()));
   return W.find(w => (String(who).includes(w.with) || String(w.with).includes(who)) && !(names.has(who) && names.has(w.with))) || null; };
 function warRole(s) { const d = identityOf(s), D = myDomain(s); if (d.ruler || D.kind === 'realm' || D.kind === 'rebel') return 'sovereign'; if (D.kind === 'army' || D.kind === 'local' || (s.career && s.career.office)) return 'officer'; return 'none'; }
+/** 法理宣称（R-164）：把旧疆旧属登记为法理，宣战时多一个名分 */
+function claimAdd(s, owner) {
+  if (!isRuler(s)) { ORGMSG = '只有一方之主才能登记法理'; return null; }
+  const nm = String(owner || '').trim(); if (!nm) return null;
+  s.claims = arr(s.claims);
+  if (s.claims.some(c => c && c.owner === nm)) { ORGMSG = `已经登记过对${nm}的法理`; return null; }
+  if (!arr(s.powers).some(p => p && (p.name === nm || String(nm).includes(p.name)))) { ORGMSG = `天下没有「${nm}」这一家`; return null; }
+  s.claims.push({ owner: nm, basis: '旧疆旧属', ym: Math.floor(ymOf(s.clock)) });
+  s.renown = Math.max(0, (num(s.renown) || 0) - 2);
+  return lifeNote(s, '朝政', `登记对${nm}的法理（旧疆旧属）：往后可以此名义宣战，也可以拿来谈`);
+}
 function warCBs(s, owner) {
   const P = arr(s.powers).find(p => p && (p.name === owner || String(owner).includes(p.name))) || {}, out = [], txt = [P.name, P.kind, P.note, P.status, P.stance].join(' ');
   if (/叛|贼|寇|逆|乱|僭|伪|自立|起义|流寇|割据|不臣/.test(txt)) out.push('讨逆');
   if (arr(s.warLog).some(x => x.atk === owner) || arr(s.battles).some(b => b && b.attacker === '敌' && String(b.enemy || '').includes(owner))) out.push('复仇');
   if (Object.values(s.mapOwn || {}).some(o => o && o.from === '你' && String(o.who || '').includes(owner))) out.push('收复');
+  if (arr(s.claims).some(c => c && (c.owner === owner || String(owner).includes(c.owner)))) out.push('法理');
   out.push('吊民伐罪', '开疆拓土'); return [...new Set(out)];
 }
 function warStart(s, owner, cb, surprise) {
@@ -10908,20 +10925,22 @@ function ultimatumAct(s, act) { const U = s.ultimatum; if (!U) return null; cons
   if (act === '拒绝') { s.ultimatum = null; return lifeNote(s, '朝政', factionRevolt(s, U)); }
   return null; }
 /** 律法：王权轻重、继承法 */
+const SUCC_LAWS = [['嫡长', '立嫡立长'], ['择贤', '择贤而立'], ['均分', '诸子均分'], ['幼子', '幼子守灶'], ['兄终弟及', '兄终弟及'], ['选举', '宗室大臣推举']];
+const succLabel = k => (SUCC_LAWS.find(x => x[0] === k) || [k, k])[1];
 const lawsOf = s => (s.laws = s.laws || { crown: 2, succ: '嫡长', ym: null });
 function lawSet(s, k, v) { if (!isRuler(s)) return null; const L = lawsOf(s), ym = Math.floor(ymOf(s.clock)); if (L.ym != null && ym - L.ym < 12) { ORGMSG = '祖制不可轻改，一年里只能改一回'; return null; }
   const need = 20; if ((num(s.renown) || 0) < need) { ORGMSG = `改祖制要有威望（至少${need}），你眼下威望不够`; return null; }
   if (k === 'crown') { const nv = Math.max(1, Math.min(3, L.crown + (v === 'up' ? 1 : -1))); if (nv === L.crown) return null; L.crown = nv; L.ym = ym; s.renown -= 10; for (const f of arr(s.factions)) f.grudge = (num(f.grudge) || 0) + (v === 'up' ? 3 : -2); return lifeNote(s, '朝政', `君权${v === 'up' ? '收于上' : '放于臣'}：${v === 'up' ? '赋役听令于上、进项兵役多了，朝中朋党怨气涨' : '朝臣舒了口气，进项兵役少些'}`); }
-  if (k === 'succ') { if (!['嫡长', '择贤'].includes(v) || v === L.succ) return null; L.succ = v; L.ym = ym; s.renown -= 10; for (const f of arr(s.factions)) f.grudge = (num(f.grudge) || 0) + 2; return lifeNote(s, '朝政', `立储之法改为「${v === '择贤' ? '择贤而立' : '立嫡立长'}」${v === '择贤' ? '：可以在儿子里挑贤的立，嫡长一系不满' : ''}`); }
+  if (k === 'succ') { if (!SUCC_LAWS.some(x => x[0] === v) || v === L.succ) return null; L.succ = v; L.ym = ym; s.renown -= 10; for (const f of arr(s.factions)) f.grudge = (num(f.grudge) || 0) + 2; return lifeNote(s, '朝政', `立储之法改为「${succLabel(v)}」${v === '择贤' ? '：可以在儿子里挑贤的立，嫡长一系不满' : v === '均分' ? '：诸子各分家业，嗣位之争难止' : v === '幼子' ? '：本朝旧俗幼子守灶，部众多服幼子' : v === '兄终弟及' ? '：兄弟相继，儿子未必能继' : v === '选举' ? '：嗣君由宗室大臣推举，不是一人可定' : ''}`); }
   return null; }
-function politicsHtml(s) { if (!isRuler(s)) return ''; const C = councilOf(s), CT = courtiers(s), L = lawsOf(s), U = s.ultimatum, V = Object.entries(s.diplo || {}).filter(([, D]) => arr(D.ties).includes('臣属')), F = arr(s.factions).filter(f => f && f.name && f.leader && f.leader !== s.protagonist.name), IL = arr(s.intrigueLog).filter(x => x.open && x.ym >= Math.floor(ymOf(s.clock)) - 3).slice(-4);
+function politicsHtml(s) { if (!isRuler(s)) return ''; const C = councilOf(s), CT = courtiers(s), L = lawsOf(s), U = s.ultimatum, V = Object.entries(s.diplo || {}).filter(([, D]) => arr(D.ties).includes('臣属')), F = arr(s.factions).filter(f => f && f.name && f.leader && f.leader !== s.protagonist.name), IL = arr(s.intrigueLog).filter(x => x.open && x.ym >= Math.floor(ymOf(s.clock)) - 3).slice(-4), NX = SUCC_LAWS[(SUCC_LAWS.findIndex(x => x[0] === L.succ) + 1) % SUCC_LAWS.length];
   return `<div class="h"><span class="seal">枢</span>中枢差遣<span class="note">人事树上宰辅、理财、掌兵、刑名、礼宾各衙门的长官，各派一件差事；每月照他的本事和对你的好恶见效（换人在人事树上任免）</span></div>
     ${U ? `<div class="affair" style="border-left:3px solid var(--zhu)"><b>${esc(U.leader)}率${esc(U.fac)}联名要挟</b>：要你${esc(DEMANDS[U.k])}${U.foe ? '（罢免' + esc(U.foe) + '）' : ''} <span class="muted">（朋党势大${U.pw}，两个月不答应就起兵）</span><div class="opost"><button class="link" data-ult="答应">答应</button><button class="link" data-ult="收买">收买</button><button class="link" data-ult="拒绝">拒绝</button></div>${parleyBox(s, 'faction', U.leader, null, '召来当面说服他')}</div>` : ''}
     ${Object.entries(COUNCIL).map(([seat, K]) => { const x = { ...(C[seat] || {}), ...seatHolder(s, seat) }; return `<div class="opost"><b style="min-width:3.5em;display:inline-block">${seat}</b><select data-cseat="${seat}"><option value="">${x.who && !(C[seat] || {}).who ? esc(x.who + '（' + x.post + '）') : '（照人事树）'}</option>${CT.filter(c => c.name !== x.who || (C[seat] || {}).who).map(c => `<option value="${esc(c.name)}"${(C[seat] || {}).who === c.name ? ' selected' : ''}>${esc(c.name)}（${esc(c.post)}${abil(s, c.name, K[0]) != null ? '，' + K[0] + abil(s, c.name, K[0]) : ''}）</option>`).join('')}</select><select data-ctask="${seat}"><option value="">差事…</option>${Object.keys(K[1]).map(t => `<option${x.task === t ? ' selected' : ''}>${t}</option>`).join('')}</select><button class="link" data-council="${seat}">定</button></div>`; }).join('')}
     ${F.length ? `<div class="muted" style="font-size:12px">朝中派系：${F.map(f => `${esc(f.name)}（${esc(f.leader)}，势力${factionPower(s, f)}，怨气${Math.round(num(f.grudge) || 0)}）`).join('；')}</div>` : ''}
     ${IL.length ? `<div class="muted" style="font-size:12px">朝中暗流：${IL.map(x => `${esc(x.who)}${esc(x.did)}`).join('；')}</div>` : ''}
-    <div class="h" style="font-size:14px">君权与立储</div><div class="opost">君权「${['', '放权于臣', '中', '收权于上'][L.crown]}」<button class="link" data-law="crown" data-v="up">收权</button><button class="link" data-law="crown" data-v="down">放权</button> · 立储「${L.succ === '嫡长' ? '立嫡立长' : '择贤而立'}」<button class="link" data-law="succ" data-v="${L.succ === '嫡长' ? '择贤' : '嫡长'}">改为${L.succ === '嫡长' ? '择贤而立' : '立嫡立长'}</button></div>
-    ${V.length ? `<div class="h" style="font-size:14px">藩属岁贡助兵</div>${V.map(([n, D]) => `<div class="opost">${esc(n)}：岁贡助兵「${esc(D.contract || '常')}」${Object.keys(CONTRACT).filter(k => k !== (D.contract || '常')).map(k => `<button class="link" data-contract="${esc(n)}" data-k="${k}">改${k}</button>`).join('')} <span class="muted">（对你${esc(dipWord(D.att))}）</span></div>`).join('')}` : ''}`; }
+    <div class="h" style="font-size:14px">君权与立储</div><div class="opost">君权「${['', '放权于臣', '中', '收权于上'][L.crown]}」<button class="link" data-law="crown" data-v="up">收权</button><button class="link" data-law="crown" data-v="down">放权</button> · 立储「${succLabel(L.succ)}」<button class="link" data-law="succ" data-v="${NX[0]}">改为${NX[1]}</button></div>
+    ${V.length ? `<div class="h" style="font-size:14px">藩属岁贡助兵</div>${V.map(([n, D]) => `<div class="opost">${esc(n)}：岁贡助兵「${esc(D.contract || '常')}」${Object.keys(CONTRACT).filter(k => k !== (D.contract || '常')).map(k => `<button class="link" data-contract="${esc(n)}" data-k="${k}">改${k}</button>`).join('')} <span class="muted">（对你${esc(dipWord(D.att))}）</span></div>`).join('')}` : ''}${(() => { const CL = arr(s.claims), PW = realmPowers(s).filter(p => p && p.name && p.name !== String(s.place.polity || '').replace(/[（(].*$/, '')).slice(0, 8); return (PW.length || CL.length) ? `<div class="h" style="font-size:14px">法理宣称</div>${PW.map(p => `<div class="opost">${esc(p.name)}${CL.some(c => c && c.owner === p.name) ? ' <span class="att onpath">已登记法理</span>' : ` <button class="link" data-claim="${esc(p.name)}">登记法理</button>`}</div>`).join('')}${CL.length ? `<div class="muted" style="font-size:12px">已登记：${CL.map(c => esc(c.owner)).join('、')}（宣战时可作名分）</div>` : ''}` : ''; })()}`; }
 /** 扯旗称王（需求台账 R-147）：有了山寨、打下一座县城、人到一千，就能立国号称王，接到一方之主那条线；原来的朝廷当即视你为敌 */
 function crownSelf(s, name) { const f = partyF(s); name = String(name || '').trim().replace(/[国王]+$/, '').slice(0, 3);
   if (!f || !s.base) { ORGMSG = '先占山立寨'; return null; } if (ptMen(f.party) < 1000) { ORGMSG = `人马不到一千（眼下${ptMen(f.party)}），扯不起王旗`; return null; }
@@ -12082,12 +12101,17 @@ function cardBlock(s) {
 · 眼下最要紧：${press.join('；') || '（无临门之事）'}
 · 最近的大事：${ev.join('；') || '（无）'}`;
 }
+/** 早年旧事：正文清掉以后留的摘要（R-164） */
+function memoryBlock(s) {
+  const M = arr(s.memoryCore).slice(-24); if (!M.length) return '';
+  return '【早年旧事（正文已不存，只留这些要紧的；写到从前的事照此，不另编）】\n' + M.map(x => '· ' + x).join('\n');
+}
 function blocks(s, forStory) {
   const p = s.protagonist, c = s.clock, L = [], id = IDM[s.idm] || IDM.commoner, TP = topicsOf(String(CUR_SAID || '') + ' ' + (forStory ? '' : TOPIC_TXT));
   L.push(`【此刻】${timeText(c)}，${season(c.m)}。主角现居：${s.place.full}（${s.place.polity || ''}）。`);
   const st = Object.entries(s.status || {}).map(([k, v]) => `${k}：${v}`).join('；');
   L.push(`【主角】${p.name}，${p.gender || ''}，${p.age != null ? p.age + '岁' : '年岁不详'}，${p.role}${p.nativePlace ? '，' + p.nativePlace + '人' : ''}${p.real ? '，史载真人' : '，虚构人物'}。${st ? '名位功名等：' + st + '。' : ''}${s.at ? `【主角此刻人在${s.at}（出门在外；家在${s.place.full}）——场面在这里，身边是这里的人；家里的事只能靠书信、来人知道】` : ''}`);
-  L.push(cardBlock(s));
+  L.push(cardBlock(s)); { const mb = memoryBlock(s); if (mb) L.push(mb); }
   { const ob = orgBlock(s); if (ob) L.push(ob); }
   if (false && s.face && typeof FACE !== 'undefined') { const ft = faceText(s.face); if (ft) L.push('【主角的相貌（玩家捏的；写到主角的样子照这个，不另编）】' + ft); }
   const hh = arr(s.household);
@@ -15470,9 +15494,9 @@ document.addEventListener('click', async e => {
     PARLEY_P = 1; ORGMSG = '正在当面说，等他回话……'; render();
     try { await parley(S, t.dataset.parley, t.dataset.pt, ask, said); } catch (er) { if (!(er && er.code === 'cancelled')) ORGMSG = '没说成（' + errText(er) + '），再说一次'; } finally { PARLEY_P = null; }
     try { await store.save(S); } catch (_) {} render(); return; }
-  if (S && !BUSY && (t.dataset.council || t.dataset.ult || t.dataset.law || t.dataset.contract)) {   // 政治（R-146 第四期）
+  if (S && !BUSY && (t.dataset.council || t.dataset.ult || t.dataset.law || t.dataset.contract || t.dataset.claim)) {   // 政治（R-146 第四期）
     if (t.dataset.council) { const k = t.dataset.council; councilSet(S, k, ($(`[data-cseat="${k}"]`) || {}).value ?? null, ($(`[data-ctask="${k}"]`) || {}).value || null); }
-    else if (t.dataset.ult) ultimatumAct(S, t.dataset.ult); else if (t.dataset.law) lawSet(S, t.dataset.law, t.dataset.v); else contractSet(S, t.dataset.contract, t.dataset.k);
+    else if (t.dataset.ult) ultimatumAct(S, t.dataset.ult); else if (t.dataset.law) lawSet(S, t.dataset.law, t.dataset.v); else if (t.dataset.claim) claimAdd(S, t.dataset.claim); else contractSet(S, t.dataset.contract, t.dataset.k);
     try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && (t.dataset.hh || t.dataset.loan || t.dataset.route)) {   // 百姓线、国债商路（R-146）
     if (t.dataset.hh) hhAct(S, t.dataset.hh, ($('#hhAmt') || {}).value); else if (t.dataset.loan) { if (t.dataset.loan === 'repay') loanRepay(S); else loanTake(S, t.dataset.loan, ($('#loanAmt') || {}).value); } else routeOpen(S, t.dataset.route);
