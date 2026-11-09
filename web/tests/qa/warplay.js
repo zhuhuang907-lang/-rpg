@@ -26,7 +26,7 @@ const { chromium } = require('playwright');
   const dec = await p.$('[data-war="declare"]'); if (dec) { await dec.click(); await p.waitForTimeout(500); } else log.push({ noDeclare: true });
   await snap('02-after-declare');
   // 连发几回
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 11; i++) {   // 行军照路网走以后福州到潮州约一千一百里（以前按直线九百多里），多给三回（R-154）
     if (i >= 5 && await p.evaluate(() => arr(S.battles).length > 0 || arr(S.campaigns).some(c => /得手|败回/.test(c.state)))) break;   // 机器慢时探报、围城晚一两回，最多再等三回
     if (await p.$('button[data-xwait]')) await p.click('button[data-xwait]', { timeout: 5000 }).catch(e => log.push({ waitErr: e.message.slice(0, 80) }));
     const v = await p.evaluate(() => (document.querySelector('#said') || {}).value || ''); if (!v.trim()) await p.fill('#said', '按兵不动，静候前方军报。');
