@@ -31,6 +31,8 @@ const CASES = require('./rules_cases.json');
     if (c.check === 'law') { if (c.state) Object.assign(s, JSON.parse(JSON.stringify(c.state))); lawSet(s, c.k, c.v); return { id: c.id, ok: !!(s.laws && s.laws[c.k] === c.want), detail: s.laws }; }
     if (c.check === 'claim') { if (c.state) Object.assign(s, JSON.parse(JSON.stringify(c.state))); claimAdd(s, c.who); const cb = warCBs(s, c.who); return { id: c.id, ok: arr(s.claims).some(x => x.owner === c.who) && cb.includes('法理'), detail: { claims: s.claims, cb } }; }
     if (c.check === 'memory') { if (c.state) Object.assign(s, JSON.parse(JSON.stringify(c.state))); s.chat = Array.from({ length: 35 }, (_, i) => ({ when: '第' + (i + 1) + '回', who: 'GM', text: '旧事' + i + '：答应过某人一件事。' })); shrink(s); const left = arr(s.chat).filter(x => x.text).length; return { id: c.id, ok: arr(s.memoryCore).length > 0 && left <= 30, detail: { mc: arr(s.memoryCore).length, left } }; }
+    if (c.check === 'council') { if (c.state) Object.assign(s, JSON.parse(JSON.stringify(c.state))); const out = councilMonthly(s); const blob = JSON.stringify({ out, factions: s.factions, intrigueLog: s.intrigueLog }); return { id: c.id, ok: (c.want || []).every(k => blob.includes(k)) && (c.wantNot || []).every(k => !blob.includes(k)), detail: blob.slice(0, 240) }; }
+    if (c.check === 'policyfx') { if (c.state) Object.assign(s, JSON.parse(JSON.stringify(c.state))); const g0 = { ...((s.gov || {}).stats || {}) }; reformMonthly(s); const G = (s.gov || {}).stats || {}, moved = Object.keys(g0).filter(k => G[k] !== g0[k]); return { id: c.id, ok: (c.want || []).every(k => moved.includes(k)), detail: { moved } }; }
     return { id: c.id, ok: false, detail: '未知检查' };
   }), CASES);
   let fail = 0;
