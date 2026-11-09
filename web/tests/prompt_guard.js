@@ -4,6 +4,17 @@ const fs = require('fs'), path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'game.src.html'), 'utf8');
 const server = fs.readFileSync(path.join(__dirname, '..', '..', 'rpg-kernel', 'server.js'), 'utf8');
 const rules = (src.match(/function storyRules\(\) \{\s*return `([\s\S]*?)`;\n\}/) || [])[1] || '';
+// 史事月份：把源码里的 evMonth 取出来按真数据验一遍（缺月不许落到六月；只记到年的排年末）
+let evMonthOK = false;
+try {
+  const code = (src.match(/const SEASON_END = \{[\s\S]*?function evMonth\(e\) \{[\s\S]*?\n\}/) || [])[0];
+  if (code) {
+    const evMonth = new Function(code + '; return evMonth;')();
+    evMonthOK = evMonth({ y: 208, m: 0, text: '春，大疫' }) === 3
+      && evMonth({ y: 208, m: 0, text: '护羌校尉段颎大破东羌' }) === 12
+      && evMonth({ y: 208, m: 7, text: '秋，某事' }) === 7;
+  }
+} catch (_) { evMonthOK = false; }
 const checks = [
   ['写正文的规则还在', rules.length > 2500],
   ['笔法示范至少两段', (rules.match(/^——/gm) || []).length >= 4],
@@ -196,6 +207,7 @@ const checks = [
   ['融会贯通：时政定办法算考成、升迁罢官改人事树、山寨即寨子、两套招人不混（需求台账 R-150）', /function affairAct\(/.test(src) && /function orgSyncMe\(/.test(src) && /orgSyncMe\(s, '保举升迁'\)/.test(src) && /orgSyncMe\(s, '罢官'\)/.test(src) && /isOfficer\(s\) && !s\.gov && s\.dutyYM/.test(src) && /function baseEnsure\(/.test(src) && /两套招人不混/.test(src) && /offHtml\(s\), 'offHtml'\)\}\$\{shituHtml\(s\)\}/.test(src) && /给中枢各衙门长官派差遣/.test(src) && /「仕途」页是做官的一处/.test(src) && /拉一队人、投军、逃荒/.test(src)],
   ['中国制度不搬外国名目、新月结面板各自兜底（需求台账 R-151）', /function SM\(nm, f\)/.test(src) && /function SH\(f, nm\)/.test(src) && /SM\('partyMonthly'/.test(src) && /function seatHolder\(/.test(src) && /中枢差遣/.test(src) && !/<span class="seal">议<\/span>议事会/.test(src) && !/递上「最后通牒」/.test(src)],
   ['扯旗称王：有山寨、打下县城、人到一千立国号，接到一方之主（需求台账 R-147）', /function crownSelf\(/.test(src) && /data-crown=/.test(src)],
+  ['史事月份不默认六月：只记到季的排季末、只记到年的排年末（历史准确性）', evMonthOK],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

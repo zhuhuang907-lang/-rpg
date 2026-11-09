@@ -61,15 +61,15 @@ try: old = json.load(open(vfile, encoding='utf8'))
 except Exception: old = {}
 build = old.get('build') if old.get('hash') == digest else datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')
 gver = (re.search(r"const VERSIONS = \{ game: '([^']+)'", (here / 'game.src.html').read_text(encoding='utf8')) or [None, ''])[1]   # 三个版本显示同一个版本号
-vfile.write_text(json.dumps({'build': build, 'hash': digest, 'api': api, 'game': gver}), encoding='utf8')
+vfile.write_text(json.dumps({'build': build, 'hash': digest, 'api': api, 'game': gver}), encoding='utf8', newline='\n')
 body = (here / 'game.src.html').read_text(encoding='utf8').replace('__BUILD__', build).replace('__CAL__', compact).replace('__HIST__', hist_js).replace('__VOCAB__', vocab.replace('</', '<\\/')).replace('__INSTLIB__', inst_js).replace('__ARCS__', arcs_js).replace('__GEO__', geo_js).replace('__TERRAIN__', terr_js).replace('__ATLAS_CORE__', atlas_core).replace('__ATLAS_E1820__', atlas_e1820).replace('__ATLAS_E1911__', atlas_e1911).replace('__ATLAS_COAST__', atlas_coast).replace('__ATLAS_JS__', atlas_js).replace('/*__FACE__*/', face_js)
-(here / 'index.html').write_text(body, encoding='utf8')
+(here / 'index.html').write_text(body, encoding='utf8', newline='\n')
 # 桌面版由本机服务直接发出，需要自己的文档外壳
 page = ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="renderer" content="webkit"><meta name="force-rendering" content="webkit">'
         '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + body + '</body></html>')
-(here.parent / 'rpg-kernel/public/index.html').write_text(page, encoding='utf8')
+(here.parent / 'rpg-kernel/public/index.html').write_text(page, encoding='utf8', newline='\n')
 # 网页版：同一个页面，没有本机游戏程序时自动变成网页版（浏览器直接连 DeepSeek，只要填 Key）。在线打开、存到电脑上双击打开都行
-(here / 'play.html').write_text(page, encoding='utf8')
+(here / 'play.html').write_text(page, encoding='utf8', newline='\n')
 print('ok', len(body), 'history eras:', len(hist), 'inst:', len(inst), 'arcs:', len(arcs))
 # 构建完先查页面脚本的语法：有错就让构建失败（一个字写错整页打不开，不能等到测试才发现）
 import tempfile, sys
