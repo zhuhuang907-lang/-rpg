@@ -23,7 +23,7 @@ const path = require('path');
   // 外交：说吴越结盟（允）
   const w1 = '吴越与闽唇齿相依，杨吴虎视江东，若两家不合，必为徐温各个击破。昔孙刘合力而破曹，今日之势正同。';
   if (await talk('dip', '吴越', '结盟', w1, '允')) { const r = await p.evaluate(() => ({ t: dipOf(S, '吴越').ties, c: CALLS.slice(-1)[0], txt: document.body.innerText }));
-    if (!r.t.includes('盟')) bad.push('说动吴越结盟，没结成：' + JSON.stringify(r.t)); if (!r.c || !r.c.extra.ds) bad.push('当面说没交给 DeepSeek'); if (!r.c.input.includes('孙刘合力')) bad.push('玩家的说辞原话没进提示');
+    if (!r.t.includes('盟')) bad.push('说动吴越结盟，没结成：' + JSON.stringify(r.t)); if (!r.c || r.c.extra.ds) bad.push('当面说硬指了 DeepSeek（照分工该随设置走，默认 GLM；2026-11-09 玩家：「你忘记分工了吗」）'); if (!r.c.input.includes('孙刘合力')) bad.push('玩家的说辞原话没进提示');
     if (/"verdict":"允"/.test(r.c.input)) bad.push('格式里放了示例答案'); if (!/正合吾意/.test(r.txt)) bad.push('对方的回话没显示出来'); }
   // 同一个月不能再说
   { const n0 = await p.evaluate(() => CALLS.length); await talk('dip', '吴越', null, '再请一事：开边互市，两利之道也。', '允'); const n1 = await p.evaluate(() => CALLS.length); if (n1 !== n0) bad.push('同一个月对同一家说了两回'); }
