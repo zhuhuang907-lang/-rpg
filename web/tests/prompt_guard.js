@@ -15,6 +15,23 @@ try {
       && evMonth({ y: 208, m: 7, text: '秋，某事' }) === 7;
   }
 } catch (_) { evMonthOK = false; }
+// 史料数据完整性（R-160）：政权不漏列、在位年不倒置、年号次序不乱、生卒不倒置
+let histOK = true, histBad = '';
+try {
+  for (const f of ['han-sanguo', 'jin-16', 'tang-late', 'song-north', 'ming-late', 'qing-mid']) {
+    const d = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'history', f + '.json'), 'utf8'));
+    const pols = new Set(d.polities || []);
+    for (const r of d.rulers || []) {
+      if (!pols.has(r.polity)) { histOK = false; histBad += f + ':' + r.name + ' 政权漏列;'; }
+      const a = Number(r.from), b = r.to == null ? a : Number(r.to);
+      if (!(a <= b)) { histOK = false; histBad += f + ':' + r.name + ' 在位年倒置;'; }
+      let last = -Infinity;
+      for (const rg of r.reigns || []) { const st = Number(rg[1]); if (st < last) { histOK = false; histBad += f + ':' + r.name + ' 年号次序乱;'; } last = st; }
+    }
+    for (const g of d.figures || []) if (g.born && g.died && Number(g.born) > Number(g.died)) { histOK = false; histBad += f + ':' + g.name + ' 生卒倒置;'; }
+  }
+} catch (e) { histOK = false; histBad = String(e && e.message || e); }
+if (!histOK) console.log('史料问题：' + histBad.slice(0, 300));
 const checks = [
   ['写正文的规则还在', rules.length > 2500],
   ['笔法示范至少两段', (rules.match(/^——/gm) || []).length >= 4],
@@ -208,6 +225,7 @@ const checks = [
   ['中国制度不搬外国名目、新月结面板各自兜底（需求台账 R-151）', /function SM\(nm, f\)/.test(src) && /function SH\(f, nm\)/.test(src) && /SM\('partyMonthly'/.test(src) && /function seatHolder\(/.test(src) && /中枢差遣/.test(src) && !/<span class="seal">议<\/span>议事会/.test(src) && !/递上「最后通牒」/.test(src)],
   ['扯旗称王：有山寨、打下县城、人到一千立国号，接到一方之主（需求台账 R-147）', /function crownSelf\(/.test(src) && /data-crown=/.test(src)],
   ['史事月份不默认六月：只记到季的排季末、只记到年的排年末（历史准确性）', evMonthOK],
+  ['史料数据完整：政权不漏列、在位年不倒置、年号次序不乱、生卒不倒置（R-160）', histOK],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
