@@ -226,6 +226,7 @@ const checks = [
   ['扯旗称王：有山寨、打下县城、人到一千立国号，接到一方之主（需求台账 R-147）', /function crownSelf\(/.test(src) && /data-crown=/.test(src)],
   ['史事月份不默认六月：只记到季的排季末、只记到年的排年末（历史准确性）', evMonthOK],
   ['史料数据完整：政权不漏列、在位年不倒置、年号次序不乱、生卒不倒置（R-160）', histOK],
+  ['称呼照时代：王爷、军机处、总督、巡抚、八旗、清代衣冠与满洲称呼都有年代限制（R-161）', /王爷\|千岁爷/.test(src) && /军机处\|军机大臣/.test(src) && /巡抚/.test(src) && /总督/.test(src) && /八旗\|旗人/.test(src) && /皇阿玛\|皇额娘/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

@@ -25,6 +25,7 @@ const CASES = require('./rules_cases.json');
     if (c.check === 'modules') { const got = pickModules(c.said, null); return { id: c.id, ok: JSON.stringify(got) === JSON.stringify(c.want), detail: got }; }
     if (c.check === 'identity') { const ex = {}; autoIdentity(s, ex); return { id: c.id, ok: s.idm === c.want && (!c.roleHas || s.protagonist.role.includes(c.roleHas)), detail: { idm: s.idm, role: s.protagonist.role, ex } }; }
     if (c.check === 'cur') { const cs = curStatus(s, { presentNpcs: c.npcs }); return { id: c.id, ok: c.must.every(m => JSON.stringify(cs).includes(m)), detail: cs }; }
+    if (c.check === 'anachro') { const s2 = { ...s, clock: { ...s.clock, y: c.year } }; const got = anachronisms(s2, c.text); return { id: c.id, ok: (c.want || []).every(k => got.some(x => x.includes(k))) && (c.wantNot || []).every(k => !got.some(x => x.includes(k))), detail: got }; }
     return { id: c.id, ok: false, detail: '未知检查' };
   }), CASES);
   let fail = 0;
