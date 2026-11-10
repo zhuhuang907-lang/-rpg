@@ -270,6 +270,13 @@ const checks = [
   ['历史改变时照史书年号查原文：本局改元不影响检索词（R-173）', /function histEraName/.test(src) && /rulersAt\(y, s\)/.test(src) && /local !== he/.test(src)],
   ['化用规矩进材料：措辞典章名物照原文化用，冲突史实以本局为准（R-173）', /化用它的措辞、典章、名物、礼制惯例/.test(src) && /以材料里「本局」的记载为准/.test(src)],
   ['命中的原文摆给玩家看：翻到的资料里带书名卷名（R-173）', /site: '史书原文'/.test(src) && /feedAdd\(\[\{ t: `《\$\{g\.book\}》/.test(src)],
+  ['朝局议题：程序挑题、AI 站队、票力与君权定成或流产（R-174）', /const ISSUE_POOL/.test(src) && /function courtIssuePick/.test(src) && /function courtIssueApply/.test(src) && /朝堂议题：这阵子朝中在争/.test(src) && /issue\?\.stances|"issue":\{"stances"/.test(src)],
+  ['内宅斗争：位分随宠爱缓涨缓跌、宠差生妒进谗、母凭子贵、外戚联动（R-175）', /function haremMonthly/.test(src) && /进谗/.test(src) && /争宠：/.test(src) && /母族随宠爱势涨/.test(src) && /SM\('haremMonthly'/.test(src)],
+  ['军心：编成没编成的兵马都记士气、欠饷哗变临门、久戍磨士气（R-176）', /const moraleWatch/.test(src) && /moraleWatch\(f, Math\.min\(months, 24\)\); continue/.test(src) && /moraleWatch\(f, m\)/.test(src) && /哗变：\$/.test(src)],
+  ['声名：官声军望两维程序账、保举照官声调、收钱拒贿都动官声（R-177）', /function repOf/.test(src) && /function repLine/.test(src) && /guanAdj/.test(src) && /repOf\(s\)\.guan \+ 2/.test(src)],
+  ['文化线：作诗文 AI 评四等、雅集花小钱请本地人、文社会文（R-178）', /async function cultAct/.test(src) && /CULT_GRADE/.test(src) && /data-cult="poem"/.test(src) && /function cultLine/.test(src)],
+  ['技术扩散：季度推演报新技、进度传开算通行、农技压粮价（R-179）', /"newTech":\{"name":"","area":"","why":""\}/.test(src) && /s\.techSpread\[nm\]/.test(src) && /已在本地通行/.test(src)],
+  ['岁入岁出月结单：一方之主每月摊账进材料（R-180）', /function fiscalLine/.test(src) && /岁入约/.test(src) && /【岁入岁出（程序照账算的/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
