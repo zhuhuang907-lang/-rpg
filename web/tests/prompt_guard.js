@@ -277,6 +277,14 @@ const checks = [
   ['文化线：作诗文 AI 评四等、雅集花小钱请本地人、文社会文（R-178）', /async function cultAct/.test(src) && /CULT_GRADE/.test(src) && /data-cult="poem"/.test(src) && /function cultLine/.test(src)],
   ['技术扩散：季度推演报新技、进度传开算通行、农技压粮价（R-179）', /"newTech":\{"name":"","area":"","why":""\}/.test(src) && /s\.techSpread\[nm\]/.test(src) && /已在本地通行/.test(src)],
   ['岁入岁出月结单：一方之主每月摊账进材料（R-180）', /function fiscalLine/.test(src) && /岁入约/.test(src) && /【岁入岁出（程序照账算的/.test(src)],
+  ['农家岁时：农活照月、里正点役临门、人情份子（R-181）', /const FARM_WORK/.test(src) && /function farmMonthly/.test(src) && /里正点役/.test(src) && /随了份子/.test(src) && /function farmLine/.test(src)],
+  ['流民之路：乞讨帮工粥厂野菜瘟疫都算日子、不只有落草一条路（R-182）', /function refugeMonthly/.test(src) && /粥厂/.test(src) && /挖野菜/.test(src) && /不只有落草一条路/.test(src)],
+  ['义军的义面：开仓放粮记恩义、约法三章、传檄 AI、火并动摇内讧（R-183）', /async function warlordAct/.test(src) && /grainopen/.test(src) && /与众人约法/.test(src) && /写一篇讨伐\/晓谕的檄文/.test(src) && /function strifeMonthly/.test(src) && /火并之兆/.test(src)],
+  ['军阀：纵兵劫掠兵心涨民心崩、犒军买军心（R-187）', /'raze'/.test(src) && /兵灾/.test(src) && /'laojun'/.test(src) && /犒赏全军/.test(src)],
+  ['读书人：读书买书涨学问、坐馆束脩、投名师、文墨联动科举（R-184）', /const studyOf = s =>/.test(src) && /'teach'/.test(src) && /'touming'/.test(src) && /月束脩/.test(src) && /function studyLine/.test(src)],
+  ['手艺学徒：拜师三年出师落本事、帮工零钱（R-188）', /'apprentice'/.test(src) && /学徒期满，出师了/.test(src)],
+  ['商人：官凭牙帖月利上浮、坏账、伙计分劳月钱（R-185）', /'license'/.test(src) && /官凭牙帖/.test(src) && /赊的账黄了/.test(src) && /'hire'/.test(src)],
+  ['女子补全：和离带妆奁、守节清议、再嫁照年代（R-186）', /'divorce'/.test(src) && /和离归家/.test(src) && /'chaste'/.test(src) && /立志守节抚孤/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
