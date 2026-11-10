@@ -249,6 +249,9 @@ const checks = [
   ['制度现状进材料：朝章与物议（R-167）', /function instLine/.test(src) && /朝章与物议/.test(src)],
   ['国计民生按季推演：GLM 照天时、战事、赋役钱法、本朝制度推年成米价工钱商贸流民和制度落地，程序照档折算落账（R-168）', /async function msSim\(s\)/.test(src) && /function msLand\(/.test(src) && /kind: '推演', detached: true \}\);\n  const d = parseJSON\(text\); if \(!d\) \{ s\.msFail/.test(src) && /id: 'minsheng'/.test(src) && /msLine\(s\)/.test(src) && /data-ms="pingtiao"/.test(src) && /"harvest":"","harvestWhy":""/.test(src)],
   ['用重臣过的那道关照朝代叫、换在位的人也要过（R-167 补正）', /const tuiOf = s =>/.test(src) && /who !== \(C\[seat\] \|\| \{\}\)\.who/.test(src)],
+  ['没有只写不读的空账：存档里记下的每一项都有地方用到（R-169）', (() => { const w = new Set((src.match(/\b[sS]\.([a-zA-Z_]\w*)\s*=(?!=)/g) || []).map(x => x.replace(/^[sS]\.|\s*=$/g, '').trim())), ok = new Set(['gameVer', 'govOld', 'logicAt']); for (const k of w) { if (ok.has(k)) continue; if (!new RegExp('\\.' + k + '\\b(?!\\s*=(?!=))').test(src)) return false; } return true; })()],
+  ['后勤补全：本色漕运入太仓、就地征粮、敌军远来逃散（R-169）', /其中\$\{Math\.round\(sh \* 10\)\}成征本色/.test(src) && /function forage\(s, fname\)/.test(src) && /远来\$\{Math\.round\(li\)\}里，粮运不继/.test(src) && /data-logi="forage"/.test(src)],
+  ['内置史料的真人：六个时代各至少一百五十人，当过官的都有任职年份（不仕的僧道学者除外）（R-169）', ['han-sanguo', 'jin-16', 'tang-late', 'song-north', 'ming-late', 'qing-mid'].every(n => { const d = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'history', n + '.json'), 'utf8')); return d.figures.length >= 150 && d.figures.every(f => f.name && Array.isArray(f.posts) && f.posts.every(p => p[0] != null)) && d.figures.filter(f => !f.posts.length).length <= 8; })],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
