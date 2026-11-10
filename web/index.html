@@ -1644,7 +1644,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261110210839';
+const BUILD = '20261110212153';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.7.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4759,15 +4759,16 @@ const HIST_ERA_BOOKS = [
   { y0: 1644, books: ['qingshigao', 'qingshilu'] },
 ];
 const HIST_TOPIC = [
-  [/科举|贡举|进士|察举|九品|铨选|官制|品级|俸禄|考成|考课|磨勘/, ['tongdian', 'wenxiantongkao']],
-  [/赋税|两税|一条鞭|盐法|钱法|宝钞|铸币|漕运|常平|义仓|徭役|丁银|摊丁/, ['tongdian', 'wenxiantongkao', 'daminghuidian']],
-  [/兵制|府兵|卫所|绿营|八旗|屯田|军器|阵法|火器|马政/, ['wujingzongyao', 'sunzibingfa', 'wenxiantongkao']],
-  [/山川|关隘|渡口|里程|形胜|险要/, ['dushifangyu', 'yuanhejunxian']],
+  [/科举|贡举|进士|察举|九品|铨选|官制|品级|俸禄|考成|考课|磨勘|铨叙|封赠|荫补/, ['tongdian', 'wenxiantongkao']],
+  [/赋税|两税|一条鞭|盐法|钱法|宝钞|铸币|漕运|常平|义仓|徭役|丁银|摊丁|物价|米价|灾异|荒政|赈济/, ['tongdian', 'wenxiantongkao', 'daminghuidian']],
+  [/兵制|府兵|卫所|绿营|八旗|屯田|军器|阵法|火器|马政|军礼/, ['wujingzongyao', 'sunzibingfa', 'wenxiantongkao']],
+  [/山川|关隘|渡口|里程|形胜|险要|城池|舆图/, ['dushifangyu', 'yuanhejunxian']],
+  [/婚礼|丧礼|祭礼|冠礼|笄礼|葬制|服丧|品官|礼仪|朝仪|射礼|养老|宴礼|节庆|上元|冬至|郊祀|宗庙/, ['tongdian', 'wenxiantongkao']],
 ];
 function histBooksFor(s, said) {
   const era = HIST_ERA_BOOKS.filter(e => e.y0 <= (((s.clock || {}).y) || 0)).pop();
   const books = new Set(era ? era.books : ['shiji']);
-  const x = String(said || '');
+  const x = String(said || '') + ' ' + String((s.citeExtra || '') || '');
   for (const [re, bs] of HIST_TOPIC) if (re.test(x)) bs.forEach(b => books.add(b));
   return [...books].slice(0, 6);
 }
@@ -4815,30 +4816,54 @@ async function citeFetch(s, bookIds, qs) {
   }
   return out.sort((a, b) => b.score - a.score).slice(0, 4);
 }
-/** 一回查一次：年号、玩家提到的真人、制度词、眼下大事里的人。查到的原文挂 s.citeNow，citeBlock 拼进材料 */
-async function citeInto(s, said) {
+/** 照史料算的史书年号（本局改元不影响它：改了元、换了历史，检索照旧落在史书的年上） */
+function histEraName(s) {
+  const y = (s.clock || {}).y || 0;
+  const pol = String((s.place || {}).polity || '');
+  const all = rulersAt(y, s);
+  let rs = pol ? all.filter(r => r.era && (r.polity === pol || pol.includes(r.polity) || r.polity.includes(pol))) : all.filter(r => r.era);
+  if (!rs.length) rs = all.filter(r => r.era);
+  return rs.length ? String(rs[rs.length - 1].era || '') : '';
+}
+/** 一回查一次（可被推演的 search 词、lookup 的「原文:词」、玩家口头「查原文」追加检索词）：
+ *  年号（史书年号＋本局年号）、玩家提到的真人、制度词、眼下大事里的人、这一步要去的地方。
+ *  查到的原文挂 s.citeNow，citeBlock 拼进材料；命中的几条同时摆到「这一回翻到的资料」上，玩家等的时候看得到。 */
+async function citeInto(s, said, extraQs) {
   if (!hasHist(s)) return;
   const turn = s.turn || 0;
-  if (s.citeAt === turn) return;
-  s.citeAt = turn;
+  const first = s.citeAt !== turn;
+  if (first) s.citeAt = turn;
   try {
     const qs = [], saidX = String(said || ''), names = realNameSet(s);
-    const el = String(s.clock.yearLabel || '');
-    const m = el.match(/^([\u4e00-\u9fff]{2,6}?)(?:元|[一二三四五六七八九十百千]+)年?$/);
-    if (m && m[1]) qs.push(m[1]);
-    for (const n of names) if (n.length >= 2 && saidX.includes(n)) { qs.push(n); if (qs.length >= 4) break; }
-    for (const e of histEvents(s, s.clock.y * 12, s.clock.y * 12 + 12).slice(0, 6)) for (const who of arr(e.who)) if (who && who.length >= 2 && !qs.includes(who)) { qs.push(who); break; }
-    if (qs.length >= 1 && qs.length <= 2 && /\[|」|？|\?/.test(saidX)) qs.push(cut(saidX.replace(/[\s，。！？「」？\?]/g, ''), 8));
-    if (!qs.length) { const f = figuresAt(s, s.clock.y).filter(x => x.alive)[0]; if (f) qs.push(f.name); }
-    if (!qs.length) return;
-    const hits = await within(citeFetch(s, histBooksFor(s, saidX), qs.slice(0, 4)), 20000);
-    s.citeNow = hits.map(h => ({ book: h.name, volume: h.volume, text: cut(h.text, 120) }));
-  } catch (_) { s.citeNow = ''; }
+    if (first) {
+      const he = histEraName(s), m = String(s.clock.yearLabel || '').match(/^([\u4e00-\u9fff]{2,6}?)(?:元|[一二三四五六七八九十百千]+)年?$/), local = m && m[1];
+      if (he) qs.push(he);
+      if (local && local !== he) qs.push(local);   // 本局改过元：史书年号照查，本局年号也查（本局的事在史书里没有，查不中就罢了）
+      for (const n of names) if (n.length >= 2 && saidX.includes(n)) { qs.push(n); if (qs.length >= 4) break; }
+      for (const e of histEvents(s, s.clock.y * 12, s.clock.y * 12 + 12).slice(0, 6)) for (const who of arr(e.who)) if (who && who.length >= 2 && !qs.includes(who)) { qs.push(who); break; }
+      const st = String((s.place || {}).full || '').replace(/[省市县府州镇].*$/, '');
+      if (st.length >= 2 && !qs.includes(st)) qs.push(st);   // 此地的山川形势、建置沿革
+      if (qs.length >= 1 && qs.length <= 2 && /\[|」|？|\?/.test(saidX)) qs.push(cut(saidX.replace(/[\s，。！？「」？\?]/g, ''), 8));
+      if (!qs.length) { const f = figuresAt(s, s.clock.y).filter(x => x.alive)[0]; if (f) qs.push(f.name); }
+    }
+    // 追加检索词：推演模型定的查证词、lookup 的「原文:词」、玩家说「查 XX 的原文」
+    const extra = [];
+    for (const q0 of arr(extraQs)) { const q = String(q0 || '').replace(/^(原文[:：]|查|帮我查|查一下)+/g, '').replace(/(的原文|原文)$/, '').trim(); if (q.length >= 2 && !qs.includes(q) && !extra.includes(q)) extra.push(cut(q, 10)); if (extra.length >= 3) break; }
+    if (!qs.length && !extra.length) return;
+    s.citeExtra = extra.join(' ');
+    const all = qs.concat(extra).slice(0, 6);
+    const hits = await within(citeFetch(s, histBooksFor(s, saidX + ' ' + s.citeExtra), all), 20000);
+    const got = hits.map(h => ({ book: h.name, volume: h.volume, text: cut(h.text, 120) }));
+    s.citeNow = first ? got : arr(s.citeNow).concat(got.filter(g => !arr(s.citeNow).some(o => o.text === g.text))).slice(0, 6);
+    for (const g of arr(s.citeNow).slice(0, 3)) if (!FEED.some(f => f.t === `《${g.book}》${g.volume}`)) feedAdd([{ t: `《${g.book}》${g.volume}：${cut(g.text, 26)}……`, site: '史书原文' }]);
+  } catch (_) { if (first) s.citeNow = ''; }
 }
 function citeBlock(s) {
   const hits = arr(s.citeNow);
   if (!hits.length) return '';
-  return '【史书原文（引原话、引典故时照这里抄，一个字不改；与本局史事冲突时以史事为准）】\n' + hits.map(h => `· 《${h.book}》${h.volume || ''}：「${h.text}」`).join('\n');
+  return '【史书原文（引原话、引典故、写典章名物时照这里抄，一个字不改）】\n'
+    + '本局历史已经改变的（改元、换人、胜负不同）：原文拿来化用它的措辞、典章、名物、礼制惯例，让场面有那个年代的味道；原文里与本局冲突的史实不写成本局的事，以材料里「本局」的记载为准。\n'
+    + hits.map(h => `· 《${h.book}》${h.volume || ''}：「${h.text}」`).join('\n');
 }
 /* ---------- 此地的营生：行情、差事、可招的门客，每到一处、每过一个月照此地此时的实情整理一次 ---------- */
 const placeDue = s => s && s.clock && s.money && (!s.local || s.local.place !== geoCenter(s) || s.local.ym !== Math.floor(ymOf(s.clock))) && !(s.localFail != null && s.turn - s.localFail < 2);
@@ -5886,7 +5911,7 @@ ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.k
 玩家这一步要交兵（攻城、出战、迎敌、伏击、守城）：填 battle——敌军兵力照史料、探报、【各方势力】合理估计，写依据；胜负和伤亡由程序算，你不要定结果。
 如果玩家这回是在戏外提问（问历史、地理、局面、建议），steps 给 []，scene 不给，search 列出回答需要查的。
 acts：把玩家这一回的话照性质分开——只是问的（问）、只是盘算还没动手的（计）、向上头或别人请准的（请）、凭主角自己的职权、身份让下面的人办的（令）、越出职权或冒险去做的（试；ok 写「越权」或「冒险」）；一件事一条，tmp 写 t1、t2……；在职权之内、钱粮人手够的「令」ok 写「能」。主角职权以内、人就在跟前或就在本地的吩咐，下面的人这一回就去办、正文里见结果，不无故拖延、推诿、来回请示；拖、打折、敷衍只在他的利害、本事、路程真说得通时才有（写进 why），不为添波折而设。后患只写这一步照常理真会带出来的，不凭空加祸事。
-lookup：写这一回要从账上查的几样（从这些里挑：${LOOKUP_KEYS}；人物、地图、往事后面写名字或关键词，如「人物:王某甲」「地图:江都县」「往事:盐引」），凡要写到兵数、钱粮、家里人、旧事、某人近况的都要查；程序会把账上的原样给写正文、记账的人。
+lookup：写这一回要从账上查的几样（从这些里挑：${LOOKUP_KEYS}；人物、地图、往事后面写名字或关键词，如「人物:王某甲」「地图:江都县」「往事:盐引」），凡要写到兵数、钱粮、家里人、旧事、某人近况的都要查；要引经据典、写典章礼制、官署故实，再加「原文:关键词」（如「原文:盐铁」「原文:丧礼」），程序会去二十四史、通鉴、通典这些史书原文里查几段带出处的给你；程序会把账上的原样给写正文、记账的人。
 只输出一个 JSON 对象：{"lookup":["兵马"],"acts":[{"tmp":"t1","type":"问/计/请/令/试","what":"","who":"谁去办（主角自己办写「自己」）","to":"向谁请（申请才写）","perm":"凭什么：职权、关系、钱财","ok":"能/要批准/越权/冒险"}],"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"battle":{"fight":"这一回真要交兵才写「是」，否则空","enemy":"对手（势力或将领真名）","enemyTroops":0,"enemyQuality":"精/中/弱","enemySupply":"足/缺","place":"在哪打（当时的地名）","terrain":"平原/山地/城池/关隘/河网/山林","attacker":"我/敌","surprise":"有/无","ourForces":["参战的我方兵马名（照【国势账】里的名字）"],"ourTroops":"主角名下没有兵马时（随军、守城、统带朝廷的兵、被卷进来）：主角这一边参战的人数","ourSide":"那时主角这一边叫什么（如 某军某指挥、守城兵民）","ourQuality":"精/中/弱","basis":"敌军兵力从哪来的（史料、探报、推断）"},"realPeople":["这一回牵涉的真实历史人物的名字：只列玩家点名要见、要找、要投奔、要对付的，和此时确实就在此地、凭主角的身份够得着的（如本县的官员）；远在别处、跟主角没有来往的名人不列，不为热闹把真人请进场面（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人，一律写全名：照【本地官员名册】与上面材料；都没有的，照常理起一个合乎时代的全名","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么","risk":"他怕什么、这件事让他担什么风险","flip":"什么情况下他会拖延、反口或翻脸"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
 }
 async function getRuling(s, said) {
@@ -15695,7 +15720,8 @@ async function send(said, span, note, resume) {
     }
     if (!st) {
       const sys = DSM();
-      await citeInto(S, said);   // R-172：写正文前查几段史书原文（一回一次，s.citeNow 由 blocks 里的 citeBlock 带进材料）
+      // R-173：写正文前查几段史书原文——基础词（史书年号/真人/制度词/此地）＋推演模型定的 search 词＋lookup 里的「原文:词」＋玩家口头「查 XX 的原文」
+      await citeInto(S, said, [].concat(arr(ruling && ruling.search).slice(0, 3), arr(ruling && ruling.lookup).filter(x => /^原文[:：]/.test(String(x))).map(x => String(x).replace(/^原文[:：]/, '')), (String(said || '').match(/查(?:一下)?([^，。！？「」]{2,10}?)的?原文/) || []).slice(1)) );
       DRAFTN = 0; PHASE = 'draft'; render();
       // 改错、重写：推演和查过的材料照用，写稿不再深度思考（照问题改，快）
       const { text } = await callClaude(storyInput(S, said, span, note, sys, ruling), draftCb,

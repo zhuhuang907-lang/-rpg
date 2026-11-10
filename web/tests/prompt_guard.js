@@ -266,6 +266,10 @@ const checks = [
   ['历史原文库网页路：浏览器直连云端语料按书下载、IndexedDB 缓存（R-172）', /async function wlibLoad/.test(src) && /DecompressionStream\('gzip'\)/.test(src) && /'wlib:' \+ id/.test(src)],
   ['历史原文库桌面端：按需下载、白名单核 id、LRU 控内存（R-172）', (() => { let f = ''; try { f = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'rpg-kernel', 'core', 'histlib.js'), 'utf8'); } catch (_) { return false; } return /SAFE_ID/.test(f) && /knownId/.test(f) && /MEM_BOOKS/.test(f) && /gunzipSync/.test(f); })()],
   ['历史原文库服务端点：书目与取证检索（R-172）', (() => { let f = ''; try { f = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'rpg-kernel', 'server.js'), 'utf8'); } catch (_) { return false; } return /\/api\/histlib\/books/.test(f) && /\/api\/histlib\/cite/.test(f); })()],
+  ['随查随用：推演 search 词、lookup「原文:词」、玩家口头查原文都并进检索（R-173）', /citeInto\(S, said, \[\]\.concat\(arr\(ruling && ruling\.search\)/.test(src) && /原文\[:：\]/.test(src) && /的\?原文/.test(src)],
+  ['历史改变时照史书年号查原文：本局改元不影响检索词（R-173）', /function histEraName/.test(src) && /rulersAt\(y, s\)/.test(src) && /local !== he/.test(src)],
+  ['化用规矩进材料：措辞典章名物照原文化用，冲突史实以本局为准（R-173）', /化用它的措辞、典章、名物、礼制惯例/.test(src) && /以材料里「本局」的记载为准/.test(src)],
+  ['命中的原文摆给玩家看：翻到的资料里带书名卷名（R-173）', /site: '史书原文'/.test(src) && /feedAdd\(\[\{ t: `《\$\{g\.book\}》/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

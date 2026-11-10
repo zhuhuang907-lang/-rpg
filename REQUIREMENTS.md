@@ -1590,3 +1590,17 @@
   - rpg-kernel/core/histlib.js：loadMeta（bundled→cache→云端多源）、ensureBook（白名单 SAFE_ID＋manifest 核对才拼路径，防穿越）、二元组倒排＋IDF 打分、LRU 3 本。
   - server.js：GET /api/histlib/books、GET /api/histlib/cite?q=..&books=..&n=4（books 逐个过白名单）。
   - game.src.html：HIST_ERA_BOOKS 年代书单、HIST_TOPIC 制度词追加书、histBooksFor、wlibLoad（浏览器 DecompressionStream 解压＋polyDB 缓存）、citeInto（一回一次，挂 s.citeNow）、citeBlock（blocks 里在本地官绅之后注入）；桌面版 draft 前调 citeInto。
+
+### R-173 原文随查随用：推演要查的词、模型点名的「原文」、玩家口头查原文，都进史书检索；历史改了也化用得了
+- 来源：2026-11-11 玩家：「上传到云端的 github，保障游戏玩的时候可以轻易检索信息，并且在历史改变和其他知识的时候，可以化用」。
+- 玩家验收：
+  - 玩的时候随时能查：不用等写完正文——推演模型自己定的查证词（search）、它在 lookup 里点名的「原文:关键词」（如「原文:盐铁」「原文:丧礼」）、玩家在输入框里说「查 XX 的原文」，三路都汇进同一回的史书检索（一回一次、20 秒上限），查到的原文直接进写正文和记账的材料。
+  - 命中的原文摆到「这一回翻到的资料」上（带书名卷名），玩家等的时候看得到查了什么、查到什么。
+  - 历史改变了照样化用：检索词照史书年号算（本局改元、自建年号，不影响检索落在史书的年上；本局年号也会一并查）；材料的引用规矩写明「本局历史已经改变的（改元、换人、胜负不同）：原文拿来化用它的措辞、典章、名物、礼制惯例；原文里与本局冲突的史实不写成本局的事，以材料里『本局』的记载为准」。
+  - 「其他知识」覆盖面扩了：礼制婚丧祭礼朝仪节庆、灾异荒政物价、城池舆图这些词一出现，自动追加通典、文献通考、读史方舆纪要；玩家这一步要去的地方（州县词干）也当检索词，查它的山川形势、建置沿革。
+- 自动验收：prompt_guard 234 项全过（新增 4 条）；rules_regress 77 条全过；web/tests/qa/cite.js 扩到 12 项断言（改元后史书年号照取、三路检索词并查、同回不重查、化用规矩进材料、命中摆到资料）全 ERRS []；web/build.py 语法检查过。
+- 状态：已做，自动测试通过，玩家未验证。
+- 详情：
+  - histEraName(s)：rulersAt 照史料取本年本政权的年号（史书本位）；citeInto 的检索词＝史书年号＋本局年号（不同时）＋真人＋大事里的人＋此地词干＋追加词。
+  - citeInto(s, said, extraQs) 第二参：ruling.search 前 3 条、ruling.lookup 里的「原文:词」、said 里「查 XX 的原文」正则提取；先查过的词去重，追加命中与基础命中合并进 s.citeNow（≤6 条）。
+  - 推演提示词 lookup 说明加「原文:关键词」用法；写正文前那次 citeInto 调用改传三路追加词。
