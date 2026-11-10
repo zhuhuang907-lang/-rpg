@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 const path = require('path'), http = require('http'), fs = require('fs'), zlib = require('zlib');
 (async () => {
   // 本机小服务：/play.html 当桌面版（/api/histlib/cite 照本机服务的应答）、/corpus/ 当云端语料库
-  const WEB = path.resolve(__dirname, '../..'), COR = path.resolve(WEB, '..', 'corpus');
+  const WEB = process.env.PLAY ? path.dirname(path.resolve(process.env.PLAY)) : path.resolve(__dirname, '../..'), COR = path.resolve(WEB, '..', 'corpus');   // 完整测试里脚本被拷到临时目录跑，照 PLAY 找网页（以前照脚本所在目录找，在 GitHub 上找不到网页，一直超时，害得 Windows 版打不出来）
   const REQ = [];
   const srv = http.createServer((q, r) => {
     if (/^\/api\/histlib\/cite/.test(q.url)) {
