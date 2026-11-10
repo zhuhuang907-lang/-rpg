@@ -262,6 +262,10 @@ const checks = [
   ['同名里只有一个写得出生的并作一人，剩下的才标生卒分两人（R-170）', /dated\.length === 1/.test(src) && /out\.splice\(i, 1\)/.test(src)],
   ['南宋金元史料与制度库（R-171）', fs.existsSync(path.join(__dirname, '..', 'history', 'song-south-yuan.json')) && fs.existsSync(path.join(__dirname, '..', 'inst', 'song-south-yuan.json'))],
   ['探马先行、本局任命考课、法理凭血统（R-171）', /c\.pre = est/.test(src) && /function trackMonthly\(s\)/.test(src) && /SM\('trackMonthly'/.test(src) && /'姻亲血统'/.test(src)],
+  ['历史原文库：按年代挑书、写正文前查原文、材料带出处与照抄规矩（R-172）', /const HIST_ERA_BOOKS/.test(src) && /async function citeInto/.test(src) && /function citeBlock/.test(src) && /史书原文/.test(src) && /照这里抄/.test(src)],
+  ['历史原文库网页路：浏览器直连云端语料按书下载、IndexedDB 缓存（R-172）', /async function wlibLoad/.test(src) && /DecompressionStream\('gzip'\)/.test(src) && /'wlib:' \+ id/.test(src)],
+  ['历史原文库桌面端：按需下载、白名单核 id、LRU 控内存（R-172）', (() => { let f = ''; try { f = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'rpg-kernel', 'core', 'histlib.js'), 'utf8'); } catch (_) { return false; } return /SAFE_ID/.test(f) && /knownId/.test(f) && /MEM_BOOKS/.test(f) && /gunzipSync/.test(f); })()],
+  ['历史原文库服务端点：书目与取证检索（R-172）', (() => { let f = ''; try { f = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'rpg-kernel', 'server.js'), 'utf8'); } catch (_) { return false; } return /\/api\/histlib\/books/.test(f) && /\/api\/histlib\/cite/.test(f); })()],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

@@ -3641,6 +3641,107 @@ function castBlock(s) {
   return `【本地官绅（能确知的都是史书真人；官职以此为准）】\n` + L.map(v => `· ${v.name}${v.role ? '，' + v.role : ''}${(s.dossiers || {})[v.name] && ((s.dossiers || {})[v.name].born != null) ? `，${s.clock.y - (s.dossiers || {})[v.name].born + 1}岁` : ''}`).join('\n')
     + (arr(s.castVacant).some(p => p.place === geoCenter(s)) ? `\n（${arr(s.castVacant).filter(p => p.place === geoCenter(s)).map(p => p.post).join('、')}此刻是谁在任，史载不详——写到时可以现查）` : '');
 }
+/* ---------- R-172 历史原文库取证：写正文前照年号、人名、制度词查几段原文（全量正史＋通鉴＋政书＋兵书，见仓库 corpus/） ----------
+ *  桌面版走本机服务 /api/histlib/cite（书按需下载到 data/cache/histlib）；网页版浏览器直连云端按书下载、IndexedDB 缓存。
+ *  原文带书名卷名出处给写正文的模型：引原文必须照抄，不得改字。 */
+const HIST_ERA_BOOKS = [
+  { y0: -770, books: ['shiji', 'zhushujinian', 'guoyu'] },
+  { y0: -403, books: ['shiji', 'zhanguoce', 'zizhitongjian'] },
+  { y0: -202, books: ['shiji', 'hanshu'] },
+  { y0: 23, books: ['houhanshu', 'sanguozhi', 'zizhitongjian'] },
+  { y0: 220, books: ['sanguozhi', 'zizhitongjian'] },
+  { y0: 265, books: ['jinshu', 'zizhitongjian'] },
+  { y0: 420, books: ['nanshi', 'beishi', 'weishu'] },
+  { y0: 589, books: ['jiutangshu', 'xintangshu', 'zizhitongjian'] },
+  { y0: 907, books: ['jiuwudaishi', 'xinwudaishi'] },
+  { y0: 960, books: ['songshi', 'changbian'] },
+  { y0: 1127, books: ['songshi', 'jianyanjilu', 'xuzizhitongjian'] },
+  { y0: 1279, books: ['yuanshi', 'xuzizhitongjian'] },
+  { y0: 1368, books: ['mingshi', 'mingtongjian'] },
+  { y0: 1644, books: ['qingshigao', 'qingshilu'] },
+];
+const HIST_TOPIC = [
+  [/科举|贡举|进士|察举|九品|铨选|官制|品级|俸禄|考成|考课|磨勘/, ['tongdian', 'wenxiantongkao']],
+  [/赋税|两税|一条鞭|盐法|钱法|宝钞|铸币|漕运|常平|义仓|徭役|丁银|摊丁/, ['tongdian', 'wenxiantongkao', 'daminghuidian']],
+  [/兵制|府兵|卫所|绿营|八旗|屯田|军器|阵法|火器|马政/, ['wujingzongyao', 'sunzibingfa', 'wenxiantongkao']],
+  [/山川|关隘|渡口|里程|形胜|险要/, ['dushifangyu', 'yuanhejunxian']],
+];
+function histBooksFor(s, said) {
+  const era = HIST_ERA_BOOKS.filter(e => e.y0 <= (((s.clock || {}).y) || 0)).pop();
+  const books = new Set(era ? era.books : ['shiji']);
+  const x = String(said || '');
+  for (const [re, bs] of HIST_TOPIC) if (re.test(x)) bs.forEach(b => books.add(b));
+  return [...books].slice(0, 6);
+}
+const WLIB_BOOKS = {};   // 网页版：书 id → {passages, post, df, n}（本次会话内）
+const WLIB_OK = typeof DecompressionStream !== 'undefined';
+async function wlibLoad(id) {
+  if (WLIB_BOOKS[id]) return WLIB_BOOKS[id];
+  const cacheKey = 'wlib:' + id;
+  let text = await polyCache(cacheKey);
+  if (!text) {
+    if (!WLIB_OK) throw new Error('浏览器不支持解压');
+    const base = globalThis.WLIB_BASE || 'https://raw.githubusercontent.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/corpus/';
+    const r = await fetch(base + id + '.jsonl.gz', { signal: AbortSignal.timeout(60000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const buf = await r.arrayBuffer();
+    text = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    polyCache(cacheKey, text);
+  }
+  const passages = [], post = {}, df = {};
+  for (let i = 0; i < text.length; ) {
+    const nl = text.indexOf('\n', i); const line = nl < 0 ? text.slice(i) : text.slice(i, nl); i = nl < 0 ? text.length : nl + 1;
+    let o; try { o = JSON.parse(line); } catch { continue; }
+    const t = String(o.text || ''); passages.push({ v: o.volume || '', t });
+    for (const run of t.match(/[\u4e00-\u9fff]+/g) || []) for (let k = 0; k + 1 < run.length; k++) { const bg = run.slice(k, k + 2); (post[bg] = post[bg] || []).push(passages.length - 1); df[bg] = (df[bg] || 0) + 1; }
+  }
+  return (WLIB_BOOKS[id] = { passages, post, df, n: passages.length });
+}
+async function citeFetch(s, bookIds, qs) {
+  const ids = bookIds.slice(0, 6);
+  if (MODE === 'local') {
+    const r = await within(api('/api/histlib/cite?q=' + encodeURIComponent(qs.join(' ')) + '&books=' + ids.join(',') + '&n=4'), 15000);
+    return (r && r.ok) ? arr(r.hits) : [];
+  }
+  if (!WLIB_OK) throw new Error('网页版原文库不可用');
+  const out = [];
+  for (const id of ids) {
+    const w = await wlibLoad(id);
+    const score = new Map();
+    for (const q of qs) for (const bg of (q.match(/[\u4e00-\u9fff]+/g) || []).flatMap(run => { const a = []; for (let i = 0; i + 1 < run.length; i++) a.push(run.slice(i, i + 2)); return a; })) {
+      const lst = w.post[bg]; if (!lst) continue;
+      const wt = Math.log(1 + w.n / (w.df[bg] || 1));
+      for (const i of lst) score.set(i, (score.get(i) || 0) + wt);
+    }
+    for (const [i, sc] of score) if (sc >= 1.5) out.push({ book: id, name: id, volume: w.passages[i].v, text: w.passages[i].t, score: sc / Math.sqrt(w.passages[i].t.length) });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 4);
+}
+/** 一回查一次：年号、玩家提到的真人、制度词、眼下大事里的人。查到的原文挂 s.citeNow，citeBlock 拼进材料 */
+async function citeInto(s, said) {
+  if (!hasHist(s)) return;
+  const turn = s.turn || 0;
+  if (s.citeAt === turn) return;
+  s.citeAt = turn;
+  try {
+    const qs = [], saidX = String(said || ''), names = realNameSet(s);
+    const el = String(s.clock.yearLabel || '');
+    const m = el.match(/^([\u4e00-\u9fff]{2,6}?)(?:元|[一二三四五六七八九十百千]+)年?$/);
+    if (m && m[1]) qs.push(m[1]);
+    for (const n of names) if (n.length >= 2 && saidX.includes(n)) { qs.push(n); if (qs.length >= 4) break; }
+    for (const e of histEvents(s, s.clock.y * 12, s.clock.y * 12 + 12).slice(0, 6)) for (const who of arr(e.who)) if (who && who.length >= 2 && !qs.includes(who)) { qs.push(who); break; }
+    if (qs.length >= 1 && qs.length <= 2 && /\[|」|？|\?/.test(saidX)) qs.push(cut(saidX.replace(/[\s，。！？「」？\?]/g, ''), 8));
+    if (!qs.length) { const f = figuresAt(s, s.clock.y).filter(x => x.alive)[0]; if (f) qs.push(f.name); }
+    if (!qs.length) return;
+    const hits = await within(citeFetch(s, histBooksFor(s, saidX), qs.slice(0, 4)), 20000);
+    s.citeNow = hits.map(h => ({ book: h.name, volume: h.volume, text: cut(h.text, 120) }));
+  } catch (_) { s.citeNow = ''; }
+}
+function citeBlock(s) {
+  const hits = arr(s.citeNow);
+  if (!hits.length) return '';
+  return '【史书原文（引原话、引典故时照这里抄，一个字不改；与本局史事冲突时以史事为准）】\n' + hits.map(h => `· 《${h.book}》${h.volume || ''}：「${h.text}」`).join('\n');
+}
 /* ---------- 此地的营生：行情、差事、可招的门客，每到一处、每过一个月照此地此时的实情整理一次 ---------- */
 const placeDue = s => s && s.clock && s.money && (!s.local || s.local.place !== geoCenter(s) || s.local.ym !== Math.floor(ymOf(s.clock))) && !(s.localFail != null && s.turn - s.localFail < 2);
 async function buildLocal(s) {
@@ -11352,6 +11453,7 @@ function blocks(s, forStory) {
   const hh = arr(s.household);
   const fb = familyBlock(s), pb = policiesBlock(s); if (fb) L.push(fb); if (pb) L.push(pb.trim());
   { const cb = castBlock(s); if (cb) L.push(cb); }
+  { const qb = citeBlock(s); if (qb) L.push(qb); }
   if (s.jail) L.push(`【主角在押】在${s.jail.where}，罪名：${s.jail.charge || '未定'}，自${s.jail.since}；场面在监里：能见的只有狱卒、牢头、同监的人、来探监的人，能做的只有托人、打点、写状子、熬；正文写出获释的经过（审结开释、保释、赎罪、大赦、越狱）以前，主角出不了监`);
   if (arr(s.cases).length) L.push('【主角牵涉的案子】' + s.cases.map(c => `${c.name}（${c.kind || ''}；主角是${c.role || '？'}；到了「${c.stage || '？'}」${c.facts ? '；已知：' + c.facts : ''}${c.suspects ? '；疑点：' + c.suspects : ''}${c.deadline ? '；限期' + c.deadline : ''}）`).join('；'));
   if (arr(s.business).length) L.push('【主角的生意】' + s.business.map(b2 => `${b2.name}（${b2.kind || ''}${N0(b2.capital) ? '，本钱' + fmtN(N0(b2.capital)) : ''}${b2.stock ? '，存货' + b2.stock : ''}${b2.credit ? '，赊欠：' + b2.credit : ''}，每月进${fmtN(N0(b2.revenue) || 0)}出${fmtN(N0(b2.cost) || 0)}${b2.partners ? '，' + b2.partners : ''}）`).join('；'));
@@ -14495,6 +14597,7 @@ async function send(said, span, note, resume) {
     }
     if (!st) {
       const sys = DSM();
+      await citeInto(S, said);   // R-172：写正文前查几段史书原文（一回一次，s.citeNow 由 blocks 里的 citeBlock 带进材料）
       DRAFTN = 0; PHASE = 'draft'; render();
       // 改错、重写：推演和查过的材料照用，写稿不再深度思考（照问题改，快）
       const { text } = await callClaude(storyInput(S, said, span, note, sys, ruling), draftCb,

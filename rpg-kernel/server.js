@@ -399,6 +399,16 @@ const routes = {
     };
   },
   'GET /api/health': async () => ({ ok: true, node: process.version }),
+  /* 历史原文库（corpus/，全量正史、通鉴、政书、兵书）：书目清单 + 原文取证检索。
+     第一次用到某本书才从云端下（0.1–11 MB/本，存 data/cache/histlib），索引只在内存里建 */
+  'GET /api/histlib/books': async () => { try { const M = await require('./core/histlib').loadMeta(); return { ok: true, books: M.books }; } catch (e) { return { ok: false, why: String(e && e.message || e).slice(0, 120) }; } },
+  'GET /api/histlib/cite': async (_b, q) => {
+    const qs = String(q.get('q') || '').slice(0, 60); const ids = String(q.get('books') || '').split(',').filter(x => /^[a-z0-9_]{2,40}$/.test(x)).slice(0, 6);
+    const n = Math.max(1, Math.min(8, Number(q.get('n')) || 4));
+    if (!qs || !ids.length) return { ok: false, why: '缺检索词或书单' };
+    try { const hits = await require('./core/histlib').search(qs, ids, n); return { ok: true, hits }; }
+    catch (e) { return { ok: false, why: String(e && e.message || e).slice(0, 120) }; }
+  },
   /* CBDB（哈佛中国历代人物传记资料库）代查：页面直连常被跨域拦下、国内也慢；这里查一次存本机 */
   'GET /api/cbdb': async (_b, q) => {
     const name = String(q.get('name') || '').slice(0, 12); if (!name) return { ok: false, why: '没给名字' };

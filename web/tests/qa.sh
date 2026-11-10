@@ -39,6 +39,7 @@ FP0=$(bash "$ROOT/scripts/fingerprint.sh")   # 这一轮测的是哪一份源码
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
 say "江山时序：本机服务替玩家下到 data/cache/jiangshan、只认两个文件、不是地图数据不收、下过不再下"; JS=$(node "$ROOT/web/tests/jsmapsrv.js" 2>&1 | tail -1); echo "$JS"; echo "$JS" | grep -q "ERRS \[\]" || bad "江山时序下载"
+say "历史原文库：65 本在库、按书检索真语料带出处、非法书号安全跳过"; CS=$(cd "$ROOT" && node "$ROOT/web/tests/qa/citesrv.js" 2>&1 | tail -1); echo "$CS"; echo "$CS" | grep -q "ERRS \[\]" || bad "历史原文库"
 say "端口被占：别的程序占着往后挪、游戏已经开着不另开"; PF=$(node "$ROOT/web/tests/portfallback.js" 2>&1 | tail -1); echo "$PF"; echo "$PF" | grep -q "ERRS \[\]" || bad "端口被占"
 KEYVAL= start ai.js && run "填 Key：粘贴、保存、换 Key、型号、博查、开关、输入不丢" 300 node keyflow.js
 start ai.js && {
@@ -87,6 +88,7 @@ start ai.js && {
   run "自己改的元接着数，不被史书年号盖掉（R-169）" 120 env PLAY="$ROOT/web/play.html" node era.js
   run "南宋金元新史料：1127–1368 年号、真人、史事、制度库都有，真人照生卒出场（R-171）" 120 env PLAY="$ROOT/web/play.html" node era_ssy.js
   run "探马先行到城下当回就打；你任命的官岁末考课（上中下、连两年下考罢黜、七十致仕、卒年病故出缺）；法理凭血统（R-171）" 150 env PLAY="$ROOT/web/play.html" node r171.js
+  run "历史原文库取证：按年代挑书、检索词带年号真人、桌面与网页两路出带出处的原文（R-172）" 180 env PLAY="$ROOT/web/play.html" node cite.js
   run "身份转换照账接上：佃农落草招安做官（队伍编营、山寨散、恶名清、按钮收起）罢官交兵权再拉队伍；投军不能拉队伍、逃散成流民能拉；寨主称王队伍编军、山寨并地盘、主公了结；布商捐监生不是官、捐实官候补十月补缺，全真点（R-153）" 200 env PLAY="$ROOT/web/play.html" node shift.js
   run "皇子太子王爷贵族：清皇子问安结交构陷（家谱里的兄弟）韬晦、够格立太子、猜忌到头被废圈禁、清不之藩；明初王爷就藩护卫九千、添募护卫、削藩奉诏、起兵清君侧；唐亲王不之藩；晋门阀门生荐举子弟，全真点（R-157）" 200 env PLAY="$ROOT/web/play.html" node royal.js
   run "各朝入仕：西晋士族寒门请中正品评（上品无寒门）、三年清定、托人打点、照乡品起家清浊；东汉举孝廉拜郎中满一年外补县长、举茂才除县令；唐门荫授官；明有报考，全真点（R-156）" 200 env PLAY="$ROOT/web/play.html" node rushi.js
