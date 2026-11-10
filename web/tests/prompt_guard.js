@@ -243,10 +243,12 @@ const checks = [
   ['zcode 那批改正：互谋走 DeepSeek、敛财不要对象、票拟封驳照朝代、对岸敌军照坐标（R-163 补正）', /kind: '推演', thinking: false, ds: true \}\);   \/\* 玩家点名朝臣/.test(src) && /\['观望', '敛财'\]\.includes\(op\)/.test(src) && /draftOK = yy >= 1426/.test(src) && /liOf\(hav\(q, end\)\) <= 30/.test(src)],
   ['党争反噬：一党把住中枢，别派怨气月涨（R-167）', /一党把住中枢/.test(src) && /别派怨气/.test(src) && /seatFav/.test(src)],
   ['国策长期效应：按类别每月连带影响（R-167）', /AREA_FX/.test(src) && /done\.length >= 5/.test(src)],
-  ['廷推：换重臣先经九卿会推，可拦；君权重可中旨直除（R-167）', /廷推未过/.test(src) && /九卿以为资望不足/.test(src) && /中旨直除/.test(src)],
+  ['廷推：换重臣先经九卿会推，可拦；君权重可中旨直除（R-167）', /\$\{T\[0\]\}未过/.test(src) && /以为资望不足/.test(src) && /\['廷推', '九卿'\]/.test(src) && /中旨直除/.test(src)],
   ['诏狱：重案可下诏狱，人进监、官印交了（R-167）', /'诏狱'/.test(src) && /案情不重，够不上诏狱/.test(src)],
   ['清议：收钱枉法掉、拒贿办成涨，影响保举成色（R-167）', /qingyi/.test(src) && /清议对你不利/.test(src) && /清议推重你/.test(src)],
   ['制度现状进材料：朝章与物议（R-167）', /function instLine/.test(src) && /朝章与物议/.test(src)],
+  ['国计民生按季推演：GLM 照天时、战事、赋役钱法、本朝制度推年成米价工钱商贸流民和制度落地，程序照档折算落账（R-168）', /async function msSim\(s\)/.test(src) && /function msLand\(/.test(src) && /kind: '推演', detached: true \}\);\n  const d = parseJSON\(text\); if \(!d\) \{ s\.msFail/.test(src) && /id: 'minsheng'/.test(src) && /msLine\(s\)/.test(src) && /data-ms="pingtiao"/.test(src) && /"harvest":"","harvestWhy":""/.test(src)],
+  ['用重臣过的那道关照朝代叫、换在位的人也要过（R-167 补正）', /const tuiOf = s =>/.test(src) && /who !== \(C\[seat\] \|\| \{\}\)\.who/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

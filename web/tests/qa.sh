@@ -81,7 +81,8 @@ start ai.js && {
   run "尾项补完：移驻绕开把守的关、敌军出来截路、对岸有敌军抢渡水战、粮队被劫；夺嫡输了的下场、真人宗室照史料定处境、袭爵清降明不降；公主和亲下嫁入道；女子说亲入宫出家；外放内调；殿试中进士授官，全真点（R-153 R-154 R-155 R-157 R-149）" 300 env PLAY="$ROOT/web/play.html" node finish.js
   run "人称称谓与 GLM 分工：二十种身份叫法、女主角家人下人叫法、第二人称规矩、唐朝写王爷被挑出；只填 GLM 能开局、首页有 GLM 栏；当面说说亲走 GLM（R-162、R-135）" 200 env PLAY="$ROOT/web/play.html" node address.js
   run "继承法四种真管用、死后照法定人；内廷宦官外戚涨落、抑与倚重全真点（R-164、R-165）" 200 env PLAY="$ROOT/web/play.html" node inner.js
-  run "zcode 那批改正：互谋走 DeepSeek、不构陷君主本人、敛财带单位、票拟封驳照朝代、渡河看对岸敌军（R-163 补正）" 200 env PLAY="$ROOT/web/play.html" node r163fix.js
+  run "zcode 那批改正：互谋走 DeepSeek、不构陷君主本人、敛财带单位、票拟封驳照朝代、渡河看对岸敌军；用重臣那道关照朝代叫（R-163、R-167 补正）" 200 env PLAY="$ROOT/web/play.html" node r163fix.js
+  run "国计民生按季推演：年成米价商贸流民制度落地落账、商税军粮跟着变、写正文带市面；囤米粜米施粥开仓平粜以工代赈全真点（R-168）" 200 env PLAY="$ROOT/web/play.html" node minsheng.js
   run "身份转换照账接上：佃农落草招安做官（队伍编营、山寨散、恶名清、按钮收起）罢官交兵权再拉队伍；投军不能拉队伍、逃散成流民能拉；寨主称王队伍编军、山寨并地盘、主公了结；布商捐监生不是官、捐实官候补十月补缺，全真点（R-153）" 200 env PLAY="$ROOT/web/play.html" node shift.js
   run "皇子太子王爷贵族：清皇子问安结交构陷（家谱里的兄弟）韬晦、够格立太子、猜忌到头被废圈禁、清不之藩；明初王爷就藩护卫九千、添募护卫、削藩奉诏、起兵清君侧；唐亲王不之藩；晋门阀门生荐举子弟，全真点（R-157）" 200 env PLAY="$ROOT/web/play.html" node royal.js
   run "各朝入仕：西晋士族寒门请中正品评（上品无寒门）、三年清定、托人打点、照乡品起家清浊；东汉举孝廉拜郎中满一年外补县长、举茂才除县令；唐门荫授官；明有报考，全真点（R-156）" 200 env PLAY="$ROOT/web/play.html" node rushi.js

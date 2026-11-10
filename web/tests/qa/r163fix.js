@@ -33,5 +33,9 @@ const path = require('path');
       S.forces.push({ name: '敌水师', owner: '敌', troops: 5000, at: '长江', foe: true, march: { to: '乙岸' }, wrPos: { lon: 114.05, lat: 30.2 } });
       const b2 = routeRisk(S, R, S.forces[0], '乙岸').join('；'); return { a, b: b2 }; });
     if (/对岸/.test(r.a)) bad.push('对岸没敌军也说有：' + r.a); if (!/对岸乙岸有敌水师/.test(r.b)) bad.push('对岸有敌军没查出来：' + r.b); }
+  // 用重臣过的那道关照朝代叫，换掉在位的人也要过（2026-11-10 补正 zcode 的廷推）
+  for (const [y, nm] of [[1080, '封还词头'], [1600, '廷推'], [200, '公卿廷议']]) { await setup(y);
+    const r = await ev(() => { S.renown = 10; lawsOf(S).crown = 2; const n0 = arr(S.chronicle).length; councilSet(S, '宰辅', '乙参', null); return { add: arr(S.chronicle).slice(n0).map(x => x.what).join('；'), m: ORGMSG }; });
+    if (!r.add.includes(nm) || (nm !== '廷推' && /廷推|九卿/.test(r.add + r.m))) bad.push(`${y}年换宰辅没照朝代叫「${nm}」、或换掉在位的人没过这道关：` + JSON.stringify(r)); }
   const all = bad.concat(errs); console.log('ERRS', JSON.stringify(all)); await b.close(); process.exit(all.length ? 1 : 0);
 })().catch(e => { console.log('ERRS', JSON.stringify(['崩了：' + e.message])); process.exit(1); });
