@@ -1531,3 +1531,23 @@
     - 界面上的「推演」字样换成玩家看得懂的话。
 - 自动验收：tests/qa/logi2.js、tests/qa/era.js；提示词护栏三项（后勤补全、真人数量、没有空账）。
 - 状态：已做，自动测试通过，玩家未验证。
+
+### R-170 真人可见性与防穿模：三源合一、平民身边有真人、同名不同人
+- 来源：2026-11-10 玩家：「我对于历史真实人物和政治系统非常不满意，很多真人都没出现，对了，我在这里可能只是平民，不一定是规则」「很多内容比如人物等等，可以现场用 bocha 或者 ds、glm 来搜索，要足够灵活，保障历史准确性的情况下可以想一个最少 token 的办法，不过必须搜索的非常多，而且根据时间不断更新和推演，历史人物不论多出名，该出现的就出现，记住别搞穿模了，比如历史人物提前出山，别后面出来两个历史人物，然后你敷衍他俩同名」。
+- 玩家验收：
+  - 同一个年代能见到的真人明显变多：不只读史料包，人物档案、朝堂全表里的人也算进来；切片上限从 18 人放到 30 人。
+  - 平民身边也有真名：知县/县令、乡绅族长举人、行会商帮寺院三路照年份现查；查不到真名的位子只写「史载不详」，绝不编一个名字充数。
+  - 同名不同人不许合并：两个张三各自带生卒（如「张三（1000–1100）」），写正文的模型会被告知「有两个同名的历史人物……不许混成一个人」。
+  - 该出现才出现：档案里的真人未出生、已故都不能出场；史料人物照 posts 的年份给官，不提前出山。
+  - 朝堂全表一年一查（原来三年），前 40 个真人进人物册，存档压缩也不淘汰；家业相关的人（core/family）永不淘汰。
+  - 人物档案上限从 30 人放到 120 人，长局里查过的人不会转头就忘。
+- 自动验收：prompt_guard 224 项全过；rules_regress 77 条全过（新增 figs 四条：档案真人并进 figuresAt、同名双人标生卒、同名只一人有生年并作一人、未出生/已故拦截）；courtfull、roster、hh、life、real3、samename 全 ERRS []；全套 qa.sh 见提交说明。
+- 状态：已做，自动测试通过，玩家未验证。
+- 详情：
+  - figuresAt 三源合并：史料包 figures + s.dossiers 真人 + s.court.people 真人；key 为 name|born，同名不同人分别保留，重名时加 disambig「生–卒」。
+  - 打分阈值 3→2、上限 18→30；平民（无官职、非一方之主）本地人 +7、朝堂来源 +1，让街坊官绅排得进来。
+  - courtDue 3 年→1 年；courtFullDS 末尾把前 40 个 real 写进 s.people（core:true, court:true），人物册立刻可用。
+  - shrink：人物上限 220，v.core || v.family 永不淘汰（200KB 压缩时也保留）；dossiers 30→120。
+  - 新增 castDue/buildCast/castBlock：三次检索（县+年份 知县/县令、乡绅族长举人、行会商帮寺院），一次 maxTokens 900 的 JSON；真名进 people 与 dossiers（born/died/native/post/real/src），查不到记 s.castVacant 并写「史载不详」；s.cast={place,y,n,reals} 按年增量；后台 job id 'cast'；blocks 在 familyBlock/policiesBlock 之后注入 castBlock。
+  - courtFullDS 提示词与 JSON schema 增加 born/died；解析存 born/died；figuresAt 的 court 分支优先用 court 自己的生卒，避免借档案生卒把两个同名人合成一个。
+  - mentionedFigures：档案真人未出生写「此时尚未出生（${born}年生）」、已故写「已于${died}年故去，不得出场」；figuresAt 同名两人时提示「有两个同名的历史人物……不许混成一个人」。

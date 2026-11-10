@@ -252,6 +252,14 @@ const checks = [
   ['没有只写不读的空账：存档里记下的每一项都有地方用到（R-169）', (() => { const w = new Set((src.match(/\b[sS]\.([a-zA-Z_]\w*)\s*=(?!=)/g) || []).map(x => x.replace(/^[sS]\.|\s*=$/g, '').trim())), ok = new Set(['gameVer', 'govOld', 'logicAt']); for (const k of w) { if (ok.has(k)) continue; if (!new RegExp('\\.' + k + '\\b(?!\\s*=(?!=))').test(src)) return false; } return true; })()],
   ['后勤补全：本色漕运入太仓、就地征粮、敌军远来逃散（R-169）', /其中\$\{Math\.round\(sh \* 10\)\}成征本色/.test(src) && /function forage\(s, fname\)/.test(src) && /远来\$\{Math\.round\(li\)\}里，粮运不继/.test(src) && /data-logi="forage"/.test(src)],
   ['内置史料的真人：六个时代各至少一百五十人，当过官的都有任职年份（不仕的僧道学者除外）（R-169）', ['han-sanguo', 'jin-16', 'tang-late', 'song-north', 'ming-late', 'qing-mid'].every(n => { const d = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'history', n + '.json'), 'utf8')); return d.figures.length >= 150 && d.figures.every(f => f.name && Array.isArray(f.posts) && f.posts.every(p => p[0] != null)) && d.figures.filter(f => !f.posts.length).length <= 8; })],
+  ['真人扩源：史料＋档案库＋朝堂全表三处合并，同名不同人靠生卒区分（R-170）', /fromDossier/.test(src) && /fromCourt/.test(src) && /disambig/.test(src) && /两个同名的历史人物/.test(src)],
+  ['人物切片放宽：阈值 2、上限 30、平民本地加权（R-170）', /score\(f\) >= 2/.test(src) && /slice\(0, 30\)/.test(src) && /commoner \? 7/.test(src)],
+  ['朝堂真人进人物册：前 40 人写入 people、一年一查（R-170）', /core: true, court: true/.test(src) && /s\.clock\.y - \(s\.court\.y \|\| 0\) >= 1/.test(src)],
+  ['人物分级永不淘汰＋档案 120（R-170）', /v\.core \|\| v\.family/.test(src) && /DS\.length > 120/.test(src)],
+  ['平民本地官绅小名单：检索真名、查不到写史载不详、进材料（R-170）', /function buildCast/.test(src) && /castBlock/.test(src) && /史载不详/.test(src) && /id: 'cast'/.test(src)],
+  ['防穿模：档案库真人拦提前出山与死后出场（R-170）', /此时尚未出生（\$\{D\.born\}年生）/.test(src) && /已于\$\{D\.died\}年故去，不得出场/.test(src)],
+  ['本地小名单只收查得实的真名，换了地方不把旧人当本地（R-170）', /nm\.length >= 2 && real/.test(src) && /v\.place = here/.test(src) && /v\.place !== geoCenter\(s\)/.test(src)],
+  ['同名里只有一个写得出生的并作一人，剩下的才标生卒分两人（R-170）', /dated\.length === 1/.test(src) && /out\.splice\(i, 1\)/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
