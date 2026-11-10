@@ -3002,6 +3002,7 @@ function campaignTick(s, days) {
       if (r) { applyBattle(s, r); s.lastCampBattle = r; const lost = /败/.test(r.outcome); out.push(foeNote(s, A.power, '设伏', `在${A.place}伏击${f.name}：我军${r.outcome}，我伤亡${fmtN(r.deadUs, '人')}、敌${fmtN(r.deadThem, '人')}${lost ? '，' + f.name + '退回' + (c.from || f.at) : ''}`, '', true)); if (lost) { c.state = '败回'; f.at = c.from || f.at; f.status = '败退'; continue; } } } }
     if (c.done < c.li) { out.push(`${f.name}行军中：离${c.target}还有约${Math.round(c.li - c.done)}里`); continue; }
     const G = garrisonAt(s, c.target);
+    if (c.mode === '攻' && !G.known && G.owner && c.pre) { f.at = c.target; f.status = '兵临城下'; out.push(`${f.name}兵临${c.target}，探马早已探明守军虚实`); out.push(...campResolve(s, c, c.pre)); continue; }   /* 行军路上探马先行（R-171）：到了城下当回就打，不再等一回 */
     if (c.mode === '攻' && !G.known && G.owner) { c.state = '待探报'; f.at = c.target; f.status = '兵临城下'; out.push(`${f.name}兵临${c.target}，正派探马打探${G.owner}守军虚实`); continue; }
     out.push(...campResolve(s, c, null));
   }
@@ -3021,16 +3022,19 @@ function campaignTick(s, days) {
   if (out.length) s.campNews = out; else s.campNews = [];
   return out.map(x => '军报：' + x);
 }
-const scoutDue = s => arr(s.campaigns).some(c => c.state === '待探报') && !(s.scFail != null && s.turn - s.scFail < 1);
+const scoutPre = s => arr(s.campaigns).find(c => c.state === '行军' && c.mode === '攻' && !c.pre && !c.preTried && (() => { const G = garrisonAt(s, c.target); return !G.known && G.owner; })());
+const scoutDue = s => (arr(s.campaigns).some(c => c.state === '待探报') || !!scoutPre(s)) && !(s.scFail != null && s.turn - s.scFail < 1);
 /** 探报：照史料估那个地方此时的守军（人数、精粗、守将、城防），估完当场结算这一仗 */
 async function campScout(s) {
-  const c = arr(s.campaigns).find(x => x.state === '待探报'); if (!c) return 0; const y = s.clock.y, yl = s.clock.yearLabel || y + '年', G = garrisonAt(s, c.target);
+  const c = arr(s.campaigns).find(x => x.state === '待探报') || scoutPre(s); if (!c) return 0; const early = c.state === '行军'; if (early) c.preTried = true; const y = s.clock.y, yl = s.clock.yearLabel || y + '年', G = garrisonAt(s, c.target);
   const B = await bochaDeep(s, [`${c.target} ${yl} 守军`, `${c.target} ${y}年 守将 兵力`, `${G.owner} ${y}年 兵力 驻防`], 20).catch(e => { if (e && e.code === 'cancelled') throw e; return { text: '' }; });
   const { text } = await callClaude(`一局历史游戏：${timeText(s.clock)}，主角的兵马到了${c.target}城下（属${G.owner || '别家'}）。照史料估此时${c.target}的守军：人数、精粗、守将（史料里的真人，没有写空）、地形城防。照这个年代此地的兵制、驻防、史料；资料没有的照最相近的史实推，why 写依据。数字照推的写，不照抄空位。
 ${B.text || '（没搜到资料）'}
 只输出一个 JSON 对象：{"troops":null,"quality":"精/中/弱","general":"","terrain":"城池/关隘/平原/山地/河网","why":""}`, null, { maxTokens: 800, temperature: 0.1, kind: '检索', detached: true, thinking: false });
   const d = parseJSON(text); if (!d || num(d.troops) == null) { s.scFail = s.turn; return 0; }
-  c.terrain = one(d.terrain, 4) || ''; const out = campResolve(s, c, { troops: num(d.troops), quality: one(d.quality, 2), general: one(d.general, 8), owner: G.owner, why: one(d.why, 60) });
+  c.terrain = one(d.terrain, 4) || ''; const est = { troops: num(d.troops), quality: one(d.quality, 2), general: one(d.general, 8), owner: G.owner, why: one(d.why, 60) };
+  if (early) { c.pre = est; s.campNews = arr(s.campNews).concat([`探马先行回报：${c.target}约有${G.owner}守军${fmtN(est.troops, '人')}${est.general ? '，守将' + est.general : ''}`]); return 1; }   /* 路上先探明，到了当回就打 */
+  const out = campResolve(s, c, est);
   s.campNews = arr(s.campNews).concat(out); s.chronicle = arr(s.chronicle).concat(out.map(t => ({ turn: s.turn, when: timeText(s.clock), who: c.force, what: t }))); return out.length;
 }
 function campBlock(s) {
@@ -8911,7 +8915,7 @@ function claimAdd(s, owner) {
   if (!arr(s.powers).concat((() => { try { return realmPowers(s); } catch (_) { return []; } })()).some(p => p && (p.name === nm || String(nm).includes(p.name)))) {   /* 页上列的是天下各国（realmPowers），这里也照它认（原来只认账上的，页上的按钮点了说「天下没有这一家」） */ ORGMSG = `天下没有「${nm}」这一家`; return null; }
   /* 法理要有凭据（2026-11-09 补正：原来哪一家都能凭空登记）：丢给他的旧地、曾是你的藩属、国号同出一源，才算真法理；都没有只能「伪造谱牒」，名声掉得多、对方记恨 */
   const lost = Object.entries(s.mapOwn || {}).filter(([, o]) => o && o.from === '你' && String(o.who || '').includes(nm)).map(([k]) => k), D = (s.diplo || {})[nm] || {}, me = String(s.place.polity || '').replace(/[（(].*$/, ''), root = x => String(x).replace(/^[东西南北前后]/, '');
-  const basis = lost.length ? `旧疆（${lost.slice(0, 3).join('、')}）` : arr(D.ties).includes('臣属') || arr(D.was).includes('臣属') ? '旧属' : me && root(me) === root(nm) && me !== nm ? '同出一源的正统' : '';
+  const basis = lost.length ? `旧疆（${lost.slice(0, 3).join('、')}）` : arr(D.ties).includes('臣属') || arr(D.was).includes('臣属') ? '旧属' : arr(D.ties).some(x => /姻|和亲|甥舅|翁婿/.test(x)) || arr(s.household).some(m => !m.dead && /妻|妾|母|妃|后/.test(m.relation || '') && String((m.note || '') + (m.origin || '')).includes(nm)) ? '姻亲血统' : me && root(me) === root(nm) && me !== nm ? '同出一源的正统' : '';   /* 凭血统（R-171）：两家结过亲、你的后妃母亲出自那一家 */
   s.claims.push({ owner: nm, basis: basis || '伪造谱牒', ym: Math.floor(ymOf(s.clock)) });
   s.renown = Math.max(0, (num(s.renown) || 0) - (basis ? 2 : 8)); if (!basis) { const d0 = dipOf(s, nm); d0.att = Math.max(-100, (num(d0.att) || 0) - 10); }
   return lifeNote(s, '朝政', basis ? `登记对${nm}的法理（${basis}）：往后可以此名义宣战，也可以拿来谈` : `对${nm}本无旧疆旧属，只能伪造谱牒、捏造旧约来立法理：名声掉了，${nm}记恨`);
@@ -10078,6 +10082,21 @@ function factionMonthly(s) { if (!isRuler(s)) return []; const out = [], ym = Ma
     if (pw >= 30 && (num(f.grudge) || 0) >= 5) { const k = (s.fisc && s.fisc.pol.tax === '重') ? '减赋' : L.crown >= 3 ? '放权' : '罢免'; const foe = k === '罢免' ? (arr(s.factions).find(x => x !== f && x.leader && x.leader !== s.protagonist.name) || {}).leader : '';
       if (k === '罢免' && !foe) continue; s.ultimatum = { fac: f.name, leader: f.leader, k, foe, pw, ym }; out.push(`${f.leader}率${f.name}联名上疏要挟：要你${DEMANDS[k]}${foe ? '（罢免' + foe + '）' : ''}，两个月内不答应就起兵`); break; } }
   return out; }
+/* ========== 本局任命的官每年考课（R-171，STATUS 里一直挂着的「玩家碰过的人往后的考课、出缺补人」）：
+ *  史书上的人照史书走（histTick、orgRefresh 管）；你亲手任命的位子不再有史书可照，由程序每年岁末考一回：
+ *  照他理政（武职照统兵）的本事、对你的好恶、吏治清浊定上中下考；连两年下考罢黜，七十岁以上致仕，史书上的卒年到了病故——
+ *  出缺的位子空出来，交后台照史料补人（orgseek），你也可以再任命 ========== */
+function trackMonthly(s) { const y = s.clock.y; if (s.trackY == null) { s.trackY = y; return []; } if (y <= s.trackY) return []; s.trackY = y; const out = [], G = (s.gov && s.gov.stats) || {};
+  for (const n of arr(s.org && s.org.nodes)) for (const q of arr(n.posts)) { if (!q.byPlayer || !q.holder) continue; const who = q.holder, v = (s.people || {})[who] || {}, D = (s.dossiers || {})[who] || {};
+    const age = num(v.age) ?? (D.born != null ? y - D.born : null), mil = /将|兵|军|卫|戎|督|帅|尉/.test(q.title || '');
+    const vacate = why => { q.holder = ''; q.src = ''; q.byPlayer = false; q.status = '出缺'; const t = `${n.name}${q.title}${who}${why}，位子出缺`; out.push(t); s.trackLog = arr(s.trackLog).concat([{ y, t }]).slice(-12); };
+    if (D.died != null && D.died <= y - 1) { vacate('病故'); continue; } if (age != null && age >= 70) { vacate('年届七十致仕'); continue; }
+    const ab = abil(s, who, mil ? '统兵' : '理政') ?? 50, fav = num(v.favor) ?? 0, sc = ab + (fav >= 30 ? 5 : fav <= -30 ? -10 : 0) - Math.max(0, (N0(G['腐败']) || 30) - 40) / 4 + (seeded(y * 31 + who.length * 7 + String(q.title).length) - 0.5) * 20;
+    const grade = sc >= 68 ? '上' : sc >= 45 ? '中' : '下'; q.kao = arr(q.kao).concat([{ y: y - 1, g: grade }]).slice(-3);
+    if (grade === '上' && s.people && s.people[who]) s.people[who].favor = Math.min(100, fav + 3);
+    if (grade === '下' && arr(q.kao).slice(-2).every(k => k.g === '下') && q.kao.length >= 2) { if (s.people && s.people[who]) s.people[who].favor = Math.max(-100, fav - 8); vacate('连两年考居下等，罢黜'); continue; }
+    const t = `${n.name}${q.title}${who}${y - 1}年考课${grade}等`; s.trackLog = arr(s.trackLog).concat([{ y, t }]).slice(-12); if (grade !== '中') out.push(t); }
+  return out; }
 /* ========== 内廷：宦官、外戚（R-165，zcode 留的「后宫外戚宦官」）：
  *  宦官势——君权收于上、君主年幼、不理朝政时涨，涨到六十以上吏治坏（腐败涨）、朝臣派系怨；八十以上来「宦官擅权」临门之事；
  *  外戚势——有宠妃（情分六十以上）或幼主有母后在时涨，六十以上进项被侵吞、外戚一派坐大；八十以上来「外戚专政」；
@@ -10139,6 +10158,7 @@ function politicsHtml(s) { if (!isRuler(s)) return ''; const C = councilOf(s), C
     ${IL.length ? `<div class="muted" style="font-size:12px">朝中暗流：${IL.map(x => `${esc(x.who)}${esc(x.did)}`).join('；')}</div>` : ''}
     <div class="h" style="font-size:14px">君权与立储</div><div class="opost">君权「${['', '放权于臣', '中', '收权于上'][L.crown]}」<button class="link" data-law="crown" data-v="up">收权</button><button class="link" data-law="crown" data-v="down">放权</button> · 立储「${(SUCC_LAW[L.succ] || SUCC_LAW['嫡长'])[0]}」${Object.keys(SUCC_LAW).filter(v => v !== L.succ && succOK(s, v)).map(v => `<button class="link" data-law="succ" data-v="${v}" title="${esc(SUCC_LAW[v][1])}">改为${SUCC_LAW[v][0]}</button>`).join('')}${(h => h ? ` <span class="muted">（照此法该承继的：${esc(h.relation)}${esc(h.name)}）</span>` : '')(heirOf(s))}</div>
     ${innerHtml(s)}
+    ${arr(s.trackLog).length ? `<div class="muted" style="font-size:12px">你任命的官考课：${s.trackLog.slice(-4).map(x => esc(x.t)).join('；')}</div>` : ''}
     ${V.length ? `<div class="h" style="font-size:14px">藩属岁贡助兵</div>${V.map(([n, D]) => `<div class="opost">${esc(n)}：岁贡助兵「${esc(D.contract || '常')}」${Object.keys(CONTRACT).filter(k => k !== (D.contract || '常')).map(k => `<button class="link" data-contract="${esc(n)}" data-k="${k}">改${k}</button>`).join('')} <span class="muted">（对你${esc(dipWord(D.att))}）</span></div>`).join('')}` : ''}${(() => { const CL = arr(s.claims), PW = realmPowers(s).filter(p => p && p.name && p.name !== String(s.place.polity || '').replace(/[（(].*$/, '')).slice(0, 8); return (PW.length || CL.length) ? `<div class="h" style="font-size:14px">法理宣称</div>${PW.map(p => `<div class="opost">${esc(p.name)}${CL.some(c => c && c.owner === p.name) ? ' <span class="att onpath">已登记法理</span>' : ` <button class="link" data-claim="${esc(p.name)}">登记法理</button>`}</div>`).join('')}${CL.length ? `<div class="muted" style="font-size:12px">已登记：${CL.map(c => esc(c.owner) + (c.basis ? '（凭' + esc(c.basis) + '）' : '')).join('、')}（宣战时可作名分；没有旧疆旧属的只能伪造谱牒，名声掉得多、对方记恨）</div>` : ''}` : ''; })()}`; }
 /** 扯旗称王（需求台账 R-147）：有了山寨、打下一座县城、人到一千，就能立国号称王，接到一方之主那条线；原来的朝廷当即视你为敌 */
 function crownSelf(s, name) { const f = partyF(s); name = String(name || '').trim().replace(/[国王]+$/, '').slice(0, 3);
@@ -13329,7 +13349,7 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), SM('warMonthly2', () => warMonthly2(s)), SM('logiMonthly', () => logiMonthly(s)), SM('rushiMonthly', () => rushiMonthly(s)), SM('royalMonthly', () => royalMonthly(s)), SM('idSync', () => idSync(s)), SM('mpMonthly', () => mpMonthly(s)), SM('armsMonthly', () => armsMonthly(s)), SM('levyMonthly', () => levyMonthly(s)), SM('groupTick', () => groupTick(s)), SM('partyMonthly', () => partyMonthly(s)), SM('lairMonthly', () => lairMonthly(s)), SM('liegeMonthly', () => liegeMonthly(s)), SM('jailMonthly', () => jailMonthly(s)), SM('wishMonthly', () => wishMonthly(s)), SM('baseMonthly', () => baseMonthly(s)), SM('huntMonthly', () => huntMonthly(s)), SM('offMonthly', () => offMonthly(s)), SM('hhMonthly', () => hhMonthly(s)), SM('loanMonthly', () => loanMonthly(s)), SM('routeMonthly', () => routeMonthly(s)), SM('councilMonthly', () => councilMonthly(s)), SM('contractMonthly', () => contractMonthly(s)), SM('factionMonthly', () => factionMonthly(s)), SM('innerMonthly', () => innerMonthly(s)), SM('dipMonthly', () => dipMonthly(s))), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), SM('warMonthly2', () => warMonthly2(s)), SM('logiMonthly', () => logiMonthly(s)), SM('rushiMonthly', () => rushiMonthly(s)), SM('royalMonthly', () => royalMonthly(s)), SM('idSync', () => idSync(s)), SM('mpMonthly', () => mpMonthly(s)), SM('armsMonthly', () => armsMonthly(s)), SM('levyMonthly', () => levyMonthly(s)), SM('groupTick', () => groupTick(s)), SM('partyMonthly', () => partyMonthly(s)), SM('lairMonthly', () => lairMonthly(s)), SM('liegeMonthly', () => liegeMonthly(s)), SM('jailMonthly', () => jailMonthly(s)), SM('wishMonthly', () => wishMonthly(s)), SM('baseMonthly', () => baseMonthly(s)), SM('huntMonthly', () => huntMonthly(s)), SM('offMonthly', () => offMonthly(s)), SM('hhMonthly', () => hhMonthly(s)), SM('loanMonthly', () => loanMonthly(s)), SM('routeMonthly', () => routeMonthly(s)), SM('councilMonthly', () => councilMonthly(s)), SM('contractMonthly', () => contractMonthly(s)), SM('factionMonthly', () => factionMonthly(s)), SM('innerMonthly', () => innerMonthly(s)), SM('trackMonthly', () => trackMonthly(s)), SM('dipMonthly', () => dipMonthly(s))), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
       if (!s.yearSnap) s.yearSnap = yearSnap(s);
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
