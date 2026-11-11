@@ -289,6 +289,10 @@ const checks = [
   ['原文库辅助开局人事树、朝堂全表、官员表、天下大势、市面民生、探报（R-189）', (src.match(/await libEvidence\(s, /g) || []).length >= 6],
   ['三方分工：原文库、博查、GLM、DeepSeek 各做什么写明；整理核对归 DeepSeek；互为后备；材料和字数不超上限（R-189）', /三方分工（R-189/.test(src) && /研读\|检索\|核任期\|审校/.test(src) && /DeepSeek 没成，改由 GLM/.test(src) && /const fitCtx = /.test(src) && /额度超了型号的上限：减半再来/.test(src)],
   ['宣战按钮和义军军阀按钮不共用 data-war（撞了宣战点了不宣战）；要问 AI 的按钮出错不抛到页上（R-189 合并时查出）', !/data-war="(grainopen|laojun|raze|surrender|xiwen|yuefa)"/.test(src) && /t\.dataset\.wl\)\) \{/.test(src) && /这件没办成（/.test(src)],
+
+  ['不卡顿不打折：大存档只 stringify 一次、后台三秒合存、渲染保持同步（R-190）', /const J = saveJSON\(s\)/.test(src) && /JSON\.parse\(J\)/.test(src) && /lastSave > 3000/.test(src) && /保持同步绘制/.test(src)],
+  ['义军开仓先认队伍自己的粮（R-190）', /\(P && N0\(P\.grain\)\) \|\| \(myG && N0\(myG\.grain\)\)/.test(src)],
+  ['测试与 CI：tour 认 CHROMIUM 路径，不依赖 playwright 自带浏览器（R-190）', (() => { let f = ''; try { f = require('fs').readFileSync(require('path').join(__dirname, 'qa', 'tour.js'), 'utf8'); } catch (_) { return false; } return /process\.env\.CHROMIUM \? \{ executablePath/.test(f); })()],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

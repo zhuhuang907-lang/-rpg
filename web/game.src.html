@@ -859,13 +859,14 @@ const store = {
     s.updatedAt = Date.now();
     s.sub = `${s.clock.yearLabel || ''} · ${s.place.full || ''} · 第${s.turn}回合`;
     shrink(s);
+    const J = saveJSON(s);   // 大存档的 stringify 不便宜：只算一次，本机、桌面两处共用（R-189）
     let local = false, remote = false;
     try {
-      localStorage.setItem(LK('hrpg:save:' + s.id), saveJSON(s));
+      localStorage.setItem(LK('hrpg:save:' + s.id), J);
       const idx = readIdx().filter(x => x.id !== s.id); idx.push({ id: s.id, title: s.title, sub: s.sub, updatedAt: s.updatedAt });
       localStorage.setItem(LK(LOCAL_INDEX), JSON.stringify(idx)); local = true;
     } catch (_) { local = false; }
-    if (MODE === 'local') { try { remote = !!(await api('/api/wsave', { save: JSON.parse(saveJSON(s)) })).ok; } catch (_) { remote = false; } }
+    if (MODE === 'local') { try { remote = !!(await api('/api/wsave', { save: JSON.parse(J) })).ok; } catch (_) { remote = false; } }
     else if (DB && UID) {
       for (let i = 0; i < 2 && !remote; i++) {
         try { await DB.collection('data/users/' + UID).doc(s.id).set(clone(s)); remote = true; }
@@ -8512,7 +8513,7 @@ function farmMonthly(s) {
   // 徭役：里正照丁多点役，一年摊一两回——出工（二十天，误了农时）或出钱代役
   if (hasLand && F.dutyYM == null && seeded(ym * 29 + s.land.mu % 53) < 0.12 && s.clock.y >= 581) { F.dutyYM = ym; F.duty = Math.round((E ? E.wage * 12 : 400) / 10); out.push(`里正点役：轮着你家出一名夫役，修城20天${F.duty ? `，或出${fmtN(F.duty, u)}代役` : ''}`); if (!arr(s.press).some(p => /点役/.test(p.title || ''))) s.press = arr(s.press).concat([{ id: 'pr' + Date.now().toString(36) + 'fy', kind: '出手', who: '里正', title: '里正点役：轮着你家出夫役', demand: `本月要出一名夫役跟官府修城20天，误了农时秋天就歉收；${F.duty ? `出${fmtN(F.duty, u)}可代役` : '没有代役的钱'}`, hidden: '里正想从中捞代役钱', tell: 60, ignore: '抗役要吃官司', effects: [], choices: [{ text: '自家出工', effects: [{ key: '劳力', delta: -1 }] }, F.duty ? { text: `出${fmtN(F.duty, u)}代役`, effects: [{ key: '现钱', delta: -1 }], risk: '里正未必真拿去雇人' } : null].filter(Boolean), due: ym + 1, state: '临门', at: s.turn }]); }
   // 人情份子：邻里婚丧，随礼记账——不出礼乡里说你小气，情分薄了借粮请工都难
-  if (E && seeded(ym * 31 + (s.turn || 0)) < 0.15 && !arr(F.gifts).some(x => x.ym >= ym - 1)) { const amt = Math.max(0.1, Math.round(E.wage * 2 * 100) / 100), who = seeded(ym * 7) < 0.5 ? '东邻' : '西舍'; F.gifts = arr(F.gifts).concat([{ ym, who, amt }]).slice(-8); s.money && s.money.cash != null && s.money.cash >= amt && cashAdd(s, -amt); out.push(`${who}家有事，随了份子${fmtN(amt, u)}（乡里情分+）`); const V = vilOf(s, geoCenter(s)); if (V && V.rel != null) V.rel = Math.min(100, V.rel + 1); }
+  if (E && seeded(ym * 31 + (s.turn || 0)) < 0.15 && !arr(F.gifts).some(x => x.ym >= ym - 1)) { try { const amt = Math.max(0.1, Math.round(E.wage * 2 * 100) / 100), who = seeded(ym * 7) < 0.5 ? '东邻' : '西舍'; F.gifts = arr(F.gifts).concat([{ ym, who, amt }]).slice(-8); if (s.money && s.money.cash != null && s.money.cash >= amt) cashAdd(s, -amt); out.push(`${who}家有事，随了份子${fmtN(amt, u)}（乡里情分+）`); const V = vilOf(s, geoCenter(s)); if (V && V.rel != null) V.rel = Math.min(100, V.rel + 1); } catch (_) { /* 乡情坏了不打断月结 */ } }
   return out;
 }
 function farmLine(s) {
@@ -9887,11 +9888,11 @@ async function warlordAct(s, k, arg) {
   const myG = s.forces.filter(f => myForce(s, f)).sort((a, b) => N0(b.troops) - N0(a.troops))[0];
   const G = (s.gov || {}).stats || {};
   const mv = (key, d) => { if (G[key] != null) G[key] = Math.max(0, Math.min(100, N0(G[key]) + d)); };
-  if (k === 'grainopen') {   // 开仓放粮：义军得民心，自愿来投的兵源就精
-    const src = myG ? myG.grain : (s.realm && s.realm.granary), amt = Math.min(N0(src) || 0, Math.max(20, Math.round((N0(src) || 0) * 0.2)));
+  if (k === 'grainopen') {   // 开仓放粮：义军得民心，自愿来投的兵源就精（粮源先认队伍自己的粮，再认兵马、国仓）
+    const src = (P && N0(P.grain)) || (myG && N0(myG.grain)) || (s.realm && N0(s.realm.granary)) || 0, amt = Math.min(src, Math.max(20, Math.round(src * 0.2)));
     if (!(amt > 0)) { ORGMSG = '仓里没有多少粮，先筹粮再放'; return null; }
-    if (myG) myG.grain = N0(src) - amt; else if (s.realm) s.realm.granary = N0(src) - amt;
-    mv('民心', 3); if (P) { P.publics = (num(P.publics) || 0) + 1; P.grain = Math.max(0, N0(P.grain) - amt); }
+    if (P && N0(P.grain)) P.grain = N0(P.grain) - amt; else if (myG && N0(myG.grain)) myG.grain = N0(myG.grain) - amt; else if (s.realm) s.realm.granary = N0(s.realm.granary) - amt;
+    mv('民心', 3); if (P) P.publics = (num(P.publics) || 0) + 1;
     repOf(s).guan = Math.max(0, repOf(s).guan - 1);   // 朝廷眼里这是叛逆收买人心
     ORGMSG = `开仓放粮${fmtN(amt, '石')}：本地百姓感念（民心+3），${P ? '往后自愿来投的汉子多、也精（' + Math.round(N0(P.publics)) + '次恩义在身）' : '但朝廷眼里这是收买人心（官声-1）'}`;
     return ORGMSG;
@@ -9909,8 +9910,8 @@ async function warlordAct(s, k, arg) {
     if (!near.length) { ORGMSG = '附近没有成气候的城池州县可传檄'; return null; }
     const { text } = await callClaude(`你是${timeText(s.clock)}的刀笔好手，替一局历史模拟游戏里${s.protagonist.name}（${s.protagonist.role}${P ? `，队伍「${P.name || ''}」${P.yuefa ? `，约法「${P.yuefa}」` : ''}` : ''}）写一篇讨伐/晓谕的檄文，三百字内，照那个年代的骈散口气，数对方的失道、申自家的义旗、许来投者的生路。只输出檄文正文，不要标题。`, null, { maxTokens: 400, temperature: 0.5, kind: '研读', thinking: false });
     const t = cut(String(text || '').trim(), 300); let took = '';
-    for (const n of near) { const c = cityOf(s, n), g = garrisonAt(s, n), weak = !g.known || N0(g.troops) < 800 || num(c.cheng) < 40;
-      if (weak && seeded(ym * 7 + n.length * 3) < 0.45) { took = n; break; } }
+    for (const n of near) { try { const c = cityOf(s, n), g = garrisonAt(s, n), weak = !g.known || N0(g.troops) < 800 || num(c.cheng) < 40;
+      if (weak && seeded(ym * 7 + n.length * 3) < 0.45) { took = n; break; } } catch (_) { /* 这座城探不了就跳过 */ } }
     if (took) { if (!arr(s.territory).some(x => x.place === took)) s.territory = arr(s.territory).concat([{ place: took, pop: null, troops: 200, grain: null, loyalty: 40, note: '传檄而定' }]); s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(took)] = { owner: '你', turn: s.turn, why: '传檄而定' };
       ORGMSG = `檄文传开（${cut(t, 60)}……）：${took}守将开门归附，兵不血刃`;
       s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: '檄文', what: `传檄而定${took}` }]);
@@ -14117,12 +14118,16 @@ function tidyState(s) {
 let RENDER_ERR = '';
 /** 重画出错不许把整局卡死：先把账里的坏条目清掉再画一次；还不行就在页面上明说出了什么错，按钮照样能用 */
 function render() {
+  /* 保持同步绘制：按钮点完、月结跑完，调用者紧接着就能读到新页（异步合帧试过，测试与「点完立刻看结果」都不稳）。
+     省开销靠两处不改变行为的：大存档只 stringify 一次、后台连做多个活时三秒合存一次（R-189）。 */
   try { if (S) tidyState(S); render0(); RENDER_ERR = ''; return; } catch (e) { RENDER_ERR = String(e && e.message || e); noteErr('render', RENDER_ERR, { stack: String(e && e.stack || '').slice(0, 600), tab: typeof TAB !== 'undefined' ? TAB : '' }); }
   try { if (typeof TAB !== 'undefined' && TAB !== 'board') { TAB = 'board'; render0(); return; } } catch (_) { /* 局面页也画不出 */ }
   const app = document.querySelector('#app'); if (app && !document.querySelector('#renderErr')) app.insertAdjacentHTML('afterbegin', `<div id="renderErr" class="err" style="margin:8px 0">页面有一块画不出来（${esc(RENDER_ERR.slice(0, 120))}），已记进问题报告；游戏照常能玩，可以接着写下一步，或在「设置」里导出问题报告。</div>`);
 }
 function render0() {
   if (PERF && BUSY) { const t = Date.now(); if (PHASE !== PERF.cur) { if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); PERF.cur = PHASE; PERF.last = t; } }
+  /* 不做「内容签名相同就跳过」：月结会改国势、民生、家底这些散在几十处的账，签名漏一处就是页面不刷新（2026-11-11 实测踩过）。
+     省重绘靠上面一帧合并 + 后台存档节流，正确性优先（R-189）。 */
   // 页面重画时，玩家正在填的字（Key、型号、要做的事……）和光标不丢
   const keep = {}, ae = document.activeElement, foc = ae && ae.id && /^(INPUT|TEXTAREA)$/.test(ae.tagName) ? ae.id : '';
   let selr = null; if (foc) try { selr = [ae.selectionStart, ae.selectionEnd]; } catch (_) { /* 有的输入框没有光标位置 */ }
@@ -14947,7 +14952,8 @@ async function afterTurnPool(s0) {
   // 有先后的：前头那件还在做、或者该做还没轮到，就先不挑它
   const blocked = (j, L) => arr(j.needs).some(n => { if (BG_RUN.has(n)) return true; const x = L.find(y => y.id === n); return !!x && !tried.has(n) && due(x); });
   const pick = () => { const L = bgJobs(s0, BG_CTX.d, BG_CTX.g); return L.find(j => !tried.has(j.id) && !BG_RUN.has(j.id) && due(j) && !blocked(j, L)); };
-  const worker = async () => {
+const worker = async () => {
+    let lastSave = 0;
     for (;;) {
       if (!live()) return;
       const j = pick();
@@ -14956,7 +14962,8 @@ async function afterTurnPool(s0) {
       const pr = (async () => { try { await j.run(); } catch (_) { /* 下回合再做 */ } })();
       BG_RUN.set(j.id, { p: pr, msg: j.msg, ex: !!j.ex }); bgMsgNow(); render();
       await pr; BG_RUN.delete(j.id); bgMsgNow();
-      if (S === s0 && !BUSY) { try { await store.save(s0); } catch (_) { /* 下回再存 */ } }
+      /* 大存档写盘不便宜：后台连做好几个活时，三秒内合到一次（三个 worker 各自一份时钟，错开也无所谓）；收尾仍必存 */
+      if (S === s0 && !BUSY && Date.now() - lastSave > 3000) { lastSave = Date.now(); try { await store.save(s0); } catch (_) { /* 下回合再存 */ } }
       render();
     }
   };
