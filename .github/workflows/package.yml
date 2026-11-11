@@ -30,7 +30,9 @@ jobs:
       - name: 装测试用的浏览器
         run: |
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null
-          npx playwright install --with-deps chromium
+          # GitHub 的机器偶尔连不上 Ubuntu 软件源（2026-11-11 一次 DNS 解析失败把整次打包拖垮）：重试三次，还不行就只装浏览器本体（机器上本来就有大多数依赖）
+          ok=0; for i in 1 2 3; do if npx playwright install --with-deps chromium; then ok=1; break; fi; echo "第 $i 次没装上，30 秒后再试"; sleep 30; done
+          if [ $ok = 0 ]; then npx playwright install chromium; fi
       - name: 快速质量检测
         run: NODE_PATH=/tmp/pw/node_modules QUICK=1 bash web/tests/qa.sh
   windows:
