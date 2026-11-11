@@ -651,6 +651,7 @@ let GLMMSG = '', GLM_MODELS = [];
 function glmBox() {
   const R = SETTINGS.route || {};
   return `<div class="h"><span class="seal">智</span>GLM（智谱）<span class="note">写故事、推演、辅助搜索交给它；没填就全用 DeepSeek</span></div>
+    ${MODE !== 'local' ? '<div class="muted" style="font-size:13px">网页版直连智谱会被浏览器的跨域规矩拦下（智谱接口不回应跨域预检），填了也用不上——要用 GLM 请开桌面版。</div>' : ''}
     ${GLM.has ? `<div class="muted" style="font-size:13px">✓ 已填 GLM Key（尾号 ${esc(GLM.tail)}）${GLM.model ? '，型号 ' + esc(GLM.model) : '，<b>还没选型号</b>'}</div>` : '<div class="muted" style="font-size:13px">到智谱开放平台申请 API Key，粘贴在这里点「保存并试连」。Key 只存在你自己的电脑或浏览器里。</div>'}
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px"><input id="gKey" type="password" autocomplete="off" placeholder="${GLM.has ? '换一个 Key（不换就空着）' : '粘贴 GLM 的 API Key'}" style="flex:1;min-width:180px">
       <select id="gBase">${GLM_BASES.map(([u, n]) => `<option value="${u}" ${(GLM.base || GLM_BASES[0][0]) === u ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
@@ -709,7 +710,7 @@ async function glmDirect(input, opts = {}) {
     try {
       let res;
       try { res = await fetch(base + '/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key }, body: JSON.stringify(body), signal: ac.signal }); }
-      catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; throw { code: 'local', net: true, message: '连不上 GLM（浏览器直连被拦或断网）' }; }
+      catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; throw { code: 'local', net: true, message: '连不上 GLM：浏览器直连智谱会被跨域拦下（智谱接口不回应浏览器的跨域预检，Key 还没轮到检查）——要用 GLM 请开桌面版；网页版这一步请用 DeepSeek' }; }
       if (!res.ok) { const raw = await res.text().catch(() => '');
         if (json && res.status === 400 && /response_format|json/i.test(raw)) { json = false; continue; }
         if (sendThink && res.status === 400 && /thinking|unknown|extra|unrecognized/i.test(raw)) { sendThink = false; continue; }

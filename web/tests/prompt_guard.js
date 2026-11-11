@@ -293,6 +293,7 @@ const checks = [
   ['不卡顿不打折：大存档只 stringify 一次、后台三秒合存、渲染保持同步（R-190）', /const J = saveJSON\(s\)/.test(src) && /JSON\.parse\(J\)/.test(src) && /lastSave > 3000/.test(src) && /保持同步绘制/.test(src)],
   ['义军开仓先认队伍自己的粮（R-190）', /\(P && N0\(P\.grain\)\) \|\| \(myG && N0\(myG\.grain\)\)/.test(src)],
   ['测试与 CI：tour 认 CHROMIUM 路径，不依赖 playwright 自带浏览器（R-190）', (() => { let f = ''; try { f = require('fs').readFileSync(require('path').join(__dirname, 'qa', 'tour.js'), 'utf8'); } catch (_) { return false; } return /process\.env\.CHROMIUM \? \{ executablePath/.test(f); })()],
-];
+
+  ['GLM 网页版直连失败说清是跨域、指向桌面版（R-191）', /智谱接口不回应浏览器的跨域预检/.test(src) && /要用 GLM 请开桌面版/.test(src) && /MODE !== 'local' \? '<div class="muted" style="font-size:13px">网页版直连智谱会被浏览器的跨域规矩拦下/.test(src)],];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

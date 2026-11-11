@@ -1709,3 +1709,12 @@
   - tests/qa/tour.js 原来不认 CHROMIUM，机器上没有 playwright 自带浏览器就跑不了（打包/CI 常见坑），已改成认环境变量。
 - 自动验收：prompt_guard 256 项全过（新增 3 条）；rules_regress 93 条全过；feedback、ages、garbage、safe、minsheng、courtfull、party、hh、life、roles、cult、study 全 ERRS []；QUICK 中 webds（要 8795 网页服务）与 realplay（要 LAT=1 慢速 mock）属环境依赖，由 qa.sh 整套环境负责。
 - 状态：已做，自动测试通过，玩家未验证。
+
+### R-191 GLM「连不上」说清原因：网页版直连被智谱的跨域预检拦下
+- 来源：2026-11-11 玩家：「为什么我连不上glm的api呢，我自己做的那个小游戏，连api连不上glm的」。
+- 实测：DeepSeek 的 OPTIONS 预检返回 access-control-allow-origin/headers/methods，浏览器直连可用；智谱 open.bigmodel.cn 的 OPTIONS 只回 200、一条 CORS 头都没有，浏览器把带 Authorization 的 POST 直接拦死，fetch 抛异常。桌面版由本机 Node 代发、无跨域，接口本身可达（探测返回标准 JSON 401）。
+- 改动：
+  - 网页版直连失败的文案改成「连不上 GLM：浏览器直连智谱会被跨域拦下（智谱接口不回应浏览器的跨域预检，Key 还没轮到检查）——要用 GLM 请开桌面版；网页版这一步请用 DeepSeek」。
+  - 设置页 GLM 栏在网页版下明写这条限制，免得玩家反复换 Key 白试。
+- 自动验收：prompt_guard 257 项全过（新增 1 条）；rules_regress 93 条全过；build 语法检查过。
+- 状态：已做，自动测试通过，玩家未验证。
