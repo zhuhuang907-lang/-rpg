@@ -6,7 +6,7 @@ const path = require('path');
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
   const hits = [];
   // 拦下发往 DeepSeek、GLM 的请求：照流式格式回一句话；GLM 的 Key 写 bad 时回 500
-  await p.route(/api\.deepseek\.com|open\.bigmodel\.cn|api\.z\.ai/, async route => {
+  await p.route(/api\.deepseek\.com|open\.bigmodel\.cn|api\.z\.ai|glm-proxy\.example/, async route => {
     const u = route.request().url(), h = route.request().headers(), body = JSON.parse(route.request().postData() || '{}');
     const who = /deepseek/.test(u) ? 'ds' : 'glm'; hits.push({ who, model: body.model, url: u });
     if (/\/models$/.test(u)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ id: 'glm-test-a' }, { id: 'glm-test-b' }] }) });
@@ -21,21 +21,29 @@ const path = require('path');
     // 没填 GLM：全走 DeepSeek
     lsSet('hrpg:glmkey', null); glmWebRefresh();
     let r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/DeepSeek/.test(r.text)) bad.push('没填 GLM 时写故事没走 DeepSeek：' + r.text);
-    // 填了 GLM：写故事、推演记账、辅助搜索走 GLM；审读、编书走 DeepSeek
+    // 网页版填了智谱官方接口：智谱不许网页直连，照实全交 DeepSeek，不先撞一回墙（R-190）
     lsSet('hrpg:glmkey', 'glm-key-ok'); lsSet('hrpg:glmmodel', 'glm-test-a'); lsSet('hrpg:glmbase', 'https://open.bigmodel.cn/api/paas/v4'); glmWebRefresh();
-    r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/GLM/.test(r.text)) bad.push('写故事没走 GLM：' + r.text);
+    r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/DeepSeek/.test(r.text) || glmUsable()) bad.push('网页版填官方接口还去撞 GLM：' + r.text);
+    // 填了自己的转发地址：写故事、想事情走 GLM；整理核对审读编书走 DeepSeek
+    lsSet('hrpg:glmbase', 'https://glm-proxy.example/api/paas/v4'); glmWebRefresh();
+    // 默认全交 DeepSeek（2026-11-11 玩家：「那就继续用 ds 吧，改回去」）
+    r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/DeepSeek/.test(r.text)) bad.push('默认写故事没交 DeepSeek：' + r.text);
+    r = await callClaude('给表', null, { kind: '推演' }); if (/glm/.test(r.text)) bad.push('默认推演没交 DeepSeek：' + r.text);
+    // 设置里选了 GLM 写故事、想事情：照选的走
+    SETTINGS.route = { story: 'glm', struct: 'glm' };
+    r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/GLM/.test(r.text)) bad.push('选了 GLM 写故事还没走 GLM：' + r.text);
     for (const k of ['裁定', '记账', '推演']) { r = await callClaude('给表', null, { kind: k }); if (!/glm/.test(r.text)) bad.push(k + '没走 GLM：' + r.text); }
     for (const k of ['检索', '研读', '核任期']) { r = await callClaude('给表', null, { kind: k }); if (/glm/.test(r.text)) bad.push(k + '是整理资料的活，该走 DeepSeek（R-189 三方分工）：' + r.text); }
     for (const k of ['审读', '编书']) { r = await callClaude('看看', null, { json: false, kind: k }); if (!/DeepSeek/.test(r.text)) bad.push(k + '没走 DeepSeek：' + r.text); }
     // 设置里改分工：写故事改给 DeepSeek
-    SETTINGS.route = { story: 'ds' }; r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/DeepSeek/.test(r.text)) bad.push('分工改了写故事给 DeepSeek，还走 GLM'); SETTINGS.route = null;
+    SETTINGS.route = { story: 'ds' }; r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/DeepSeek/.test(r.text)) bad.push('分工改了写故事给 DeepSeek，还走 GLM'); SETTINGS.route = { story: 'glm', struct: 'glm' };
     // GLM 出错：自动改由 DeepSeek，不报错
     lsSet('hrpg:glmkey', 'glm-key-bad'); glmWebRefresh();
     try { r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/DeepSeek/.test(r.text)) bad.push('GLM 出错没退回 DeepSeek：' + r.text); } catch (e) { bad.push('GLM 出错直接报错给玩家：' + (e.message || e.code)); }
     // 只填 GLM 不填 DeepSeek：也能玩，全走 GLM
     lsSet('hrpg:glmkey', 'glm-key-ok'); glmWebRefresh(); lsSet('hrpg:dskey', null); webKeyRefresh();
     try { r = await callClaude('看看', null, { json: false, kind: '审读' }); if (!/GLM/.test(r.text)) bad.push('只填 GLM 时杂活没走 GLM'); } catch (e) { bad.push('只填 GLM 不能玩：' + (e.message || e.code)); }
-    lsSet('hrpg:dskey', 'sk-test1234'); webKeyRefresh();
+    lsSet('hrpg:dskey', 'sk-test1234'); webKeyRefresh(); SETTINGS.route = null;
     // 设置页字数说法和实际约定一致
     S = newSave({ name: '王审知', gender: '男', age: 59, role: '闽王', real: true, gregorianYear: 921, month: 6, day: 1, place: '福州', polity: '闽' }); S.chat = [{ role: 'gm', text: '开场' }];
     TAB = 'set'; VIEW = 'game'; SIDE_FOLD = false; render0();
@@ -46,7 +54,7 @@ const path = require('path');
   });
   // 真点设置页：列出型号、选型号、保存并试连、改分工
   await p.click('#bGlmModels'); await p.waitForFunction(() => /列出 2 个型号/.test(document.body.innerText), null, { timeout: 8000 }).catch(() => bad.push('点「列出型号」没列出来'));
-  await p.selectOption('#gModel', 'glm-test-b'); await p.fill('#gKey', 'glm-key-new');
+  await p.selectOption('#gModel', 'glm-test-b'); await p.fill('#gKey', 'glm-key-new'); await p.fill('#gProxy', 'https://glm-proxy.example/api/paas/v4');
   await p.click('#bGlmSave'); await p.waitForFunction(() => /试连通了/.test(document.body.innerText), null, { timeout: 8000 }).catch(() => bad.push('点「保存并试连」没试通'));
   const after = await p.evaluate(() => ({ key: lsGet('hrpg:glmkey'), model: lsGet('hrpg:glmmodel'), has: GLM.has }));
   if (after.key !== 'glm-key-new' || after.model !== 'glm-test-b' || !after.has) bad.push('设置页存的 GLM Key、型号不对：' + JSON.stringify(after));

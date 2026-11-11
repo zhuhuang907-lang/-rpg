@@ -7,9 +7,10 @@ const path = require('path');
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
   await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof libEvidence === 'function');
   const r = await p.evaluate(async () => { const bad = [];
-    KEY = { ...KEY, has: true }; GLM = { ...GLM, has: true, model: 'glm-x' };
+    KEY = { ...KEY, has: true }; GLM = { ...GLM, has: true, model: 'glm-x', base: 'https://glm-proxy.example/api/paas/v4' };
     const R = k => routeOf(k, false); if (R('研读') !== 'ds' || R('检索') !== 'ds' || R('核任期') !== 'ds' || R('审读') !== 'ds') bad.push('整理资料、核对、审稿没归 DeepSeek');
-    if (R('推演') !== 'glm' || R('记账') !== 'glm' || routeOf('写戏', true) !== 'glm') bad.push('写故事、想事情没归 GLM');
+    if (R('推演') !== 'ds' || routeOf('写戏', true) !== 'ds') bad.push('默认没全交 DeepSeek');
+    SETTINGS.route = { story: 'glm', struct: 'glm' }; if (R('推演') !== 'glm' || R('记账') !== 'glm' || routeOf('写戏', true) !== 'glm') bad.push('设置里选了 GLM 写故事、想事情没照走'); if (R('研读') !== 'ds') bad.push('整理资料不该给 GLM');
     // 互为后备
     const calls = []; const old = SAMPLE;
     SAMPLE = async (input, o) => { calls.push(o.provider === 'glm' ? 'glm' : 'ds'); if (o.provider !== 'glm') throw { code: 'local', message: 'DS 坏了' }; return { text: '{"ok":1}' }; };

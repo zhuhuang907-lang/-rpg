@@ -93,6 +93,7 @@ start ai.js && {
   run "学问手艺：读书涨学问涨文墨、坐馆月束脩、学徒三年出师落本事（R-184、R-188）" 120 env PLAY="$ROOT/web/play.html" node study.js
   run "原文库检索：照朝代政权挑书、整词比对、同段多词排前、在命中处摘句、真语料查得到（R-189）" 300 env PLAY="$ROOT/web/play.html" node libsearch.js
   run "三方分工：整理归 DeepSeek、写故事想事情归 GLM、互为后备、材料过长删中间；原文佐证进推演（R-189）" 150 env PLAY="$ROOT/web/play.html" node r189.js
+  run "默认全交 DeepSeek；翻史书真点；朝臣互谋、大臣奏事、敌国之主、当面说、立真人档案带史书原文；同查询只查一回（R-192）" 150 env PLAY="$ROOT/web/play.html" node r192.js
   run "身份转换照账接上：佃农落草招安做官（队伍编营、山寨散、恶名清、按钮收起）罢官交兵权再拉队伍；投军不能拉队伍、逃散成流民能拉；寨主称王队伍编军、山寨并地盘、主公了结；布商捐监生不是官、捐实官候补十月补缺，全真点（R-153）" 200 env PLAY="$ROOT/web/play.html" node shift.js
   run "皇子太子王爷贵族：清皇子问安结交构陷（家谱里的兄弟）韬晦、够格立太子、猜忌到头被废圈禁、清不之藩；明初王爷就藩护卫九千、添募护卫、削藩奉诏、起兵清君侧；唐亲王不之藩；晋门阀门生荐举子弟，全真点（R-157）" 200 env PLAY="$ROOT/web/play.html" node royal.js
   run "各朝入仕：西晋士族寒门请中正品评（上品无寒门）、三年清定、托人打点、照乡品起家清浊；东汉举孝廉拜郎中满一年外补县长、举茂才除县令；唐门荫授官；明有报考，全真点（R-156）" 200 env PLAY="$ROOT/web/play.html" node rushi.js

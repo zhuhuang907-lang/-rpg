@@ -636,29 +636,33 @@ const ROUTE_CATS = [['story', '写故事（正文、改稿、编剧）'], ['stru
 /* 三方分工（R-189，2026-11-10 玩家：「合理设计 glm，ds 和 bocha 三方分别做什么，确保不会超出他们的能力」）：
  *  · 原文库（游戏自带，正史、实录、通鉴、政书、兵书、地理书）：史实的第一来源，不花钱、不会编；人名、官职、年月、典章先照它。
  *  · 博查（联网搜索）：只管找资料——原文库没有的（地方小官、乡绅、商帮、晚近的事、考订文章），搜到的网页摘要给模型当材料；它不判断、不写东西。
- *  · GLM（写故事、想事情）：写正文、改稿、编剧情；推演天下大势、玩家这一步的后果、市面民生、裁定、记账——要长篇文笔和前后因果的活。
- *  · DeepSeek（整理、核对、扮演）：把博查和原文库的资料整理成表（官员表、行情表、户口、核任期、核真人）、审稿挑毛病、编书；
+ *  · DeepSeek（默认什么都交给它，R-192）：写正文、推演、记账，整理、核对、扮演；
+ *  · GLM（可选）：设置页里自己选，把写故事、想事情交给它（只有桌面版或填了转发地址才连得上）。以前的默认分工是 GLM 写故事想事情，DeepSeek 做下面这些：
+ *    把博查和原文库的资料整理成表（官员表、行情表、户口、核任期、核真人）、审稿挑毛病、编书；
  *    扮演敌国之主、手下大臣、朝臣私下互谋——要快、要守格式、要照各人立场说话的活。
  *  · 不超出能力：每样活给的材料有上限（超了先删中间）、要的字数有上限（超了减半重来）；一家出错自动换另一家再来一次。 */
-const ROUTE_DEF = { story: 'glm', struct: 'glm', light: 'ds' };
+const ROUTE_DEF = { story: 'ds', struct: 'ds', light: 'ds' };   /* 2026-11-11 玩家：「那就继续用 ds 吧，改回去」——默认全交 DeepSeek；想让 GLM 写故事、想事情，在设置页自己改（桌面版或填了转发地址才连得上） */
 const fitCtx = (x, max) => { const t = String(x || ''); if (t.length <= max) return t; const h = Math.floor(max * 0.55), e = max - h - 20; return t.slice(0, h) + '\n（材料太长，中间略去一段）\n' + t.slice(t.length - e); };
 const CTX_MAX = { glm: 90000, ds: 90000 };   // 两家都是十二万字元上下的窗口，留足余量给回答
 const routeCat = (kind, plain) => /^(写戏|改稿|编剧|play|turn)$/.test(kind) || (plain && kind === '写戏') ? 'story' : /^(审读|编书|chapter|book-?|研读|检索|核任期|审校|史事|修史|档案)$/.test(kind) ? 'light' : 'struct';   /* 整理资料、核对、审稿归 DeepSeek（R-189） */
-const routeOf = (kind, plain) => { if (GLM.has && !KEY.has) return 'glm'; const r = (SETTINGS.route || {})[routeCat(kind, plain)] || ROUTE_DEF[routeCat(kind, plain)]; return r === 'glm' && GLM.has ? 'glm' : 'ds'; };
+/* 网页能不能直连 GLM（2026-11-11 玩家：「glm连不上」；查实：智谱的写作接口只许它自己的网站从网页里调，别的网页一律被浏览器拦下——
+ *  网页版、claude.ai 版都连不上，桌面版从本机程序去连不受影响。网页版只有填了自己的转发地址才算能用，不然全交 DeepSeek，不再每件先撞一回墙） */
+const glmUsable = () => !!GLM.has && (MODE === 'local' || !GLM_BASES.some(([u]) => u === String(GLM.base || GLM_BASES[0][0]).replace(/\/+$/, '')));
+const routeOf = (kind, plain) => { if (!glmUsable()) return 'ds'; if (!KEY.has) return 'glm'; const r = (SETTINGS.route || {})[routeCat(kind, plain)] || ROUTE_DEF[routeCat(kind, plain)]; return r === 'glm' && GLM.has ? 'glm' : 'ds'; };
 function glmWebRefresh() { const k = lsGet('hrpg:glmkey') || ''; GLM = { has: !!k, tail: k.slice(-4), model: lsGet('hrpg:glmmodel') || '', base: lsGet('hrpg:glmbase') || GLM_BASES[0][0] }; }
 let GLMMSG = '', GLM_MODELS = [];
 /** 设置页：GLM 的 Key、接口、型号，和每样活交给谁（需求台账 R-135） */
 function glmBox() {
   const R = SETTINGS.route || {};
-  return `<div class="h"><span class="seal">智</span>GLM（智谱）<span class="note">写故事、推演、辅助搜索交给它；没填就全用 DeepSeek</span></div>
-    ${MODE !== 'local' ? '<div class="muted" style="font-size:13px">网页版直连智谱会被浏览器的跨域规矩拦下（智谱接口不回应跨域预检），填了也用不上——要用 GLM 请开桌面版。</div>' : ''}
+  return `<div class="h"><span class="seal">智</span>GLM（智谱）<span class="note">写故事、想事情交给它；没填就全用 DeepSeek</span></div>
+    ${MODE !== 'local' ? `<div class="err" style="font-size:13px">网页版连不上 GLM：智谱只许它自己的网站直接调用写作接口，别的网页（包括这个游戏的网页版）都会被浏览器拦下。网页版的活全交给 DeepSeek；想让 GLM 写故事，请用桌面版（Windows 安装包，从本机程序去连，不受这个限制）。${glmUsable() ? '<br>✓ 你填了自己的转发地址，网页版照转发地址连 GLM。' : ''}</div>` : ''}
     ${GLM.has ? `<div class="muted" style="font-size:13px">✓ 已填 GLM Key（尾号 ${esc(GLM.tail)}）${GLM.model ? '，型号 ' + esc(GLM.model) : '，<b>还没选型号</b>'}</div>` : '<div class="muted" style="font-size:13px">到智谱开放平台申请 API Key，粘贴在这里点「保存并试连」。Key 只存在你自己的电脑或浏览器里。</div>'}
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px"><input id="gKey" type="password" autocomplete="off" placeholder="${GLM.has ? '换一个 Key（不换就空着）' : '粘贴 GLM 的 API Key'}" style="flex:1;min-width:180px">
-      <select id="gBase">${GLM_BASES.map(([u, n]) => `<option value="${u}" ${(GLM.base || GLM_BASES[0][0]) === u ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <select id="gBase">${GLM_BASES.map(([u, n]) => `<option value="${u}" ${(GLM.base || GLM_BASES[0][0]) === u ? 'selected' : ''}>${n}</option>`).join('')}${MODE !== 'local' && GLM.base && !GLM_BASES.some(([u]) => u === GLM.base) ? `<option value="${esc(GLM.base)}" selected>自己的转发地址</option>` : ''}</select>${MODE !== 'local' ? `<input id="gProxy" placeholder="会架转发的可填自己的转发地址（不会就空着）" style="flex:1;min-width:180px" value="">` : ''}</div>
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px"><select id="gModel">${[GLM.model].concat(GLM_MODELS).filter((x, i, a) => x && a.indexOf(x) === i).map(m => `<option value="${esc(m)}" ${m === GLM.model ? 'selected' : ''}>${esc(m)}</option>`).join('') || '<option value="">（先列出型号）</option>'}</select>
       <button class="link" id="bGlmModels">列出型号</button><button id="bGlmSave">保存并试连</button>${GLM.has ? '<button class="link" id="bGlmClear">清除 GLM Key</button>' : ''}</div>
     ${GLMMSG ? `<div class="muted" style="font-size:13px;margin-top:4px">${esc(GLMMSG)}</div>` : ''}
-    <div class="muted" style="font-size:13px;margin-top:8px">每样活交给谁${GLM.has ? '' : '（填了 GLM 才生效）'}：</div>
+    <div class="muted" style="font-size:13px;margin-top:8px">每样活交给谁（默认全交 DeepSeek；想让 GLM 写故事、想事情就改成 GLM${GLM.has ? '' : '，填了 GLM 才生效'}）：</div>
     ${ROUTE_CATS.map(([k, n]) => `<div class="row" style="gap:6px;margin-top:2px"><span style="flex:1;font-size:13px">${n}</span><select id="rt-${k}">${[['glm', 'GLM'], ['ds', 'DeepSeek']].map(([v, l]) => `<option value="${v}" ${(R[k] || ROUTE_DEF[k]) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}
     <div class="muted" style="font-size:12px;margin-top:4px">GLM 那边出错（不通、限流、余额不足）时，这一件自动改由 DeepSeek 再写一次。</div>`;
 }
@@ -672,7 +676,7 @@ async function glmModels() {
   render();
 }
 async function glmSave(clear) {
-  const k = ((($('#gKey') || {}).value) || '').trim(), base = (($('#gBase') || {}).value) || GLM_BASES[0][0], model = (($('#gModel') || {}).value) || GLM.model || '';
+  const k = ((($('#gKey') || {}).value) || '').trim(), base = ((($('#gProxy') || {}).value) || '').trim().replace(/\/+$/, '') || (($('#gBase') || {}).value) || GLM_BASES[0][0], model = (($('#gModel') || {}).value) || GLM.model || '';
   GLMMSG = clear ? '正在清除……' : '正在保存、试连……'; render();
   try {
     if (MODE === 'local') {
@@ -684,7 +688,7 @@ async function glmSave(clear) {
       if (clear) { lsSet('hrpg:glmkey', null); lsSet('hrpg:glmmodel', null); }
       else { if (k) lsSet('hrpg:glmkey', k.replace(/^Bearer\s*/i, '')); lsSet('hrpg:glmbase', base); if (model) lsSet('hrpg:glmmodel', model); }
       glmWebRefresh();
-      if (!clear && GLM.has && GLM.model) { try { await glmDirect([{ role: 'user', content: '只回答两个字：正常' }], { json: false, maxTokens: 20, temperature: 0 }); GLMMSG = '✓ 已存好，试连通了'; } catch (e) { GLMMSG = '已存好，试连没通：' + String(e.message || e).slice(0, 120) + '（GLM 不允许浏览器直连的话，网页版用不了 GLM，会自动改用 DeepSeek；桌面版不受影响）'; } }
+      if (!clear && GLM.has && GLM.model) { try { await glmDirect([{ role: 'user', content: '只回答两个字：正常' }], { json: false, maxTokens: 20, temperature: 0 }); GLMMSG = '✓ 已存好，试连通了'; } catch (e) { GLMMSG = '已存好，试连没通：' + String(e.message || e).slice(0, 120) + (glmUsable() ? '（转发地址不通，查一下转发）' : '（智谱不许网页直连，网页版全交 DeepSeek；桌面版不受影响）'); } }
       else GLMMSG = clear ? '已清除，全部改用 DeepSeek' : GLM.model ? '已存好' : '已存好 Key：点「列出型号」选一个';
     }
   } catch (e) { GLMMSG = '没存上：' + String(e.message || e).slice(0, 160); }
@@ -1237,7 +1241,7 @@ function within(p, ms, dflt = null) {
   return Promise.race([p, cap]).finally(() => clearTimeout(t));
 }
 async function callClaude(input, onReply, extra, tier) {
-  if (DSM() && !KEY.has && !GLM.has) throw { code: 'no_key', message: '还没填 DeepSeek 或 GLM 的 Key：在首页把 Key 粘贴进去点「保存」' };
+  if (DSM() && !KEY.has && !glmUsable()) throw { code: 'no_key', message: GLM.has ? '网页版连不上 GLM（智谱只许它自己的网站直连），请再填一个 DeepSeek 的 Key，或用桌面版' : '还没填 DeepSeek 或 GLM 的 Key：在首页把 Key 粘贴进去点「保存」' };
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
   const det = extra && extra.detached;
   if (!det && TURN && TURN.signal.aborted) throw { code: 'cancelled' };
@@ -1281,7 +1285,7 @@ async function callClaude(input, onReply, extra, tier) {
       return r2;
     }
     /* DeepSeek 出错（不是玩家停下、不是没填 Key）而 GLM 有 Key：换 GLM 再来一次（R-189；以前只有 GLM 出错退回 DeepSeek，反过来没有） */
-    if (DSM() && GLM.has && !glmTried && !(e && (e.code === 'cancelled' || e.code === 'no_key')) && !(TURN && TURN.signal.aborted && !det)) {
+    if (DSM() && glmUsable() && !glmTried && !(e && (e.code === 'cancelled' || e.code === 'no_key')) && !(TURN && TURN.signal.aborted && !det)) {
       noteErr('DeepSeek 没成，改由 GLM', (kind || '') + '：' + String((e && e.message) || e).slice(0, 200)); CTL = new AbortController(); if (TURN && !det) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); }
       const r3 = await SAMPLE(input, { ...opts, ...(extra || {}), provider: 'glm', fast: false, signal: CTL.signal, onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
       logRaw(kind + '（改 GLM）', r3 && r3.text, r3 && r3.truncated); return r3;
@@ -3743,7 +3747,16 @@ async function citeFetch(s, bookIds, qs, n) {
   return out.sort((a, b) => b.score - a.score).slice(0, n || 4);
 }
 /** 给推演、设定朝局用的原文佐证（R-189）：照检索词查几段，拼成材料；查不到、查得慢都不挡路 */
-async function libEvidence(s, terms, said, n, ms) { try { const hits = await within(citeFetch(s, histBooksFor(s, said || ''), terms, n || 5), ms || 25000); if (!arr(hits).length) return ''; try { feedAdd(hits.slice(0, 2).map(h => ({ t: `《${h.name}》${h.volume}：${cut(h.text, 26)}……`, site: '史书原文' }))); } catch (_) {}
+/* 翻史书（R-192，玩家：「多利用我内置的知识库」）：史线页上自己查原文——写人名、地名、事，照这个年代、这一家的书查，带书名卷名 */
+let LIBFIND = { q: '', hits: null, busy: false, msg: '' };
+function libFindHtml(s) { const H = LIBFIND.hits; return `<div class="h"><span class="seal">书</span>翻史书<span class="note">游戏自带的正史、实录、通鉴、政书；写人名、地名、事，照这个年代的书查原文</span></div>
+  <div class="opost"><input id="libQ" maxlength="30" placeholder="例如：${esc(histEraName(s) || '年号')} 某人 某事" value="${esc(LIBFIND.q)}" style="flex:1;min-width:160px"><button class="link" data-libfind="1"${LIBFIND.busy ? ' disabled' : ''}>${LIBFIND.busy ? '正在翻……' : '查原文'}</button> <span class="muted" style="font-size:12px">照这些书：${histBooksFor(s, LIBFIND.q).map(b => esc(LIB_ZH[b] || b)).join('、')}</span></div>
+  ${LIBFIND.msg ? `<div class="muted" style="font-size:12px">${esc(LIBFIND.msg)}</div>` : ''}${H && H.length ? `<div class="list">${H.map(h => `<div><b>《${esc(h.name)}》${esc(h.volume || '')}</b><div style="font-size:13px">${esc(h.text)}</div></div>`).join('')}</div>` : ''}`; }
+async function libFind(s, q) { q = String(q || '').trim(); if (q.replace(/[^\u4e00-\u9fff]/g, '').length < 2) { LIBFIND.msg = '至少写两个字'; return; } LIBFIND = { q, hits: null, busy: true, msg: '' }; render();
+  try { const terms = q.split(/[\s,，、]+/).filter(Boolean).slice(0, 6); const hits = await within(citeFetch(s, histBooksFor(s, q), terms, 8), 60000); LIBFIND.hits = arr(hits); LIBFIND.msg = hits && hits.length ? `查到 ${hits.length} 段` : '这几部书里没查到；换个写法（人名写全、年号写对）再查'; }
+  catch (e) { LIBFIND.msg = '没查成（' + errText(e) + '）'; } finally { LIBFIND.busy = false; } }
+const LIB_CACHE = new Map();   /* 同一年、同一批书、同一批词，一局里只查一回（R-192 顺畅） */
+async function libEvidence(s, terms, said, n, ms) { try { const books = histBooksFor(s, said || ''), ck = [Math.floor((((s.clock || {}).y) || 0)), books.join(','), arr(terms).join('|'), n || 5].join('#'); let hits = LIB_CACHE.get(ck); if (!hits) { hits = await within(citeFetch(s, books, terms, n || 5), ms || 25000); if (arr(hits).length) { LIB_CACHE.set(ck, hits); if (LIB_CACHE.size > 200) LIB_CACHE.delete(LIB_CACHE.keys().next().value); } } if (!arr(hits).length) return ''; try { feedAdd(hits.slice(0, 2).map(h => ({ t: `《${h.name}》${h.volume}：${cut(h.text, 26)}……`, site: '史书原文' }))); } catch (_) {}
   return '【史书原文佐证（游戏内置原文库查出，书名卷名为出处；人名、官职、年月与它冲突的，以原文为准，原文没写的不硬编）】\n' + hits.map(h => `· 《${h.name}》${h.volume || ''}：「${h.text}」`).join('\n'); } catch (e) { if (e && e.code === 'cancelled') throw e; return ''; } }
 /** 照史料算的史书年号（本局改元不影响它：改了元、换了历史，检索照旧落在史书的年上） */
 function histEraName(s) {
@@ -9636,7 +9649,8 @@ async function parley(s, kind, tg, ask, said) {
   if (kind === 'dip' && ask === '联姻' && !arr(s.household).some(m => m && /子|女/.test(m.relation || '') && !/孙/.test(m.relation || '') && !m.dead && (num(m.age) == null || (num(m.age) >= 13 && num(m.age) <= 35)) && !/妻|夫|已嫁|已娶/.test(m.note || ''))) { ORGMSG = '家里没有到了年纪、还没婚配的子女可以联姻'; return null; }
   const X = parleyCtx(s, kind, tg, ask); if (!X) { ORGMSG = '找不到这个人'; return null; } const ym = Math.floor(ymOf(s.clock)); s.talkYM = s.talkYM || {};
   if (s.talkYM[X.key] === ym) { ORGMSG = `这个月已经和${X.who}当面说过了，下个月再说`; return null; }
-  const { text } = await callClaude(`一局历史游戏。现在是${timeText(s.clock)}。你扮演${X.who}（史书上有这个人的，照史书里他的为人、主张、器量、处境；没有的照他的身份），听主角当面（或主角的使者）跟你说话，替他拿主意。
+  const libP = await libEvidence(s, [X.who + '*2', histEraName(s)], '', 3);   /* 他在史书里的言行，照着扮（R-192） */
+  const { text } = await callClaude(`${libP ? libP + '\n（以上是史书里关于此人的原文：他的为人、口气、主张照这个来）\n' : ''}一局历史游戏。现在是${timeText(s.clock)}。你扮演${X.who}（史书上有这个人的，照史书里他的为人、主张、器量、处境；没有的照他的身份），听主角当面（或主角的使者）跟你说话，替他拿主意。
 你此刻的处境：${X.sit}
 来说你的是：${s.protagonist.name}（${s.protagonist.role}）；主角兵约${fmtN(myTroopsAll(s), '人')}${num(s.renown) != null ? '，名声' + Math.round(num(s.renown)) : ''}
 主角要你答应的：${X.want}
@@ -10531,7 +10545,8 @@ async function foePlan(s) {
   const X = foeInfo(s); if (!X.length) { s.foeYM = foeYM(s); return 0; }
   const mineF = arr(s.forces).filter(f => myForce(s, f) && N0(f.troops) > 0), cities = myPlaces(s), H = arr(s.foeLog).filter(x => x.ym >= foeYM(s) - 3).map(x => `${x.power}${x.what}`).slice(-8);
   const txt = X.map(({ w, P, tot, avail, F }) => `· ${w.with}：主事的${P.leader || '（史料无名）'}${P.note ? '，' + cut(P.note, 40) : ''}；兵约${tot != null ? fmtN(tot, '人') : '不详'}，还能调的约${avail != null ? fmtN(avail, '人') : '不详'}；都城${P.seat || '不详'}；战局${warScore(w) > 0 ? '主角占上风' : warScore(w) < 0 ? '他占上风' : '相持'}，他国中厌战${Math.round(w.exhThem || 0)}（满一百）、主角厌战${Math.round(w.exh || 0)}（主角胜${w.won || 0}败${w.lost || 0}${arr(w.took).length ? '，主角取了' + w.took.join('、') : ''}${arr(w.lostCities).length ? '，主角丢了' + w.lostCities.join('、') : ''}）；两家挨着的地方：${F.map(f => '他的' + f.b + '—主角的' + f.a + '（约' + f.li + '里）').join('、') || '不挨着'}；他在外的兵马：${foeArmies(s).filter(g => g.owner === w.with).map(g => `${g.name}${fmtN(N0(g.troops), '人')}在${g.at}${g.march ? '，往' + g.march.to : ''}`).join('；') || '无'}`).join('\n');
-  const { text } = await callClaude(`你扮演跟主角交战的各家之主（照史料里此人的为人、谋略和他此刻的处境），替他们定这个月的军国大计。现在是${timeText(s.clock)}。
+  const libF = await libEvidence(s, X.map(x => x.P && x.P.leader).filter(Boolean).slice(0, 3).map(n => n + '*2').concat([histEraName(s)]), '用兵', 4);   /* 各家之主在史书里的用兵行事（R-192） */
+  const { text } = await callClaude(`${libF ? libF + '\n（以上是史书原文：各家之主的谋略、用兵习惯照这个扮）\n' : ''}你扮演跟主角交战的各家之主（照史料里此人的为人、谋略和他此刻的处境），替他们定这个月的军国大计。现在是${timeText(s.clock)}。
 主角：${s.protagonist.name}（${s.protagonist.role}）。主角的兵马：${mineF.map(f => { const sl = supplyLine(s, f); return `${f.name}${fmtN(N0(f.troops), '人')}驻${f.at || geoCenter(s)}（${f.status || ''}${sl.k < 1 ? '，离自家城池约' + sl.li + '里，粮道长' : ''}）`; }).join('；') || '无'}。主角的城池：${cities.slice(0, 14).join('、') || '不详'}
 ${H.length ? '近几个月各家已经做的：' + H.join('；') + '\n' : ''}跟主角交战的：
 ${txt}
@@ -10636,7 +10651,8 @@ async function memPlan(s) {
   if (!C.length && !G.length) { s.memYM = ym; return 0; }
   const ppl = n => { const v = (s.people || {})[n] || {}, T = arr(v.traits); return `${v.favor != null ? '，对主角' + (v.favor >= 30 ? '亲附' : v.favor <= -30 ? '怨望' : '平常') : ''}${T.length ? '，' + T.slice(0, 3).join('、') : ''}${facOf(s, n) ? '，' + facOf(s, n) : ''}`; };
   const GS = (s.gov && s.gov.stats) || {}, rev = annualRev(s), PW = realmPowers(s).slice(0, 10);
-  const { text } = await callClaude(`你扮演主角手下的大臣和将领（照史料里此人的为人、主张、派系和他对主角的好恶；虚构的照他的出身），替他们定这个月各自主动要办、要奏的事。现在是${timeText(s.clock)}，主角${s.protagonist.name}（${s.protagonist.role}）。
+  const libMP = await libEvidence(s, C.slice(0, 4).map(c => c.name + '*2').concat([histEraName(s)]), '', 4);   /* 大臣在史书里的主张（R-192） */
+  const { text } = await callClaude(`${libMP ? libMP + '\n（以上是史书原文：这几位的主张、奏议口气照这个扮）\n' : ''}你扮演主角手下的大臣和将领（照史料里此人的为人、主张、派系和他对主角的好恶；虚构的照他的出身），替他们定这个月各自主动要办、要奏的事。现在是${timeText(s.clock)}，主角${s.protagonist.name}（${s.protagonist.role}）。
 国势：${Object.entries(GS).filter(([, v]) => v != null).slice(0, 10).map(([k, v]) => k + Math.round(N0(v))).join('、') || '不详'}${rev ? '；一年进项约' + fmtN(rev, (s.money || {}).unit || '') : ''}；赋税${(s.fisc && s.fisc.pol && s.fisc.pol.tax) || '常'}
 天下：${PW.map(p => `${p.name}${warOf(s, p.name) ? '（交战）' : p.stance ? '（' + p.stance + '）' : ''}`).join('、') || '不详'}
 ${FA.length ? '逼近的敌军：' + FA.map(g => `${g.name}${fmtN(N0(g.troops), '人')}在${g.at}${g.march ? '往' + g.march.to : ''}`).join('；') + '\n' : ''}大臣：${C.map(c => `${c.name}（${c.post}${ppl(c.name)}）`).join('；') || '无'}
@@ -10717,8 +10733,8 @@ function intrigueDossier(s, c) {
 async function intrigueMonthly(s) {
   const C = courtiers(s).slice(0, 6); if (C.length < 3) { s.intrigueYM = intrigueYM(s); return 0; }
   const ym = intrigueYM(s), recent = arr(s.npcLog).filter(x => x.ym >= ym - 2).slice(-8).map(x => `${x.name}${x.did}`).join('；');
-  const issue = courtIssuePick(s);
-  const { text } = await callClaude(`你扮演这局历史模拟游戏朝中的几位要紧人物，照他们各自的利益、性情、派系和处境，替他们定这个月私下要做的动作。现在是${timeText(s.clock)}，主角${s.protagonist.name}（${s.protagonist.role}）。
+  const issue = courtIssuePick(s), libI = await libEvidence(s, C.slice(0, 4).map(c => c.name + '*2').concat([histEraName(s)]), '', 4);   /* 朝臣在史书里的交游恩怨（R-192） */
+  const { text } = await callClaude(`${libI ? libI + '\n（以上是史书原文：这几位彼此的交游、恩怨照这个来）\n' : ''}你扮演这局历史模拟游戏朝中的几位要紧人物，照他们各自的利益、性情、派系和处境，替他们定这个月私下要做的动作。现在是${timeText(s.clock)}，主角${s.protagonist.name}（${s.protagonist.role}）。
 朝中人物（各人只照自己打算，不替主角着想）：
 ${C.map(c => '· ' + intrigueDossier(s, c)).join('\n')}
 主角近来的作为：${arr(s.deeds).slice(-8).map(d => d.what).join('；') || '还没有'}
@@ -13145,6 +13161,7 @@ async function ensureDossiers(s, names) {
       + cb.map(x => '\n· CBDB（中国历代人物传记资料库）' + x.text).join('');
     if (cb.length) feedAdd(cb.map(x => ({ t: 'CBDB 人物：' + x.name, site: 'CBDB' })));
   }
+  { const lb = await libEvidence(s, want.map(n => n + '*2').concat([histEraName(s)]), '', 6); if (lb) ev = lb + '\n' + ev; }   /* 立真人档案先照史书原文（R-192：多用内置原文库） */
   const chk = await chkP, CK = new Map(want.map((n, i) => [n, chk[i]]));
   { const add = want.map(n => CK.get(n)).filter(c => c && arr(c.evidence).length); if (add.length) ev += add.map(c => '\n· 核查：' + c.evidence.join(' / ')).join(''); }
   const { text } = await callClaude(`下面这些名字是一局历史模拟游戏里玩家这一回提到、或场面里要出现的人，可能是真实历史人物。请按史实给每个人立一份档案，并写出他在${timeText(s.clock)}这一刻的状态。主角：${s.protagonist.name || '（玩家扮演的人）'}${s.protagonist.gender ? '（' + s.protagonist.gender + '）' : ''}，${s.protagonist.role}，在${s.place.full}（${s.place.polity || ''}）。
@@ -14190,7 +14207,7 @@ function customForm() {
       <label class="wide">姓名<input id="cName" value="${v('cName')}" placeholder="留空由 AI 起名；写真实人物的名字，就扮演此人（如：海瑞、李清照）"></label>
       <label class="wide">家世背景<textarea id="cFamily" rows="2" placeholder="如：父亲早亡，寡母带着弟妹，靠两亩薄田和母亲做针线过活；舅舅在县衙当书吏">${v('cFamily')}</textarea></label>
       <label class="wide">补充设定（性格、本事、处境、想做的事……）<textarea id="cMore" rows="2" placeholder="如：识字，会算账，脾气倔；想去府城考秀才，舅舅不赞成">${v('cMore')}</textarea></label>
-      <div class="wide row" style="margin-top:2px"><button class="main" id="bCustomStart" ${BUSY || !SAMPLE || (DSM() && !KEY.has && !GLM.has) ? 'disabled' : ''}>按这些设定开局</button><button type="button" class="link" id="bCustomClear">清空</button></div>
+      <div class="wide row" style="margin-top:2px"><button class="main" id="bCustomStart" ${BUSY || !SAMPLE || (DSM() && !KEY.has && !glmUsable()) ? 'disabled' : ''}>按这些设定开局</button><button type="button" class="link" id="bCustomClear">清空</button></div>
     </form></details>`;
 }
 /** 设定表 → 一句话（查资料、认年份用）+ 完整设定（交给 AI 照办） */
@@ -14310,8 +14327,8 @@ async function renderStart() {
   $('#app').innerHTML = `<section class="start">
     <div class="hero"><h1>你想当谁？</h1>
       <p>一句话就行：哪个年代、什么地方、什么人。之后就像聊天一样往下玩：戏里你说做什么，世界照真实的样子回应；戏外你随时可以问历史、问地理、问局面、请它帮你分析。</p>
-      <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off" value="${esc(QTEXT)}"><button class="main" id="bStart" ${BUSY || !SAMPLE || (DSM() && !KEY.has && !GLM.has) ? 'disabled' : ''}>开始</button></form>
-      ${DSM() && !KEY.has && !GLM.has ? '<div class="err">先在下面填 DeepSeek 或 GLM 的 Key（填一个就能玩，两个都填照分工：GLM 写故事、推演，DeepSeek 做杂活），才能开始。<a href="#kIn" style="color:inherit">去填 ↓</a></div>' : ''}
+      <form class="ask1" id="fStart"><input id="qText" maxlength="80" placeholder="例如：乾隆年间扬州的盐商" autocomplete="off" value="${esc(QTEXT)}"><button class="main" id="bStart" ${BUSY || !SAMPLE || (DSM() && !KEY.has && !glmUsable()) ? 'disabled' : ''}>开始</button></form>
+      ${DSM() && !KEY.has && GLM.has && !glmUsable() ? '<div class="err">网页版连不上 GLM：智谱只许它自己的网站直连，别的网页都会被浏览器拦下。请在下面再填一个 DeepSeek 的 Key（网页版全交给它），想用 GLM 写故事请用桌面版。</div>' : ''}${DSM() && !KEY.has && !GLM.has ? '<div class="err">先在下面填 DeepSeek 或 GLM 的 Key（填一个就能玩，两个都填照分工：GLM 写故事、推演，DeepSeek 做杂活），才能开始。<a href="#kIn" style="color:inherit">去填 ↓</a></div>' : ''}
       <div class="examples">${EXAMPLES.map(x => `<button class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
       ${customForm()}
     </div>
@@ -14616,6 +14633,7 @@ function pane(tab) {
     const A0 = arcsNow(s)[0];
     return `${A0 ? `<div class="h" style="margin-top:6px"><span class="seal">线</span>你身在的大势<span class="note">${esc(A0.a.title)}</span></div><div class="overview"><b>${esc((A0.st && A0.st.name) || '')}</b>　${esc((A0.st && A0.st.what) || '')}${A0.st && A0.st.felt && A0.st.felt[roleKey(s)] ? `<div class="muted" style="margin-top:4px">${esc(A0.st.felt[roleKey(s)])}</div>` : ''}</div>${arcsNow(s).slice(1, 3).map(o => `<div class="muted" style="font-size:13px">同时：${esc(o.a.title)}——${esc((o.st && o.st.name) || '')}</div>`).join('')}` : ''}<div class="h" style="margin-top:6px"><span class="seal">势</span>天下大势<span class="note">${w.tickAt ? '记于' + esc(w.tickAt.label) : '开场时写的'}</span></div><div class="overview">${esc(w.overview || '开场后出现。')}</div>
       <div class="muted" style="font-size:12px;margin-top:4px">天下的事自己往下走：外面发生的事照路程变成消息传到你这里。</div>
+      ${libFindHtml(s)}
       ${false && arr(w.ripples).length ? `<div class="h"><span class="seal">果</span>你引起的连锁变化</div><div class="list">${w.ripples.slice().reverse().map(r => `<div><span class="when">第${r.turn}回合</span><b>${esc(r.cause)}</b> → ${esc(r.effect)}${r.when ? `<span class="muted">（${esc(r.when)}）</span>` : ''}</div>`).join('')}</div>` : ''}
       ${(() => { const D = arr(s.deeds).slice(-12).reverse(), HC = arr(s.history).slice(-8).reverse(), INF = Object.values(s.influence || {}).filter(o => o && o.score >= 1);
         return D.length || HC.length || INF.length ? `<div class="h"><span class="seal">迹</span>你在这世上留下的痕迹<span class="note">外面的人记着、在传、照着应对的</span></div><div class="list">${HC.map(h => `<div><span class="badge b-bad">改了史事</span> ${esc(h.event)} → ${esc(h.now)}${h.cause ? `<span class="muted">（因${esc(h.cause)}）</span>` : ''}</div>`).join('')}${INF.map(o => `<div><span class="badge b-doing">碰到大事</span> ${esc(o.text)}<span class="muted">（分量 ${esc(o.score)}）</span></div>`).join('')}${D.map(x => `<div style="${x.done ? 'opacity:.6' : ''}"><span class="when">第${x.turn}回合</span>${esc(x.what)}${x.effect ? `<span class="muted">——${esc(x.effect)}</span>` : ''}</div>`).join('')}</div>` : ''; })()}
@@ -15269,6 +15287,7 @@ document.addEventListener('click', async e => {
       render(); return;
     } }
   const t = e.target.closest('button'); if (!t) return;
+  if (S && t.dataset.libfind) { await libFind(S, ($('#libQ') || {}).value); render(); return; }   // 翻史书（R-192）
   if (S && !BUSY && t.dataset.ms) { msAct(S, t.dataset.ms, ($('#msQty') || {}).value); try { await store.save(S); } catch (_) {} render(); return; }   // 市面与民生（R-168）
   if (S && !BUSY && (t.dataset.zz || t.id === 'bMao')) { if (t.id === 'bMao') maocaiAsk(S); else zhongzhengAct(S, t.dataset.zz); try { await store.save(S); } catch (_) {} render(); return; }   // 九品中正、举茂才（R-156）
   if (S && !BUSY && (t.id === 'bExam' || t.id === 'bXiao' || t.id === 'bStudy')) { if (t.id === 'bExam') examApply(S); else if (t.id === 'bXiao') examRecommend(S); else { const E = examOf(S); if (E.studyFrom != null) { E.studyFrom = null; S.focus = ''; ORGMSG = '不再闭门读书'; } else { E.studyFrom = Math.floor(ymOf(S.clock)); S.focus = '读书'; ORGMSG = '开始闭门读书：每过一个月文墨长一些，应考把握大一些'; } } try { await store.save(S); } catch (_) {} render(); return; }
