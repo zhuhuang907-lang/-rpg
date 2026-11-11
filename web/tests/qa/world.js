@@ -47,11 +47,11 @@ const path = require('path');
     st = mk({ idm: 'official', protagonist: { name: '甲', role: '江都县知县' }, career: { office: '江都县知县' }, gov: { scope: 'local', keys: LOCAL_KEYS, stats: { 治安: 60 }, hist: [] } });
     localImpact(st, { where: '苏州府吴县', kind: '治安' }, '吴县盗案'); if (st.gov.stats.治安 !== 60) bad.push('别县出事落到了自己辖区');
     localImpact(st, { where: '江都县', kind: '治安' }, '江都盗案'); if (st.gov.stats.治安 !== 57) bad.push('本县出事没落到治安上');
-    // 别家之间交兵：两家兵数都在账上才照打仗规矩结算，折损落到两家；有一家兵数不详的不编
+    // 别家之间交兵照打仗规矩结算，折损落到两家；账上没兵数的一家照它的地盘推兵数再打（2026-11-11 玩家：「整个游戏不准有不详」，R-193）
     st = mk({ powers: [{ name: '白莲教众', leader: '王聪儿', troops: '20000', seat: '襄阳' }, { name: '襄阳清军', leader: '永保', troops: '8000', seat: '襄阳府' }, { name: '无名股匪', leader: '刘六', troops: '' }], people: {} });
     applyNpcMoves(st, [{ name: '王聪儿', op: '出兵', with: '襄阳清军', did: '攻襄阳', cause: '聚众已多', open: true }, { name: '刘六', op: '出兵', with: '襄阳清军', did: '抢掠', cause: '缺粮', open: true }]);
     { const A = st.powers[0], B = st.powers[1]; if (!(Number(A.troops) < 20000 && Number(B.troops) < 8000) || !arr(st.clashLog).length || !arr(st.world.events).some(e => /白莲教众攻襄阳清军/.test(e.text))) bad.push('别家交兵没照规矩结算或没进天下大事：' + JSON.stringify([A, B, st.clashLog]));
-      if (arr(st.clashLog).length !== 1) bad.push('兵数不详的一家也结算了'); }
+      if (arr(st.clashLog).length !== 2 || !(Number(st.powers[2].troops) > 0)) bad.push('账上没兵数的一家没照地盘推兵数结算：' + JSON.stringify(st.powers[2])); }
     // 钱粮：别家组织进公库、没组织的进家资；原本不详的要写怎么来的才立数；一个月最多动一半
     st = mk({ people: { 韩掌柜: { role: '盐商', tie: '同行', seen: 7 }, 梁大: { role: '寨主', seen: 7 } }, orgs: [{ id: 'o5', name: '梁家寨', kind: '山寨', head: '梁大', members: [], count: 200, cash: 100 }] });
     applyNpcMoves(st, [{ name: '韩掌柜', op: '经营', did: '贩盐到汉口', cause: '汉口盐价高', res: { cash: 800 } }, { name: '梁大', op: '经营', did: '劫了一支商队', cause: '劫商队', res: { cash: 5000 } }]);

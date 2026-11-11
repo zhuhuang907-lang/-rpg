@@ -33,7 +33,7 @@ const path = require('path');
     if (!/marker-end="url\(#marr\)"/.test(h)) bad.push('行军的兵马没画去向');
     MAPZ.from = '威武军'; MAPZ.sel = '虔州'; const card0 = mapInfo(S);
     // 户口没推出来的城：不拿默认数凑守军，写「守军不详」（2026-11-02 玩家：「数据非常诡异」）
-    if (!/胜算：守军不详/.test(card0)) bad.push('户口没推出来的城，胜算照默认数编了守军');
+    if (/不详/.test(card0) || !/守军没探实，是推的/.test(card0)) bad.push('户口没推出来的城，胜算没照城的等级推、或没标明是推的');   // 2026-11-11 玩家：「整个游戏不准有不详」，照城的等级推、标明是推的
     S.popEst = { k: popKey(S), m: { 虔州: { hh: 30000, pop: 160000, why: '推' } } }; MAPC.k = '';
     const card = mapInfo(S);
     if (!/⚑ 威武军/.test(card) || !/军粮够/.test(card)) bad.push('选了兵马没出军情卡');

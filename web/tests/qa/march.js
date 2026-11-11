@@ -20,7 +20,7 @@ const path = require('path');
   if (opts.length < 4) bad.push('出征单上的目标太少：' + opts.length);
   if (!opts.some(o => /汀州（.*?，约\d+里、\d+日，胜算约\d+%，守军约8,000人/.test(o))) bad.push('别家兵马驻的汀州没列出、或没写守军和胜算：' + opts.join(' | '));
   if (opts.some(o => /守军约1,200人/.test(o))) bad.push('户口不详的城还照默认数编守军');
-  if (!opts.some(o => /守军不详/.test(o))) bad.push('户口不详的城没写「守军不详」');
+  if (opts.some(o => /不详/.test(o))) bad.push('出征单上还写着不详（R-193 一律照城的等级推）');   // 2026-11-11 玩家：「整个游戏不准有不详」
   await p.selectOption('[data-xtg="威武军"]', { label: opts.find(o => /汀州/.test(o)) });
   await p.selectOption('[data-xtac="威武军"]', '包抄');
   await p.click('button[data-army="go"][data-mode="攻"]');
