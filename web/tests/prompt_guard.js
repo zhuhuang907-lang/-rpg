@@ -294,10 +294,14 @@ const checks = [
   ['义军开仓先认队伍自己的粮（R-190）', /\(P && N0\(P\.grain\)\) \|\| \(myG && N0\(myG\.grain\)\)/.test(src)],
   ['测试与 CI：tour 认 CHROMIUM 路径，不依赖 playwright 自带浏览器（R-190）', (() => { let f = ''; try { f = require('fs').readFileSync(require('path').join(__dirname, 'qa', 'tour.js'), 'utf8'); } catch (_) { return false; } return /process\.env\.CHROMIUM \? \{ executablePath/.test(f); })()],
 
-  ['GLM 网页版直连失败说清是跨域、指向桌面版（R-191）', /智谱接口不回应浏览器的跨域预检/.test(src) && /要用 GLM 请开桌面版/.test(src) && /网页版连不上 GLM/.test(src)],
   ['网页版连不上 GLM（智谱只许它自己的网站直连）：网页版照实说、全交 DeepSeek、可填自己的转发地址；桌面版不受影响；GLM 的 Key 错了不再叫玩家去换 DeepSeek 的 Key（R-191）', /const glmUsable = \(\) =>/.test(src) && /if \(!glmUsable\(\)\) return 'ds'/.test(src) && /网页版连不上 GLM/.test(src) && /id="gProxy"/.test(src) && /GLM 的 Key 不对或已失效，请到「设置」的 GLM 栏重新粘贴/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'rpg-kernel', 'adapters', 'index.js'), 'utf8'))],
   ['默认全交 DeepSeek（GLM 设置里可选）；翻史书；原文库进当面说、敌国之主、大臣奏事、朝臣互谋、立真人档案；同查询缓存（R-192）', /const ROUTE_DEF = \{ story: 'ds', struct: 'ds', light: 'ds' \}/.test(src) && /function libFindHtml\(s\)/.test(src) && /data-libfind/.test(src) && /const LIB_CACHE = new Map\(\)/.test(src) && (src.match(/await libEvidence\(s, /g) || []).length >= 11],
   ['不写「不详」：守军、兵数、年岁、品级、位分、本地官绅照制度和常情推、标「约」；朝局没整理就当场自动整理，不让玩家去按（R-193）', /function garrisonGuess\(s, place\)/.test(src) && /function powTroopsGuess\(s, name\)/.test(src) && /function ageGuessOf\(s, v\)/.test(src) && /function titleRankGuess\(t\)/.test(src) && !/'品级不详'|'守军不详'|'年岁不详'|'君主不详'|'上头的人不详'|出身不详，不能授官|史载不详——/.test(src) && /朝局不用玩家去按/.test(src)],
+  ['关卡大表只增不删：80 关带年代与坐标，六大时代各有关（R-198）', (() => { try { const T = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'terrain.json'), 'utf8')); if (T.passes.length < 70) return false; const cnt = {}; for (const p of T.passes) for (const e of [-200, 200, 600, 1000, 1400, 1800]) if (p.from <= e && p.to >= e) cnt[e] = (cnt[e] || 0) + 1; return [-200, 200, 600, 1000, 1400, 1800].every(e => cnt[e] >= 15); } catch (_) { return false; } })()],
+  ['古道走廊：真实古道折线按年代生效，行军照 slow 拉长（R-199）', /const corridorsIn = y =>/.test(src) && /const corridorOf/.test(src) && /co\.slow/.test(src) && /循\$\{R\.corridor\.n\}/.test(src)],
+  ['舆图交互：交战红圈脉冲、⚔、新占地金圈（R-200）', /battlepulse/.test(src) && /新占\/新丢的城/.test(src) && /e8b021/.test(src)],
+  ['山道磨兵：走古道或半程山路行军掉士气（R-201）', /山道磨兵/.test(src) && /走\$\{co\.n\}|走山路/.test(src)],
+  ['粮道上图：兵→仓画线、被截变红虚线（R-202）', /粮道画在图上/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

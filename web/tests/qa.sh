@@ -91,6 +91,7 @@ start ai.js && {
   run "历史原文库取证：按年代挑书、检索词带年号真人、桌面与网页两路出带出处的原文（R-172）" 180 env PLAY="$ROOT/web/play.html" node cite.js
   run "文化线：作诗文评四等、雅集请本地人、文社会文、同月有节度（R-178）" 120 env PLAY="$ROOT/web/play.html" node cult.js
   run "学问手艺：读书涨学问涨文墨、坐馆月束脩、学徒三年出师落本事（R-184、R-188）" 120 env PLAY="$ROOT/web/play.html" node study.js
+  run "舆图大修：关卡大表、古道走廊（行军变慢写循某道）、交战红圈、新占地金圈、粮道画线（R-197~202）" 240 env PLAY="$ROOT/web/play.html" node passes.js
   run "原文库检索：照朝代政权挑书、整词比对、同段多词排前、在命中处摘句、真语料查得到（R-189）" 300 env PLAY="$ROOT/web/play.html" node libsearch.js
   run "三方分工：整理归 DeepSeek、写故事想事情归 GLM、互为后备、材料过长删中间；原文佐证进推演（R-189）" 150 env PLAY="$ROOT/web/play.html" node r189.js
   run "默认全交 DeepSeek；翻史书真点；朝臣互谋、大臣奏事、敌国之主、当面说、立真人档案带史书原文；同查询只查一回（R-192）" 150 env PLAY="$ROOT/web/play.html" node r192.js
