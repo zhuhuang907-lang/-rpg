@@ -15,7 +15,7 @@ const path = require('path');
     callClaude = async x => ({ text: JSON.stringify({ fills: [{ i: 1, name: '杨素' }, { i: 2, name: '牛弘' }] }) });
     try { const due = orgVerifyDue(S); await orgVerifyReal(S); } finally { MODE = om; bochaDeep = ob; callClaude = oc; }
     const P = S.org.nodes.flatMap(n => n.posts); return { due0: true, a: [P[1].holder, P[1].src], b: [P[2].holder, P[2].src], c: [P[3].holder, P[3].src], nq: qs.length, log: S.org.log.length }; });
-  if (v.a.join() !== '高颎,DS表·博查核' || v.b[0] !== '杨素' || v.c[0] !== '牛弘' || !(v.nq >= 6) || !v.log) bad.push('大官没上网核、或核不上的没换：' + JSON.stringify(v));
+  if (!/^高颎,(原文库|DS表·博查核)/.test(v.a.join()) || v.b[0] !== '杨素' || v.c[0] !== '牛弘' || !(v.nq >= 6) || !v.log) bad.push('大官没上网核、或核不上的没换：' + JSON.stringify(v));
   // 2 日后显达的人此刻在下位：照真人贴进树里，对不上的进名册；不标虚拟
   await base();
   const r = await p.evaluate(async () => { const oc = callClaude; callClaude = async () => ({ text: JSON.stringify({ people: [{ name: '李靖', now: '殿中省殿内直长', place: '大兴', later: '尚书右仆射', source: '旧唐书·李靖传' }, { name: '房玄龄', now: '隰城县尉', place: '隰城县', later: '中书令', source: '旧唐书·房玄龄传' }, { name: '某甲', now: '县丞', place: '', later: '', source: 'x' }] }) }); try { await risingDS(S); } finally { callClaude = oc; }

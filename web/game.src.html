@@ -1730,6 +1730,7 @@ ${vacantText(s.clock.y) ? '【这一年照例空着、不授人的职位（照�
     }
     const lg0 = nodes.logTmp || arr(s.org && s.org.log); delete nodes.logTmp;
     s.org = { regime: `${pol} ${yl}`, pol: s.place.polity || '', ruler, at: s.turn, y: s.clock.y, nodes, log: lg0, lib: !!instLibFor(s).length };
+    SH(() => seatSelf(s), 'seatSelf');   // R-204 做了官的主角先落进树里，朝局才是你的戏
     orgFillReal(s); orgVacantFix(s);
     // 国策书另起一路（照这个政权此刻的处境）
     try {
@@ -1851,9 +1852,10 @@ async function courtFullDS(s) {
 function courtHtml(s) {
   const C = s.court; if (!C || !arr(C.people).length) return '';
   const FS = fictionShow(s), byF = {}; for (const x of C.people) (byF[x.faction || '（不分派）'] = byF[x.faction || '（不分派）'] || []).push(x);
+  const CK = s.courtChk || {};
   return `<div class="h"><span class="seal">廷</span>朝堂全表<span class="note">${esc(C.y)}年 · ${esc(C.people.length)}人 · 照派系分</span></div>
     ${arr(C.factions).length ? `<div class="list">${C.factions.map(f => `<div><b>${esc(f.name)}</b>${f.leader ? ` <span class="muted">首领 ${esc(f.leader)}</span>` : ''}${f.aim ? `<div class="muted">${esc(f.aim)}</div>` : ''}</div>`).join('')}</div>` : ''}
-    ${Object.entries(byF).map(([fn, L]) => `<details class="ofold"${fn !== '（不分派）' ? ' open' : ''}><summary><b>${esc(fn)}</b> <span class="muted">${L.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>谁</th><th>官职</th><th>关系</th></tr>${L.map(x => `<tr><td>${esc(x.name)}${!x.real || FS.has(x.name) ? '<span class="vt">虚拟</span>' : ''}</td><td>${esc(x.post)}${x.rank ? `<span class="muted">（${esc(x.rank)}）</span>` : ''}${x.stance ? `<div class="muted" style="font-size:11px">${esc(x.stance)}</div>` : ''}</td><td>${arr(x.ties).map(t => `${esc(t.rel)}：${esc(t.to)}`).join('；')}</td></tr>`).join('')}</table></div></details>`).join('')}`;
+    ${Object.entries(byF).map(([fn, L]) => `<details class="ofold"${fn !== '（不分派）' ? ' open' : ''}><summary><b>${esc(fn)}</b> <span class="muted">${L.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>谁</th><th>官职</th><th>关系</th></tr>${L.map(x => `<tr><td>${esc(x.name)}${!x.real || FS.has(x.name) ? '<span class="vt">虚拟</span>' : CK[x.name] ? `<span class="ok" title="${esc(CK[x.name])}" style="font-size:10px;color:#3c9a4b">✓核</span>` : ''}</td><td>${esc(x.post)}${x.rank ? `<span class="muted">（${esc(x.rank)}）</span>` : ''}${x.stance ? `<div class="muted" style="font-size:11px">${esc(x.stance)}</div>` : ''}</td><td>${arr(x.ties).map(t => `${esc(t.rel)}：${esc(t.to)}`).join('；')}</td></tr>`).join('')}</table></div></details>`).join('')}`;
 }
 async function orgSeekReal(s, nodes) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '', byId = Object.fromEntries(nodes.map(n => [n.id, n]));
@@ -2238,6 +2240,10 @@ function courtTab(s) {
     const headTxt = `<b>${esc(n.name)}</b>${n.level ? ` <span class="muted">${esc(n.level)}</span>` : ''}${n.status ? ` <span class="att">${esc(n.status)}</span>` : ''}${n.src === '玩家' ? ' <span class="att">新设</span>' : ''}${n.path && n.id !== 'root' ? ' <span class="att onpath">你这一路</span>' : ''}${n.duty ? `<span class="muted"> · ${esc(n.duty)}</span>` : ''}${ks.length ? `<span class="muted">（下辖${ks.length}）</span>` : ''}`;
     return `<details class="onode${n.path ? ' path' : ''}" ${open ? 'open' : ''}><summary>${headTxt}</summary>${body}</details>`; };
   const pathLine = O ? (() => { const L = []; const byId = Object.fromEntries(O.nodes.map(n => [n.id, n])); let c = O.nodes.filter(n => n.path && n.id !== 'root').sort((a, b) => (b.depth || 0) - (a.depth || 0))[0]; while (c && L.length < 14) { L.unshift(c.name); c = byId[c.parent]; } return L.length > 1 ? '线路：' + L.join(' → ') : ''; })() : '';
+  const seatCardHtml = (() => { const me = s.protagonist && s.protagonist.name, p = me && findPost(s, me); if (!p) return ''; const n0 = postNodeOf(s, p); if (!n0) return '';
+    const par = arr(O.nodes).find(n => n.id === n0.parent), up = par ? arr(par.posts).filter(q => q.holder && q.holder !== me).slice(0, 2).map(q => `${q.holder}（${par.name}${q.title}）`) : [];
+    const mates = arr(n0.posts).filter(q => q.holder && q.holder !== me).slice(0, 4).map(q => `${q.holder}（${q.title}）`), chk = (s.courtChk || {})[me] || '本人';
+    return `<div class="plan" style="border-left-color:#8a6d1d"><div class="ph"><b>你的位子</b> <span class="muted">${esc(n0.path ? cut(n0.path, 40) + ' · ' : '')}${esc(n0.name)}${esc(p.title)}${p.rank ? '（' + esc(p.rank) + '）' : ''}</span></div><div class="muted" style="font-size:12px">${up.length ? '上司：' + esc(up.join('、')) + '；' : ''}${mates.length ? '同僚：' + esc(mates.join('、')) + '；' : ''}${arr(n0.places).length ? '辖地：' + esc(cut(arr(n0.places).join('、'), 60)) : ''}（核实：${esc(chk)}）</div></div>`; })();
   const tree = O ? `${pathLine ? `<div class="pl" style="font-size:13px">${esc(pathLine)}</div>` : ''}<div class="pl" style="font-size:13px"><span>职权</span>${esc(myRule)}</div><div class="muted" style="font-size:12px">共 ${O.nodes.filter(n => n.status !== '已裁撤').length} 个衙署、${O.nodes.reduce((a, n) => a + n.posts.reduce((b, p) => b + (p.quota || 1), 0), 0)} 个员额；${O.lib ? '照内置制度库（按史书编）和联网资料整理' : '照联网资料整理'}；在任的先填天下名录、内置史料里的真人，再用博查（没有博查用 DeepSeek 检索）一个个查；都查不到的才是虚构的（标「虚拟」），查到真人会换；离你远的衙门收在「其余」里</div>` + (O.nodes.find(n => n.id === 'root') ? nodeHtml(O.nodes.find(n => n.id === 'root')) : '') + O.nodes.filter(n => n.id !== 'root' && n.status !== '已裁撤' && !O.nodes.some(m => m.id === n.parent)).map(nodeHtml).join('') : '';
   const areas = ['政治', '经济', '民生', '军事', '制度'];
   const pols = arr(s.polBook);
@@ -2250,7 +2256,7 @@ function courtTab(s) {
     ${s.gov ? govHtml(s) : rk === 'ruler' ? dash : ''}
     ${s.gov ? affairsHtml(s, perm === 'decree') : ''}
     <div class="h"><span class="seal">树</span>人事树<span class="note">${O ? esc(O.regime || '') + (O.at != null ? ' · 第' + O.at + '回合整理' : '') : ''}</span>${O ? ` <button class="link" id="bOrgRe">重新查一遍</button>` : ''}</div>
-    ${O ? tree + (can ? `<div class="opost"><input class="oin" data-onode="" placeholder="新衙门名（最上一层）"><button class="link" data-org="addNode" data-n="">${vb}设立衙门</button></div>` : '') : `<div class="muted">${ORGING ? '正在照史书和制度整理人事树、国策书，整理好自动摆出来……' : '正在排进后台，马上开始整理……'}</div>${(() => { if (!ORGING && !KICK.org && seesCourt(s)) setTimeout(() => { if (S && !S.org && !ORGING) kickJob('org', '人事树', () => buildOrg(S), '人事树整理好了'); }, 0); return ''; })()}`}   <!-- 朝局不用玩家去按（R-193）：没整理就当场自动整理 -->
+    ${O ? seatCardHtml + tree + (can ? `<div class="opost"><input class="oin" data-onode="" placeholder="新衙门名（最上一层）"><button class="link" data-org="addNode" data-n="">${vb}设立衙门</button></div>` : '') : `<div class="muted">${ORGING ? '正在照史书和制度整理人事树、国策书，整理好自动摆出来……' : '正在排进后台，马上开始整理……'}</div>${(() => { if (!ORGING && !KICK.org && seesCourt(s)) setTimeout(() => { if (S && !S.org && !ORGING) kickJob('org', '人事树', () => buildOrg(S), '人事树整理好了'); }, 0); return ''; })()}`}   <!-- 朝局不用玩家去按（R-193）：没整理就当场自动整理 -->
     ${isRuler(s) ? edictHtml(s) : ''}
     ${rosterTable(s)}
     ${talentHtml(s, SC)}
@@ -2672,6 +2678,44 @@ async function buildOfficers(s) {
   return C.length;
 }
 function findPost(s, name) { for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.holder === name) return p; return null; }
+/* ---------- R-203 原文库核实：人事树上的人不只靠博查——照朝代挑正史，在原文库里检索这个名字；
+   命中即「已核·原文《书名》」，一条就把真人钉死（正史列传里查得到名字，铁证）；核不上再走博查，还核不上就不配占大位子 ---------- */
+const PEV_MEMO = new Map();
+async function personEvidence(s, name, ctx) {
+  if (!name || String(name).length < 2) return null;
+  const key = (s.clock || {}).y + '|' + name;
+  if (PEV_MEMO.has(key)) return PEV_MEMO.get(key);
+  if (PEV_MEMO.size > 300) PEV_MEMO.clear();
+  let r = null;
+  try {
+    const hits = await within(citeFetch(s, histBooksFor(s, ctx || ''), [name]), 25000);
+    const hit = hits.find(h => String(h.text || '').includes(name));
+    if (hit) r = { ok: true, src: '原文库·' + (hit.name || '') + (hit.volume || '') };
+  } catch (_) { r = null; }
+  PEV_MEMO.set(key, r);
+  return r;
+}
+function courtChkMark(s, name, src) { s.courtChk = s.courtChk || {}; if (src && !s.courtChk[name]) s.courtChk[name] = src; }
+/* ---------- R-204 主角落位：做了官的主角必须落在人事树上（照 career.office 找位子），不然朝局就是别人的戏 ----------
+   「你的位子」卡：上司、同僚、辖地全用树上核过的真人；主角自己上任，盖过程序起的占位名（player 优先） ---------- */
+function seatSelf(s) {
+  const me = s.protagonist && s.protagonist.name; if (!me || !s.org || !arr(s.org.nodes).length) return null;
+  if (findPost(s, me)) return null;
+  const office = String((s.career || {}).office || ''); if (!office || office.length < 2) return null;
+  /* 官名古今异称：太守≈知府/知州，同知≈通判，县令≈知县——换几个叫法再找位子 */
+  const tries = [office, office.replace(/太守/g, '知府'), office.replace(/太守/g, '知州'), office.replace(/同知/g, '通判'), office.replace(/县令/g, '知县')].filter((x, i, a) => x && a.indexOf(x) === i);
+  for (const t of tries) { const m = matchPost(s, t);
+    if (m && seatPut(s, m[0], m[1], me, '本人', { player: true, force: true })) { s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: `${me}就任${m[0].name}${m[1].title}（照开局身份落位）` }]); return m; } }
+  return null;
+}
+function seatSelfLine(s) {
+  const me = s.protagonist && s.protagonist.name, p = me && findPost(s, me); if (!p) return '';
+  const n0 = postNodeOf(s, p); if (!n0) return '';
+  const par = arr(s.org.nodes).find(n => n.id === n0.parent), up = par ? arr(par.posts).filter(q => q.holder && q.holder !== me).slice(0, 2).map(q => `${q.holder}（${par.name}${q.title}）`) : [];
+  const mates = arr(n0.posts).filter(q => q.holder && q.holder !== me).slice(0, 4).map(q => `${q.holder}（${q.title}）`);
+  const chk = (s.courtChk || {})[me] || '本人';
+  return `【你的位子（程序照人事树落位；上司同僚照树上的真人写）】${n0.path ? cut(n0.path, 40) + ' · ' : ''}${n0.name}${p.title}${p.rank ? '（' + p.rank + '）' : ''}——你占着这个位子（${chk}）${up.length ? '；上司：' + up.join('、') : ''}${mates.length ? '；同僚：' + mates.join('、') : ''}${arr(n0.places).length ? '；辖地：' + cut(arr(n0.places).join('、'), 60) : ''}`;
+}
 /* ========== 剧情扩展：不违背玩家命令的前提下，照这个年代、这个地方、身边这些人的真实处境，给日子添些有来由的事
    （时事波及、有人上门、机会、麻烦、家事、官场），每隔一两回、或者玩家这一步平平无事时，挑一件写进来；只把事摆到主角面前，停在要他拿主意的地方 ========== */
 const HOOK_KINDS = ['时事', '人物', '机会', '麻烦', '家事', '官场'];
@@ -9038,13 +9082,23 @@ async function orgVerifyReal(s) {
   s.ovAt = s.turn; const y = s.clock.y, yl = s.clock.yearLabel || y + '年', L = [];
   for (const n of arr(s.org.nodes)) for (const q of n.posts) if (q.holder && /^DS表$/.test(q.src || '') && orgMajor(n, q) && q.ver == null && !q.byPlayer) L.push({ n, q });
   const pick = L.slice(0, 120); if (!pick.length) return 0;
-  const QS = pick.flatMap(x => [`${x.q.holder} ${x.q.title}`, `${x.q.holder} ${yl}`]), items = [];
-  for (let k = 0; k < QS.length; k += 24) { const b = await bochaDeep(s, QS.slice(k, k + 24), 120); items.push(...b.items.filter(i => !i.ds)); }
-  const bad = []; let ok = 0;
-  for (const x of pick) { const nm = x.q.holder, stem = x.n.name.replace(/(衙门|衙署|府署|公署|署|司|院|部|寺|监|处|府|厅|省)$/, '').slice(0, 2), t2 = x.q.title.slice(-2);
+  /* R-203 先走原文库：正史列传里查得到名字就是铁证，不花博查的钱；核不上的再交给博查 */
+  let pevOk = 0;
+  for (const x of pick.slice(0, 40)) { const ev = await personEvidence(s, x.q.holder, `${x.n.name}${x.q.title}`); if (ev && ev.ok) { x.q.ver = s.turn; x.q.src = ev.src; courtChkMark(s, x.q.holder, ev.src); pevOk++; } }
+  const rest = pick.slice(40).concat(pevOk ? pick.slice(0, 40).filter(x => x.q.src === 'DS表' || /^DS表·/.test(x.q.src || '')) : pick.slice(0, 40));
+  const QS = rest.flatMap(x => [`${x.q.holder} ${x.q.title}`, `${x.q.holder} ${yl}`]), items = [];
+  if (canSearch()) for (let k = 0; k < QS.length; k += 24) { const b = await bochaDeep(s, QS.slice(k, k + 24), 120); items.push(...b.items.filter(i => !i.ds)); }
+  const bad = []; let ok = pevOk;
+  for (const x of rest) { if (x.q.src && !/^DS表/.test(x.q.src)) continue; const nm = x.q.holder, stem = x.n.name.replace(/(衙门|衙署|府署|公署|署|司|院|部|寺|监|处|府|厅|省)$/, '').slice(0, 2), t2 = x.q.title.slice(-2);
     const hit = items.some(i => { const h = `${i.title} ${i.snippet}`; return h.includes(nm) && (h.includes(x.q.title) || h.includes(t2) || (stem.length >= 2 && h.includes(stem))); });
-    x.q.ver = s.turn; if (hit) { x.q.src = 'DS表·博查核'; ok++; } else bad.push(x); }
+    x.q.ver = s.turn; if (hit) { x.q.src = 'DS表·博查核'; courtChkMark(s, nm, '博查'); ok++; } else bad.push(x); }
   if (bad.length && items.length) ok += await postSeek(s, bad.slice(0, 60), true);
+  /* 核不上的大员不配占位子：腾出来写出缺（后台 orgSeek 会继续找真人），宁缺毋滥——玩家看到假人比看到空位更伤 */
+  if (pevOk > 0 || items.length) { let vac = 0;
+    for (const x of pick) { if (!orgMajor(x.n, x.q) || x.q.byPlayer) continue; if (/^DS表$/.test(x.q.src || '') && x.q.ver != null) {
+      s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: `${x.n.name}${x.q.title}的「${x.q.holder}」核不出真人，位子空着待查` }]).slice(-60);
+      x.q.holder = ''; x.q.src = ''; x.q.status = '出缺'; x.q.needReal = true; vac++; } }
+    if (vac) s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: `这轮核实：${ok} 个核到了真人，${vac} 个核不上、先空着` }]).slice(-60); }
   return ok;
 }
 /* ========== 日后显达的人此刻在下位（2026-11-04 玩家：「现在官职很小、以后会成材的官员也要标成真的……能搜到的真人全部都要贴进去」）：
@@ -9127,7 +9181,8 @@ function personBad(s, name) {
   return '';
 }
 function seatPut(s, n, q, name, src, opt) {
-  opt = opt || {}; name = one(name, 8); if (!q || !name || name.length < 2 || /某|不详|待查|佚名|空缺|不知道/.test(name)) return false;
+  opt = opt || {}; name = one(name, 8); if (!q || !name || name.length < 2 || /某|不详|待查|佚名|空缺|不知道|无/.test(name)) return false;
+  if (/[，。；！？、：」「『』（）()!?,.:;<>]/.test(name)) return false;   /* R-205 真模型会把官衔一整串塞进名字：带标点的不是人名，不收 */
   if (q.byPlayer && !opt.player) return false;
   if (name === q.holder) { if (SEAT_RANK(src) > SEAT_RANK(q.src)) q.src = src; return true; }
   if (!opt.force && !opt.player && q.holder && SEAT_RANK(src) < SEAT_RANK(q.src)) return false;
@@ -11928,6 +11983,7 @@ function blocks(s, forStory) {
   const hh = arr(s.household);
   const fb = familyBlock(s), pb = policiesBlock(s); if (fb) L.push(fb); if (pb) L.push(pb.trim());
   { const cb = castBlock(s); if (cb) L.push(cb); }
+  { const sl = seatSelfLine(s); if (sl) L.push(sl); }
   { const hb = haremLine(s); if (hb) L.push(hb); }   // R-175 内宅暗流
   { const cl = cultLine(s); if (cl) L.push(cl); }   // R-178 文墨
   { const sl = studyLine(s); if (sl) L.push(sl); }   // R-184/188 学问手艺

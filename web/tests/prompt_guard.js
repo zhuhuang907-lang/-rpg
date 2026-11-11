@@ -302,6 +302,10 @@ const checks = [
   ['舆图交互：交战红圈脉冲、⚔、新占地金圈（R-200）', /battlepulse/.test(src) && /新占\/新丢的城/.test(src) && /e8b021/.test(src)],
   ['山道磨兵：走古道或半程山路行军掉士气（R-201）', /山道磨兵/.test(src) && /走\$\{co\.n\}|走山路/.test(src)],
   ['粮道上图：兵→仓画线、被截变红虚线（R-202）', /粮道画在图上/.test(src)],
+  ['原文库核人：personEvidence 照朝代挑正史核名字，orgVerifyReal 先原文后博查（R-203）', /async function personEvidence/.test(src) && /PEV_MEMO/.test(src) && /先走原文库/.test(src) && /courtChkMark/.test(src)],
+  ['核不上大员腾位：宁缺毋滥写出缺进日志（R-203）', /核不出真人，位子空着待查/.test(src) && /needReal = true; vac/.test(src)],
+  ['主角落位：seatSelf 照 career.office（含太守→知府异称）进树，你的位子卡上司同僚辖地（R-204）', /function seatSelf/.test(src) && /office\.replace\(\/太守\/g, '知府'\)/.test(src) && /你的位子/.test(src) && /function seatSelfLine/.test(src)],
+  ['人名门禁：带标点的不是人名不收；朝堂全表 ✓核 徽标（R-205）', /带标点的不是人名/.test(src) && /✓核/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
