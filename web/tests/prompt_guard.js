@@ -262,7 +262,7 @@ const checks = [
   ['同名里只有一个写得出生的并作一人，剩下的才标生卒分两人（R-170）', /dated\.length === 1/.test(src) && /out\.splice\(i, 1\)/.test(src)],
   ['南宋金元史料与制度库（R-171）', fs.existsSync(path.join(__dirname, '..', 'history', 'song-south-yuan.json')) && fs.existsSync(path.join(__dirname, '..', 'inst', 'song-south-yuan.json'))],
   ['探马先行、本局任命考课、法理凭血统（R-171）', /c\.pre = est/.test(src) && /function trackMonthly\(s\)/.test(src) && /SM\('trackMonthly'/.test(src) && /'姻亲血统'/.test(src)],
-  ['历史原文库：按年代挑书、写正文前查原文、材料带出处与照抄规矩（R-172）', /const HIST_ERA_BOOKS/.test(src) && /async function citeInto/.test(src) && /function citeBlock/.test(src) && /史书原文/.test(src) && /照这里抄/.test(src)],
+  ['历史原文库：按年代挑书、写正文前查原文、材料带出处与照抄规矩（R-172）', /function libBooksFor\(y, pol, said\)/.test(src) && /async function citeInto/.test(src) && /function citeBlock/.test(src) && /史书原文/.test(src) && /照这里抄/.test(src)],
   ['历史原文库网页路：浏览器直连云端语料按书下载、IndexedDB 缓存（R-172）', /async function wlibLoad/.test(src) && /DecompressionStream\('gzip'\)/.test(src) && /'wlib:' \+ id/.test(src)],
   ['历史原文库桌面端：按需下载、白名单核 id、LRU 控内存（R-172）', (() => { let f = ''; try { f = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'rpg-kernel', 'core', 'histlib.js'), 'utf8'); } catch (_) { return false; } return /SAFE_ID/.test(f) && /knownId/.test(f) && /MEM_BOOKS/.test(f) && /gunzipSync/.test(f); })()],
   ['历史原文库服务端点：书目与取证检索（R-172）', (() => { let f = ''; try { f = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'rpg-kernel', 'server.js'), 'utf8'); } catch (_) { return false; } return /\/api\/histlib\/books/.test(f) && /\/api\/histlib\/cite/.test(f); })()],
@@ -285,6 +285,10 @@ const checks = [
   ['手艺学徒：拜师三年出师落本事、帮工零钱（R-188）', /'apprentice'/.test(src) && /学徒期满，出师了/.test(src)],
   ['商人：官凭牙帖月利上浮、坏账、伙计分劳月钱（R-185）', /'license'/.test(src) && /官凭牙帖/.test(src) && /赊的账黄了/.test(src) && /'hire'/.test(src)],
   ['女子补全：和离带妆奁、守节清议、再嫁照年代（R-186）', /'divorce'/.test(src) && /和离归家/.test(src) && /'chaste'/.test(src) && /立志守节抚孤/.test(src)],
+  ['原文库检索网页和桌面同一套（R-189）', (() => { const core = fs.readFileSync(path.join(__dirname, '..', '..', 'rpg-kernel', 'core', 'libcore.js'), 'utf8').replace(/^'use strict';\n/, '').replace(/module\.exports[^\n]*\n?$/, '').trim(); return src.includes(core); })()],
+  ['原文库辅助开局人事树、朝堂全表、官员表、天下大势、市面民生、探报（R-189）', (src.match(/await libEvidence\(s, /g) || []).length >= 6],
+  ['三方分工：原文库、博查、GLM、DeepSeek 各做什么写明；整理核对归 DeepSeek；互为后备；材料和字数不超上限（R-189）', /三方分工（R-189/.test(src) && /研读\|检索\|核任期\|审校/.test(src) && /DeepSeek 没成，改由 GLM/.test(src) && /const fitCtx = /.test(src) && /额度超了型号的上限：减半再来/.test(src)],
+  ['宣战按钮和义军军阀按钮不共用 data-war（撞了宣战点了不宣战）；要问 AI 的按钮出错不抛到页上（R-189 合并时查出）', !/data-war="(grainopen|laojun|raze|surrender|xiwen|yuefa)"/.test(src) && /t\.dataset\.wl\)\) \{/.test(src) && /这件没办成（/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

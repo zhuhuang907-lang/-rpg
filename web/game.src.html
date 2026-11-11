@@ -632,9 +632,18 @@ async function dsKey() {
  *  没填 GLM Key、或 GLM 出错（不通、限流、余额），自动退回 DeepSeek 再来一次，不让玩家看到报错 */
 let GLM = { has: false, model: '', tail: '', base: '' };
 const GLM_BASES = [['https://open.bigmodel.cn/api/paas/v4', '智谱开放平台（open.bigmodel.cn）'], ['https://api.z.ai/api/paas/v4', 'Z.ai 国际站（api.z.ai）']];
-const ROUTE_CATS = [['story', '写故事（正文、改稿、编剧）'], ['struct', '推演、记账、史料表、核查、辅助搜索'], ['light', '审读文笔、编书这些杂活']];
+const ROUTE_CATS = [['story', '写故事（正文、改稿、编剧）'], ['struct', '想事情（推演天下、这一步的后果、市面民生、裁定、记账）'], ['light', '整理资料、核对、审稿、编书（官员表、行情表、核任期、核真人）']];
+/* 三方分工（R-189，2026-11-10 玩家：「合理设计 glm，ds 和 bocha 三方分别做什么，确保不会超出他们的能力」）：
+ *  · 原文库（游戏自带，正史、实录、通鉴、政书、兵书、地理书）：史实的第一来源，不花钱、不会编；人名、官职、年月、典章先照它。
+ *  · 博查（联网搜索）：只管找资料——原文库没有的（地方小官、乡绅、商帮、晚近的事、考订文章），搜到的网页摘要给模型当材料；它不判断、不写东西。
+ *  · GLM（写故事、想事情）：写正文、改稿、编剧情；推演天下大势、玩家这一步的后果、市面民生、裁定、记账——要长篇文笔和前后因果的活。
+ *  · DeepSeek（整理、核对、扮演）：把博查和原文库的资料整理成表（官员表、行情表、户口、核任期、核真人）、审稿挑毛病、编书；
+ *    扮演敌国之主、手下大臣、朝臣私下互谋——要快、要守格式、要照各人立场说话的活。
+ *  · 不超出能力：每样活给的材料有上限（超了先删中间）、要的字数有上限（超了减半重来）；一家出错自动换另一家再来一次。 */
 const ROUTE_DEF = { story: 'glm', struct: 'glm', light: 'ds' };
-const routeCat = (kind, plain) => /^(写戏|改稿|编剧|play|turn)$/.test(kind) || (plain && kind === '写戏') ? 'story' : /^(审读|编书|chapter|book-?)$/.test(kind) ? 'light' : 'struct';
+const fitCtx = (x, max) => { const t = String(x || ''); if (t.length <= max) return t; const h = Math.floor(max * 0.55), e = max - h - 20; return t.slice(0, h) + '\n（材料太长，中间略去一段）\n' + t.slice(t.length - e); };
+const CTX_MAX = { glm: 90000, ds: 90000 };   // 两家都是十二万字元上下的窗口，留足余量给回答
+const routeCat = (kind, plain) => /^(写戏|改稿|编剧|play|turn)$/.test(kind) || (plain && kind === '写戏') ? 'story' : /^(审读|编书|chapter|book-?|研读|检索|核任期|审校|史事|修史|档案)$/.test(kind) ? 'light' : 'struct';   /* 整理资料、核对、审稿归 DeepSeek（R-189） */
 const routeOf = (kind, plain) => { if (GLM.has && !KEY.has) return 'glm'; const r = (SETTINGS.route || {})[routeCat(kind, plain)] || ROUTE_DEF[routeCat(kind, plain)]; return r === 'glm' && GLM.has ? 'glm' : 'ds'; };
 function glmWebRefresh() { const k = lsGet('hrpg:glmkey') || ''; GLM = { has: !!k, tail: k.slice(-4), model: lsGet('hrpg:glmmodel') || '', base: lsGet('hrpg:glmbase') || GLM_BASES[0][0] }; }
 let GLMMSG = '', GLM_MODELS = [];
@@ -704,6 +713,8 @@ async function glmDirect(input, opts = {}) {
       if (!res.ok) { const raw = await res.text().catch(() => '');
         if (json && res.status === 400 && /response_format|json/i.test(raw)) { json = false; continue; }
         if (sendThink && res.status === 400 && /thinking|unknown|extra|unrecognized/i.test(raw)) { sendThink = false; continue; }
+        if (res.status === 400 && /max_tokens|max tokens|max_completion|too large/i.test(raw) && budget > 2000) { budget = Math.floor(budget / 2); continue; }   /* 额度超了型号的上限：减半再来（R-189） */
+        if (res.status === 400 && /context|length|too long|exceed/i.test(raw) && messages.length) { const m = messages[messages.length - 1]; m.content = fitCtx(m.content, Math.floor(String(m.content).length * 0.6)); continue; }
         throw { code: 'local', message: `GLM 返回出错（HTTP ${res.status}）${res.status === 401 ? '：Key 不对或失效' : res.status === 429 ? '：太频繁或余额不足' : ''}` }; }
       const rd = res.body.getReader(), dec = new TextDecoder(); let buf = '', content = '', finish = null;
       for (;;) { let r; try { r = await rd.read(); } catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; throw { code: 'local', net: true, message: '和 GLM 的连接中途断了' }; }
@@ -742,6 +753,8 @@ async function directSample(input, opts = {}) {
         if (sendThink && res.status === 400 && /thinking|unrecognized|unknown|extra/i.test(raw)) { sendThink = false; continue; }
         if (model !== base && /model/i.test(raw)) { model = base; continue; }   // 快型号没有：换回原型号
         if (res.status === 400 && /model/i.test(raw) && model !== 'deepseek-v4-pro') { model = 'deepseek-v4-pro'; continue; }
+        if (res.status === 400 && /max_tokens|max tokens|max_completion|too large/i.test(raw) && budget > 2000) { budget = Math.floor(budget / 2); continue; }   /* 额度超了型号的上限：减半再来（R-189） */
+        if (res.status === 400 && /context|length|too long|exceed/i.test(raw) && messages.length) { const m = messages[messages.length - 1]; m.content = fitCtx(m.content, Math.floor(String(m.content).length * 0.6)); continue; }
         if (res.status === 402) { lsSet('hrpg:dspoor', '1'); if (MODE === 'web') webKeyRefresh(); }
         throw { code: 'local', message: (DS_HINT[res.status] || 'DeepSeek 返回出错') + `（HTTP ${res.status}）` };
       }
@@ -1236,6 +1249,7 @@ async function callClaude(input, onReply, extra, tier) {
   if (MODE === 'claude') Object.assign(opts, { model: 'claude-sonnet-5-5', effort: 'medium' });
   const plain = extra && extra.json === false;
   const kind = (extra && extra.kind) || (plain ? '写戏' : '记账');
+  if (typeof input === 'string' && input.length > CTX_MAX.ds) input = fitCtx(input, CTX_MAX.ds);   /* 材料超了窗口先删中间，不让整回出错（R-189） */
   // DeepSeek：深度思考给写正文，也给「推演玩家这一步」——别人怎么回应、要多久花多少、合不合常理和制度，全靠这一步想清楚；
   // 不想就容易出不合常理的结果。思考出岔子（太慢、服务端不认）下面会自动关掉思考重来
   // 推演只在要紧的步子上深度思考（打官司、打仗、谋划、婚嫁、升迁、大买卖、造反……）；歇着、逛街、问话这类家常步子不思考，快得多
@@ -1245,10 +1259,11 @@ async function callClaude(input, onReply, extra, tier) {
   if (DSM() && /^(检索|核任期|研读|审校|审读)$/.test(kind)) extra = { ...extra, fast: true, thinking: false };
   if (DSM() && plain && extra && extra.temperature > 1.0) extra = { ...extra, temperature: 1.0 };
   // 分工：这一件交给 GLM 还是 DeepSeek（需求台账 R-135）；GLM 出错（不是玩家停下）自动退回 DeepSeek 再来一次
+  let glmTried = false;
   if (DSM() && routeOf(kind, plain) === 'glm' && !(extra && extra.ds && KEY.has)) {   // 扮演敌国之主、大臣（R-145）玩家点名交 DeepSeek
     const gx = { ...(extra || {}), provider: 'glm', fast: false };
     try { const r = await SAMPLE(input, { ...opts, ...gx, onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined }); logRaw(kind + '（GLM）', r && r.text, r && r.truncated); return r; }
-    catch (e) { if (e && (e.code === 'cancelled' || (TURN && TURN.signal.aborted && !det))) throw e; noteErr('GLM 没成，改由 DeepSeek', (kind || '') + '：' + String((e && e.message) || e).slice(0, 200)); CTL = new AbortController(); if (TURN && !det) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); } opts.signal = CTL.signal; }
+    catch (e) { if (e && (e.code === 'cancelled' || (TURN && TURN.signal.aborted && !det))) throw e; glmTried = true; noteErr('GLM 没成，改由 DeepSeek', (kind || '') + '：' + String((e && e.message) || e).slice(0, 200)); CTL = new AbortController(); if (TURN && !det) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); } opts.signal = CTL.signal; }
   }
   try {
     const r = await SAMPLE(input, { ...opts, ...(DSM() ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
@@ -1262,6 +1277,12 @@ async function callClaude(input, onReply, extra, tier) {
       const r2 = await SAMPLE(input, { ...opts, ...extra, thinking: false, signal: CTL.signal, onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
       logRaw(kind + '（关思考重试）', r2 && r2.text, r2 && r2.truncated);
       return r2;
+    }
+    /* DeepSeek 出错（不是玩家停下、不是没填 Key）而 GLM 有 Key：换 GLM 再来一次（R-189；以前只有 GLM 出错退回 DeepSeek，反过来没有） */
+    if (DSM() && GLM.has && !glmTried && !(e && (e.code === 'cancelled' || e.code === 'no_key')) && !(TURN && TURN.signal.aborted && !det)) {
+      noteErr('DeepSeek 没成，改由 GLM', (kind || '') + '：' + String((e && e.message) || e).slice(0, 200)); CTL = new AbortController(); if (TURN && !det) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); }
+      const r3 = await SAMPLE(input, { ...opts, ...(extra || {}), provider: 'glm', fast: false, signal: CTL.signal, onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
+      logRaw(kind + '（改 GLM）', r3 && r3.text, r3 && r3.truncated); return r3;
     }
     throw e;
   }
@@ -1632,8 +1653,10 @@ async function buildOrg(s) {
     const hereStem = String(here).replace(/(府|州|县|郡).*$/, '$1');
     const found = await searchFirst(s, [`${dy} 中枢 机构 设置`, `${dy} 地方 官制 层级`, `${dy} 军制 兵制 编制`, `${yl} ${pol} 大臣 在任`, `${hereStem} ${yl} 知府 知县`, ruler && !emp ? `${String(p.role || '').slice(0, 10)} 幕府 属官` : `${dy} 六部 属司`, `${dy} 吏役 乡里 保甲`]);
     const ru = rulersAt(s.clock.y, s).find(r => !pol || String(r.polity || '').includes(pol.slice(0, 1)) || pol.includes(String(r.polity || '').slice(0, 1)));
+    const libOrg = await libEvidence(s, [histEraName(s)].concat(figuresAt(s, s.clock.y).filter(f => f.alive && f.post).slice(0, 4).map(f => f.name + '*2')), '官制', 6);   /* 原文库佐证（R-189）：开局整人事树先照史书原文 */
     const head = `你是精通历代职官、政制、军制的史家，替一局历史游戏整理人事树。此刻：${timeText(s.clock)}，政权${pol}，主角${p.name || ''}（${p.role || ''}），人在${here}。${ruler && !emp ? '主角是一方之主：最上一层是他自己的幕府、军府，往下是他治下的州县和兵马。' : ''}
 ${found}
+${libOrg}
 ${officialsBlock(s)}
 ${vacantText(s.clock.y) ? '【这一年照例空着、不授人的职位（照史书，不许填人）】\n' + vacantText(s.clock.y) + '\n' : ''}规矩：只写此刻（${s.clock.y}年）实有的衙门和官职（已裁撤的、还没设的都不写），官名、品级、员额照材料和史书；在任的人只填材料或名册里写明的真人，查不到就空着，不编；大人物（三品以上、中枢主官、宰执、督抚、节度、将帅）尤其只填材料里写明此刻在任的真人，拿不准就空着；照例不除授、只作加官虚衔的职位照写官名，holders 留空；主角所在的那一路（${here}）写实名实地，path 填 true。`;
     const fmt = `只输出一个 JSON 对象：{"nodes":[{"key":"唯一短名","name":"衙署名（地方的带实地名）","parent":"上级的 key；最上一层写 ROOT","level":"层级","duty":"一句话职掌","path":false,"posts":[{"title":"官名","rank":"品级","quota":员额数,"holders":["在任真人"],"manage":"这个官管得到谁（统辖哪些衙门、能自行任免谁、能参劾谁、能调哪些兵，照本朝制度，一句）"}]}]}`;
@@ -1721,12 +1744,13 @@ async function orgTableDS(s, nodes, onlyEmpty, force) {
   const imp = x => (orgMajor(x.n, x.q) ? 0 : x.n.path ? 1 : 2); L.sort((a, b) => imp(a) - imp(b) || (a.n.depth || 0) - (b.n.depth || 0));
   const pick = L.slice(0, 600); if (!pick.length) return 0;
   const vt = vacantText(y);
+  const libT = await libEvidence(s, [histEraName(s)].concat(pick.filter(x => orgMajor(x.n, x.q)).slice(0, 4).map(x => x.q.title + '*1.5')), '官制 铨选', 6);   /* 原文库佐证（R-189） */
   const ask = B => callClaude(`你是精通历代职官年表、实录、正史列传的史家。替一局历史游戏做一张「${yl}（公元${y}年${s.clock.m ? s.clock.m + '月' : ''}，${pol}）在任官员表」。
 下面每一行是一个职位。逐个写出此刻在这个位子上的真人（员额多的写几个，最多四个）；照史书确知的写，不要编。
 · 史书上此刻这个位子确实空着（出缺、未补、照例不授、只作虚衔没人加）：vacant 写 true，why 写依据。
 · 大官（三品以上、中枢主官、宰执、督抚、节度、将帅）此刻照史书一定有人：写出那个真人；实在不知道写 unknown。
 · 小官不知道是谁：unknown 写 true（程序另起名字，你不要编）。${force ? '\n· 这一回问的都是前一回没答上的大官位子：照正史本纪、列传、宰相表、方镇表、职官年表细细想，这一年这个位子上不是有人就是史载空着，不许再写不知道。' : ''}
-${vt ? '【这一年照例不授的职位，写 vacant】\n' + vt + '\n' : ''}${me ? `主角是${me}，不要把主角填到别的位子上。\n` : ''}【职位】
+${vt ? '【这一年照例不授的职位，写 vacant】\n' + vt + '\n' : ''}${me ? `主角是${me}，不要把主角填到别的位子上。\n` : ''}${libT ? libT + '\n' : ''}【职位】
 ${B.map((x, i) => `${i + 1}. ${x.n.name}｜${x.q.title}${x.q.rank ? '（' + x.q.rank + '）' : ''}${(x.q.quota || 1) > 1 ? '，员额' + x.q.quota : ''}`).join('\n')}
 只输出一个 JSON 对象：{"rows":[{"i":1,"names":[],"vacant":false,"unknown":false,"why":""}]}`, null, { maxTokens: 6000, temperature: 0, kind: '研读', detached: true, thinking: false }).then(r => parseJSON(r.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; });
   // 不漏查：一块八十个位子并发问；哪一块没答上、哪几行没写到的，挑出来再问一回
@@ -1776,10 +1800,10 @@ const courtDue = s => !!(s && s.org && arr(s.org.nodes).length > 1 && s.clock &&
 async function courtFullDS(s) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '', me = s.protagonist.name || '';
   const parts = ['中枢：宰执（照本朝叫法）、各省部寺监台的长官和副贰、谏官、翰林学士、掌兵的中枢长官', '宗室（诸王、太子、公主驸马）、后妃、外戚、开国勋贵、内廷宦官女官', '地方大员（各道各州的总管、刺史或督抚布按、留守）和各路统兵大将'];
-  const vt = vacantText(y);
+  const vt = vacantText(y), libC = await libEvidence(s, [histEraName(s)].concat(figuresAt(s, y).filter(f => f.alive && f.post).slice(0, 5).map(f => f.name + '*2')), '官制', 6);   /* 原文库佐证（R-189） */
   const ask = part => callClaude(`你是熟读正史、通鉴、职官年表的史家。替一局历史游戏把${yl}（公元${y}年${s.clock.m ? s.clock.m + '月' : ''}）${pol}朝廷里的要紧人物列成一整张表，要像真的朝堂一样，该有人的位子都有人。这一张只写：${part}。
 每人写：name 姓名；post 官职（写全，带衙门）；organ 衙门或所属；rank 品级；born、died 生卒年（公元，确知的写数，不知道写 null——防同名混人，必须照实）；faction 派系（照史书，这一年朝中分成哪几派、谁跟谁一伙；说不上派系的写空）；ties 和别人的关系（父子、兄弟、夫妻、姻亲、师生、举主门生、同党、政敌、旧部），to 写那人姓名；stance 对时局的立场一句；real 写「真」（史书确有其人此时在此任）或「假」。
-规矩：大官（三品以上、宰执、诸王、后妃、督抚大将）一律写史书真人；次要的位子史书查不到是谁的，可以起一个合那时士人样子的名字，real 写「假」；史书上这一年确实空着的位子不写人。${vt ? '\n这一年照例不授的职位不写人：' + vt : ''}${me ? `\n主角是${me}，照他的身份列在表里（${s.protagonist.role || ''}），不要另安排别人做他的位子。` : ''}
+规矩：大官（三品以上、宰执、诸王、后妃、督抚大将）一律写史书真人；次要的位子史书查不到是谁的，可以起一个合那时士人样子的名字，real 写「假」；史书上这一年确实空着的位子不写人。${vt ? '\n这一年照例不授的职位不写人：' + vt : ''}${libC ? '\n' + libC : ''}${me ? `\n主角是${me}，照他的身份列在表里（${s.protagonist.role || ''}），不要另安排别人做他的位子。` : ''}
 只输出一个 JSON 对象：{"people":[{"name":"","post":"","organ":"","rank":"","born":null,"died":null,"faction":"","real":"真","ties":[{"to":"","rel":""}],"stance":""}],"factions":[{"name":"","leader":"","members":[""],"aim":"这一派要什么"}]}`, null, { maxTokens: 8000, temperature: 0.1, kind: '研读', detached: true, thinking: false }).then(r => parseJSON(r.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; });
   const R = await Promise.all(parts.map(ask)); if (R.every(d => !d)) { s.ctFail = s.turn; throw { code: 'bad_json' }; }
   const P = [], seen = new Set(), FA = [];
@@ -3037,8 +3061,10 @@ const scoutDue = s => (arr(s.campaigns).some(c => c.state === '待探报') || !!
 async function campScout(s) {
   const c = arr(s.campaigns).find(x => x.state === '待探报') || scoutPre(s); if (!c) return 0; const early = c.state === '行军'; if (early) c.preTried = true; const y = s.clock.y, yl = s.clock.yearLabel || y + '年', G = garrisonAt(s, c.target);
   const B = await bochaDeep(s, [`${c.target} ${yl} 守军`, `${c.target} ${y}年 守将 兵力`, `${G.owner} ${y}年 兵力 驻防`], 20).catch(e => { if (e && e.code === 'cancelled') throw e; return { text: '' }; });
+  const libS = await libEvidence(s, [c.target + '*2', histEraName(s), '守', '城'], '城池 守城', 4);   /* 原文库佐证（R-189）：史书上这座城这几年的守将守军 */
   const { text } = await callClaude(`一局历史游戏：${timeText(s.clock)}，主角的兵马到了${c.target}城下（属${G.owner || '别家'}）。照史料估此时${c.target}的守军：人数、精粗、守将（史料里的真人，没有写空）、地形城防。照这个年代此地的兵制、驻防、史料；资料没有的照最相近的史实推，why 写依据。数字照推的写，不照抄空位。
 ${B.text || '（没搜到资料）'}
+${libS}
 只输出一个 JSON 对象：{"troops":null,"quality":"精/中/弱","general":"","terrain":"城池/关隘/平原/山地/河网","why":""}`, null, { maxTokens: 800, temperature: 0.1, kind: '检索', detached: true, thinking: false });
   const d = parseJSON(text); if (!d || num(d.troops) == null) { s.scFail = s.turn; return 0; }
   c.terrain = one(d.terrain, 4) || ''; const est = { troops: num(d.troops), quality: one(d.quality, 2), general: one(d.general, 8), owner: G.owner, why: one(d.why, 60) };
@@ -3653,80 +3679,70 @@ function castBlock(s) {
 /* ---------- R-172 历史原文库取证：写正文前照年号、人名、制度词查几段原文（全量正史＋通鉴＋政书＋兵书，见仓库 corpus/） ----------
  *  桌面版走本机服务 /api/histlib/cite（书按需下载到 data/cache/histlib）；网页版浏览器直连云端按书下载、IndexedDB 缓存。
  *  原文带书名卷名出处给写正文的模型：引原文必须照抄，不得改字。 */
-const HIST_ERA_BOOKS = [
-  { y0: -770, books: ['shiji', 'zhushujinian', 'guoyu'] },
-  { y0: -403, books: ['shiji', 'zhanguoce', 'zizhitongjian'] },
-  { y0: -202, books: ['shiji', 'hanshu'] },
-  { y0: 23, books: ['houhanshu', 'sanguozhi', 'zizhitongjian'] },
-  { y0: 220, books: ['sanguozhi', 'zizhitongjian'] },
-  { y0: 265, books: ['jinshu', 'zizhitongjian'] },
-  { y0: 420, books: ['nanshi', 'beishi', 'weishu'] },
-  { y0: 589, books: ['jiutangshu', 'xintangshu', 'zizhitongjian'] },
-  { y0: 907, books: ['jiuwudaishi', 'xinwudaishi'] },
-  { y0: 960, books: ['songshi', 'changbian'] },
-  { y0: 1127, books: ['songshi', 'jianyanjilu', 'xuzizhitongjian'] },
-  { y0: 1279, books: ['yuanshi', 'xuzizhitongjian'] },
-  { y0: 1368, books: ['mingshi', 'mingtongjian'] },
-  { y0: 1644, books: ['qingshigao', 'qingshilu'] },
-];
-const HIST_TOPIC = [
-  [/科举|贡举|进士|察举|九品|铨选|官制|品级|俸禄|考成|考课|磨勘|铨叙|封赠|荫补/, ['tongdian', 'wenxiantongkao']],
-  [/赋税|两税|一条鞭|盐法|钱法|宝钞|铸币|漕运|常平|义仓|徭役|丁银|摊丁|物价|米价|灾异|荒政|赈济/, ['tongdian', 'wenxiantongkao', 'daminghuidian']],
-  [/兵制|府兵|卫所|绿营|八旗|屯田|军器|阵法|火器|马政|军礼/, ['wujingzongyao', 'sunzibingfa', 'wenxiantongkao']],
-  [/山川|关隘|渡口|里程|形胜|险要|城池|舆图/, ['dushifangyu', 'yuanhejunxian']],
-  [/婚礼|丧礼|祭礼|冠礼|笄礼|葬制|服丧|品官|礼仪|朝仪|射礼|养老|宴礼|节庆|上元|冬至|郊祀|宗庙/, ['tongdian', 'wenxiantongkao']],
-];
-function histBooksFor(s, said) {
-  const era = HIST_ERA_BOOKS.filter(e => e.y0 <= (((s.clock || {}).y) || 0)).pop();
-  const books = new Set(era ? era.books : ['shiji']);
-  const x = String(said || '') + ' ' + String((s.citeExtra || '') || '');
-  for (const [re, bs] of HIST_TOPIC) if (re.test(x)) bs.forEach(b => books.add(b));
-  return [...books].slice(0, 6);
-}
-const WLIB_BOOKS = {};   // 网页版：书 id → {passages, post, df, n}（本次会话内）
+/* 原文库检索核心（R-189，桌面服务与网页两边同一套）：
+ *  · 检索词整词比对（不是两字一拆乱凑）：每个词照它在这本书里出现的段数算稀有度（越少见越要紧），带权重（人名、地名重，年号轻）；
+ *  · 一段里同时中了几个词的加倍（年号＋人名＋事同在一段，才是要找的那段）；出现在过半段落里的词当常用字，不计分；
+ *  · 摘句：在命中最密的地方截一百五十字左右、顺着句号断开，不再从段首硬截（以前截出来的常常根本不含要找的词）。 */
+const LIB_ZH = { beiqishu: '北齐书', beishi: '北史', cefuyuangui: '册府元龟', changbian: '续资治通鉴长编', chenshu: '陈书', daminghuidian: '大明会典', dushifangyu: '读史方舆纪要', dutongjianlun: '读通鉴论', guoyu: '国语', hanshu: '汉书', houhanshu: '后汉书', huangchaowenxiantongkao: '皇朝文献通考', jianyanjilu: '建炎以来系年要录', jinshi: '金史', jinshu: '晋书', jiutangshu: '旧唐书', jiuwudaishi: '旧五代史', jixiaoxinshu: '纪效新书', lianbingjinji: '练兵实纪', liangshu: '梁书', liaoshi: '辽史', lijibingshu: '天下郡国利病书', liutao: '六韬', mingshi: '明史', mingshilu: '明实录', mingtongjian: '明通鉴', nanqishu: '南齐书', nanshi: '南史', nianershi: '廿二史札记', qingshigao: '清史稿', qingshilu: '清实录', sanguozhi: '三国志', sanlue: '三略', shanhaijing: '山海经', shiji: '史记', shuijingzhu: '水经注', sima: '司马法', songhuiyao: '宋会要辑稿', songshi: '宋史', songshu: '宋书', suishu: '隋书', sunzibingfa: '孙子兵法', taipingyulan: '太平御览', tanghuiyao: '唐会要', tongdian: '通典', tongzhi: '通志', weiliaozi: '尉缭子', weishu: '魏书', wenxiantongkao: '文献通考', wubeizhi: '武备志', wudaihuiyao: '五代会要', wujingzongyao: '武经总要', wuyuechunqiu: '吴越春秋', wuzi: '吴子', xintangshu: '新唐书', xinwudaishi: '新五代史', xuzizhitongjian: '续资治通鉴', yuanhejunxian: '元和郡县图志', yuanshi: '元史', yuejueshu: '越绝书', yuhai: '玉海', zhanguoce: '战国策', zhoushu: '周书', zhushujinian: '竹书纪年', zizhitongjian: '资治通鉴' };
+function libTerms(x) { const out = []; for (const raw of (Array.isArray(x) ? x : String(x || '').split(/[|\s]+/))) { const o = typeof raw === 'object' && raw ? raw : (() => { const m = String(raw).match(/^(.+?)\*(\d+(?:\.\d+)?)$/); return m ? { q: m[1], w: +m[2] } : { q: String(raw), w: 1 }; })(); const q = String(o.q || '').replace(/[^一-鿿]/g, ''); if (q.length >= 2 && !out.some(t => t.q === q)) out.push({ q: q.slice(0, 12), w: Math.max(0.2, Math.min(4, +o.w || 1)) }); if (out.length >= 10) break; } return out; }
+function libSnip(t0, m, L) { L = L || 150; const t = String(t0 || '').replace(/__NOEDITSECTION__/g, '').replace(/\s+/g, ' ').trim(); const pos = []; for (const q of m) { let p = t.indexOf(q); while (p >= 0 && pos.length < 40) { pos.push(p); p = t.indexOf(q, p + q.length); } } pos.sort((a, b) => a - b);
+  if (!pos.length) return t.slice(0, L); let best = pos[0], bc = 0; for (const p of pos) { const c = new Set(m.filter(q => { const k = t.indexOf(q, Math.max(0, p - 10)); return k >= 0 && k < p + L - 20; })).size; if (c > bc) { bc = c; best = p; } }
+  let a = Math.max(0, best - 40); const pre = t.lastIndexOf('。', best); if (pre >= 0 && best - pre <= 70) a = pre + 1; let e = Math.min(t.length, a + L); const nx = t.indexOf('。', Math.max(a, e - 30)); if (nx >= 0 && nx < e + 40) e = nx + 1;
+  return (a > 0 ? '……' : '') + t.slice(a, e).trim() + (e < t.length ? '……' : ''); }
+function libScan(texts, terms, n) { const N = texts.length; if (!N || !terms.length) return []; const sc = new Map();
+  for (const T of terms) { const hit = []; for (let i = 0; i < N; i++) if (texts[i].t.indexOf(T.q) >= 0) hit.push(i); const df = hit.length; if (!df || (df > N * 0.5 && N > 20)) continue; const idf = Math.log(1 + N / df) * T.w; for (const i of hit) { const o = sc.get(i) || { s: 0, m: [] }; o.s += idf; o.m.push(T.q); sc.set(i, o); } }
+  const out = []; for (const [i, o] of sc) out.push({ i, s: o.s * (1 + 0.7 * (o.m.length - 1)), m: o.m }); out.sort((a, b) => b.s - a.s);
+  return out.slice(0, n || 4).map(x => ({ volume: texts[x.i].v, text: libSnip(texts[x.i].t, x.m), terms: x.m, score: Math.round(x.s * 100) / 100 })); }
+/* 哪个年代、哪一家查哪几部书（照朝代与政权；南北朝分南北，宋辽金元分开） */
+function libBooksFor(y, pol, said) { const P = String(pol || ''), B = []; const add = (...a) => { for (const x of a) if (!B.includes(x)) B.push(x); };
+  if (y < -221) add('shiji', 'zhanguoce', 'guoyu', 'zhushujinian'); else if (y < -202) add('shiji', 'zizhitongjian'); else if (y < 9) add('hanshu', 'shiji', 'zizhitongjian'); else if (y < 25) add('hanshu', 'zizhitongjian'); else if (y < 189) add('houhanshu', 'zizhitongjian');
+  else if (y < 220) add('houhanshu', 'sanguozhi', 'zizhitongjian'); else if (y < 266) add('sanguozhi', 'zizhitongjian'); else if (y < 420) { add('jinshu', 'zizhitongjian'); if (y >= 386 && /魏|代|拓跋|北/.test(P)) add('weishu'); }
+  else if (y < 589) { const north = /魏|齐|周|北|燕|凉|夏|柔然/.test(P) && !/南齐/.test(P); if (north) { add(y < 550 ? 'weishu' : y < 577 && /齐/.test(P) ? 'beiqishu' : 'zhoushu', 'beishi'); } else add(y < 479 ? 'songshu' : y < 502 ? 'nanqishu' : y < 557 ? 'liangshu' : 'chenshu', 'nanshi'); add('zizhitongjian'); }
+  else if (y < 618) add('suishu', 'beishi', 'zizhitongjian'); else if (y < 907) add('jiutangshu', 'xintangshu', 'zizhitongjian', 'tanghuiyao');
+  else if (y < 960) { if (/辽|契丹/.test(P)) add('liaoshi'); add('jiuwudaishi', 'xinwudaishi', 'zizhitongjian', 'wudaihuiyao'); }
+  else if (y < 1127) { if (/辽|契丹/.test(P)) add('liaoshi'); else if (/金|女真/.test(P)) add('jinshi'); add('songshi', 'changbian', 'songhuiyao'); }
+  else if (y < 1279) { if (/金|女真|齐/.test(P) && y <= 1234) add('jinshi'); else if (/蒙古|元/.test(P)) add('yuanshi'); add('songshi', y <= 1162 ? 'jianyanjilu' : 'xuzizhitongjian', 'songhuiyao'); if (y >= 1206 && !/蒙古|元/.test(P)) add('yuanshi'); }
+  else if (y < 1368) add('yuanshi', 'xuzizhitongjian'); else if (y < 1644) add('mingshi', 'mingshilu', 'mingtongjian'); else add('qingshigao', 'qingshilu', 'huangchaowenxiantongkao');
+  const x = String(said || ''); const T = [[/科举|贡举|进士|察举|九品|铨选|官制|品级|俸禄|考成|考课|磨勘|荫补|封赠/, y >= 1368 ? ['daminghuidian', 'tongdian'] : ['tongdian', 'wenxiantongkao']], [/赋税|两税|一条鞭|盐法|钱法|宝钞|铸钱|漕运|常平|义仓|徭役|丁银|摊丁|米价|荒政|赈济|饥|旱|蝗/, y >= 1644 ? ['huangchaowenxiantongkao'] : y >= 1368 ? ['daminghuidian', 'wenxiantongkao'] : ['tongdian', 'wenxiantongkao']], [/兵制|府兵|卫所|绿营|八旗|屯田|军器|阵法|火器|马政|练兵|战船|守城/, y >= 1550 && y < 1650 ? ['jixiaoxinshu', 'wujingzongyao'] : ['wujingzongyao', 'tongdian']], [/山川|关隘|渡口|里程|形胜|险要|城池|舆图|沿革/, ['dushifangyu', 'yuanhejunxian']], [/婚礼|丧礼|祭礼|冠礼|葬制|服丧|礼仪|朝仪|郊祀|宗庙/, ['tongdian', 'wenxiantongkao']]];
+  for (const [re, bs] of T) if (re.test(x)) add(...bs); return B.slice(0, 6); }
+/* 和桌面服务 rpg-kernel/core/libcore.js 同一套（护栏核对两边一字不差） */
+function histBooksFor(s, said) { return libBooksFor(((s.clock || {}).y) || 0, (s.place || {}).polity || '', String(said || '') + ' ' + String(s.citeExtra || '')); }
+const WLIB_BOOKS = {}, WLIB_LRU = [];   // 网页版：书 id → 段落（本次会话内最多留三本，不建索引，检索时整词扫）
 const WLIB_OK = typeof DecompressionStream !== 'undefined';
 async function wlibLoad(id) {
   if (WLIB_BOOKS[id]) return WLIB_BOOKS[id];
+  if (!/^[a-z0-9_]{2,40}$/.test(id) || !LIB_ZH[id]) throw new Error('库单里没有这本书');
   const cacheKey = 'wlib:' + id;
   let text = await polyCache(cacheKey);
   if (!text) {
     if (!WLIB_OK) throw new Error('浏览器不支持解压');
     const base = globalThis.WLIB_BASE || 'https://raw.githubusercontent.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/corpus/';
-    const r = await fetch(base + id + '.jsonl.gz', { signal: AbortSignal.timeout(60000) });
+    const r = await fetch(base + id + '.jsonl.gz', { signal: AbortSignal.timeout(90000) });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const buf = await r.arrayBuffer();
     text = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
     polyCache(cacheKey, text);
   }
-  const passages = [], post = {}, df = {};
-  for (let i = 0; i < text.length; ) {
-    const nl = text.indexOf('\n', i); const line = nl < 0 ? text.slice(i) : text.slice(i, nl); i = nl < 0 ? text.length : nl + 1;
-    let o; try { o = JSON.parse(line); } catch { continue; }
-    const t = String(o.text || ''); passages.push({ v: o.volume || '', t });
-    for (const run of t.match(/[\u4e00-\u9fff]+/g) || []) for (let k = 0; k + 1 < run.length; k++) { const bg = run.slice(k, k + 2); (post[bg] = post[bg] || []).push(passages.length - 1); df[bg] = (df[bg] || 0) + 1; }
-  }
-  return (WLIB_BOOKS[id] = { passages, post, df, n: passages.length });
+  const texts = [];
+  for (let i = 0; i < text.length; ) { const nl = text.indexOf('\n', i); const line = nl < 0 ? text.slice(i) : text.slice(i, nl); i = nl < 0 ? text.length : nl + 1; let o; try { o = JSON.parse(line); } catch { continue; } texts.push({ v: o.volume || '', t: String(o.text || '') }); }
+  WLIB_BOOKS[id] = texts; WLIB_LRU.push(id); while (WLIB_LRU.length > 3) { const o = WLIB_LRU.shift(); if (o !== id) delete WLIB_BOOKS[o]; }
+  return texts;
 }
-async function citeFetch(s, bookIds, qs) {
-  const ids = bookIds.slice(0, 6);
+/** 查原文：qs 是检索词（可带权重「王安石*2」）；桌面走本机服务，网页直连云端语料 */
+async function citeFetch(s, bookIds, qs, n) {
+  const ids = bookIds.slice(0, 6), terms = libTerms(qs); if (!terms.length || !ids.length) return [];
   if (MODE === 'local') {
-    const r = await within(api('/api/histlib/cite?q=' + encodeURIComponent(qs.join(' ')) + '&books=' + ids.join(',') + '&n=4'), 15000);
-    return (r && r.ok) ? arr(r.hits) : [];
+    const r = await within(api('/api/histlib/cite?q=' + encodeURIComponent(terms.map(t => t.q + (t.w !== 1 ? '*' + t.w : '')).join('|')) + '&books=' + ids.join(',') + '&n=' + (n || 4)), 25000);
+    return (r && r.ok) ? arr(r.hits).map(h => ({ ...h, name: LIB_ZH[h.book] || h.name })) : [];
   }
   if (!WLIB_OK) throw new Error('网页版原文库不可用');
   const out = [];
-  for (const id of ids) {
-    const w = await wlibLoad(id);
-    const score = new Map();
-    for (const q of qs) for (const bg of (q.match(/[\u4e00-\u9fff]+/g) || []).flatMap(run => { const a = []; for (let i = 0; i + 1 < run.length; i++) a.push(run.slice(i, i + 2)); return a; })) {
-      const lst = w.post[bg]; if (!lst) continue;
-      const wt = Math.log(1 + w.n / (w.df[bg] || 1));
-      for (const i of lst) score.set(i, (score.get(i) || 0) + wt);
-    }
-    for (const [i, sc] of score) if (sc >= 1.5) out.push({ book: id, name: id, volume: w.passages[i].v, text: w.passages[i].t, score: sc / Math.sqrt(w.passages[i].t.length) });
-  }
-  return out.sort((a, b) => b.score - a.score).slice(0, 4);
+  for (const id of ids) { const texts = await wlibLoad(id); for (const h of libScan(texts, terms, 4)) out.push({ book: id, name: LIB_ZH[id] || id, ...h }); }
+  return out.sort((a, b) => b.score - a.score).slice(0, n || 4);
 }
+/** 给推演、设定朝局用的原文佐证（R-189）：照检索词查几段，拼成材料；查不到、查得慢都不挡路 */
+async function libEvidence(s, terms, said, n, ms) { try { const hits = await within(citeFetch(s, histBooksFor(s, said || ''), terms, n || 5), ms || 25000); if (!arr(hits).length) return ''; try { feedAdd(hits.slice(0, 2).map(h => ({ t: `《${h.name}》${h.volume}：${cut(h.text, 26)}……`, site: '史书原文' }))); } catch (_) {}
+  return '【史书原文佐证（游戏内置原文库查出，书名卷名为出处；人名、官职、年月与它冲突的，以原文为准，原文没写的不硬编）】\n' + hits.map(h => `· 《${h.name}》${h.volume || ''}：「${h.text}」`).join('\n'); } catch (e) { if (e && e.code === 'cancelled') throw e; return ''; } }
 /** 照史料算的史书年号（本局改元不影响它：改了元、换了历史，检索照旧落在史书的年上） */
 function histEraName(s) {
   const y = (s.clock || {}).y || 0;
@@ -3750,8 +3766,8 @@ async function citeInto(s, said, extraQs) {
       const he = histEraName(s), m = String(s.clock.yearLabel || '').match(/^([\u4e00-\u9fff]{2,6}?)(?:元|[一二三四五六七八九十百千]+)年?$/), local = m && m[1];
       if (he) qs.push(he);
       if (local && local !== he) qs.push(local);   // 本局改过元：史书年号照查，本局年号也查（本局的事在史书里没有，查不中就罢了）
-      for (const n of names) if (n.length >= 2 && saidX.includes(n)) { qs.push(n); if (qs.length >= 4) break; }
-      for (const e of histEvents(s, s.clock.y * 12, s.clock.y * 12 + 12).slice(0, 6)) for (const who of arr(e.who)) if (who && who.length >= 2 && !qs.includes(who)) { qs.push(who); break; }
+      for (const n of names) if (n.length >= 2 && saidX.includes(n)) { qs.push(n + '*2'); if (qs.length >= 4) break; }   /* 玩家提到的真人最要紧 */
+      for (const e of histEvents(s, s.clock.y * 12, s.clock.y * 12 + 12).slice(0, 6)) for (const who of arr(e.who)) if (who && who.length >= 2 && !qs.some(q => q.startsWith(who))) { qs.push(who + '*1.5'); break; }
       const st = String((s.place || {}).full || '').replace(/[省市县府州镇].*$/, '');
       if (st.length >= 2 && !qs.includes(st)) qs.push(st);   // 此地的山川形势、建置沿革
       if (qs.length >= 1 && qs.length <= 2 && /\[|」|？|\?/.test(saidX)) qs.push(cut(saidX.replace(/[\s，。！？「」？\?]/g, ''), 8));
@@ -3759,12 +3775,12 @@ async function citeInto(s, said, extraQs) {
     }
     // 追加检索词：推演模型定的查证词、lookup 的「原文:词」、玩家说「查 XX 的原文」
     const extra = [];
-    for (const q0 of arr(extraQs)) { const q = String(q0 || '').replace(/^(原文[:：]|查|帮我查|查一下)+/g, '').replace(/(的原文|原文)$/, '').trim(); if (q.length >= 2 && !qs.includes(q) && !extra.includes(q)) extra.push(cut(q, 10)); if (extra.length >= 3) break; }
+    for (const q0 of arr(extraQs)) { const q = String(q0 || '').replace(/^(原文[:：]|查|帮我查|查一下)+/g, '').replace(/(的原文|原文)$/, '').trim(); if (q.length >= 2 && !qs.includes(q) && !extra.includes(q)) extra.push(cut(q, 10) + '*1.5'); if (extra.length >= 3) break; }
     if (!qs.length && !extra.length) return;
     s.citeExtra = extra.join(' ');
     const all = qs.concat(extra).slice(0, 6);
     const hits = await within(citeFetch(s, histBooksFor(s, saidX + ' ' + s.citeExtra), all), 20000);
-    const got = hits.map(h => ({ book: h.name, volume: h.volume, text: cut(h.text, 120) }));
+    const got = hits.map(h => ({ book: h.name, volume: h.volume, text: cut(h.text, 200) }));   /* 摘句已在命中处截好 */
     s.citeNow = first ? got : arr(s.citeNow).concat(got.filter(g => !arr(s.citeNow).some(o => o.text === g.text))).slice(0, 6);
     for (const g of arr(s.citeNow).slice(0, 3)) if (!FEED.some(f => f.t === `《${g.book}》${g.volume}`)) feedAdd([{ t: `《${g.book}》${g.volume}：${cut(g.text, 26)}……`, site: '史书原文' }]);
   } catch (_) { if (first) s.citeNow = ''; }
@@ -8312,7 +8328,7 @@ async function msSim(s) {
   const E = econOf(s); if (!E) return 0; const M = msOf(s), q = MS_Q(s), u = E.unit || (s.money || {}).unit || '', G = (s.gov && s.gov.stats) || {}, pl = geoCenter(s), pol = s.place.polity || '', ym = ymOf(s.clock);
   const IL = msInstList(s), lib = instLibFor(s)[0], ev = (() => { try { return histEvents(s, ym - 4, ym).map(e => one(e.text || e.what || '', 40)).filter(Boolean).slice(-8); } catch (_) { return []; } })();
   const war = arr(s.wars).filter(w => w && w.state !== '已和').map(w => w.with).slice(0, 4), foes = (() => { try { return foeArmies(s).slice(0, 4).map(g => `${g.name}在${g.at}`); } catch (_) { return []; } })(), myT = (() => { try { return myTroopsAll(s); } catch (_) { return 0; } })();
-  const off = courtiers(s).slice(0, 10).map(c => `${c.name}（${c.post}）`).join('、');
+  const off = courtiers(s).slice(0, 10).map(c => `${c.name}（${c.post}）`).join('、'), libM = await libEvidence(s, [histEraName(s), String(pl).replace(/[省府州县郡].*$/, '') + '*1.5', '饥', '旱', '蝗', '大水', '米价'], '荒政 米价 赋税', 4);   /* 原文库佐证（R-189）：这几年史书上本地的水旱饥荒 */
   const { text } = await callClaude(`你是精通历代农事、物价、钱法、赋役、荒政和地方吏治的经济史家，替一局历史游戏推「${pl}（${pol}）」这一季（${timeText(s.clock)}，${season(s.clock.m)}）的年成、市面和民生。照这一季的天时、灾异、战事、赋役钱法和本朝制度推，前后连贯；不凭空造大灾大丰。
 主角：${s.protagonist.name}（${s.protagonist.role}）。
 ${lib ? `本朝赋役：${cut(lib.tax || '', 420)}\n本朝社会：${cut(lib.society || '', 260)}` : ''}
@@ -8321,7 +8337,7 @@ ${lib ? `本朝赋役：${cut(lib.tax || '', 420)}\n本朝社会：${cut(lib.soc
 ${s.fisc && s.fisc.pol ? `赋税钱法：赋税${s.fisc.pol.tax || '常'}、盐法${s.fisc.pol.yan || '照旧'}、钱法${s.fisc.pol.coin || '足值'}、徭役${s.fisc.pol.yao || '常'}${arr(s.fisc.works).length ? '；在修的工程：' + s.fisc.works.map(w => w.name || w.kind).join('、') : ''}` : ''}
 ${war.length ? '在打的仗：' + war.join('、') + '\n' : ''}${foes.length ? '逼近的敌军：' + foes.join('；') + '\n' : ''}${myT ? '你养的兵约' + fmtN(myT, '人') + '\n' : ''}${ev.length ? '这几个月的史事：' + ev.join('；') + '\n' : ''}上一季：${M.last ? `年成${M.last.harvest}、米价${M.last.rice}、流民${M.last.refugee}` : '没有'}
 ${IL.length ? '要评的制度国策（name 只能从这里照抄）：' + IL.map(x => x.name).join('、') : ''}${off ? '\n经手的官员（who 只能从这里照抄，没有就空）：' + off : ''}
-各项只能从给定的几档里挑一个：harvest ${MS_LV.harvest.join('/')}；rice ${MS_LV.rice.join('/')}；wage、cloth、land ${MS_LV.wage.join('/')}；coin ${MS_LV.coin.join('/')}；trade ${MS_LV.trade.join('/')}；refugee ${MS_LV.refugee.join('/')}；制度的 exec ${MS_EXEC.join('/')}。
+${libM ? libM + '\n（这是史书里这个年号、这个地方的水旱饥荒记载：本局没改动的照史书的灾年写年成）\n' : ''}各项只能从给定的几档里挑一个：harvest ${MS_LV.harvest.join('/')}；rice ${MS_LV.rice.join('/')}；wage、cloth、land ${MS_LV.wage.join('/')}；coin ${MS_LV.coin.join('/')}；trade ${MS_LV.trade.join('/')}；refugee ${MS_LV.refugee.join('/')}；制度的 exec ${MS_EXEC.join('/')}。
 每项的 why 一句，写这一季的实在缘由（哪里水旱、哪路兵过境、钱法怎么坏、胥吏怎么加派），不写空话。events 写这一季本地市面民间的一两件事（一句一件）。数目由程序照档算，你不写数。
 newTech：这一季有没有哪样新技术、新作物、新技艺传进此地（必须符合这个年代，常见如占城稻、秧马、曲辕犁、复厢纺车、活字印刷、火铳、红夷炮、玉米番薯等；没有就留空对象）。area 只能是：农、工、医、军、天文。why 写它是怎么传进来的（商旅、流民、工匠、官府推广……）。已经传开的不重复报。
 只输出一个 JSON 对象：{"harvest":"","harvestWhy":"","rice":"","riceWhy":"","wage":"","cloth":"","land":"","coin":"","coinWhy":"","trade":"","tradeWhy":"","refugee":"","refugeeWhy":"","inst":[{"name":"","exec":"","who":"","why":""}],"events":[""],"newTech":{"name":"","area":"","why":""}}`, null, { maxTokens: 1500, temperature: 0.4, kind: '推演', detached: true });
@@ -9805,7 +9821,7 @@ function partyHtml(s) { if (!canParty(s) && !partyF(s)) return ''; try { baseEns
     <div class="opost"><input class="oin" id="ptN" type="number" min="1" style="width:4em" placeholder="人"><button class="link" data-ptx="recruit">在这里招人</button><button class="link" data-ptx="train">操练一个月</button><input class="oin" id="ptFoodN" type="number" min="1" style="width:4em" placeholder="石"><button class="link" data-ptx="food">买粮</button></div>
     <div class="opost">${Object.entries(PT_UP).filter(([a]) => (P.tiers[a] || 0) > 0).flatMap(([a, L]) => L.map(b => `<button class="link" data-ptup="${esc(a)}" data-to="${esc(b)}" title="${esc(a)}阅历满六十才能升">${esc(a)}升${esc(b)}</button>`)).join('')}${Object.keys(PT_UP).some(a => (P.tiers[a] || 0) > 0) ? '<input class="oin" id="ptUpN" type="number" min="1" style="width:4em" placeholder="人">' : ''}</div>
     ${P.pris ? `<div class="opost">俘虏${P.pris}人：<button class="link" data-ptpris="收编">收编</button><button class="link" data-ptpris="卖">卖去做苦力</button><button class="link" data-ptpris="放">放了</button></div>` : ''}
-    <div class="opost">义旗：${P.yuefa ? `<span class="muted">约法「${esc(P.yuefa)}」</span>` : '<button class="link" data-war="yuefa" title="约法写在输入框里，不写用默认三条">约法三章</button>'}<button class="link" data-war="grainopen" title="开仓放粮：民心+3，往后自愿来投的汉子多也精">开仓放粮</button><button class="link" data-war="xiwen">传檄邻近州县</button><button class="link" data-war="surrender" title="把俘虏降卒编进队伍">招降纳叛</button></div>
+    <div class="opost">义旗：${P.yuefa ? `<span class="muted">约法「${esc(P.yuefa)}」</span>` : '<button class="link" data-wl="yuefa" title="约法写在输入框里，不写用默认三条">约法三章</button>'}<button class="link" data-wl="grainopen" title="开仓放粮：民心+3，往后自愿来投的汉子多也精">开仓放粮</button><button class="link" data-wl="xiwen">传檄邻近州县</button><button class="link" data-wl="surrender" title="把俘虏降卒编进队伍">招降纳叛</button></div>
     <div class="opost">在${esc(here)}：<button class="link" data-ptvil="帮工">帮村里干活</button>${(() => { try { return isBandit(s); } catch (_) { return false; } })() ? '' : '<button class="link" data-ptvil="勒索">勒孝敬</button>'}<button class="link" data-ptvil="劫村">洗劫</button><button class="link" data-ptx="seek">去酒肆寻好汉</button><button class="link" data-ptx="quest">打听差事</button></div>
     ${arr(P.cands).length ? `<div class="list">${P.cands.map(h => `<div><b>${esc(h.name)}</b> <span class="muted">${esc(h.from)}；武${h.wu} 统${h.tong} 谋${h.mou} 医${h.yi}，${esc(h.temper)}，想要：${esc(h.wish)}</span> <button class="link" data-pthire="${esc(h.name)}">花${esc(fmtN(h.price, u))}请他入伙</button></div>`).join('')}</div>` : ''}
     ${arr(P.heroes).length ? `<div class="h" style="font-size:14px">头领</div><div class="list">${P.heroes.map(h => `<div><b>${esc(h.name)}</b> <span class="muted">武${h.wu} 统${h.tong} 谋${h.mou} 医${h.yi} · ${esc(h.temper)} · 忠心${h.loyal ?? 50}</span></div>`).join('')}</div>` : ''}
@@ -11585,7 +11601,8 @@ function influenceBlock(s) {
 async function worldTick(s) {
   const pol = s.place.polity || '', yl = s.clock.yearLabel || s.clock.y + '年', w0 = s.world || {};
   const found = await searchFirst(s, [`${yl} ${pol} 大事`, `${s.clock.y}年 ${pol} 朝政`, `${s.clock.y + 1}年 ${pol} 大事`].concat(arr(w0.upcoming).filter(u => u.status === '照史').slice(0, 3).map(u => `${String(u.text).split(/[，,；。（(]/)[0].slice(0, 16)} ${u.y}年`)));
-  const { text } = await callClaude(worldInput(s) + (found ? '\n\n' + found + '\n（照史的大事以上面查到的资料为准：年份、人名、经过对不上的照资料改；查不到的不加新的照史大事）' : ''), null, { maxTokens: 8000, temperature: 0.4, kind: '推演' });
+  const libW = await libEvidence(s, [histEraName(s)].concat(arr(w0.upcoming).filter(u => u.status === '照史').slice(0, 3).flatMap(u => arr(u.who).slice(0, 1).map(x => x + '*1.5'))), '', 5);   /* 原文库佐证（R-189）：照史的大事拿史书原文对年月人名 */
+  const { text } = await callClaude(worldInput(s) + (libW ? '\n\n' + libW : '') + (found ? '\n\n' + found + '\n（照史的大事以上面查到的资料为准：年份、人名、经过对不上的照资料改；查不到的不加新的照史大事）' : ''), null, { maxTokens: 8000, temperature: 0.4, kind: '推演' });
   const d = parseJSON(text);
   if (!d || !Array.isArray(d.upcoming)) throw { code: 'bad_json' };
   for (const o of influencePending(s)) o.applied = Math.floor(o.score / INF_STEP);   // 这一档的影响已经交给推演改写过了
@@ -14460,7 +14477,7 @@ function pane(tab) {
       ${whoHtml(s)}
       ${threatHtml(s)}${soldierHtml(s)}${campHtml(s)}${SH(() => royalHtml(s), 'royalHtml')}${SH(() => femLifeHtml(s), 'femLifeHtml')}${SH(() => partyHtml(s), 'partyHtml')}${SH(() => jhHtml(s), 'jhHtml')}${isOfficer(s) ? `<div class="route">做官的事（公务、考成、送上门的钱、参你的本、上疏、派系、打点保举）都在「仕途」页</div>` : ''}${SH(() => hhHtml(s), 'hhHtml')}${SH(() => msHtml(s), 'msHtml')}
       ${domainPanel(s)}${fiscHtml(s)}${mercHtml(s)}${privHtml(s)}${newsHtml(s)}
-      ${myDomain(s).kind === 'none' && isLandlord(s) ? landHtml(s) : ''}${isFem(s) ? femHtml(s) : ''}${myDomain(s).kind === 'none' && !isLandlord(s) && /佃|农|雇工|短工|长工|樵|渔|匠/.test(String(p.role || '')) ? `<div class="h"><span class="seal">工</span>生计</div><div class="opost"><button class="link" data-land="work">出去打短工（二十天）</button></div>` : ''}${(() => { const f = arr(s.forces).find(x => myForce(s, x) && N0(x.troops) > 0); return f ? `<div class="h"><span class="seal">兵</span>兵骄与犒赏</div><div class="opost">士气${Math.round(num(f.morale) ?? 60)} · 粮${fmtN(N0(f.grain), '石')}<button class="link" data-war="laojun">犒军（约${fmtN(Math.max(10, Math.round(N0(f.troops) * 0.05)), (s.money || {}).unit || '')}）</button><button class="link" data-war="raze" title="兵吃饱了，但民心崩、官声烂——史书上军阀都这么干过">纵兵劫掠</button><button class="link" data-war="xiwen">传檄邻近州县</button></div>` : ''; })()}
+      ${myDomain(s).kind === 'none' && isLandlord(s) ? landHtml(s) : ''}${isFem(s) ? femHtml(s) : ''}${myDomain(s).kind === 'none' && !isLandlord(s) && /佃|农|雇工|短工|长工|樵|渔|匠/.test(String(p.role || '')) ? `<div class="h"><span class="seal">工</span>生计</div><div class="opost"><button class="link" data-land="work">出去打短工（二十天）</button></div>` : ''}${(() => { const f = arr(s.forces).find(x => myForce(s, x) && N0(x.troops) > 0); return f ? `<div class="h"><span class="seal">兵</span>兵骄与犒赏</div><div class="opost">士气${Math.round(num(f.morale) ?? 60)} · 粮${fmtN(N0(f.grain), '石')}<button class="link" data-wl="laojun">犒军（约${fmtN(Math.max(10, Math.round(N0(f.troops) * 0.05)), (s.money || {}).unit || '')}）</button><button class="link" data-wl="raze" title="兵吃饱了，但民心崩、官声烂——史书上军阀都这么干过">纵兵劫掠</button><button class="link" data-wl="xiwen">传檄邻近州县</button></div>` : ''; })()}
       ${ms.length ? `<div class="tiles">${ms.map(([k, v]) => `<div class="tile" title="${esc(v.why)}"><div class="k">${esc(k)}</div><div class="v">${esc(v.value)}${arrow(v.delta)}</div>${v.delta && v.why ? `<div class="why">${esc(v.why)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted">开场后出现。</div>'}
       ${gs.length ? `<div class="h"><span class="seal">众</span>各方对你</div>${gs.map(([k, v]) => `<div class="grp" title="${esc(v.why)}"><span class="gk">${esc(k)}</span><span class="bar"><i style="width:${Math.max(3, v.value)}%" class="${v.value < 25 ? 'bad' : v.value < 40 ? 'warn' : v.value >= 60 ? 'good' : ''}"></i></span><span class="gw">${W(v.value)}${v.delta > 0 ? '<span class="up">▲</span>' : v.delta < 0 ? '<span class="down">▼</span>' : ''}</span></div>`).join('')}` : ''}
       <div class="h"><span class="seal">近</span>近来</div>
@@ -15255,9 +15272,9 @@ document.addEventListener('click', async e => {
     PARLEY_P = 1; ORGMSG = '正在当面说，等他回话……'; render();
     try { await parley(S, t.dataset.parley, t.dataset.pt, ask, said); } catch (er) { if (!(er && er.code === 'cancelled')) ORGMSG = '没说成（' + errText(er) + '），再说一次'; } finally { PARLEY_P = null; }
     try { await store.save(S); } catch (_) {} render(); return; }
-  if (S && !BUSY && (t.dataset.council || t.dataset.ult || t.dataset.law || t.dataset.contract || t.dataset.claim || t.dataset.inner || t.dataset.cult || t.dataset.study || t.dataset.war)) {   // 政治（R-146 第四期）
+  if (S && !BUSY && (t.dataset.council || t.dataset.ult || t.dataset.law || t.dataset.contract || t.dataset.claim || t.dataset.inner || t.dataset.cult || t.dataset.study || t.dataset.wl)) {   // 政治（R-146 第四期）；义军军阀的按钮用 data-wl，不和宣战的 data-war 撞（2026-11-10 撞了以后宣战按钮点了不宣战）
     if (t.dataset.council) { const k = t.dataset.council; councilSet(S, k, ($(`[data-cseat="${k}"]`) || {}).value ?? null, ($(`[data-ctask="${k}"]`) || {}).value || null); }
-    else if (t.dataset.inner) innerAct(S, t.dataset.inner, t.dataset.how); else if (t.dataset.ult) ultimatumAct(S, t.dataset.ult); else if (t.dataset.law) lawSet(S, t.dataset.law, t.dataset.v); else if (t.dataset.claim) claimAdd(S, t.dataset.claim); else if (t.dataset.cult) { const r = await cultAct(S, t.dataset.cult, ($('#qText') || {}).value || ''); if (r && $('#qText') && t.dataset.cult === 'poem') $('#qText').value = ''; } else if (t.dataset.study) { const r = await studyAct(S, t.dataset.study, ($('#qText') || {}).value || ''); if (r && $('#qText') && ['read', 'buybook', 'apprentice'].includes(t.dataset.study)) $('#qText').value = ''; } else if (t.dataset.war) { await warlordAct(S, t.dataset.war, ($('#qText') || {}).value || ''); if ($('#qText') && ['yuefa'].includes(t.dataset.war)) $('#qText').value = ''; } else contractSet(S, t.dataset.contract, t.dataset.k);
+    else if (t.dataset.inner) innerAct(S, t.dataset.inner, t.dataset.how); else if (t.dataset.ult) ultimatumAct(S, t.dataset.ult); else if (t.dataset.law) lawSet(S, t.dataset.law, t.dataset.v); else if (t.dataset.claim) claimAdd(S, t.dataset.claim); else if (t.dataset.cult || t.dataset.study || t.dataset.wl) { try { if (t.dataset.cult) { const r = await cultAct(S, t.dataset.cult, ($('#qText') || {}).value || ''); if (r && $('#qText') && t.dataset.cult === 'poem') $('#qText').value = ''; } else if (t.dataset.study) { const r = await studyAct(S, t.dataset.study, ($('#qText') || {}).value || ''); if (r && $('#qText') && ['read', 'buybook', 'apprentice'].includes(t.dataset.study)) $('#qText').value = ''; } else if (t.dataset.wl) { await warlordAct(S, t.dataset.wl, ($('#qText') || {}).value || ''); if ($('#qText') && ['yuefa'].includes(t.dataset.wl)) $('#qText').value = ''; } } catch (er) { if (!(er && er.code === 'cancelled')) ORGMSG = '这件没办成（' + errText(er) + '），再点一次'; } }   /* 要问 AI 的按钮出错不再整页报错（2026-11-10 全按钮普查查出：传檄问 AI 出错把错抛到页上） */ else contractSet(S, t.dataset.contract, t.dataset.k);
     try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && (t.dataset.hh || t.dataset.loan || t.dataset.route)) {   // 百姓线、国债商路（R-146）
     if (t.dataset.hh) hhAct(S, t.dataset.hh, ($('#hhAmt') || {}).value); else if (t.dataset.loan) { if (t.dataset.loan === 'repay') loanRepay(S); else loanTake(S, t.dataset.loan, ($('#loanAmt') || {}).value); } else routeOpen(S, t.dataset.route);

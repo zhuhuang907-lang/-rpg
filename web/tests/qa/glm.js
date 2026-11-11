@@ -24,7 +24,8 @@ const path = require('path');
     // 填了 GLM：写故事、推演记账、辅助搜索走 GLM；审读、编书走 DeepSeek
     lsSet('hrpg:glmkey', 'glm-key-ok'); lsSet('hrpg:glmmodel', 'glm-test-a'); lsSet('hrpg:glmbase', 'https://open.bigmodel.cn/api/paas/v4'); glmWebRefresh();
     r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/GLM/.test(r.text)) bad.push('写故事没走 GLM：' + r.text);
-    for (const k of ['裁定', '记账', '检索', '研读']) { r = await callClaude('给表', null, { kind: k }); if (!/glm/.test(r.text)) bad.push(k + '没走 GLM：' + r.text); }
+    for (const k of ['裁定', '记账', '推演']) { r = await callClaude('给表', null, { kind: k }); if (!/glm/.test(r.text)) bad.push(k + '没走 GLM：' + r.text); }
+    for (const k of ['检索', '研读', '核任期']) { r = await callClaude('给表', null, { kind: k }); if (/glm/.test(r.text)) bad.push(k + '是整理资料的活，该走 DeepSeek（R-189 三方分工）：' + r.text); }
     for (const k of ['审读', '编书']) { r = await callClaude('看看', null, { json: false, kind: k }); if (!/DeepSeek/.test(r.text)) bad.push(k + '没走 DeepSeek：' + r.text); }
     // 设置里改分工：写故事改给 DeepSeek
     SETTINGS.route = { story: 'ds' }; r = await callClaude('写一段', null, { json: false, kind: '写戏' }); if (!/DeepSeek/.test(r.text)) bad.push('分工改了写故事给 DeepSeek，还走 GLM'); SETTINGS.route = null;
