@@ -12,7 +12,7 @@
 import io, os, re, json, gzip, sys, unicodedata
 from opencc import OpenCC
 
-RAW = os.environ.get('RAW_DIR', r'<历史库>\raw')
+RAW = os.environ.get('RAW_DIR', 'raw')
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'corpus')
 os.makedirs(OUT, exist_ok=True)
 t2s = OpenCC('t2s').convert

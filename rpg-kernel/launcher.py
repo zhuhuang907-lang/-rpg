@@ -20,7 +20,7 @@ APP_DIR = os.path.dirname(os.path.abspath(sys.executable)) if getattr(
 def find_node():
     candidates = [
         os.path.join(APP_DIR, "node.exe"),
-        r"C:\Users\<user>\.workbuddy\binaries\node\versions\22.22.2-3\node.exe",
+        os.path.expanduser(r"~\.workbuddy\binaries\node\versions\22.22.2-3\node.exe"),
     ]
     for c in candidates:
         if os.path.exists(c):
