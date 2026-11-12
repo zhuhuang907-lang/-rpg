@@ -94,6 +94,7 @@ start ai.js && {
   run "舆图大修：关卡大表、古道走廊（行军变慢写循某道）、交战红圈、新占地金圈、粮道画线（R-197~202）" 240 env PLAY="$ROOT/web/play.html" node passes.js
   run "朝局核实与主角落位：原文库核人、核不上腾位、seatSelf 落位、你的位子卡、人名门禁（R-203~205）" 240 env PLAY="$ROOT/web/play.html" node orgself.js
   run "剧情像 RPG：史论总结腔打回、第二人称、对话场面、结尾停在拿主意处；家常短步只查史论（R-206~208）" 120 env PLAY="$ROOT/web/play.html" node storychk.js
+  run "真人硬门槛：模型夹带的古人（李白）不收、名单外不立档、真人档案只列此刻在世且核实过的、旧档打开就清（R-209~211）" 120 env PLAY="$ROOT/web/play.html" node eragate.js
   run "原文库检索：照朝代政权挑书、整词比对、同段多词排前、在命中处摘句、真语料查得到（R-189）" 300 env PLAY="$ROOT/web/play.html" node libsearch.js
   run "三方分工：整理归 DeepSeek、写故事想事情归 GLM、互为后备、材料过长删中间；原文佐证进推演（R-189）" 150 env PLAY="$ROOT/web/play.html" node r189.js
   run "默认全交 DeepSeek；翻史书真点；朝臣互谋、大臣奏事、敌国之主、当面说、立真人档案带史书原文；同查询只查一回（R-192）" 150 env PLAY="$ROOT/web/play.html" node r192.js

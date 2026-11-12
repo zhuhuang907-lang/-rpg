@@ -1077,6 +1077,7 @@ function shrink(s) {
 /** 第一版存档（按回合记的 log）转成对话 */
 function migrate(s) {
   try { tidyState(s); } catch (_) { /* 旧档缺字段 */ }
+  try { eraPurge(s); } catch (_) { /* 旧档没档案 */ }   // R-209：旧档里混进来的古人（李白之流）打开就清掉
   if (s && typeof s === 'object') s.gameVer = VERSIONS.game;
   // 旧存档：人事树上照例不授的位子（隋唐尚书令之类）、大人物位子上程序起的虚构名字清掉，留待查真人
   try { if (s && s.org && Array.isArray(s.org.nodes) && s.clock) orgVacantFix(s); } catch (_) { /* 旧档缺字段 */ }   // 存档里记下是哪一版写的
@@ -1801,6 +1802,7 @@ ${B.map((x, i) => `${i + 1}. ${x.n.name}｜${x.q.title}｜现任${x.q.holder || 
   O.future = arr(O.future); let k = 0;
   res.forEach((d, bi) => { for (const c of arr(d && d.changes)) { const x = blocks[bi][(num(c && c.i) || 0) - 1], yy = num(c && c.y), mm = num(c && c.m), nm = one(c && c.name, 8);
     if (!x || yy == null || yy < y0 || yy > to || !nm || nm.length < 2 || nm.length > 6 || /某|不详|空|无/.test(nm) || nm === me) continue;
+    if (!eraPersonOkName(s, nm).ok) { noteErr('档案退人', `${nm}（人事更替表）：不是这一朝的人，不收`); continue; }
     if (yy === y0 && mm != null && mm < m0) continue;
     if (O.future.some(f => f.node === x.n.id && f.title === x.q.title && f.name === nm)) continue;
     O.future.push({ y: yy, m: mm != null && mm >= 1 && mm <= 12 ? mm : null, node: x.n.id, title: x.q.title, name: nm, prev: one(c.prev, 20), src: one(c.src, 20) }); k++; } });
@@ -1822,6 +1824,8 @@ async function courtFullDS(s) {
   const R = await Promise.all(parts.map(ask)); if (R.every(d => !d)) { s.ctFail = s.turn; throw { code: 'bad_json' }; }
   const P = [], seen = new Set(), FA = [];
   for (const d of R) { for (const x of arr(d && d.people)) { const n = one(x && x.name, 8); if (!n || n.length < 2 || n.length > 6 || /某|不详|空|无/.test(n) || seen.has(n)) continue; seen.add(n);
+      // R-209：朝堂表也只收这一朝的人；模型把唐人、宋人写进清朝朝堂的，照生卒退掉
+      if (!/^假/.test(String(x.real || '')) && !eraPersonOk(s, n, num(x.born) ?? null, num(x.died) ?? null)) { noteErr('档案退人', `${n}（朝堂表）：生卒与这一局不合，不收`); continue; }
       P.push({ name: n, post: one(x.post, 30), organ: one(x.organ, 20), rank: one(x.rank, 10), faction: one(x.faction, 16), real: !/^假/.test(String(x.real || '')), stance: one(x.stance, 40), born: num(x.born) ?? null, died: num(x.died) ?? null, ties: arr(x.ties).filter(t => t && t.to).slice(0, 6).map(t => ({ to: one(t.to, 8), rel: one(t.rel, 8) })) }); }
     for (const f of arr(d && d.factions)) if (f && f.name && !FA.some(z => z.name === one(f.name, 16))) FA.push({ name: one(f.name, 16), leader: one(f.leader, 8), members: arr(f.members).map(m => one(m, 8)).filter(Boolean).slice(0, 20), aim: one(f.aim, 40) }); }
   const O = s.org; let added = 0, filled = 0; const held = orgHolders(s);
@@ -2229,7 +2233,7 @@ function courtTab(s) {
     ${card('民生', [['地盘', TR.length || null], ['户口', TR.length ? fmtN(sum(TR, 'pop')) : null], ['民心（均）', avg(TR, 'loyalty')], ['物价', arr(s.prices).slice(0, 2).map(x => x.item + (x.price != null ? x.price + (x.per || '') : '')).join('、') || null]])}
     ${card('军事', [['兵马', FC.length ? FC.length + ' 支' : null], ['总兵力', troops ? fmtN(troops, '人') : R.army != null ? fmtN(N0(R.army), '人') : null], ['军粮可支', troops && grain ? Math.floor(grain / (troops * 0.02)) + ' 日' : null], ['打过的仗', arr(s.battles).length || null]])}
   </div>`;
-  const people = [...new Set(livePeople(s).map(([k]) => k).concat(Object.keys(s.dossiers || {}).filter(k => (s.dossiers[k] || {}).real !== false), arr(s.household).map(m => m.name)))].filter(n => n && n !== s.protagonist.name).slice(0, 80);
+  const people = [...new Set(livePeople(s).map(([k]) => k).concat(Object.keys(s.dossiers || {}).filter(k => { const d = s.dossiers[k] || {}; return d.real !== false && !d.doubt && eraPersonOk(s, k, d.born ?? null, d.died ?? null) && (d.died == null || d.died >= s.clock.y) && (d.born == null || d.born <= s.clock.y); }), arr(s.household).map(m => m.name)))].filter(n => n && n !== s.protagonist.name).slice(0, 80);
   const SC = orgScope(s), can = SC.lv === 'decree', vb = '下令';
   const FS = fictionShow(s), nm = h => h ? esc(h) + (FS.has(h) ? '<span class="vt">虚拟</span>' : '') : '<span class="muted">空缺</span>';
   const kids = pid => O.nodes.filter(n => (n.parent || '') === pid && n.status !== '已裁撤');
@@ -4784,7 +4788,7 @@ function figuresAt(s, y) {
   }
   // 档案库（人才年表 / 核查过的真人）：这一年在世、且还没在史料里的
   for (const [name, D] of Object.entries(s.dossiers || {})) {
-    if (!D || D.real === false) continue;
+    if (!D || D.real === false || D.doubt) continue;
     if (D.died != null && D.died < y) continue;
     if (D.born != null && D.born > y) continue;
     const past = arr(D.career).filter(c => c.y <= y), last = past[past.length - 1];
@@ -4963,7 +4967,7 @@ ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.k
 如果玩家这回是在戏外提问（问历史、地理、局面、建议），steps 给 []，scene 不给，search 列出回答需要查的。
 acts：把玩家这一回的话照性质分开——只是问的（问）、只是盘算还没动手的（计）、向上头或别人请准的（请）、凭主角自己的职权、身份让下面的人办的（令）、越出职权或冒险去做的（试；ok 写「越权」或「冒险」）；一件事一条，tmp 写 t1、t2……；在职权之内、钱粮人手够的「令」ok 写「能」。主角职权以内、人就在跟前或就在本地的吩咐，下面的人这一回就去办、正文里见结果，不无故拖延、推诿、来回请示；拖、打折、敷衍只在他的利害、本事、路程真说得通时才有（写进 why），不为添波折而设。后患只写这一步照常理真会带出来的，不凭空加祸事。
 lookup：写这一回要从账上查的几样（从这些里挑：${LOOKUP_KEYS}；人物、地图、往事后面写名字或关键词，如「人物:王某甲」「地图:江都县」「往事:盐引」），凡要写到兵数、钱粮、家里人、旧事、某人近况的都要查；要引经据典、写典章礼制、官署故实，再加「原文:关键词」（如「原文:盐铁」「原文:丧礼」），程序会去二十四史、通鉴、通典这些史书原文里查几段带出处的给你；程序会把账上的原样给写正文、记账的人。
-只输出一个 JSON 对象：{"lookup":["兵马"],"acts":[{"tmp":"t1","type":"问/计/请/令/试","what":"","who":"谁去办（主角自己办写「自己」）","to":"向谁请（申请才写）","perm":"凭什么：职权、关系、钱财","ok":"能/要批准/越权/冒险"}],"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"battle":{"fight":"这一回真要交兵才写「是」，否则空","enemy":"对手（势力或将领真名）","enemyTroops":0,"enemyQuality":"精/中/弱","enemySupply":"足/缺","place":"在哪打（当时的地名）","terrain":"平原/山地/城池/关隘/河网/山林","attacker":"我/敌","surprise":"有/无","ourForces":["参战的我方兵马名（照【国势账】里的名字）"],"ourTroops":"主角名下没有兵马时（随军、守城、统带朝廷的兵、被卷进来）：主角这一边参战的人数","ourSide":"那时主角这一边叫什么（如 某军某指挥、守城兵民）","ourQuality":"精/中/弱","basis":"敌军兵力从哪来的（史料、探报、推断）"},"realPeople":["这一回牵涉的真实历史人物的名字：只列玩家点名要见、要找、要投奔、要对付的，和此时确实就在此地、凭主角的身份够得着的（如本县的官员）；远在别处、跟主角没有来往的名人不列，不为热闹把真人请进场面（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人，一律写全名：照【本地官员名册】与上面材料；都没有的，照常理起一个合乎时代的全名","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么","risk":"他怕什么、这件事让他担什么风险","flip":"什么情况下他会拖延、反口或翻脸"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
+只输出一个 JSON 对象：{"lookup":["兵马"],"acts":[{"tmp":"t1","type":"问/计/请/令/试","what":"","who":"谁去办（主角自己办写「自己」）","to":"向谁请（申请才写）","perm":"凭什么：职权、关系、钱财","ok":"能/要批准/越权/冒险"}],"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"battle":{"fight":"这一回真要交兵才写「是」，否则空","enemy":"对手（势力或将领真名）","enemyTroops":0,"enemyQuality":"精/中/弱","enemySupply":"足/缺","place":"在哪打（当时的地名）","terrain":"平原/山地/城池/关隘/河网/山林","attacker":"我/敌","surprise":"有/无","ourForces":["参战的我方兵马名（照【国势账】里的名字）"],"ourTroops":"主角名下没有兵马时（随军、守城、统带朝廷的兵、被卷进来）：主角这一边参战的人数","ourSide":"那时主角这一边叫什么（如 某军某指挥、守城兵民）","ourQuality":"精/中/弱","basis":"敌军兵力从哪来的（史料、探报、推断）"},"realPeople":["这一回牵涉的真实历史人物的名字：只列玩家点名要见、要找、要投奔、要对付的，和此时确实就在此地、凭主角的身份够得着的（如本县的官员）；远在别处、跟主角没有来往的名人不列，不为热闹把真人请进场面；史书上早已去世、不在这一朝的人（如唐人绝不能列进清朝这一回）绝不列，程序会照生卒年再核一遍（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人，一律写全名：照【本地官员名册】与上面材料；都没有的，照常理起一个合乎时代的全名","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么","risk":"他怕什么、这件事让他担什么风险","flip":"什么情况下他会拖延、反口或翻脸"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
 }
 async function getRuling(s, said) {
   try {
@@ -9118,7 +9122,8 @@ async function risingDS(s) {
   const d = parseJSON(text); const P = arr(d && d.people).filter(x => x && x.name && x.now && one(x.source, 60) && x.name !== me && !/某|不详/.test(x.name)).slice(0, 80);
   if (!P.length) { s.riFail = s.turn; throw { code: 'bad_json' }; }
   const used = new Set(arr(s.org.nodes).flatMap(n => n.posts.flatMap(q => [q.holder].concat(arr(q.others)))).filter(Boolean)), list = [], offs = []; let tree = 0;
-  for (const x of P) { const name = one(x.name, 8), now = one(x.now, 30), place = one(x.place, 16), r = { name, now, place, later: one(x.later, 30), src: one(x.source, 60) }; list.push(r);
+  for (const x of P) { const name = one(x.name, 8), now = one(x.now, 30), place = one(x.place, 16), r = { name, now, place, later: one(x.later, 30), src: one(x.source, 60) };
+    if (!eraPersonOkName(s, name).ok) { noteErr('档案退人', `${name}（后进表）：不是这一朝的人，不收`); continue; } list.push(r);
     if (used.has(name)) continue; const m = matchPost(s, (place && !now.includes(place) ? place : '') + now);
     if (m && !m[1].byPlayer && (!m[1].holder || /拟/.test(m[1].src || '')) && seatPut(s, m[0], m[1], name, '史书·后进', { force: true })) { used.add(name); r.inTree = true; tree++; continue; }
     if (m && (m[1].quota || 1) > 1 && arr(m[1].others).length < 4 && !arr(m[1].others).includes(name)) { m[1].others = arr(m[1].others).concat([name]); used.add(name); r.inTree = true; tree++; continue; }
@@ -9215,6 +9220,8 @@ async function talentDS(s) {
   const res = await Promise.all(B.map(ask)); let n = 0; s.dossiers = s.dossiers || {};
   for (const d of res) for (const x of arr(d && d.people)) {
     const name = one(x && x.name, 8); if (!name || name.length < 2 || name === me || /某|不详/.test(name) || !one(x.source, 60)) continue;
+    // R-209：年表只收这一朝的人；生卒在这年之外的（古人、未生）不收
+    if (!eraPersonOk(s, name, num(x.born) ?? null, num(x.died) ?? null)) { noteErr('档案退人', `${name}（人才年表）：生卒与这一局不合，不收`); continue; }
     const path = arr(x.path).filter(c => c && num(c.y) != null && c.post).map(c => ({ y: num(c.y), m: num(c.m), post: one(c.post, 40), how: one(c.how, 8), patron: one(c.patron, 8), src: '年表' })).slice(0, 24);
     const D = s.dossiers[name] = Object.assign(s.dossiers[name] || {}, { real: true, tl: true });
     if (num(x.born) != null && D.born == null) D.born = num(x.born); if (num(x.died) != null && D.died == null) D.died = num(x.died);
@@ -9226,7 +9233,7 @@ async function talentDS(s) {
 }
 /** 本局轨道：玩家碰过的，或者史书上引他出来的人已经不在了 */
 function trackOf(s, name) { const D = (s.dossiers || {})[name]; return D && D.track === '局' ? '局' : '史'; }
-function touchFig(s, name, why) { if (!name) return; s.dossiers = s.dossiers || {}; const D = s.dossiers[name] = s.dossiers[name] || {}; if (D.track !== '局') { D.track = '局'; D.trackWhy = one(why, 30); } }
+function touchFig(s, name, why) { if (!name) return; if (!eraPersonOkName(s, name).ok) { noteErr('档案退人', `${name}：古人，不进档案`); return; } s.dossiers = s.dossiers || {}; const D = s.dossiers[name] = s.dossiers[name] || {}; if (D.track !== '局') { D.track = '局'; D.trackWhy = one(why, 30); } }
 /** 照史轨道这一步该不该走：靠山没了的转本局 */
 function pathStepOK(s, name, step) { if (trackOf(s, name) === '局') return false; const pa = step && step.patron; if (pa && pa.length >= 2 && personBad(s, pa) === '已故') { touchFig(s, name, `引他出来的${pa}已经不在了`); return false; } return true; }
 /** 名臣谱：只写此刻 */
@@ -13253,9 +13260,65 @@ async function cbdbPerson(name, y) {
     return (CBDB_CACHE[name] = { name: b.ChName || name, born: +b.YearBirth || null, died: +b.YearDeath || null, native: b.IndexAddr || '', posts: dated.slice(0, 30), now: nowP.map(fmt).slice(0, 3), text: text + (nowP.length ? `\n程序照任官年份推算：${y}年他最可能在任 ${nowP.map(fmt).join('；')}` : '') });
   } catch (_) { return null; } finally { clearTimeout(t); }
 }
+/* ========== R-209 真人硬门槛：不是这一朝的人，检索得再热闹也不收 ==========
+   模型最容易犯的错：提扬州就顺手把李白塞进来（他写过扬州），提变法就塞王安石。
+   程序照内置史料、档案、朝堂全表里的生卒年核：已故超过四十年、或还没出生的，一概不进档案、不上真人表。
+   同名不同人的，只要史料里有一位在这一朝活着，就放行（不能因为另一个同名古人把今人挡了）。 */
+const PERSON_BACK = 40;   // 已故超过这么多年：算古人，与这一局无涉
+function eraPersonOk(s, name, born, died) {
+  const Y = s && s.clock ? s.clock.y : 0;
+  if (born != null && died != null && died < born) return false;              // 生卒颠倒：脏数据
+  if (born != null && born > Y + 1) return false;                             // 还没出生
+  if (died != null && died < Y - PERSON_BACK) return false;                   // 已故太久：古人
+  return true;
+}
+/** 照史料认这个人：生卒、史事里最后一次出现、卒年。同一名字可能跨朝同名：有一位在这一朝活着就算这一朝的人 */
+function eraPersonOkName(s, name) {
+  const Y = s && s.clock ? s.clock.y : 0; let saw = false, why = '', last = null, diedEv = null;
+  const note = (f) => { saw = true; if (eraPersonOk(s, name, f.born ?? null, f.died ?? null)) return true;
+    why = f.died != null && f.died < Y - PERSON_BACK ? `史载已故（${f.born ?? '?'}—${f.died}），与这一局无涉` : `史载尚未出生（${f.born}年生）`; return false; };
+  for (const h of HALL(s)) for (const f of arr(h.figures)) { if (!f || f.name !== name || (f.born == null && f.died == null)) continue; if (note(f)) return { ok: true, why: '' }; }
+  // 史料里没有生卒的人（诗人、名士常这样）：照史事认——最后一次见于哪一年、有没有卒年
+  for (const h of HALL(s)) for (const e of arr(h.events)) {
+    const inWho = arr(e.who).includes(name), inTxt = e.y && String(e.text || '').includes(name);
+    if (!inWho && !inTxt) continue;
+    saw = true; if (last == null || e.y > last) last = e.y;
+    if (inWho && new RegExp('(^|[，。；：、\\s])' + name + '[^，。；]{0,12}(卒|死|崩|薨|被害|被杀|伏诛)').test(String(e.text || ''))) diedEv = e.y;
+  }
+  if (diedEv != null) {
+    if (diedEv < Y - PERSON_BACK) { why = `史料载${diedEv}年已卒，与这一局无涉`; }
+    else return { ok: true, why: '' };
+  }
+  if (last != null) {
+    if (last >= Y - PERSON_BACK) return { ok: true, why: '' };   // 这几年史料上还有他（或是同名的后人）
+    if (!why) why = `史料最后见于${last}年，与这一局无涉`;
+  }
+  const D = (s && s.dossiers && s.dossiers[name]) || null;
+  if (D && (D.born != null || D.died != null)) { if (note(D)) return { ok: true, why: '' }; if (!why) why = '档案里的生卒与这一局不合'; }
+  const c = arr(s && s.court && s.court.people).find(x => x && x.name === name && (x.born != null || x.died != null));
+  if (c) { if (note({ born: num(c.born) ?? null, died: num(c.died) ?? null })) return { ok: true, why: '' }; if (!why) why = '朝堂表里的生卒与这一局不合'; }
+  return saw ? { ok: false, why } : { ok: true, why: '' };   // 史料里一点影子都没有：放行，交给核查定
+}
+/** 旧存档清一次：档案里是古人的删掉（玩家打开旧档就再也看不到李白之流）；带标记，之后只靠各入口把关 */
+function eraPurge(s) {
+  if (!s || s.eraPurged === 2) return;
+  const D = s.dossiers || {}, out = [];
+  for (const [k, d] of Object.entries(D)) {
+    if (!d) { delete D[k]; continue; }
+    if (!eraPersonOk(s, k, d.born ?? null, d.died ?? null)) { out.push(`${k}（${d.born ?? '?'}—${d.died ?? '?'}）`); delete D[k]; }
+  }
+  // 见闻里「此时此地的真人」同样清：名字是史料上的古人就删
+  s.locals = arr(s.locals).filter(x => x && x.name && eraPersonOkName(s, x.name).ok);
+  if (out.length) noteErr('档案退人', '旧档清出古人：' + out.slice(0, 6).join('、'));
+  s.eraPurged = 2;
+}
 async function ensureDossiers(s, names) {
   const fresh = n => s.dossiers && s.dossiers[n] && Math.abs((s.dossiers[n].y || 0) - s.clock.y) < 2;
-  const want = [...new Set(arr(names).map(x => one(x, 12)).filter(n => n.length >= 2 && n !== s.protagonist.name))].filter(n => !knownFig(s, n) && !fresh(n)).slice(0, 3);
+  const want0 = [...new Set(arr(names).map(x => one(x, 12)).filter(n => n.length >= 2 && n !== s.protagonist.name))].filter(n => !knownFig(s, n) && !fresh(n)).slice(0, 3);
+  // R-209：先照史料生卒过一遍——李白们连查都不用查
+  const back = [];
+  const want = want0.filter(n => { const e = eraPersonOkName(s, n); if (!e.ok) { back.push(`${n}：${e.why}`); return false; } return true; });
+  if (back.length) noteErr('档案退人', back.join(' / '));
   if (!want.length) return [];
   let ev = '', cb = [];
   // 是不是真人，程序先查（维基条目、维基数据、博查，DeepSeek 照查到的判）；档案里的 real 照这个定
@@ -13280,16 +13343,21 @@ async function ensureDossiers(s, names) {
   { const add = want.map(n => CK.get(n)).filter(c => c && arr(c.evidence).length); if (add.length) ev += add.map(c => '\n· 核查：' + c.evidence.join(' / ')).join(''); }
   const { text } = await callClaude(`下面这些名字是一局历史模拟游戏里玩家这一回提到、或场面里要出现的人，可能是真实历史人物。请按史实给每个人立一份档案，并写出他在${timeText(s.clock)}这一刻的状态。主角：${s.protagonist.name || '（玩家扮演的人）'}${s.protagonist.gender ? '（' + s.protagonist.gender + '）' : ''}，${s.protagonist.role}，在${s.place.full}（${s.place.polity || ''}）。
 名字：${want.map(n => { const c = CK.get(n); return c ? `${n}（核查：${c.real ? '史上有其人，据' + c.src : '维基百科、维基数据、博查都查不到，判为查无此人——real 必须写 false'}）` : n; }).join('、')}
+只给上面名单上的人立档；名单外的名字一个都不写（多写的程序不收）。史书上早已去世、这一朝根本不在世的人不列。
 ${ev ? '【查到的资料（维基、博查、CBDB：维基与博查说法矛盾时以博查为准；照 CBDB 的任官年份推算此刻他在任什么官、在哪，与博查矛盾也以博查为准）】\n' + ev + '\n' : ''}要求：只写史书确有记载的；此刻的官职照任官年份推算（某年任甲官、某年改乙官，此刻就在两者之间那一任），推算出来的照写，不要因为没有「此刻」二字就写不详；拿不准的写「不详」，绝不编造官职、地点、年份。同名的取与这个年代、这个地方相关的那一位。查无此人、或此时尚未出生、早已去世的，照实写。
 只输出一个 JSON 对象：{"people":[{"name":"","real":true,"born":0,"died":0,"native":"籍贯","identity":"一句话：他是谁、凭什么出名","state":"此刻：在世/未生/已故","age":null,"post":"此刻的官职或身份","where":"此刻大约在哪（写到州县）","doing":"此刻在做什么、处境如何","ties":"此刻与他相关的要紧人物与派系","reach":"以主角此刻的身份、所在，见不见得到他、要经谁引荐、要走多远多久；他会怎么看待主角这样的人","zi":"字、号","origin":"出身（科第、门荫、行伍、捐纳……哪一年）","career":[{"y":0,"post":"历官：哪一年任什么（照资料，五六条，到此刻为止）"}],"family":"此刻的家眷：父母妻妾子女里要紧的","character":"为人、脾气、好恶（照史书的评语）","stance":"政见与派系立场","sources":"每一条依据哪份资料（维基／博查／CBDB／正史本传），没有依据的写「史识」"}]}。born、died 不知道写 null；career 只写资料里有的，没有就 []。`, null, { maxTokens: 3000, temperature: 0.1, kind: '档案' });
   const d = parseJSON(text), got = [];
   s.dossiers = s.dossiers || {};
   for (const p of arr(d && d.people)) if (p && p.name) {
     const k = one(p.name, 12);
+    // R-209：模型顺手塞进名单的（提扬州就塞李白、提变法就塞王安石），一个不收
+    if (!want.includes(k)) { noteErr('档案退人', `${k}：不在名单上（模型顺手加的），不收`); continue; }
     // CBDB 有的：生卒、籍贯、此刻在任由程序定（AI 只补它没有的）；年岁、在世与否照生卒算；资料里一个字都没提到的「真人」标存疑
     const cbx = cb.find(x => x.name === k || x.name === p.name), Y = s.clock.y;
     const ck0 = CK.get(k), fake0 = ck0 && !ck0.real;   // 查无此人：AI 给的生卒、官职不作数
     const born = fake0 ? null : (cbx && cbx.born) || (ck0 && ck0.born) || num(p.born), died = fake0 ? null : (cbx && cbx.died) || (ck0 && ck0.died) || num(p.died);
+    // R-209：名单上的人也要照生卒再核一遍——AI 可能把同名古人当成本朝人
+    if (!eraPersonOk(s, k, born, died)) { noteErr('档案退人', `${k}（${born ?? '?'}—${died ?? '?'}）：${died != null && died < Y - PERSON_BACK ? '史载已故' + (Y - died) + '年，与这一局无涉' : '史载尚未出生'}，不立档`); continue; }
     const state = born && Y < born ? '未生' : died && Y > died ? '已故' : born || died ? '在世' : one(p.state, 10);
     const seen = ev.includes(k) || (cbx && true);
     const nowNote = cbx && arr(cbx.now).length && p.post && !cbx.now.some(x => x.includes(String(p.post).slice(0, 2))) ? `（CBDB 任官年份推算此刻是：${cbx.now.join('；')}）` : '';
@@ -13936,7 +14004,11 @@ function applyReply(s, d, said) {
     for (const x of arr(d.canon).slice(0, 6)) if (x && String(x).trim().length > 3 && !arr(s.canon).some(c => c.text === one(x, 80))) s.canon = arr(s.canon).concat([{ turn: s.turn, text: one(x, 80) }]);
     s.canon = arr(s.canon).slice(-80);
     for (const f of arr(d.localFigures).slice(0, 6)) if (f && f.name && String(f.name).length >= 2) {
-      const k = one(f.name, 10); s.locals = arr(s.locals).filter(x => x.name !== k).concat([{ name: k, role: one(f.role, 40), y: num(f.y) || s.clock.y, note: one(f.note, 60), turn: s.turn, place: s.place.full }]).slice(-60);
+      const k = one(f.name, 10);
+      // R-209：地方人物也照史料生卒核——记账模型照「扬州名人」写出李白的事发生过
+      const e = eraPersonOkName(s, k);
+      if (!e.ok) { noteErr('档案退人', `${k}（地方人物）：${e.why}`); continue; }
+      s.locals = arr(s.locals).filter(x => x.name !== k).concat([{ name: k, role: one(f.role, 40), y: num(f.y) || s.clock.y, note: one(f.note, 60), turn: s.turn, place: s.place.full }]).slice(-60);
     }
     if (Array.isArray(d.almanac)) addAlmanac(s, d.almanac);
     if (Array.isArray(d.lookups)) s.lookups = d.lookups.map(x => one(x, 40)).filter(Boolean).slice(0, 3);
@@ -14731,12 +14803,12 @@ function pane(tab) {
     // 见闻：你在这世上听到、认得的——传到你耳边的消息、此地在任的官员、打过交道的真人、这年代的行情风俗；联网查到的原始资料放最后，折起来
     const R = arr(s.research).filter(x => x.text && !/^某人/.test(x.q)).slice().reverse(), LC = arr(s.locals).slice().reverse();
     const heardEv = arr(s.world && s.world.events).filter(e => e.key && (s.heard || {})[e.key]).slice(-20).reverse();
-    const offs = officialsHere(s), D = Object.entries(s.dossiers || {}).filter(([k, d]) => d && d.real !== false).slice(-20).reverse();
+    const offs = officialsHere(s), D = Object.entries(s.dossiers || {}).filter(([k, d]) => d && d.real !== false && !d.doubt && eraPersonOk(s, k, d.born ?? null, d.died ?? null) && (d.died == null || d.died >= s.clock.y) && (d.born == null || d.born <= s.clock.y)).slice(-20).reverse();
     const srcTag = x => x.wiki || x.src === 'wikipedia' ? '维基' : x.src === 'bocha' ? '博查' : x.src === 'wikisource' ? '维基文库' : x.src === 'mixed' ? '博查＋维基' : '联网';
     return `<div class="h" style="margin-top:6px"><span class="seal">闻</span>传到你这里的消息<span class="note">照路程先到风闻、后到确报；没传到的你不会知道</span></div>
       <div class="list">${heardEv.map(e => `<div><span class="when">${esc(e.y)}年${e.m ? e.m + '月' : ''}</span>${(s.heard || {})[e.key] === 1 ? '<span class="badge b-doing">风闻</span> ' + esc(String(e.text).split(/[，；。,]/)[0]) + '……' : '<span class="badge b-done">确报</span> ' + esc(e.text)}${e.where ? `<span class="muted">（${esc(e.where)}）</span>` : ''}</div>`).join('') || '<div class="muted">还没有外地的消息传到这里。</div>'}</div>
       ${offs.length ? `<div class="h"><span class="seal">官</span>此地在任的官员<span class="note">史料确载的、按任期推算的、查不到才拟的，分别标出</span></div><div class="tblwrap"><table class="tbl"><tr><th>职位</th><th>人</th><th>本官 / 上司</th></tr>${offs.map(o => `<tr><td>${esc(o.post)}<div class="muted">${esc(o.place)}</div></td><td><b>${esc(o.name)}</b> <span class="badge ${o.src === '史料' ? 'b-done' : o.src === '推断' ? 'b-doing' : ''}">${esc(o.src || '')}</span>${o.since ? `<div class="muted">${esc(o.since)}到任${o.until ? '，' + esc(o.until) + '离任' : ''}</div>` : ''}${o.basis ? `<div class="muted" style="font-size:12px">${esc(o.basis)}</div>` : ''}</td><td class="muted">${esc(o.rank || '')}${o.superior ? '<div>上司：' + esc(o.superior) + '</div>' : ''}</td></tr>`).join('')}</table></div>` : ''}
-      ${D.length ? `<div class="h"><span class="seal">档</span>真人档案<span class="note">这一局里牵涉到的真实人物</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此刻</th><th>出处</th></tr>${D.map(([k, d]) => `<tr><td><b>${esc(k)}</b>${d.born || d.died ? `<div class="muted">${esc(d.born ?? '?')}—${esc(d.died ?? '?')}</div>` : ''}</td><td>${esc([d.state, d.born != null && s.clock ? (s.clock.y - d.born + 1) + '岁' : '', d.post, d.where ? '在' + d.where : ''].filter(Boolean).join('，'))}${d.doing ? `<div class="muted">${esc(d.doing)}</div>` : ''}${d.zi || d.origin ? `<div class="muted">${esc([d.zi && '字号：' + d.zi, d.origin && '出身：' + d.origin, d.native && '籍贯：' + d.native].filter(Boolean).join('；'))}</div>` : ''}${arr(d.career).length ? `<div class="muted" style="font-size:12px">历官：${esc(d.career.map(x => (x.y ? x.y + '年 ' : '') + x.post).join('；'))}</div>` : ''}${d.character || d.stance ? `<div class="muted" style="font-size:12px">${esc([d.character && '为人：' + d.character, d.stance && '立场：' + d.stance].filter(Boolean).join('；'))}</div>` : ''}${d.family ? `<div class="muted" style="font-size:12px">家眷：${esc(d.family)}</div>` : ''}</td><td class="muted">${esc(d.src || '')}${d.doubt ? '<div><span class="badge b-bad">资料里查不到，存疑</span></div>' : ''}${d.sources ? `<div style="font-size:12px">${esc(d.sources)}</div>` : ''}</td></tr>`).join('')}</table></div>` : ''}
+      ${D.length ? `<div class="h"><span class="seal">档</span>真人档案<span class="note">这一局里牵涉到、此刻在世的真实人物（已故的另有记载，不列在此）</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此刻</th><th>出处</th></tr>${D.map(([k, d]) => `<tr><td><b>${esc(k)}</b>${d.born || d.died ? `<div class="muted">${esc(d.born ?? '?')}—${esc(d.died ?? '?')}</div>` : ''}</td><td>${esc([d.state, d.born != null && s.clock ? (s.clock.y - d.born + 1) + '岁' : '', d.post, d.where ? '在' + d.where : ''].filter(Boolean).join('，'))}${d.doing ? `<div class="muted">${esc(d.doing)}</div>` : ''}${d.zi || d.origin ? `<div class="muted">${esc([d.zi && '字号：' + d.zi, d.origin && '出身：' + d.origin, d.native && '籍贯：' + d.native].filter(Boolean).join('；'))}</div>` : ''}${arr(d.career).length ? `<div class="muted" style="font-size:12px">历官：${esc(d.career.map(x => (x.y ? x.y + '年 ' : '') + x.post).join('；'))}</div>` : ''}${d.character || d.stance ? `<div class="muted" style="font-size:12px">${esc([d.character && '为人：' + d.character, d.stance && '立场：' + d.stance].filter(Boolean).join('；'))}</div>` : ''}${d.family ? `<div class="muted" style="font-size:12px">家眷：${esc(d.family)}</div>` : ''}</td><td class="muted">${esc(d.src || '')}${d.doubt ? '<div><span class="badge b-bad">资料里查不到，存疑</span></div>' : ''}${d.sources ? `<div style="font-size:12px">${esc(d.sources)}</div>` : ''}</td></tr>`).join('')}</table></div>` : ''}
       ${LC.length ? `<div class="h"><span class="seal">人</span>此时此地的真人<span class="note">从查证里认出来的，剧情里可能遇到</span></div><div class="tblwrap"><table class="tbl"><tr><th>人</th><th>此时身份</th><th>出处</th></tr>${LC.map(x => `<tr><td><b>${esc(x.name)}</b>${x.y ? `<div class="muted">${esc(x.y)}年前后</div>` : ''}</td><td>${esc(x.role)}</td><td class="muted">${esc(x.note)}</td></tr>`).join('')}</table></div>` : ''}
       ${arr(s.almanac).length ? `<div class="h"><span class="seal">志</span>年代志<span class="note">物价、风俗、制度这些查实了的</span></div>${ALM_CATS.map(c => { const xs = arr(s.almanac).filter(x => x.cat === c && x.grade !== 'C'); return xs.length ? `<div class="h" style="font-size:14px">${c}</div><div class="list">${xs.slice().reverse().map(x => `<div>${esc(x.text)}</div>`).join('')}</div>` : ''; }).join('')}` : ''}
       <details class="book" style="display:none"><summary>联网查到的原始资料（${R.length} 条，${MODE !== 'none' ? (SETTINGS.search === false ? '联网查资料已关' : '人物、当年当地用博查，天下大势用维基') : '联网查证只在桌面版里有'}）</summary>

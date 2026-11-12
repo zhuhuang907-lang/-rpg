@@ -309,6 +309,10 @@ const checks = [
   ['剧情程序体检：史论/总结腔黑名单、第二人称、对话场面、结尾行动钩（R-206）', /const ESSAY_RE = /.test(src) && /function storyRpgCheck/.test(src) && /通篇没用第二人称/.test(src) && /没有一段直接对话的场面/.test(src) && /结尾收死了/.test(src) && /const HOOK_RE = /.test(src)],
   ['写作指令置顶三条 RPG 铁律：你是「你」、场景+台词、停在拿主意处，不许史论总结（R-207）', /function storyRules/.test(src) && /通篇第二人称/.test(src) && /至少一段带「」的直接对话/.test(src) && /结尾停在主角要拿主意的那一刻/.test(src)],
   ['体检并进 preFaults：家常短步只查史论，打回带具体条目重写一次（R-208）', /if \(!st\.talk\) preFaults = preFaults\.concat\(storyRpgCheck\(S, said, st\.text, LIGHT\)\)/.test(src)],
+  ['真人硬门槛：已故超过四十年、未出生的不收；照史料生卒与史事最后出现的年份认人（R-209）', /const PERSON_BACK = 40/.test(src) && /function eraPersonOk\(/.test(src) && /function eraPersonOkName\(/.test(src) && /史料最后见于/.test(src) && /不在名单上（模型顺手加的），不收/.test(src)],
+  ['真人各个入口都设卡：档案名单、地方人物、人才年表、后进表、人事更替、朝堂表、touchFig（R-209）', /（地方人物）：/.test(src) && /（人才年表）/.test(src) && /（后进表）/.test(src) && /（人事更替表）/.test(src) && /（朝堂表）/.test(src) && /function touchFig[\s\S]{0,260}?eraPersonOkName/.test(src)],
+  ['真人档案只列此刻在世、核实过的；旧档里的古人打开就清；人物册、此时在世的人都不混进古人（R-210）', /!d\.doubt && eraPersonOk\(s, k, d\.born/.test(src) && /function eraPurge/.test(src) && /eraPurge\(s\)/.test(src) && /D\.real === false \|\| D\.doubt/.test(src) && /d\.real !== false && !d\.doubt && eraPersonOk\(s, k, d\.born/.test(src)],
+  ['检索提示词：realPeople 只列这一朝的人；立档名单外的名字一律不写（R-211）', /不在这一朝的人（如唐人绝不能列进清朝这一回）/.test(src) && /名单外的名字一个都不写（多写的程序不收）/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
