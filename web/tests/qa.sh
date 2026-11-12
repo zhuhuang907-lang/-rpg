@@ -122,6 +122,7 @@ start ai.js && {
   run "百姓科举、经营：功名照朝代一级级考、到月程序定中不中、进士授官、隋以前察举；开铺子由 DeepSeek 判行情、程序按月结算、增资收铺、记账改不了本钱" 120 env PLAY="$ROOT/web/play.html" node livelihood.js
   run "各种身份都能玩：地方官管辖区、山大王管山寨能劫掠、武官管自己的兵、节度使土司酋长是一方之主、开局照史料查统带的兵、局面页摆出辖区和兵马" 120 env PLAY="$ROOT/web/play.html" node roles.js
   run "朝局令当场办：一方之主任命跟前的当场到任、远处的下一回到任、罢免增设裁撤当场办、国策走诏令回报了才算已行；写正文吩咐了就办不说空话；日本新罗西域西南夷南越林邑都在" 120 env PLAY="$ROOT/web/play.html" node courtnow.js
+  run "任职里的遭遇不算官职：削籍归里、罢归、致仕、下狱论死不再当成此刻的官职，括注里的经历去掉（任务三，R-221）" 120 env PLAY="$ROOT/web/play.html" node postclean.js
   run "大人物照真官：隋唐尚书令照例不授、不起虚构的；三品以上查不到真人就空着待查、后台再查；小吏照旧起名；旧存档清掉大位子上的虚构名字；一方之主能破例除授、小官保举不了" 120 env PLAY="$ROOT/web/play.html" node officials.js
   run "出征真能打：军务页出征单列邻近的城（归谁、多远、几日、胜算、守军不详不编）、点进攻当场立行军、静候军报、撤回；营数整数、总数和战报对得上；胜负折损看对面战力" 120 env PLAY="$ROOT/web/play.html" node march.js
   run "用江山时序的版图：只当数据解析不执行、照多边形认各家、没画到的照内置；测试里不自动下；玩家亲手打下丢掉的才改图" 120 env PLAY="$ROOT/web/play.html" node jsmap.js

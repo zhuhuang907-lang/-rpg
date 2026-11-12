@@ -1933,7 +1933,7 @@ function matchPost(s, postTxt) {
 function histTick(s) {
   if (!s.org) return []; const ym = Math.floor(ymOf(s.clock)), out = [];
   const P = []; for (const [n, d] of Object.entries(s.dossiers || {})) if (d && arr(d.career).length && !(d.died != null && d.died < s.clock.y)) P.push([n, d.career]);
-  for (const h of histFor(s.clock.y, s)) for (const f of arr(h.figures)) if (f && f.name && !P.some(x => x[0] === f.name) && arr(f.posts).length && !(f.died != null && f.died < s.clock.y)) P.push([f.name, arr(f.posts).map(ps => ({ y: ps[0], m: null, post: String(ps[2]).replace(/^.*→/, '') }))]);
+  for (const h of histFor(s.clock.y, s)) for (const f of arr(h.figures)) if (f && f.name && !P.some(x => x[0] === f.name) && arr(f.posts).length && !(f.died != null && f.died < s.clock.y)) P.push([f.name, arr(f.posts).map(ps => ({ y: ps[0], m: null, post: postOnly(String(ps[2]).replace(/^.*→/, '')) })).filter(x => x.post)]);
   s.carApplied = s.carApplied || {};
   for (const [who, car] of P) {
     if (trackOf(s, who) === '局') continue;   // 本局轨道的人不再照史书调
@@ -4780,6 +4780,17 @@ function syncHist(s) {
 /** 一个史料人物在 y 年（m 月）的状态：未生 / 在世 / 已故、官职；本局的改动优先。
    只认史料里明写的生卒；生年不详的按头一次任官推断，卒年不详的按寿数推断，免得把别朝的人当成此时在世 */
 const DEATH_RE = /卒|死|杀|崩|薨|殉|自尽|自缢|遇害|伏诛|被害|病逝/;
+/* 任职记录里的遭遇不算官职（任务三，R-221）：史料 posts 里有把「削籍归里」「罢归」「致仕」「下狱论死」「降清」这类遭遇记成了官职的，
+ * 旧代码直接拿来当「此刻的官职」，高攀龙 1625 年成了官职「削籍归里」、被排进朝堂。整条只有遭遇的不算官职（此刻闲居）；
+ * 「知江宁府（罢相）」这类括注里夹着经历的，只留官名 */
+const POST_STATUS = /削籍|下狱|论死|弃市|赐死|被杀|遇害|流放|流崖|贬为庶|归里|致仕|罢归|罢职|罢相|闲住|闲居|安置|隐居|出家|起兵|叛|反正|反清|反唐|被俘|囚|(?:^|[，、；（])降(?!虏|号|随)|降[唐清金元宋魏吴蜀明后伪蒙]/;
+const POST_OFFICE = /官|使|尉|令|守|史|丞|卿|侍|郎|尚书|将军|王|公|侯|帅|督|大夫|学士|府|州|县|尹|参|判|节度|团练|宾客|少师|少傅|少保|太师|太傅|太保|首领/;
+function postOnly(t) {
+  let x = String(t || '').trim(); if (!x) return '';
+  x = x.replace(/（([^）]*)）|\(([^)]*)\)/g, (all, a, b) => POST_STATUS.test(a || b || '') ? '' : all).trim();   // 括注是经历的，去掉
+  if (POST_STATUS.test(x) && !POST_OFFICE.test(x.replace(new RegExp(POST_STATUS.source, 'g'), ''))) return '';   // 整条只有遭遇
+  return x;
+}
 function figState(s, f, y, m) {
   const o = (s.figOver || {})[f.name] || {};
   const posts = arr(f.posts).filter(p => Array.isArray(p) && Number.isFinite(p[0]));
@@ -4805,7 +4816,7 @@ function figState(s, f, y, m) {
   // 任官可以带起始月日（[起年, 止年, 官, 起月, 起日]）：同一年里还没到任命的日子就不算
   const md = s.clock && s.clock.y === y ? [s.clock.m, s.clock.d || 1] : [12, 30];
   const started = p => !(p[0] === y && p[3] && (md[0] < p[3] || (md[0] === p[3] && p[4] && md[1] < p[4])));
-  const dataPost = posts.filter(p => p[0] <= y && (p[1] ?? p[0]) >= y && started(p)).map(p => p[2]).pop() || '';
+  const dataPost = posts.filter(p => p[0] <= y && (p[1] ?? p[0]) >= y && started(p)).map(p => postOnly(p[2])).filter(Boolean).pop() || '';
   const laterData = !o.fate && posts.some(p => o.postY != null && p[0] > o.postY && p[0] <= y);   // 主角改了他的去向：史书上后来的任命不再自动生效，由天下推演定
   const post = o.post && !laterData ? o.post : dataPost;
   return { state: 'alive', died, post, dyingNow, age: f.born != null ? y - f.born + 1 : null };
@@ -5893,7 +5904,7 @@ async function buildRoster(s) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '';
   const base = [], seen = new Set();
   for (const r of rulersAt(y, s)) if (!seen.has(r.name)) { seen.add(r.name); base.push({ g: r.polity || pol, name: r.name, post: r.title || r.polity, src: '内置史料' }); }
-  for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && !seen.has(f.name + ps[2])) { seen.add(f.name + ps[2]); base.push({ g: '', name: f.name, post: ps[2], since: ps[0], src: '内置史料' }); }
+  for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && postOnly(ps[2]) && !seen.has(f.name + ps[2])) { seen.add(f.name + ps[2]); base.push({ g: '', name: f.name, post: postOnly(ps[2]), since: ps[0], src: '内置史料' }); }
   const RA = realmsAt(y, s.clock.m), RL = rulersAt(y, s).map(r => String(r.polity || '')), big = n => RL.some(p0 => p0 && (p0.includes(n) || n.includes(p0.replace(/[（(].*$/, '')))),
     realms = [...new Set([pol].concat(RA ? RA.list.map(r => r.name).sort((a, b) => big(b) - big(a)) : []).filter(Boolean))].slice(0, 18);   // 自己那家、史料里有君主的大国先问（921 年楚、南汉、荆南排在三十几家后头漏了）
   const blocks = []; for (let i = 0; i < realms.length; i += 3) blocks.push(realms.slice(i, i + 3));
@@ -6143,7 +6154,7 @@ function titleRank(s, t) {
 function recordPost(s, who) {
   const y = s.clock.y;
   for (const g of arr(s.roster && s.roster.y === y ? s.roster.groups : [])) for (const x of arr(g.people)) if (x && x.name === who && x.post) return String(x.post);
-  for (const h of histFor(y, s)) for (const f of arr(h.figures)) if (f.name === who && !(f.died != null && f.died < y)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y)) return String(ps[2]);
+  for (const h of histFor(y, s)) for (const f of arr(h.figures)) if (f.name === who && !(f.died != null && f.died < y)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && postOnly(ps[2])) return postOnly(ps[2]);
   const d = (s.dossiers || {})[who]; if (d) { const c = arr(d.career).filter(x => x && x.post && (x.y == null || x.y <= y)).sort((a, b) => (b.y || 0) - (a.y || 0))[0]; if (c) return String(c.post); }
   return '';
 }
@@ -6380,7 +6391,7 @@ let TALENT_P = null;
 function orgFillReal(s) {
   const O = s.org; if (!O) return 0; const y = s.clock.y, L = [];
   for (const g of arr(s.roster && s.roster.y === y ? s.roster.groups : [])) for (const x of arr(g.people)) if (x && x.name && x.post) L.push({ name: x.name, post: String(x.post), src: x.source || '天下名录' });
-  for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y)) L.push({ name: f.name, post: String(ps[2]).replace(/^.*→/, ''), src: '内置史料' });
+  for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && postOnly(String(ps[2]).replace(/^.*→/, ''))) L.push({ name: f.name, post: postOnly(String(ps[2]).replace(/^.*→/, '')), src: '内置史料' });
   let n0 = 0; const held = orgHolders(s);
   for (const x of L) {
     if (held.has(x.name) || x.name === s.protagonist.name) continue;
