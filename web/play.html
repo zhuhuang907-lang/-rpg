@@ -1652,7 +1652,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261112012451';
+const BUILD = '20261112021506';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.7.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -3323,7 +3323,9 @@ function courtTab(s) {
   const perm = permLevel(s), O = s.org, R = s.realm || {}, TR = arr(s.territory), FC = arr(s.forces), u = (s.money || {}).unit || '';
   const avg = (xs, k) => { const v = xs.map(x => N0(x[k])).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
   const sum = (xs, k) => xs.reduce((a, x) => a + (N0(x[k]) || 0), 0);
-  const vac = O ? O.nodes.filter(n => n.status !== '已裁撤').reduce((a, n) => a + n.posts.filter(p => !p.holder).length, 0) : null;
+  // 空缺只算真该有人、却空着的：照额设的丙等员额、照例不授的、史载虚衔的都不算
+  const seatGap = p => (!p.holder && p.status === '照额') || p.noGrant || p.histVacant ? 0 : Math.max(0, (p.quota || 1) - (p.holder ? 1 : 0) - arr(p.others).length);
+  const vac = O ? O.nodes.filter(n => n.status !== '已裁撤').reduce((a, n) => a + n.posts.reduce((b, p) => b + seatGap(p), 0), 0) : null;
   const card = (t, rows) => `<div class="ccard"><div class="ct">${t}</div>${rows.filter(r => r[1] != null && r[1] !== '').map(([k, v]) => `<div class="cr"><span>${k}</span><b>${esc(v)}</b></div>`).join('') || '<div class="muted">正在照史料推</div>'}</div>`;
   const grain = sum(FC, 'grain'), troops = sum(FC, 'troops');
   const dash = `<div class="cgrid">
@@ -3348,7 +3350,7 @@ function courtTab(s) {
     const headTxt = `<b>${esc(n.name)}</b>${n.level ? ` <span class="muted">${esc(n.level)}</span>` : ''}${n.status ? ` <span class="att">${esc(n.status)}</span>` : ''}${n.src === '玩家' ? ' <span class="att">新设</span>' : ''}${n.path && n.id !== 'root' ? ' <span class="att onpath">你这一路</span>' : ''}${n.duty ? `<span class="muted"> · ${esc(n.duty)}</span>` : ''}${ks.length ? `<span class="muted">（下辖${ks.length}）</span>` : ''}`;
     return `<details class="onode${n.path ? ' path' : ''}" ${open ? 'open' : ''}><summary>${headTxt}</summary>${body}</details>`; };
   const pathLine = O ? (() => { const L = []; const byId = Object.fromEntries(O.nodes.map(n => [n.id, n])); let c = O.nodes.filter(n => n.path && n.id !== 'root').sort((a, b) => (b.depth || 0) - (a.depth || 0))[0]; while (c && L.length < 14) { L.unshift(c.name); c = byId[c.parent]; } return L.length > 1 ? '线路：' + L.join(' → ') : ''; })() : '';
-  const seatCardHtml = (() => { const me = s.protagonist && s.protagonist.name, p = me && findPost(s, me); if (!p) return ''; const n0 = postNodeOf(s, p); if (!n0) return '';
+  const seatCardHtml = (() => { const me = s.protagonist && s.protagonist.name, p = me && findPost(s, me); if (!p) { const c = s.career || {}; if (!c.office) return ''; return `<div class="plan" style="border-left-color:#8a6d1d"><div class="ph"><b>你的位子</b> <span class="muted">${esc(c.office)}${c.rank ? '（' + esc(c.rank) + '）' : ''}</span></div><div class="muted" style="font-size:12px">人事树里还没排到你这个衙门（${esc(s.place.full || '')}）；整理到本衙门就落进树里——在那之前先照身份办事（核实：${esc((s.courtChk || {})[me] || '本人')}）</div></div>`; } const n0 = postNodeOf(s, p); if (!n0) return '';
     const par = arr(O.nodes).find(n => n.id === n0.parent), up = par ? arr(par.posts).filter(q => q.holder && q.holder !== me).slice(0, 2).map(q => `${q.holder}（${par.name}${q.title}）`) : [];
     const mates = arr(n0.posts).filter(q => q.holder && q.holder !== me).slice(0, 4).map(q => `${q.holder}（${q.title}）`), chk = (s.courtChk || {})[me] || '本人';
     return `<div class="plan" style="border-left-color:#8a6d1d"><div class="ph"><b>你的位子</b> <span class="muted">${esc(n0.path ? cut(n0.path, 40) + ' · ' : '')}${esc(n0.name)}${esc(p.title)}${p.rank ? '（' + esc(p.rank) + '）' : ''}</span></div><div class="muted" style="font-size:12px">${up.length ? '上司：' + esc(up.join('、')) + '；' : ''}${mates.length ? '同僚：' + esc(mates.join('、')) + '；' : ''}${arr(n0.places).length ? '辖地：' + esc(cut(arr(n0.places).join('、'), 60)) : ''}（核实：${esc(chk)}）</div></div>`; })();
@@ -3356,6 +3358,19 @@ function courtTab(s) {
   const areas = ['政治', '经济', '民生', '军事', '制度'];
   const pols = arr(s.polBook);
   const polHtml = pols.length ? `<div class="cgrid">${areas.map(a => { const L = pols.filter(q => q.area === a); return L.length ? `<div class="ccard"><div class="ct">${a}</div>${L.map(q => { const lock = q.need.some(id => !pols.some(x => x.id === id && x.state === '已行')); return `<div class="pol ${q.state === '已行' ? 'done' : lock ? 'lock' : ''}"><b>${esc(q.name)}</b> <span class="muted">${q.cost} 点</span>${q.state ? ` <span class="att">${esc(q.state)}</span>` : ''}<div class="muted">${esc(q.desc)}</div>${q.effect ? `<div class="muted">后果：${esc(q.effect)}</div>` : ''}${q.real ? `<div class="muted">史例：${esc(q.real)}</div>` : ''}${q.need.length ? `<div class="muted">要先：${esc(q.need.map(id => (pols.find(x => x.id === id) || {}).name || id).join('、'))}</div>` : ''}${orgCan(s, null, null, 'policy') && !q.state && !lock ? `<button class="link" data-org="policy" data-pol="${esc(q.id)}">${perm === 'decree' ? '颁行' : '上疏请行'}</button>` : ''}</div>`; }).join('')}</div>` : ''; }).join('')}</div>` : '';
+  // R-212 朝议：各派站队、暗地里的手脚都摆到台面上；没定时玩家可以表态（席位、君权、清议定成败）
+  const issueHtml = (() => { const I = s.issue; if (!I) return '';
+    const stTxt = arr(I.stances).map(x => `${x.f}${x.st}${x.de ? '（要' + x.de + '）' : ''}`).join('、');
+    return `<div class="h" style="margin-top:6px"><span class="seal">议</span>朝议<span class="note">朝堂正在争的事；你可以表态——席位、君权、清议定成败</span></div>
+      <div class="affair"><b>「${esc(I.k)}」</b> <span class="att">${I.verdict ? esc(I.verdict) : '正在争'}</span>
+        <div class="muted">${I.verdict ? esc(I.why) : (stTxt ? esc(stTxt) : '各派还在计较')}${I.twist ? '；暗地里' + esc(I.twist) : ''}</div>
+        ${I.verdict ? '' : I.playerStance ? `<div class="muted">你已${esc(I.playerStance)}，等朝堂定论</div>` : `<div class="opost"><button class="link" data-issue="赞成">表态赞成</button><button class="link" data-issue="反对">表态反对</button><button class="link" data-issue="观望">暂不表态</button></div>`}</div>`; })();
+  // R-212 朝局待办与回音：下了令、上了疏，要在页面上看得到批没批、到没到任
+  const pendHtml = (() => { const L = arr(s.orgPending).filter(x => !x.done).slice(-8), LG = arr(s.org && s.org.log).slice(-8).reverse();
+    if (!L.length && !LG.length) return '';
+    return `<div class="h"><span class="seal">办</span>朝局待办与回音<span class="note">你下的令、上的疏：批文和到任要走路、要人点头</span></div>
+      ${L.length ? `<div class="list">${L.map(x => `<div>${esc(x.line)}${x.res ? ` <span class="att">${x.res === '准' ? '上头准了' : '上头驳了'}</span><span class="muted">（${esc(x.why || '')}）</span>` : x.arrive != null ? `<span class="muted">（约第${esc(x.arrive)}回到任）</span>` : `<span class="muted">（等回音）</span>`}</div>`).join('')}</div>` : ''}
+      ${LG.length ? `<div class="list">${LG.map(x => `<div class="muted">${esc(x.when || '')}　${esc(x.text)}</div>`).join('')}</div>` : ''}`; })();
   const rk = roleKind(s);
   return `${SH(() => memoHtml(s), 'memoHtml')}${SH(() => politicsHtml(s), 'politicsHtml')}<div class="h" style="margin-top:6px"><span class="seal">${rk === 'local' ? '衙' : '朝'}</span>${rk === 'local' ? '衙署' : '朝局'}<span class="note">${esc(PERM_TXT[SC.lv === 'scoped' ? 'scoped' : SC.lv === 'decree' ? 'decree' : 'view'])}</span></div>
     ${ROLE_TXT[rk] ? `<div class="muted" style="font-size:12px">你的身份：${esc(s.protagonist.role || '')}${(s.career || {}).office ? '（' + esc(s.career.office) + '）' : ''}——${esc(ROLE_TXT[rk])}</div>` : ''}
@@ -3363,6 +3378,7 @@ function courtTab(s) {
     ${ORGMSG ? `<div class="muted" style="margin:6px 0">${esc(ORGMSG)}</div>` : ''}
     ${s.gov ? govHtml(s) : rk === 'ruler' ? dash : ''}
     ${s.gov ? affairsHtml(s, perm === 'decree') : ''}
+    ${issueHtml}${pendHtml}
     <div class="h"><span class="seal">树</span>人事树<span class="note">${O ? esc(O.regime || '') + (O.at != null ? ' · 第' + O.at + '回合整理' : '') : ''}</span>${O ? ` <button class="link" id="bOrgRe">重新查一遍</button>` : ''}</div>
     ${O ? seatCardHtml + tree + (can ? `<div class="opost"><input class="oin" data-onode="" placeholder="新衙门名（最上一层）"><button class="link" data-org="addNode" data-n="">${vb}设立衙门</button></div>` : '') : `<div class="muted">${ORGING ? '正在照史书和制度整理人事树、国策书，整理好自动摆出来……' : '正在排进后台，马上开始整理……'}</div>${(() => { if (!ORGING && !KICK.org && seesCourt(s)) setTimeout(() => { if (S && !S.org && !ORGING) kickJob('org', '人事树', () => buildOrg(S), '人事树整理好了'); }, 0); return ''; })()}`}   <!-- 朝局不用玩家去按（R-193）：没整理就当场自动整理 -->
     ${isRuler(s) ? edictHtml(s) : ''}
@@ -12036,17 +12052,32 @@ function courtIssuePick(s) {
 const seatPower = (s, fn) => { let w = 0; for (const k of Object.keys(COUNCIL)) { const x = seatHolder(s, k); if (x && x.who && fn(facOf(s, x.who))) w += k === 'crown' ? 3 : 2; } return w; };
 function courtIssueApply(s, d) {
   const I = s.issue; if (!I || !d || !Array.isArray(d.stances)) return '';
-  let pro = 0, con = 0; const proF = [], conF = [];
   for (const x of arr(d.stances).slice(0, 6)) {
     const f = one(x && x.faction, 16), st = one(x && x.stance, 4), de = one(x && x.demand, 40);
     if (!f || !/赞成|反对|观望/.test(st)) continue;
     I.stances.push({ f, st, de });
-    const w = seatPower(s, g => g === f) + 1;
-    if (st === '赞成') { pro += w; proF.push(f); } else if (st === '反对') { con += w; conF.push(f); }
   }
   I.twist = one(d.twist, 60);
+  return issueSettle(s);
+}
+/** 各派的票力：朝中席位照派系算，君权、清议另计（玩家表的一票在 issueAct 里带 w） */
+function issueTally(s) {
+  const I = s.issue; if (!I) return null;
+  let pro = 0, con = 0; const proF = [], conF = [];
+  for (const x of arr(I.stances).slice(0, 10)) {
+    if (!/赞成|反对|观望/.test(String(x.st || ''))) continue;
+    const w = x.w != null ? x.w : seatPower(s, g => g === x.f) + 1;
+    if (x.st === '赞成') { pro += w; proF.push(x.f); } else if (x.st === '反对') { con += w; conF.push(x.f); }
+  }
   const lw = lawsOf(s), crown = lw.crown || 0, qy = num(s.qingyi) || 0;
   const win = pro > con * 1.1 && (crown >= 2 || qy >= 0 || pro >= con + 4);
+  return { pro, con, proF, conF, crown, win };
+}
+/** 定了这桩议题：写进派系怨气、国势、清议、朝局日志、年谱 */
+function issueSettle(s) {
+  const I = s.issue; if (!I) return '';
+  const T = issueTally(s); if (!T) return '';
+  const { pro, con, proF, conF, crown, win } = T;
   I.verdict = win ? '议行' : con > pro ? '流产' : '搁置';
   I.why = win ? `${proF.join('、') || '赞成一方'}占了上风${crown >= 2 ? '，君权撑得住' : '，清议也向着这边'}` : con > pro ? `${conF.join('、') || '反对一方'}力大，议题办不下去` : '两下僵住，谁也不让';
   for (const f of new Set(proF)) { const x = arr(s.factions).find(o => o.name === f); if (x) x.grudge = Math.max(-20, (num(x.grudge) || 0) + (win ? -2 : 3)); }
@@ -12058,9 +12089,24 @@ function courtIssueApply(s, d) {
   s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: '朝堂', what: `朝议「${I.k}」${I.verdict}` }]);
   return `朝议「${I.k}」${I.verdict}：${I.why}`;
 }
+/** 玩家就朝议表态：官身照席位算票力，君主一票更重，读书人白身算清议 */
+function issueAct(s, st) {
+  const I = s.issue; if (!I) return '';
+  if (I.verdict) return `「${I.k}」已经${I.verdict}了，等下月的朝议`;
+  if (I.playerStance) return `你已经就「${I.k}」${I.playerStance}了，等朝堂定论`;
+  const stance = /赞成/.test(st) ? '赞成' : /反对/.test(st) ? '反对' : '观望';
+  I.playerStance = stance;
+  if (stance === '观望') return `你暂不表态，「${I.k}」让各派去争`;
+  // 白身读书人没有席位：表态只算清议，不凭空造出票来，也定不了朝议
+  if (orgScope(s).lv === 'view') { s.qingyi = Math.max(-100, Math.min(100, (num(s.qingyi) || 0) + (stance === '赞成' ? 2 : -2))); return `你以清议${stance}「${I.k}」，传了出去；朝堂上还得各派自己争`; }
+  const w = isRuler(s) ? 4 : 2;
+  I.stances = arr(I.stances).concat([{ f: '你', st: stance, de: '', w }]);
+  if (!arr(I.stances).some(x => x.f !== '你')) return `你已就「${I.k}」${stance}；朝堂上其他人还没开口，等等再看`;
+  return issueSettle(s);
+}
 const issueLine = s => {
   const I = s.issue; if (!I) return '';
-  if (!I.verdict) return I.stances.length ? `朝堂正在争「${I.k}」：${I.stances.map(x => `${x.f}${x.st}${x.de ? '（要' + x.de + '）' : ''}`).join('、')}${I.twist ? '；暗地里' + I.twist : ''}` : `朝堂正在争「${I.k}」，各派还在计较`;
+  if (!I.verdict) return I.stances.length ? `朝堂正在争「${I.k}」：${I.stances.map(x => `${x.f}${x.st}${x.de ? '（要' + x.de + '）' : ''}`).join('、')}${I.twist ? '；暗地里' + I.twist : ''}${I.playerStance ? `；你已${I.playerStance}` : ''}` : `朝堂正在争「${I.k}」，各派还在计较`;
   return `「${I.k}」已${I.verdict}（${I.why}）`;
 };
 /** 战局里的敌情：敌军在哪、往哪去，你可以迎击、劫粮、劫营；敌方这几个月做了什么；和书 */
@@ -16744,6 +16790,12 @@ document.addEventListener('click', async e => {
     catch (e) { if (!(e && e.code === 'cancelled')) ORGMSG = '没办成：' + errText(e); }
     finally { TALENT_P = null; try { await store.save(S); } catch (_) {} render(); }
     return;
+  }
+  if (ds.issue && S && !BUSY) {
+    const line = issueAct(S, ds.issue);
+    if (line) ORGMSG = line;
+    try { await store.save(S); } catch (_) { /* 下回再存 */ }
+    render(); return;
   }
   if (ds.org && S && S.org !== undefined) {
     if (BUSY) { ORGMSG = '这一回还在写，写完再改人事'; render(); return; }

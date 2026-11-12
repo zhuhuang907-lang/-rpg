@@ -313,6 +313,9 @@ const checks = [
   ['真人各个入口都设卡：档案名单、地方人物、人才年表、后进表、人事更替、朝堂表、touchFig（R-209）', /（地方人物）：/.test(src) && /（人才年表）/.test(src) && /（后进表）/.test(src) && /（人事更替表）/.test(src) && /（朝堂表）/.test(src) && /function touchFig[\s\S]{0,260}?eraPersonOkName/.test(src)],
   ['真人档案只列此刻在世、核实过的；旧档里的古人打开就清；人物册、此时在世的人都不混进古人（R-210）', /!d\.doubt && eraPersonOk\(s, k, d\.born/.test(src) && /function eraPurge/.test(src) && /eraPurge\(s\)/.test(src) && /D\.real === false \|\| D\.doubt/.test(src) && /d\.real !== false && !d\.doubt && eraPersonOk\(s, k, d\.born/.test(src)],
   ['检索提示词：realPeople 只列这一朝的人；立档名单外的名字一律不写（R-211）', /不在这一朝的人（如唐人绝不能列进清朝这一回）/.test(src) && /名单外的名字一个都不写（多写的程序不收）/.test(src)],
+  ['朝议摆上朝局页、玩家能表态定成败；白身只算清议；AI 各派站队照旧（R-212）', /function issueTally/.test(src) && /function issueSettle/.test(src) && /function issueAct/.test(src) && /data-issue="赞成"/.test(src) && /if \(ds\.issue && S && !BUSY\)/.test(src) && /只在白身|只算清议/.test(src)],
+  ['朝局待办与回音：下了令、上了疏，页面上看得到批没批、到没到任、朝局日志（R-213）', /朝局待办与回音/.test(src) && /上头准了/.test(src) && /约第\$\{esc\(x\.arrive\)\}回到任/.test(src)],
+  ['你的位子没落进人事树也有卡；人事空缺不把照额员额、照例不授的算进去（R-214）', /还没排到你这个衙门/.test(src) && /const seatGap = /.test(src) && /status === '照额'\) \|\| p\.noGrant \|\| p\.histVacant/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
