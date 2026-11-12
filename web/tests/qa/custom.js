@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 (async () => {
   const W = Number(process.argv[2] || 1300), H = Number(process.argv[3] || 900), TAG = process.argv[4] || 'd';
-  const b = await chromium.launch(); const p = await (await b.newContext({ viewport: { width: W, height: H } })).newPage();
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await (await b.newContext({ viewport: { width: W, height: H } })).newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1200);
   

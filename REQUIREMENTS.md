@@ -1822,3 +1822,14 @@
 
 自动验收：web/tests/qa/courtissue.js（朝议上页、表态定成败并进日志年谱、白身只算清议、待办与回音、位子没落树也有卡、空缺数不虚高、AI 站队回归）；prompt_guard 278 项；rules_regress 95 条。
 状态：自动测试通过，玩家未验证。
+
+### R-215 0.8.0 发版：融合贯通、三个版本同步、连接与真 bug
+
+来源：2026-11-12 玩家「整个融合贯通一下，可以推出下一版跟新了，三个版都更新好，把bug和连接做好」。
+
+- 版本号 0.7.0 → 0.8.0（VERSIONS.game）；桌面版 `rpg-kernel/public/index.html`、网页版 `web/play.html`、claude.ai 版 `web/index.html` 由同一次构建产出，三份都带 0.8.0；`version.json` 的 game/build/hash/api 同步。
+- 融合贯通：原文库与真人年代关管住检索，真人档案只列此刻在世且核实过的，朝局从核人、落位到朝议表态、待办回音走通，剧情四条程序体检接在写稿打回链路上，身份线与舆图后勤共用同一份存档与月结。
+- 连接：核对页面调用的 28 个 `/api/*` 路径与本机服务路由一一对上；网页版直连 DeepSeek、桌面版本机代发、claude.ai 版各自的分支不变；原文库浏览器端走 claude 分支 raw（ghfast/gh-proxy 备份）。
+- 真 bug：桌面服务对 `/favicon.ico` 回 204（以前 404，巡检把它当控制台错误）；打仗实玩等 8 个测试认 CHROMIUM（本机用系统 Chrome）；AI 把本朝人的生卒写错时，史料能证这名字在本朝有人就只清掉日期、不误退真人（R-209 补）。
+- 自动验收：提示词护栏 279 项、规则回归 95 条、eragate/courtissue/storychk/orgself/courtfull 全绿；巡检（含图标 404）与打仗全程实玩在 mock 服务下 ERRS []；桌面服务自测 PASS 17 / FAIL 0。CI 推送后跑 QUICK QA 并打包安装程序、免安装包、网页单文件。
+状态：自动测试通过，玩家未验证；三个版本与安装包以 CI 的 latest Release 为准。

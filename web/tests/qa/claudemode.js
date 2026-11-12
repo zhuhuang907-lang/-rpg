@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 (async () => {
-  const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 1300, height: 900 } });
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const ctx = await b.newContext({ viewport: { width: 1300, height: 900 } });
   await ctx.exposeBinding('mockLLM', async (_, m) => { const r = await fetch('http://127.0.0.1:' + (process.env.MOCK_PORT || 3418) + '/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: JSON.parse(m), max_tokens: 4000 }) }); const j = await r.json(); return j.choices[0].message.content; });
   await ctx.addInitScript(() => {
     window.claude = { use: async name => {

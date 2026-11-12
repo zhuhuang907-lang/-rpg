@@ -316,6 +316,7 @@ const checks = [
   ['朝议摆上朝局页、玩家能表态定成败；白身只算清议；AI 各派站队照旧（R-212）', /function issueTally/.test(src) && /function issueSettle/.test(src) && /function issueAct/.test(src) && /data-issue="赞成"/.test(src) && /if \(ds\.issue && S && !BUSY\)/.test(src) && /只在白身|只算清议/.test(src)],
   ['朝局待办与回音：下了令、上了疏，页面上看得到批没批、到没到任、朝局日志（R-213）', /朝局待办与回音/.test(src) && /上头准了/.test(src) && /约第\$\{esc\(x\.arrive\)\}回到任/.test(src)],
   ['你的位子没落进人事树也有卡；人事空缺不把照额员额、照例不授的算进去（R-214）', /还没排到你这个衙门/.test(src) && /const seatGap = /.test(src) && /status === '照额'\) \|\| p\.noGrant \|\| p\.histVacant/.test(src)],
+  ['AI 把本朝人的生卒写错时，史料能证这名字在本朝有人就清掉日期、不误退真人（R-209 补）', (src.match(/与这一朝不合，不采信/g) || []).length >= 3],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

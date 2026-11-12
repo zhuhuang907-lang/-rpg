@@ -1,5 +1,7 @@
 # 历史模拟 RPG
 
+**0.8.0**：史书原文库与真人年代核查、朝局朝议可表态、剧情 RPG 硬验收、八条身份线、舆图古道与后勤——桌面版、网页版、claude.ai 版同步更新。
+
 ## 网页版（不用安装，连 DeepSeek）
 
 用浏览器打开：https://raw.githack.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/web/play.html

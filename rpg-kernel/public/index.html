@@ -1652,9 +1652,9 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261112021506';
+const BUILD = '20261112035508';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
-const VERSIONS = { game: '0.7.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
+const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
 let MODE = 'none', KEY = { has: false, tail: '', model: '' };
 /** 用 DeepSeek 写的两种：桌面版（local，经本机游戏程序）和网页版（web，浏览器直接连 DeepSeek，只要填 Key） */
@@ -2924,8 +2924,15 @@ async function courtFullDS(s) {
   const P = [], seen = new Set(), FA = [];
   for (const d of R) { for (const x of arr(d && d.people)) { const n = one(x && x.name, 8); if (!n || n.length < 2 || n.length > 6 || /某|不详|空|无/.test(n) || seen.has(n)) continue; seen.add(n);
       // R-209：朝堂表也只收这一朝的人；模型把唐人、宋人写进清朝朝堂的，照生卒退掉
-      if (!/^假/.test(String(x.real || '')) && !eraPersonOk(s, n, num(x.born) ?? null, num(x.died) ?? null)) { noteErr('档案退人', `${n}（朝堂表）：生卒与这一局不合，不收`); continue; }
-      P.push({ name: n, post: one(x.post, 30), organ: one(x.organ, 20), rank: one(x.rank, 10), faction: one(x.faction, 16), real: !/^假/.test(String(x.real || '')), stance: one(x.stance, 40), born: num(x.born) ?? null, died: num(x.died) ?? null, ties: arr(x.ties).filter(t => t && t.to).slice(0, 6).map(t => ({ to: one(t.to, 8), rel: one(t.rel, 8) })) }); }
+      // 反过来，模型把本朝人的生卒写错（写成几百年前）的，只要史料里这名字在这一朝确实有人，就只当日期不可信、清掉，别把真人退出朝堂
+      let cb0 = num(x.born) ?? null, cd0 = num(x.died) ?? null;
+      if (!/^假/.test(String(x.real || '')) && !eraPersonOk(s, n, cb0, cd0)) {
+        const ek = eraPersonOkName(s, n);
+        if (!ek.ok) { noteErr('档案退人', `${n}（朝堂表）：生卒与这一局不合，不收`); continue; }
+        noteErr('档案退人', `${n}（朝堂表）：模型给的生卒（${cb0 ?? '?'}—${cd0 ?? '?'}）与这一朝不合，不采信`);
+        cb0 = null; cd0 = null;
+      }
+      P.push({ name: n, post: one(x.post, 30), organ: one(x.organ, 20), rank: one(x.rank, 10), faction: one(x.faction, 16), real: !/^假/.test(String(x.real || '')), stance: one(x.stance, 40), born: cb0, died: cd0, ties: arr(x.ties).filter(t => t && t.to).slice(0, 6).map(t => ({ to: one(t.to, 8), rel: one(t.rel, 8) })) }); }
     for (const f of arr(d && d.factions)) if (f && f.name && !FA.some(z => z.name === one(f.name, 16))) FA.push({ name: one(f.name, 16), leader: one(f.leader, 8), members: arr(f.members).map(m => one(m, 8)).filter(Boolean).slice(0, 20), aim: one(f.aim, 40) }); }
   const O = s.org; let added = 0, filled = 0; const held = orgHolders(s);
   for (const x of P.slice(0, 300)) {
@@ -10348,10 +10355,17 @@ async function talentDS(s) {
   for (const d of res) for (const x of arr(d && d.people)) {
     const name = one(x && x.name, 8); if (!name || name.length < 2 || name === me || /某|不详/.test(name) || !one(x.source, 60)) continue;
     // R-209：年表只收这一朝的人；生卒在这年之外的（古人、未生）不收
-    if (!eraPersonOk(s, name, num(x.born) ?? null, num(x.died) ?? null)) { noteErr('档案退人', `${name}（人才年表）：生卒与这一局不合，不收`); continue; }
+    // 模型把本朝人的生卒写错的，史料里这名字在这一朝有人就只当日期不可信、清掉，别误退
+    let tb = num(x.born) ?? null, td = num(x.died) ?? null;
+    if (!eraPersonOk(s, name, tb, td)) {
+      const ek = eraPersonOkName(s, name);
+      if (!ek.ok) { noteErr('档案退人', `${name}（人才年表）：生卒与这一局不合，不收`); continue; }
+      noteErr('档案退人', `${name}（人才年表）：模型给的生卒（${tb ?? '?'}—${td ?? '?'}）与这一朝不合，不采信`);
+      tb = null; td = null;
+    }
     const path = arr(x.path).filter(c => c && num(c.y) != null && c.post).map(c => ({ y: num(c.y), m: num(c.m), post: one(c.post, 40), how: one(c.how, 8), patron: one(c.patron, 8), src: '年表' })).slice(0, 24);
     const D = s.dossiers[name] = Object.assign(s.dossiers[name] || {}, { real: true, tl: true });
-    if (num(x.born) != null && D.born == null) D.born = num(x.born); if (num(x.died) != null && D.died == null) D.died = num(x.died);
+    if (tb != null && D.born == null) D.born = tb; if (td != null && D.died == null) D.died = td;
     if (x.native && !D.native) D.native = one(x.native, 16); if (x.now) D.now = one(x.now, 40); if (x.temper) D.temper = one(x.temper, 30); D.will = /不肯/.test(x.will || '') ? '不肯' : /难/.test(x.will || '') ? '难' : '肯';
     const have = new Set(arr(D.career).map(c => c.y + '|' + c.post)); D.career = arr(D.career).concat(path.filter(c => !have.has(c.y + '|' + c.post))).sort((a, b) => (a.y * 12 + (a.m || 1)) - (b.y * 12 + (b.m || 1))); n++;
   }
@@ -14512,9 +14526,16 @@ ${ev ? '【查到的资料（维基、博查、CBDB：维基与博查说法矛�
     // CBDB 有的：生卒、籍贯、此刻在任由程序定（AI 只补它没有的）；年岁、在世与否照生卒算；资料里一个字都没提到的「真人」标存疑
     const cbx = cb.find(x => x.name === k || x.name === p.name), Y = s.clock.y;
     const ck0 = CK.get(k), fake0 = ck0 && !ck0.real;   // 查无此人：AI 给的生卒、官职不作数
-    const born = fake0 ? null : (cbx && cbx.born) || (ck0 && ck0.born) || num(p.born), died = fake0 ? null : (cbx && cbx.died) || (ck0 && ck0.died) || num(p.died);
+    const born0 = fake0 ? null : (cbx && cbx.born) || (ck0 && ck0.born) || num(p.born), died0 = fake0 ? null : (cbx && cbx.died) || (ck0 && ck0.died) || num(p.died);
+    let born = born0, died = died0;
     // R-209：名单上的人也要照生卒再核一遍——AI 可能把同名古人当成本朝人
-    if (!eraPersonOk(s, k, born, died)) { noteErr('档案退人', `${k}（${born ?? '?'}—${died ?? '?'}）：${died != null && died < Y - PERSON_BACK ? '史载已故' + (Y - died) + '年，与这一局无涉' : '史载尚未出生'}，不立档`); continue; }
+    // 但 AI 给的生卒也会写错：史料里这名字在这一朝确实有人的（eraPersonOkName 放行），只当日期不可信、清掉，别把真人误退
+    if (!eraPersonOk(s, k, born, died)) {
+      const ek = eraPersonOkName(s, k);
+      if (!ek.ok) { noteErr('档案退人', `${k}（${born ?? '?'}—${died ?? '?'}）：${died != null && died < Y - PERSON_BACK ? '史载已故' + (Y - died) + '年，与这一局无涉' : '史载尚未出生'}，不立档`); continue; }
+      noteErr('档案退人', `${k}：模型给的生卒（${born ?? '?'}—${died ?? '?'}）与这一朝不合，不采信，按史料另核`);
+      born = null; died = null;
+    }
     const state = born && Y < born ? '未生' : died && Y > died ? '已故' : born || died ? '在世' : one(p.state, 10);
     const seen = ev.includes(k) || (cbx && true);
     const nowNote = cbx && arr(cbx.now).length && p.post && !cbx.now.some(x => x.includes(String(p.post).slice(0, 2))) ? `（CBDB 任官年份推算此刻是：${cbx.now.join('；')}）` : '';

@@ -3,7 +3,7 @@
 const { chromium } = require('playwright');
 (async () => {
   const OUT = process.env.AUD || '.', fs = require('fs'), log = [];
-  const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1280, height: 1000 } });
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1280, height: 1000 } });
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message)); p.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text().slice(0, 200)); });
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8771) + '/'); await p.waitForTimeout(1500);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForFunction(() => typeof newSave === 'function' && typeof MODE !== 'undefined' && MODE === 'local', null, { timeout: 30000 });

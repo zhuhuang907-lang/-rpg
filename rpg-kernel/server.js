@@ -111,6 +111,8 @@ function send(res, code, obj, isJson = true) {
 
 async function serveStatic(req, res, urlPath) {
   let rel = urlPath === '/' ? '/index.html' : urlPath;
+  // 页面里用的是内联 SVG 图标；浏览器仍会顺手要 /favicon.ico，回 204 免得控制台报 404（巡检会把它当错）
+  if (rel === '/favicon.ico') { res.writeHead(204, { 'cache-control': 'max-age=86400' }); return res.end(); }
   if (rel === '/index.html') { const up = updatedPage(); if (up) { try { const data = await fsp.readFile(up); res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' }); return res.end(data); } catch { /* 坏了就用自带的 */ } } }
   const file = path.join(PUBLIC, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
   if (!file.startsWith(PUBLIC)) return send(res, 403, { error: 'forbidden' });

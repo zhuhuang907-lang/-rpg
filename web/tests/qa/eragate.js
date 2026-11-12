@@ -48,6 +48,13 @@ const path = require('path');
     callClaude = async () => ({ text: JSON.stringify({ people: [{ name: '李白', real: true, born: 701, died: 762, identity: '唐代诗人', state: '已故' }] }) });
     try { await ensureDossiers(s, ['李白']); } finally { callClaude = oc; S = os; }
     if (s.dossiers['李白']) bad.push('名单上的古人被立了档');
+    // 7 AI 把本朝人的生卒写错（写成几百年前）：史料里这名字在这一朝有人，只当日期不可信、清掉，别把真人误退
+    s.dossiers = {};
+    const op = personCheck; personCheck = async () => ({ real: true, src: '测', born: null, died: null, evidence: [] });
+    callClaude = async () => ({ text: JSON.stringify({ people: [{ name: '永常', real: true, born: 1200, died: 1280, identity: '本朝武将', state: '在世' }] }) });
+    try { await ensureDossiers(s, ['永常']); } finally { callClaude = oc; personCheck = op; }
+    if (!s.dossiers['永常']) bad.push('模型把本朝人的生卒写错，真人被误退了');
+    else if (s.dossiers['永常'].born != null || s.dossiers['永常'].died != null) bad.push('错误的生卒没清掉：' + JSON.stringify({ b: s.dossiers['永常'].born, d: s.dossiers['永常'].died }));
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));

@@ -1,6 +1,6 @@
 // 真点按钮扫一遍（CLAUDE.md「发布与仓库」按钮真点得动）：皇帝、山大王、将领、文官、百姓、商人六种身份，每一页每个按钮真点一下，不许报错；每个身份输入框上有一排能办的事、点了写进框里
 const { chromium } = require('playwright'); const path = require('path');
-(async () => { const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1280, height: 900 } }); const pe = []; p.on('pageerror', e => pe.push(e.message));
+(async () => { const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1280, height: 900 } }); const pe = []; p.on('pageerror', e => pe.push(e.message));
  p.on('dialog', d => d.dismiss());
  await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof render0 === 'function');
  const roles = [['皇帝', '大明皇帝', 1630, '顺天府', '明', { idm: 'emperor' }], ['山大王', '山寨寨主，啸聚梁山', 1120, '郓州', '宋', {}], ['将领', '登州镇总兵', 1630, '登州府', '明', { career: { office: '登州镇总兵', rank: '正二品' } }], ['文官', '潍县知县', 1747, '莱州府潍县', '清', { career: { office: '潍县知县', rank: '正七品' } }], ['百姓', '耕读人家的读书人', 1747, '扬州府江都县', '清', {}], ['商人', '扬州盐商', 1757, '扬州府江都县', '清', {}]];

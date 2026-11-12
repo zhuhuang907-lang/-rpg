@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 const TURNS = Number(process.argv[2] || 60);
 (async () => {
-  const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 1300, height: 900 } }); const p = await ctx.newPage();
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const ctx = await b.newContext({ viewport: { width: 1300, height: 900 } }); const p = await ctx.newPage();
   const errs = [], uiErrs = [], stuck = [];
   p.on('pageerror', e => errs.push(e.message.slice(0, 200)));
   p.on('dialog', d => d.dismiss());
