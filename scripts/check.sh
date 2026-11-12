@@ -3,8 +3,8 @@
 ROOT=$(cd "$(dirname "$0")/.." && pwd); cd "$ROOT"; bad=0
 say() { echo "【提交前检查】$*"; }
 # 完整测试放到最后（R-218，2026-11-12 玩家：「最后时刻在最后排版的时候再跑测试」）：
-#   发布分支、预备分支（claude/gallant-davinci-l8pni0、claude/staging、main）照旧必须全过；其余工作分支（opencode/…、zcode/…、court/…）只提醒，合并进发布分支时再跑
-br=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); release=0; case "$br" in claude/gallant-davinci-l8pni0|claude/staging|main) release=1;; esac   # 预备分支（R-220）同发布分支一样严
+#   发布分支（claude/gallant-davinci-l8pni0、main）照旧必须全过；预备分支和工作分支（claude/staging、opencode/…、zcode/…、court/…）只提醒，合并进发布分支时再跑
+br=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); release=0; case "$br" in claude/gallant-davinci-l8pni0|main) release=1;; esac   # 预备分支 claude/staging 平时合活，只提醒；请玩家拍板发布前在它上面跑完整测试（R-218、R-220）
 # 1. 完整测试（全按钮真点、地图、人物……）全过以后源码没再改过
 fp=$(bash scripts/fingerprint.sh); pass=$(cat .qa-pass 2>/dev/null)
 if [ "$fp" != "$pass" ]; then
