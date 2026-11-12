@@ -1,4 +1,5 @@
 <title>历史模拟RPG</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23b5372a'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='%23f8f9f5' font-family='serif'%3E%E5%8F%B2%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" media="print" onload="this.media='all'"><!-- 字体连不上（国内常见）也不挡页面：先用本机字体显示，字体到了再换上 -->
@@ -1651,7 +1652,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261112011725';
+const BUILD = '20261112012451';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.7.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4542,12 +4543,13 @@ ${who}
 ${iss.length ? '【眼下账上对不上的（这回必须推对）】' + iss.join('；') + '\n' : ''}规矩：史书真人照史载生年算虚岁（写出处）；没有生年的，照他的身份、官职出身的年纪（几岁中举、几岁出仕）、经历、和主角及家里人的关系（比主角大几辈、谁的儿女、生了几个孩子）一个一个合理推断，写依据，about 写 true——一定要给出一个推断的岁数，不许空着、不许写不详。长幼次序必须对：兄、姐比本人大，弟、妹比本人小；伯父比父亲大、叔父比父亲小；长子比次子大、次子比三子大，女儿同理；生母比孩子至少大十五岁；父母比本人大一辈。不要给人人一样的整数，不要套「比主角大二十几、小十几」的现成差数，也不要照抄账上原写的数。
 只输出一个 JSON 对象：{"people":[{"name":"","age":null,"born":null,"about":true,"why":"依据"}]}`, null, { maxTokens: 3000, temperature: 0.2, kind: '研读', detached: true });
   const d = parseJSON(text); if (!d) { s.ageFail = s.turn; return []; }
-  const out = [];
+  const out = []; let introDirty = false;
   for (const x of arr(d.people)) { const n = one(x && x.name, 12), hit = L.find(it => nm(it) === n); if (!hit) continue; const v = hit[1], a = num(x.age), b = num(x.born);
     v.ageV = AGEV;
     if (b != null && s.clock.y - b + 1 > 0 && s.clock.y - b + 1 < 110) { v.born = b; v.age = s.clock.y - b + 1; v.ageAbout = false; v.ageWhy = one(x.why, 50) || `生于${b}年`; }
     else if (a != null && a >= 0 && a < 110) { v.age = Math.round(a); v.ageAbout = x.about !== false; v.ageWhy = one(x.why, 50); }
     else continue;   // 没推出数：这个人下回再推，不写「不详」（2026-10-30 玩家：所有东西都要数据，要合理推断）
+    if (v === p) introDirty = true;   // 主角的年岁改了：开场卡片上那一处也跟着改，同一屏不许两个岁数
     out.push(`${n}${(v.ageAbout ? '约' : '') + v.age + '岁'}`); }
   // 好几个人推出同一个整十岁数（以前满屏三十岁）：这几个人下一回带着这条再推一次（最多三回）
   { const C = {}; for (const it of L) { const v = it[1]; if (v.ageV === AGEV && v.ageAbout && v.age != null && v.age % 10 === 0) (C[v.age] = C[v.age] || []).push([nm(it), v]); }
@@ -4557,6 +4559,7 @@ ${iss.length ? '【眼下账上对不上的（这回必须推对）】' + iss.jo
   const left = familyAgeIssues(s); s.ageTries = left.length ? (num(s.ageTries) || 0) + 1 : 0;
   if (left.length && s.ageTries <= 3) { s.ageAgain = true; for (const m of arr(s.household)) if (left.some(t => t.includes(m.name))) m.ageV = 0; }
   else if (out.length >= L.length || !left.length) s.ageAgain = false;
+  if (introDirty) syncIntro(s);
   return out;
 }
 const famThin = s => arr(s.household).filter(m => m && m.rec).length < 4 && (s.famThinTry || 0) < 3;
@@ -4732,7 +4735,7 @@ ${story ? '【这一回刚写成的正文（也照上面的账挑：跟账、跟
   return { probs, fixes: arr(d.fixes).slice(0, 12) };
 }
 function applyLogicFixes(s, fixes) {
-  const p = s.protagonist, done = [];
+  const p = s.protagonist, done = []; let introDirty = false;
   for (const x of arr(fixes).slice(0, 12)) {
     if (!x || !x.target) continue;
     const t = String(x.target), nm = one(x.name, 16), f = String(x.field || ''), v = x.value, why = one(x.why, 60);
@@ -4740,7 +4743,7 @@ function applyLogicFixes(s, fixes) {
     let ok = false;
     if (/household/.test(t)) { const m = arr(s.household).find(z => z.name === nm); if (m) { if (f === 'age' && N != null && N >= 0 && N < 110) { m.age = N; ok = true; } else if (f === 'relation' && str) { m.relation = str; ok = true; } else if (f === 'dead') { m.dead = v === true || /是|true|1/.test(String(v)); ok = true; } else if (f === 'away') { m.away = v === true || /是|true|1/.test(String(v)); ok = true; } } }
     else if (/people/.test(t)) { const m = (s.people || {})[nm]; if (m && /^(age|role|tie|where|status)$/.test(f)) { m[f] = f === 'age' ? (N != null && N >= 0 && N < 110 ? N : m.age) : str; ok = true; } }
-    else if (/protagonist/.test(t)) { if (f === 'age' && N != null && N > 0 && N < 110) { p.age = N; ok = true; } else if (f === 'role' && str) { p.role = str; ok = true; } }
+    else if (/protagonist/.test(t)) { if (f === 'age' && N != null && N > 0 && N < 110) { p.age = N; ok = true; introDirty = true; } else if (f === 'role' && str) { p.role = str; ok = true; introDirty = true; } }
     else if (/career/.test(t)) { if (/^(office|rank|post)$/.test(f)) { s.career = s.career || {}; s.career[f] = str; ok = true; } }
     else if (/money/.test(t)) { if (N != null && N >= 0 && s.money) { s.money.cash = N; ok = true; } }
     else if (/forces/.test(t)) { const m = arr(s.forces).find(z => z.name === nm); if (m && /^(troops|grain|at|leader)$/.test(f)) { m[f] = /troops|grain/.test(f) ? (N != null && N >= 0 ? N : m[f]) : str; ok = true; } }
@@ -4748,7 +4751,16 @@ function applyLogicFixes(s, fixes) {
     if (/canon/.test(t) || ok) { const txt = /canon/.test(t) ? one(v, 80) : `${nm || (t === 'protagonist' ? p.name : t === 'money' ? '现钱' : '')}${f ? '的' + f : ''}改为${str}`; if (txt) { s.canon = arr(s.canon).concat([{ text: `更正：${txt}（${why}）`, turn: s.turn }]).slice(-60); done.push(`${txt}（${why}）`); } }
   }
   s.logicLog = arr(s.logicLog).concat(done.map(t => ({ turn: s.turn, when: timeText(s.clock), text: t }))).slice(-40);
+  if (introDirty) syncIntro(s);
   return done;
+}
+/** 开场的「这一局，你是」卡片：后台照经历重推主角年岁、常理审改正身份之后，卡片照改后的重记一遍，
+ *  免得开场那一屏上两处年岁、身份对不上。还在开场那一刻的，家里人的年岁也一并重记；过了日子的，家里留着开场时的样子。 */
+function syncIntro(s) {
+  const g = arr(s.chat)[0]; if (!g || !g.extra || !g.extra.intro) return;
+  const P = s.protagonist || {}, i = g.extra.intro;
+  i.name = P.name; i.gender = P.gender; i.age = P.age; i.role = P.role; i.native = P.nativePlace; i.real = P.real;
+  if (i.when === timeText(s.clock)) i.family = arr(s.household).map(m => `${m.relation}${m.name}${m.age != null ? '（' + m.age + '）' : ''}`).join('、');
 }
 /* ========== 营生与本事（借骑马与砍杀的路子，不要它的打仗和建模）：
  *  属性与本事（用得越多长得越快，高低影响办事成败）、声望与品行、门第；各地头面人物给的差事；此地行情跑商（当场买卖、货随身带）；招揽门客（按月给薪） ========== */
@@ -8975,7 +8987,7 @@ function stratMap(s) {
   const DOM0 = domainSet(s, M), DOM = DOM0.D.kind === 'realm' && DOM0.set.size > 15 ? { D: DOM0.D, set: new Set() } : DOM0, inDom = u => !u.outer && (DOM.set.has(geoStem(u.n)) || (u.lv === 3 && u.p && DOM.set.has(geoStem(u.p))));
   const fine = zoom && !(near && sp > 2.6), cell = fine ? 5 : 3.5, ck = [[...DOM.set].join(), y, s.myAdm ? 'a' + s.myAdm.v : '', (M.era ? M.era.id + (PL ? 'P' : '') : '') + (M.ok ? M.A.at : 'c'), MAPZ.mode, prov, near ? near.lon + ',' + near.lat : '', W, H, Ly.adm, [...own.entries()].map(([k, v]) => k + v.who).join()].join('|');
   let fills = MAPC.k === ck ? MAPC.v : '', plFills = '';
-  const MAP_PLAIN = '#d6c9a6';
+  const MAP_PLAIN = '#dcd2ae';
   const TINT = ['#b89f6a', '#7f9f6c', '#9a83ad', '#ad8670', '#6f95ab', '#a8a35f', '#6fa094', '#ad7a8b'];
   // 屏幕坐标的多边形路径（挨得不到一个像素的点省掉）
   const dOf = rings => { let d = ''; for (const R of rings) { let lx = -1e9, ly = -1e9, k = 0, sg = ''; for (const [lo, la] of R) { const X = 10 + (lo - x0) / (x1 - x0) * (W - 20), Y = 10 + (y1 - la) / (y1 - y0) * (H - 20); if (Math.abs(X - lx) + Math.abs(Y - ly) < 1.1) continue; sg += (k++ ? 'L' : 'M') + X.toFixed(1) + ' ' + Y.toFixed(1); lx = X; ly = Y; } if (k >= 3) d += sg + 'Z'; } return d; };
@@ -8989,10 +9001,11 @@ function stratMap(s) {
     // 放大缩小都照政权上色（2026-11-02 玩家：「突然一往下就变了个样子，变成很夸张的各种颜色」）：不再一放大就每个府州各一种颜色；没认出归哪家的铺谭图那种素色，府州之间靠界线分
     const fillOf = u => { const o = ownOf(u), r = M.reg(u); return o ? o.col : r && r.col ? r.col : MAP_PLAIN; };
     const tip = u => `${u.n}（${u.t || '府州'}${u.p ? '，属' + u.p : ''}${u.seatC ? '，治所' + u.seatC : ''}）${ownOf(u) ? ' · ' + ownOf(u).who : ''}`;
-    fills = `<g fill-opacity="${Ly.terr ? '.32' : '.48'}" stroke="#4a3a2a" stroke-opacity="${zoom ? '.9' : '.6'}" stroke-width="${zoom ? '1' : '.5'}" stroke-linejoin="round">${U.map(u => `<path d="${dOf(u.poly.R)}" fill="${fillOf(u)}"${ownOf(u) || M.reg(u) ? ` fill-opacity="${Ly.terr ? '.42' : zoom ? '.4' : '.55'}"` : ''} fill-rule="evenodd" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(tip(u))}</title></path>`).join('')}</g>`
+    fills = `<g fill-opacity="${Ly.terr ? '.22' : '.38'}" stroke="#6b5842" stroke-opacity="${zoom ? '.55' : '.4'}" stroke-width="${zoom ? '.8' : '.5'}" stroke-linejoin="round">${U.map(u => { const synth = (u.poly.R || []).reduce((a, R) => a + R.length, 0) <= 8; return `<path d="${dOf(u.poly.R)}" fill="${fillOf(u)}"${ownOf(u) ? ` fill-opacity="${Ly.terr ? '.42' : zoom ? '.4' : '.55'}"` : M.reg(u) ? ` fill-opacity="${Ly.terr ? '.14' : zoom ? '.13' : '.22'}"` : ''}${synth ? ' stroke="#6b5842" stroke-opacity=".26" stroke-width=".6"' : ''} fill-rule="evenodd" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(tip(u))}</title></path>`; }).join('')}</g>`
       + (DOM.set.size ? `<g fill="none" stroke="#b3261e" stroke-width="2.6" stroke-opacity=".95" pointer-events="none" class="domline">${U.filter(inDom).map(u => `<path d="${dOf(u.poly.R)}"/>`).join('')}</g>` : '')
       + (!DOM.set.size && DOM0.set.size ? `<g fill="#b3261e" fill-opacity=".16" stroke="none" pointer-events="none" class="domfill">${U.filter(u => !u.outer && (DOM0.set.has(geoStem(u.n)) || (u.p && DOM0.set.has(geoStem(u.p))))).map(u => `<path d="${dOf(u.poly.R)}"/>`).join('')}</g>` : '')   /* 地盘大（一方之主）的不一个个描边，整片罩一层你的颜色，一眼看得出哪是你的（R-155） */
-      + `<g fill="none" stroke="#2f2216" stroke-opacity=".85" stroke-width="${zoom ? 2.2 : 1.2}" stroke-linejoin="round" pointer-events="none">${VP.map(f => `<path d="${dOf(f.R)}"/>`).join('')}</g>`;
+      + (() => { const np = f => (f.R || []).reduce((a, R) => a + R.length, 0); const real = VP.filter(f => np(f) > 8), synth = VP.filter(f => np(f) <= 8);   /* 按格收敛造出来的界址是四角矩形（数据没界址的地方），描粗黑线就是一个大黑框（2026-11-12 玩家：「地图观感比较差」）：真界用粗线，合成的只画淡虚线示意 */
+        return `<g fill="none" stroke="#6b5842" stroke-opacity=".55" stroke-width="${zoom ? 1.4 : 0.9}" stroke-linejoin="round" pointer-events="none">${real.map(f => `<path d="${dOf(f.R)}"/>`).join('')}</g>` + (synth.length ? `<g fill="none" stroke="#6b5842" stroke-opacity=".25" stroke-width="${zoom ? 1 : 0.6}" stroke-dasharray="6 4" pointer-events="none">${synth.map(f => `<path d="${dOf(f.R)}"/>`).join('')}</g>` : ''); })();
     // 放大时：每个府州里有好几个县，县与县之间画虚线（府界照谭图；府界之内按各县治所远近分，不越出府界）
     if (zoom && cty.length) { const c2 = 5, nx2 = Math.ceil(W / c2), ny2 = Math.ceil(H / c2), G = [], ofP = new Map(M.L2.filter(u => u.poly).map(u => [u.poly, u])), CP = cty.map(c => [px(c), py(c), c]);
       for (let i = 0; i < nx2; i++) { G.push([]); for (let j = 0; j < ny2; j++) { const gx = i * c2 + c2 / 2, gy = j * c2 + c2 / 2, lon = x0 + (gx - 10) / (W - 20) * (x1 - x0), lat = y1 - (gy - 10) / (H - 20) * (y1 - y0), f = polyAt(PL, lon, lat), u = f && ofP.get(f);
@@ -9000,7 +9013,7 @@ function stratMap(s) {
       const E = []; for (let i = 0; i < nx2; i++) for (let j = 0; j < ny2; j++) { const a = G[i][j]; if (!a) continue;
         if (i + 1 < nx2) { const b = G[i + 1][j]; if (b && b.f === a.f && b.c !== a.c) E.push(`M${(i + 1) * c2} ${j * c2}v${c2}`); }
         if (j + 1 < ny2) { const b = G[i][j + 1]; if (b && b.f === a.f && b.c !== a.c) E.push(`M${i * c2} ${(j + 1) * c2}h${c2}`); } }
-      fills += `<path d="${E.join('')}" fill="none" stroke="#3a2a1a" stroke-opacity=".9" stroke-width="1.1" stroke-dasharray="3 2" pointer-events="none" class="cntyline"/>`; }
+      fills += `<path d="${E.join('')}" fill="none" stroke="#6b5b45" stroke-opacity=".38" stroke-width=".8" stroke-dasharray="3 2" pointer-events="none" class="cntyline"/>`; }
     plFills = fills; fills = '';   // 谭图真界画在上面；没有界址的地方（隋唐以前的北方、边地）由下面按治所远近铺底，不留白
   }
   if (MAPC.k !== ck) {
@@ -9025,9 +9038,9 @@ function stratMap(s) {
       if (i + 1 < nx && Gd[i + 1][j] && key(Gd[i + 1][j]) !== key(u)) E.push([i + 1, j, i + 1, j + 1]);
       if (j + 1 < ny && Gd[i][j + 1] && key(Gd[i][j + 1]) !== key(u)) E.push([i, j + 1, i + 1, j + 1]); } return smoothGrid(E, cell); };   /* 界线连成长线再磨圆，不是一格一格的台阶（2026-11-08 玩家：「地图的错误太多」，截图州界全是锯齿） */
     // 颜色照谭图那样淡一些（2026-11-02 玩家：「很夸张的各种颜色，这样其实不太合适」）：政权色放大以后更淡，界线和州名看得清
-    fills = `<g opacity="${Ly.terr ? '.3' : '.45'}" shape-rendering="crispEdges">${R.join('')}</g><g opacity="${Ly.terr ? '.42' : zoom ? '.4' : '.55'}" shape-rendering="crispEdges">${R2.join('')}</g>`
-      + (fine ? `<path d="${edges(u => u.n)}" stroke="#3a2a1a" stroke-opacity=".85" stroke-width="1" fill="none" stroke-dasharray="3 2" class="cntyline"/><path d="${edges(pref)}" stroke="#3a2a1a" stroke-opacity=".9" stroke-width="1.4" fill="none" class="prefline"/>` : zoom ? `<path d="${edges(pref)}" stroke="#3a2a1a" stroke-opacity=".75" stroke-width="1" fill="none" class="prefline"/>` : '')   // 稍微放大一点就画府州界（2026-11-02 玩家：「要能看到州及他们的行政划分，有区域界线」）
-      + (M.ok || M.era ? `<path d="${edges(u => M.prov(u) || '?')}" stroke="#4a3a2a" stroke-opacity=".5" stroke-width="${fine ? 1.4 : 0.6}" fill="none"${fine ? '' : ' stroke-dasharray="3 2"'}/>` : '')
+    fills = `<g opacity="${Ly.terr ? '.22' : '.36'}" shape-rendering="crispEdges">${R.join('')}</g><g opacity="${Ly.terr ? '.32' : zoom ? '.3' : '.45'}" shape-rendering="crispEdges">${R2.join('')}</g>`
+      + (fine ? `<path d="${edges(u => u.n)}" stroke="#6b5b45" stroke-opacity=".38" stroke-width=".7" fill="none" stroke-dasharray="3 2" class="cntyline"/><path d="${edges(pref)}" stroke="#5a4a34" stroke-opacity=".55" stroke-width="1" fill="none" class="prefline"/>` : zoom ? `<path d="${edges(pref)}" stroke="#5a4a34" stroke-opacity=".5" stroke-width=".8" fill="none" class="prefline"/>` : '')   // 稍微放大一点就画府州界（2026-11-02 玩家：「要能看到州及他们的行政划分，有区域界线」）
+      + (M.ok || M.era ? `<path d="${edges(u => M.prov(u) || '?')}" stroke="#4a3a2a" stroke-opacity=".38" stroke-width="${fine ? 1.2 : 0.6}" fill="none"${fine ? '' : ' stroke-dasharray="3 2"'}/>` : '')
       + (M.ok && M.A.regimes.length > 1 ? `<path d="${edges(u => u.r || '?')}" stroke="#7a1f1f" stroke-opacity=".85" stroke-width="2" fill="none"/>` : '')
       + (DOM.set.size ? `<path d="${edges(u => inDom(u) ? 'D' : '-')}" stroke="#b3261e" stroke-opacity=".95" stroke-width="2.6" fill="none" class="domline"/>` : !DOM.set.size && DOM0.set.size ? `<path d="${edges(u => !u.outer && (DOM0.set.has(geoStem(u.n)) || (u.lv === 3 && u.p && DOM0.set.has(geoStem(u.p)))) ? 'D' : '-')}" stroke="#b3261e" stroke-opacity=".9" stroke-width="2.2" fill="none" class="domline"/>` : '');   /* 地盘大的只描外沿一圈（R-155）：里头各府不描，看得出整片哪是你的 */   // 你的辖区：朱红粗线圈出来
     fills += plFills; MAPC.k = ck; MAPC.v = fills;
@@ -9037,7 +9050,7 @@ function stratMap(s) {
   // 底图：地形、海岸、湖泊、河流（黄河下游按年代走当时的河道）、运河
   const img = Ly.terr ? terrainImg(x0, x1, y0, y1, W, H) : '';
   const coast = (y >= 1644 && coast1820().length ? coast1820() : arr(T.coast)).filter(visL).map(c => `<polyline points="${P(c)}" fill="none" stroke="#5f7f99" stroke-width=".8"/>`).join('');
-  const lakes = arr(T.lakes).filter(l => (!l.from || y >= l.from) && visL(l.p)).map(l => `<polygon points="${P(l.p)}" fill="#a9c8e0" stroke="#5f8fb5" stroke-width=".5"><title>${esc(l.n)}</title></polygon>`).join('');
+  const lakes = arr(T.lakes).filter(l => (!l.from || y >= l.from) && visL(l.p)).map(l => `<polygon points="${P(l.p)}" fill="#8fb9da" stroke="#6f9cc0" stroke-width=".6"><title>${esc(l.n)}</title></polygon>`).join('');
   const rv = Ly.river ? arr(T.rivers).filter(r => (!r.from || y >= r.from) && (zoom || r.r <= 7) && visL(r.p)) : [];
   const rivers = rv.map(r => `<polyline points="${P(r.p)}" fill="none" stroke="#4a86c5" stroke-width="${r.n === '黄河' || r.n === '长江' ? 1.8 : r.r <= 4 ? 1.2 : 0.8}" stroke-linejoin="round"><title>${esc(r.n)}</title></polyline>`).join('')
     + (Ly.river ? arr(T.old).filter(o => y >= o.from && y <= o.to && visL(o.p)).map(o => `<polyline points="${P(o.p)}" fill="none" stroke="#4a86c5" stroke-width="1.8" stroke-linejoin="round"><title>${esc(o.n)}（这一年黄河下游走这条河道）</title></polyline>`).join('') : '')
@@ -9089,7 +9102,7 @@ function stratMap(s) {
     return out.join(''); })();
   // 治所、县城
   const dot = u => { if (u.noSeat) return ''; const o = ownOf(u), sel = MAPZ.sel === u.n; if (PL) return `<g data-mapu="${esc(u.n)}" style="cursor:pointer"><circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${zoom ? 14 : 9}" fill="transparent"/><title>${esc(u.n)}治所${u.seatC ? '（' + esc(u.seatC) + '）' : ''}${o ? ' · ' + esc(o.who) : ''}</title><circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${sel ? 6.5 : zoom ? 5 : 2.4}" fill="#fff" stroke="${sel ? 'var(--zhu)' : o ? o.col : '#2a2a2a'}" stroke-width="${sel ? 2.2 : zoom ? 1.3 : 0.9}"/><circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${zoom ? 2.2 : 1}" fill="${o ? o.col : '#2a2a2a'}" data-mapu="${esc(u.n)}"/></g>`; return `<circle cx="${px(u).toFixed(1)}" cy="${py(u).toFixed(1)}" r="${sel ? 6 : zoom ? 4.2 : 3.2}" fill="${o ? o.col : '#2a2a2a'}" stroke="${sel ? 'var(--zhu)' : '#fff'}" stroke-width="${sel ? 2 : 1}" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(u.n)}${u.t ? '（' + esc(u.t) + '）' : ''}${o ? ' · ' + esc(o.who) : ''}</title></circle>`; };
-  const cdot = u => `<rect x="${(px(u) - 2.8).toFixed(1)}" y="${(py(u) - 2.8).toFixed(1)}" width="5.6" height="5.6" fill="#fff" stroke="#222" stroke-width="1.1" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(u.n)}（${esc(u.t || '县')}${u.p ? '，属' + esc(u.p) : ''}）</title></rect>`;
+  const cdot = u => `<rect x="${(px(u) - 2.8).toFixed(1)}" y="${(py(u) - 2.8).toFixed(1)}" width="5.6" height="5.6" fill="#fff" stroke="#4a4a4a" stroke-width=".9" data-mapu="${esc(u.n)}" style="cursor:pointer"><title>${esc(u.n)}（${esc(u.t || '县')}${u.p ? '，属' + esc(u.p) : ''}）</title></rect>`;
   const CITYB = [], placeLbls = (L, fs) => { const boxes = PINB.concat(pss.map((p, i) => FAMP.test(p.n) ? PSB[i] : null).filter(Boolean)), out = [], rk = u => (here && (geoStem(u.n) === geoStem(here.name) || u === homeN)) ? 0 : ownOf(u) ? 1 : u.lv === 2 ? 2 : 3;
     for (const u of L.slice().sort((a, b) => rk(a) - rk(b))) { const t = u.n, f = u.lv === 3 ? Math.max(12, fs - 2) : fs, w = t.length * f, x = px(u), yy = py(u);
       for (const [dx, dy] of [[5, 4], [-5 - w, 4], [-w / 2, -6], [-w / 2, f + 6]].concat(rk(u) === 0 ? [[-w / 2, f + 22], [10, f + 14], [-10 - w, f + 14]] : [])) {   /* 你所在的州府名被头像标记挡住时挪到标记下方，京城不能没名字（2026-11-08 截图：贞观四年长安一带不见雍州） */ const b = [x + dx, yy + dy - f, x + dx + w, yy + dy + 2];
@@ -15231,7 +15244,7 @@ function applyReply(s, d, said) {
   // 兵马、地盘这一回的增减：记进账目，并摆到正文下面（不用翻册子也看得见）
   if (play) {
     const mv = [];
-    for (const f of arr(s.forces)) { const a = tr0.get(f.name), b2 = N0(f.troops); if (!tr0.has(f.name)) mv.push(`新立 ${f.name}${b2 != null ? ' ' + b2 + '人' : ''}${f.at ? '，驻' + f.at : ''}`); else if (a != null && b2 != null && a !== b2) { mv.push(`${f.name} ${a}→${b2}人`); acc.push({ k: `兵马·${f.name}`, from: a + '人', to: b2 + '人', why: one(f.status, 10) }); } }
+    for (const f of arr(s.forces)) { const a = tr0.get(f.name), b2 = N0(f.troops); if (!tr0.has(f.name)) mv.push(`新立 ${f.name}${b2 != null ? ' ' + b2 + '人' : ''}${f.at ? '，驻' + f.at : ''}`); else if (a != null && b2 != null && a !== b2) { mv.push(`${f.name} ${a}→${b2}人`); extra.acc.push({ k: `兵马·${f.name}`, from: a + '人', to: b2 + '人', why: one(f.status, 10) }); } }
     for (const n of tr0.keys()) if (!arr(s.forces).some(f => f.name === n)) mv.push(`${n} 打散了`);
     for (const t of arr(s.territory)) if (!land0.has(t.place)) mv.push(`新得 ${t.place}`);
     for (const n of land0) if (!arr(s.territory).some(t => t.place === n)) mv.push(`丢了 ${n}`);

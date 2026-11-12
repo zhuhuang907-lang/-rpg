@@ -11,7 +11,7 @@ const CASES = require('./rules_cases.json');
   // 页面脚本跑完、程序兜底的检查函数都在了再测（CI 上偶尔页面还没跑完就开测，报「draftFaults 未定义」）
   try { await p.waitForFunction(() => typeof draftFaults === 'function', null, { timeout: 30000 }); }
   catch (_) { console.log('页面脚本没跑起来：', JSON.stringify(errs)); await b.close(); process.exit(1); }
-  const res = await p.evaluate(cases => cases.map(c => {
+  const res = await p.evaluate(async cases => Promise.all(cases.map(async c => {
     const s = { protagonist: { name: '王二', age: 24, role: '流民' }, clock: { y: 1126, m: 1, d: 5, yearLabel: '靖康元年' }, place: { full: '开封府东水门外' }, people: {}, chat: [], goals: [], ...(c.state || {}) };
     let got;
     if (c.check === 'faults') { const f = draftFaults(s, c.said, c.text, c.span || 'auto'); got = c.expect.map(k => f.some(x => x.includes(k))); return { id: c.id, ok: c.bad ? got.every(Boolean) : f.length === 0, detail: f }; }
@@ -50,8 +50,33 @@ const CASES = require('./rules_cases.json');
     if (c.check === 'r184') { if (c.state) Object.assign(s, JSON.parse(JSON.stringify(c.state))); let out = []; try { if (c.k) out.push(studyAct(s, c.k, c.arg || '')); if (c.months) out = out.concat(studyMonthly(s)); } catch (e) { out.push('err:' + e.message); } const blob = JSON.stringify({ out, orgmsg: ORGMSG, study: s.study, cash: s.money && s.money.cash, line: studyLine(s) }); return { id: c.id, ok: (c.want || []).every(k => blob.includes(k)), detail: blob.slice(0, 240) }; }
     if (c.check === 'r185') { if (c.state) Object.assign(s, JSON.parse(JSON.stringify(c.state))); let out = []; try { out.push(shopDo(s, c.shop, c.k, c.arg || '')); if (c.monthly) out = out.concat(shopMonthly(s, 1)); } catch (e) { out.push('err:' + e.message); } const blob = JSON.stringify({ out, orgmsg: ORGMSG, biz: s.business, cash: s.money && s.money.cash }); return { id: c.id, ok: (c.want || []).every(k => blob.includes(k)), detail: blob.slice(0, 240) }; }
     if (c.check === 'r186') { if (c.state) Object.assign(s, JSON.parse(JSON.stringify(c.state))); let out = []; try { out.push(femAct(s, c.k, c.arg || '')); } catch (e) { out.push('err:' + e.message); } const blob = JSON.stringify({ out, orgmsg: ORGMSG, household: s.household, cash: s.money && s.money.cash, qy: s.qingyi, chaste: s.chaste, role: s.protagonist.role }); return { id: c.id, ok: (c.want || []).every(k => blob.includes(k)), detail: blob.slice(0, 240) }; }
+    if (c.check === 'applyforces') {   /* 兵马增减：记账不许抛错，整回的账目照记（旧版把 acc 写成了局部变量，一打仗整回变化全丢） */
+      const st = newSave({ name: '王二', role: '流民', gregorianYear: 1126, month: 1, day: 5, place: '开封府东水门外', cash: 100 });
+      st.protagonist.age = 24; st.clock.yearLabel = '靖康元年';
+      st.forces = JSON.parse(JSON.stringify(c.forces || []));
+      st.territory = [];
+      let ex = null, err = '';
+      try { applyReply(st, { mode: 'play', reply: c.reply || '照办。', elapsedDays: 5, forces: c.upd || [] }, c.said || '招募乡勇'); ex = st.chat[st.chat.length - 1] && st.chat[st.chat.length - 1].extra; }
+      catch (e) { err = e.message; }
+      const troops = st.forces.map(f => String(f.troops));
+      const want = (c.upd || []).map(f => String(f.troops));
+      const accHit = arr(ex && ex.acc).some(a => String(a.k).includes('兵马·') && String(a.from).includes('100') && String(a.to).includes('120'));
+      const armyHit = arr(ex && ex.army).some(x => String(x).includes('乡勇') && String(x).includes('100') && String(x).includes('120'));
+      return { id: c.id, ok: !err && JSON.stringify(troops) === JSON.stringify(want) && accHit && armyHit, detail: { err, troops, acc: ex && ex.acc, army: ex && ex.army } };
+    }
+    if (c.check === 'introsync') {   /* 开场卡片：后台照经历重推主角年岁，卡片不许还留着旧数（同一屏两处年岁对不上） */
+      const st = newSave({ name: '汪景和', role: '扬州盐商', gender: '男', gregorianYear: 1757, month: 3, day: 6, place: '扬州府江都县', cash: 80000 });
+      st.protagonist.age = 41; st.protagonist.ageV = 0; st.protagonist.ageSet = false; st.protagonist.born = null; st.protagonist.real = false;
+      st.clock.yearLabel = '乾隆二十二年';
+      st.chat = [{ role: 'gm', turn: 1, text: '开场', when: timeText(st.clock), extra: { intro: { name: '汪景和', gender: '男', age: 41, role: '扬州盐商', when: timeText(st.clock), place: st.place.full } } }];
+      const orig = callClaude; let err = '';
+      callClaude = async () => ({ text: JSON.stringify({ people: [{ name: '汪景和', age: 39, about: true, why: '照经历推' }] }) });
+      try { await ageInfer(st); } catch (e) { err = e.message; } finally { callClaude = orig; }
+      const i = st.chat[0].extra.intro;
+      return { id: c.id, ok: !err && st.protagonist.age === 39 && i.age === 39, detail: { err, age: st.protagonist.age, introAge: i.age } };
+    }
     return { id: c.id, ok: false, detail: '未知检查' };
-  }), CASES);
+  })), CASES);
   let fail = 0;
   for (const r of res) { if (!r.ok) fail++; console.log((r.ok ? '通过' : '不合格') + '  ' + r.id + (r.ok ? '' : '  ' + JSON.stringify(r.detail).slice(0, 200))); }
   if (errs.length) { console.log('页面错误', errs); fail++; }
