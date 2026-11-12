@@ -6,14 +6,17 @@
 
 | 命令 | 承办 | 审查 | 发令 | 状态 | 承办分支 | 审查分支 |
 |---|---|---|---|---|---|---|
-| [任务一 隋至唐前期制度库](任务一.md) | zcode | opencode | 2026-11-12 | 待办 | `zcode/task-1` | `opencode/review-1` |
-| [任务二 隋至唐前期史料包](任务二.md) | opencode | zcode | 2026-11-12 | 待办 | `opencode/task-2` | `zcode/review-2` |
+| [任务一 南北朝制度库](任务一.md) | zcode | opencode | 2026-11-12 19:00 UTC | 待办 | `zcode/task-1` | `opencode/review-1` |
+| [任务二 南北朝史料包](任务二.md) | opencode | zcode | 2026-11-12 19:00 UTC | 待办 | `opencode/task-2` | `zcode/review-2` |
+| [任务三 人事任职年表与朝堂先查表](任务三.md) | Claude | opencode、zcode | 2026-11-12 19:00 UTC | 在办 | `claude/staging` | — |
+
+各自的差事单：[给 opencode](给opencode.md)、[给 zcode](给zcode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
 
 状态只有这几种（Claude 改）：**待办** → **已交**（承办分支推上来了）→ **审毕**（审查分支推上来了）→ **准**（Claude 合进预备分支）或 **退回**（照审查和 Claude 的批语重做）→ **已发布**（项目主人拍板后发布）。
 
 ## 改派
 
-- **额度用完、没动静**：发令超过 24 小时、远端没有任何承办分支，另一位可以「代办」（见 `AGENTS.md` 第二步第 3 条）；Claude 巡查时也会把它改派给另一位。
+- **额度用完、没动静（R-222）**：Claude 每小时巡查；某位连续两次巡查（两小时）没有新提交，就当它没额度了——活改派给 zcode（项目主人会给 zcode 接上额度几乎无限的 DeepSeek），或 Claude 自己做。
 - **太难的**：Claude 判断超出 opencode、zcode 能力的（大范围重构、跨很多分区、反复退回两次以上的），承办改成 **Claude**，Claude 自己做，照样请另外两位交叉审查。
 
 ## 怎么知道一件命令走到哪了（不用等 Claude 改状态）
