@@ -3,7 +3,7 @@
 const { chromium } = require('playwright');
 const path = require('path'), http = require('http'), fs = require('fs');
 (async () => {
-  const WEB = path.resolve(__dirname, '../..'), COR = path.resolve(WEB, '..', 'corpus');
+  const WEB = process.env.PLAY ? path.dirname(path.resolve(process.env.PLAY)) : path.resolve(__dirname, '../..'), COR = path.resolve(WEB, '..', 'corpus');
   const srv = http.createServer((q, r) => {
     const f = decodeURIComponent(q.url.split('?')[0]);
     const fp = f.startsWith('/corpus/') ? path.join(COR, f.slice(8)) : path.join(WEB, f === '/' ? 'play.html' : f.slice(1));
@@ -15,7 +15,7 @@ const path = require('path'), http = require('http'), fs = require('fs');
   const base = 'http://127.0.0.1:' + srv.address().port;
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1500, height: 950 } });
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
-  await p.goto(base + '/play.html'); await p.waitForFunction(() => typeof seatSelf === 'function' && typeof personEvidence === 'function');
+  await p.goto(base + '/play.html'); await p.waitForFunction(() => typeof seatSelf === 'function' && typeof personEvidence === 'function', null, { timeout: 120000 });
   const out = await p.evaluate(async port => {
     const bad = [];
     const mkOrg = () => { s.org = { regime: '北宋 熙宁元年', pol: '北宋', at: 1, y: 1068, log: [], nodes: [

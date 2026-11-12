@@ -1652,7 +1652,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261112035508';
+const BUILD = '20261112142716';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2848,6 +2848,20 @@ ${vacantText(s.clock.y) ? '【这一年照例空着、不授人的职位（照�
   } catch (e) { if (e && e.code === 'cancelled') throw e; s.orgFail = s.turn; ORGMSG = '没整理成：' + errText(e) + '（下一回合自动再试）'; }
   finally { ORGING = false; render(); }
 }
+/* ========== 人事树保底（R-194，2026-11-11 玩家：「一回合就能看到所有信息，别说什么四回合再把朝局构造出来……你要自己一开始就做好」）：
+ *  联网整理连着几回都没成，就照游戏自带的本朝制度库（中枢各衙门、地方各级）先立一棵树，官位上照内置史料里这一年在任的真人填，
+ *  其余照官名拟合乎身份的名字（标虚拟）；往后联网查到了再补实，不推倒重来 ========== */
+function orgFromLib(s) { const L = instLibFor(s)[0], pol = s.place.polity || '', y = s.clock.y, nodes = [{ id: 'root', name: pol || '朝廷', depth: 0, posts: [] }];
+  const F = figuresAt(s, y).filter(f => f.alive && f.post), used = new Set(), hold = title => { const st = String(title).replace(/[（(].*$/, '').slice(0, 4); const f = F.find(x => !used.has(x.name) && st.length >= 2 && String(x.post).includes(st)); if (f) { used.add(f.name); return f.name; } return ''; };
+  const split = h => String(h || '').replace(/（[^）]*）/g, '').split(/[、，,；;]/).map(x => x.trim()).filter(x => x && x.length <= 12).slice(0, 4);
+  let k = 0; const add = (name, parent, depth, titles, path) => { const id = 'L' + (++k); nodes.push({ id, name: one(name, 20), parent, depth, path: !!path, posts: titles.map(tt => { const h = hold(tt); return { title: one(tt, 16), holder: h, src: h ? '内置史料' : '', quota: 1 }; }) }); return id; };
+  if (L) { const c = add('中枢', 'root', 1, [], true); for (const o of arr(L.central).filter(o => (o.from == null || o.from <= y) && (o.to == null || o.to >= y)).slice(0, 12)) add(o.organ.replace(/（[^）]*）/g, ''), c, 2, split(o.head));
+    const d = add('地方', 'root', 1, []); for (const o of arr(L.local).slice(0, 6)) add(String(o.level).replace(/（[^）]*）/g, '') + '·' + String(o.organ).replace(/某/g, '').slice(0, 10), d, 2, split(o.head)); }
+  const me = s.protagonist || {}, off = (s.career || {}).office; if (off && !nodes.some(n => n.posts.some(q => q.title === off))) { const id = add(geoCenter(s) + '衙门', 'root', 1, [off], true); nodes.find(n => n.id === id).posts[0].holder = me.name; nodes.find(n => n.id === id).posts[0].src = '本人'; }
+  s.org = { regime: `${pol} ${s.clock.yearLabel || y + '年'}`, pol, ruler: isRuler(s), at: s.turn, y, nodes, log: [], lib: !!L, fromLib: true };
+  try { orgFillReal(s); orgVacantFix(s); } catch (_) {}
+  return s.org; }
+const settled = s => !!(s && (s.settledAt != null || (s.turn || 0) > 3));   /* 开局一次查齐以后：已经摆给玩家看过的人和数不再「查实了改」，往后只顺着情节变（R-194） */
 /** 人事树上要紧的位子（中枢最上两层、主角这一路、主角衙门直属）还空着的：大量博查这一年谁在任，DeepSeek 只从搜到的材料里认人，名字不在材料里的不收 */
 /** 问 DeepSeek 要一张表（2026-11-02 玩家：「直接问 DS 做表格和名单，不要一个人一个人地查……说名字太慢了，思维方式是错的」）：
  *  整棵树的职位一次列给它，逐个写这一年在任的真人；史书上此刻确实空着的写 vacant 和依据；不知道的写 unknown。分几块并发，一块八十个位子。
@@ -4541,15 +4555,15 @@ const ageTxt = (v, s) => v && v.age != null ? `<span title="${esc(v.ageWhy || ''
  *  真人照史载生年算虚岁；没有生年的照他的身份、经历、和家里人的关系推，写依据、标「约」；推不出写不详。程序不拿常情的差数去凑 ========== */
 const AGEV = 1;
 const ageTodo = s => { const me = s.protagonist && s.protagonist.name, L = [];
-  if (s.protagonist && s.protagonist.born == null && !s.protagonist.ageSet && s.protagonist.ageV !== AGEV) L.push(['我', s.protagonist]);
-  for (const m of arr(s.household)) if (m && m.name && !m.dead && !(m.rec && m.born != null) && (m.ageV !== AGEV || s.ageAgain)) L.push(['家', m]);
-  for (const [k, v] of Object.entries(s.people || {})) if (v && k !== me && !v.faded && !v.dead && !(v.born != null && v.statReal) && v.ageV !== AGEV && ((s.turn - (num(v.seen) || 0)) <= 6 || v.age == null || !v.ageWhy)) L.push([k, v]);
+  if (s.protagonist && s.protagonist.born == null && !s.protagonist.ageSet && s.protagonist.ageV !== AGEV && !(settled(s) && s.protagonist.age != null)) L.push(['我', s.protagonist]);
+  for (const m of arr(s.household)) if (m && m.name && !m.dead && !(m.rec && m.born != null) && (m.ageV !== AGEV || s.ageAgain) && !(settled(s) && m.age != null && !m.ageBad && !s.ageAgain)) L.push(['家', m]);   /* 家里人年岁前后矛盾（母亲比主角小这类）是记账写坏了，当回就重推 */   /* 开局定下的年岁不再改（R-194） */
+  for (const [k, v] of Object.entries(s.people || {})) if (v && k !== me && !v.faded && !v.dead && !(v.born != null && v.statReal) && v.ageV !== AGEV && !(settled(s) && v.age != null && !v.ageBad) && ((s.turn - (num(v.seen) || 0)) <= 6 || v.age == null || !v.ageWhy)) L.push([k, v]);
   return L; };
 /** 账上好几个人是同一个整十岁数、又没写依据（以前人人三十岁）：一概交 DeepSeek 照各人经历重推（读档、每回都查） */
 function ageSameScan(s) { const C = {}, all = [...arr(s.household).map(m => [m.name, m]), ...Object.entries(s.people || {})];
   for (const [n, v] of all) if (v && !v.dead && num(v.age) != null && num(v.age) % 10 === 0 && v.born == null && !(v.ageWhy && v.ageV === AGEV && !v.ageAbout === false)) (C[v.age] = C[v.age] || []).push([n, v]);
   const same = Object.entries(C).filter(([, g]) => g.length >= 3); if (!same.length) return 0;
-  s.ageSame = same.map(([a, g]) => `${g.map(x => x[0]).slice(0, 8).join('、')}都写成${a}岁，不可能人人一样，照各人经历分开推`); for (const [, g] of same) for (const [, v] of g) v.ageV = 0; return same.length; }
+  s.ageSame = same.map(([a, g]) => `${g.map(x => x[0]).slice(0, 8).join('、')}都写成${a}岁，不可能人人一样，照各人经历分开推`); for (const [, g] of same) for (const [, v] of g) { v.ageV = 0; v.ageBad = true; } return same.length; }   /* 一排整十岁是记账写坏了：当回就重推（不算回头改） */
 const ageDue = s => { if (!(s && s.clock && s.protagonist)) return false; if (s.ageScanT !== s.turn) { s.ageScanT = s.turn; ageSameScan(s); } return ageTodo(s).length > 0 && !(s.ageFail != null && s.turn - s.ageFail < 2); };
 async function ageInfer(s) {
   const L = ageTodo(s).slice(0, 40); if (!L.length) return [];   // 一回四十人；没推完的后台接着推
@@ -4568,7 +4582,7 @@ ${iss.length ? '【眼下账上对不上的（这回必须推对）】' + iss.jo
   const d = parseJSON(text); if (!d) { s.ageFail = s.turn; return []; }
   const out = []; let introDirty = false;
   for (const x of arr(d.people)) { const n = one(x && x.name, 12), hit = L.find(it => nm(it) === n); if (!hit) continue; const v = hit[1], a = num(x.age), b = num(x.born);
-    v.ageV = AGEV;
+    v.ageV = AGEV; delete v.ageBad;
     if (b != null && s.clock.y - b + 1 > 0 && s.clock.y - b + 1 < 110) { v.born = b; v.age = s.clock.y - b + 1; v.ageAbout = false; v.ageWhy = one(x.why, 50) || `生于${b}年`; }
     else if (a != null && a >= 0 && a < 110) { v.age = Math.round(a); v.ageAbout = x.about !== false; v.ageWhy = one(x.why, 50); }
     else continue;   // 没推出数：这个人下回再推，不写「不详」（2026-10-30 玩家：所有东西都要数据，要合理推断）
@@ -4717,7 +4731,7 @@ function logicFaults(s) {
   return out;
 }
 // 每回合当场审（写完正文、给玩家看之前，和审读、核实一起做）；后台只在还有硬伤没改掉时补一次
-const logicDue = s => s && s.clock && logicFaults(s).length > 0 && !(s.logicFail != null && s.turn - s.logicFail < 1);
+const logicDue = s => s && s.clock && !settled(s) && logicFaults(s).length > 0 && !(s.logicFail != null && s.turn - s.logicFail < 1);
 async function logicAudit(s, story) { const r = await logicReview(s, story); return applyLogicFixes(s, r.fixes); }
 /** 常理审查要对着看的那本账：主角、家室、来往的人、兵马、国势、定本、最近几回（和综合审稿共用） */
 function ledgerSnapshot(s) {
@@ -10220,7 +10234,7 @@ async function postSeek(s, pick, replace) {
     if (old && old !== nm) s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: `核实：${x.n.name}${x.q.title}此时是${nm}（表上原写${old}）` }]).slice(-80); }
   return k;
 }
-const orgVerifyDue = s => !!(s && s.org && canSearch() && !(s.ovAt != null && s.turn - s.ovAt < 4) && arr(s.org.nodes).some(n => n.posts.some(q => q.holder && /^DS表$/.test(q.src || '') && orgMajor(n, q) && q.ver == null)));
+const orgVerifyDue = s => !!(s && s.org && canSearch() && !settled(s) && !(s.ovAt != null && s.turn - s.ovAt < 4) && arr(s.org.nodes).some(n => n.posts.some(q => q.holder && /^DS表$/.test(q.src || '') && orgMajor(n, q) && q.ver == null)));
 async function orgVerifyReal(s) {
   s.ovAt = s.turn; const y = s.clock.y, yl = s.clock.yearLabel || y + '年', L = [];
   for (const n of arr(s.org.nodes)) for (const q of n.posts) if (q.holder && /^DS表$/.test(q.src || '') && orgMajor(n, q) && q.ver == null && !q.byPlayer) L.push({ n, q });
@@ -12411,7 +12425,7 @@ function mergeOffices(s, list, src0) {
     const same = s.offices.filter(e => geoStem(e.place) === geoStem(o.place) && e.post === o.post && ofNow(s, e));
     if (same.some(e => e.name === o.name)) { same.filter(e => e.name === o.name).forEach(e => { if ((OF_RANK[o.src] || 0) > (OF_RANK[e.src] || 0)) Object.assign(e, o); }); continue; }
     // 拟的名字（史料暂缺时起的）查到真人就换，哪怕已经出过场：以真人为准，往后照真名写
-    const keep = same.filter(e => (OF_RANK[e.src] || 0) >= (OF_RANK[o.src] || 0) || (said.includes(e.name) && !(e.src === '拟' && o.src === '史料')));
+    const keep = same.filter(e => (OF_RANK[e.src] || 0) >= (OF_RANK[o.src] || 0) || (said.includes(e.name) && (settled(s) || !(e.src === '拟' && o.src === '史料'))));   /* 开局以后出过场的不再「查实是某某」换人（R-194） */
     for (const e of same) if (e.src === '拟' && o.src === '史料' && said.includes(e.name)) s.canon = arr(s.canon).concat([{ text: `${o.place}${o.post}查实是${o.name}（先前暂拟名${e.name}，此后一律照真名${o.name}写）`, turn: s.turn }]).slice(-60);
     if (keep.length) continue;   // 已经定下（或已经在戏里出过场）的人不换
     if (s.offices.some(e => e.name === o.name && e.post === o.post)) continue;   // 同一人同一职已经记过
@@ -14685,7 +14699,7 @@ function freshName(s, old, female, low) {
 }
 /** 每回合后台：新出现的虚构名字逐个查（每回最多六个，联网的最多三个），撞了真人就换 */
 /** 以前查重名时改掉的名字（clashLog），复查一遍：史书上那位就是这一年这一家的这个人的，改回原名、认作真人（2026-11-05 闽国真官员被改名） */
-const clashUndoDue = s => !!(s && s.clock && arr(s.clashLog).some(x => x && !x.chk && /（DeepSeek）|（博查）/.test(x.t || '')) && !(s.cuFail != null && s.turn - s.cuFail < 2));
+const clashUndoDue = s => !!(s && s.clock && !settled(s) && arr(s.clashLog).some(x => x && !x.chk && /（DeepSeek）|（博查）/.test(x.t || '')) && !(s.cuFail != null && s.turn - s.cuFail < 2));
 async function clashUndo(s) {
   const L = arr(s.clashLog).filter(x => x && !x.chk && /（DeepSeek）|（博查）/.test(x.t || '')).map(x => { const m = String(x.t || '').match(/^(\S+?)→(\S+?)（/); return m ? { x, from: m[1], to: m[2] } : null; }).filter(Boolean).slice(0, 40);
   if (!L.length) return 0; const yl = `公元${s.clock.y}年（${s.clock.yearLabel || ''}）${s.place.polity || ''}`;
@@ -14741,7 +14755,7 @@ ${cand0.map(n => n + (roleOf(n) ? '（' + roleOf(n) + '）' : '')).join('、')}
   const ks = Object.keys(s.clashOK); if (ks.length > 400) for (const k of ks.slice(0, ks.length - 400)) delete s.clashOK[k];
   return out;
 }
-const clashDue = s => s && [...fictionSet(s), ...(s.protagonist && !s.protagonist.real ? arr(s.household).map(m => m && m.name) : [])].some(n => n && !(s.clashOK || {})[n] && n.length >= 2);
+const clashDue = s => s && !settled(s) && [...fictionSet(s), ...(s.protagonist && !s.protagonist.real ? arr(s.household).map(m => m && m.name) : [])].some(n => n && !(s.clashOK || {})[n] && n.length >= 2);
 /** 显示用：每段正文里，虚构人物头一次出现时后面标「（虚拟）」 */
 function markFict(s, text) {
   let t = String(text || ''); if (!s) return t;
@@ -16131,12 +16145,13 @@ async function startGame(sentence, have, havePre, custom, spec) {
         }
         PHASE = 'dossier'; render();
         try { await within(ensureDossiers(fake, (r.real ? [r.name] : []).concat(r.people)), 60000); } catch (e) { if (e && e.code === 'cancelled') throw e; }
+        try { fake.libOpen = await libEvidence(fake, [(r.real ? r.name + '*2' : ''), histEraName(fake), String(r.place || '').replace(/[省府州县郡].*$/, '') + '*1.5'].concat(arr(r.people).slice(0, 3).map(n => n + '*1.5')).filter(x => x && x.length >= 2), String(r.role || ''), 6, 40000); } catch (e) { if (e && e.code === 'cancelled') throw e; }   /* 开局先照原文库立人立事（R-194：第一次就写对） */
         pre = Object.assign(pre || {}, { research: fake.research, almanac: fake.almanac, wikiDone: fake.wikiDone, setting: r, fake });
       }
     }
     if (!st) {
       const sys = DSM(), r = pre && pre.setting, fake = pre && pre.fake;
-      const mat = r && fake ? [settingBlock(r, fake), heatBlock(fake), arcBlock(fake), histBlock(fake), dossierBlock(fake, [r.name, ...r.people].join(' ')), instPoints(fake, r.role, sentence, 2000)].filter(Boolean).join('\n\n') : '';
+      const mat = r && fake ? [settingBlock(r, fake), heatBlock(fake), arcBlock(fake), histBlock(fake), fake.libOpen || '', dossierBlock(fake, [r.name, ...r.people].join(' ')), instPoints(fake, r.role, sentence, 2000)].filter(Boolean).join('\n\n') : '';
       const inp = () => openingStoryInput(sentence, sys, custom, mat) + (pre && arr(pre.almanac).length ? '\n\n' + almanacBlock(pre) : '') + (pre && arr(pre.research).length ? '\n\n' + researchBlock(pre) : '');
       DRAFTN = 0; PHASE = 'draft'; render();
       const { text } = await callClaude(inp(), draftCb, { json: false, temperature: STORY_T, maxTokens: 6000, system: sys ? storyRules() : '' });
@@ -16234,14 +16249,17 @@ let PREP = null;
 async function prepAll(s0) {
   PREP = { round: 0, t0: Date.now() }; PHASE = 'prep'; setBusy(true);
   try {
-    for (let r = 1; r <= 3 && S === s0 && !BG_STOP; r++) {
+    for (let r = 1; r <= 5 && S === s0 && !BG_STOP; r++) {
       PREP.round = r; render();
       if (r > 1) for (const k of Object.keys(s0)) if (/Fail$/.test(k) && s0[k] != null && typeof s0[k] === 'number') delete s0[k];   // 上一轮没做成的，这一轮当场再做
       await afterTurn(s0, null, null);
       if (Date.now() - PREP.t0 > 15 * 60 * 1000) break;   // 最多等十五分钟，网络实在不通就先放行，剩下的照常在后头做
       const L = bgJobs(s0, null, null).filter(j => { try { return !!j.due(); } catch (_) { return false; } }).filter(j => !/^(press|agenda|compact|world|sync|pol|digest)$/.test(j.id));
       if (!L.length) break; PREP.left = L.map(j => j.msg);
+      if (r >= 3 && seesCourt(s0) && !s0.org) orgFromLib(s0);   /* 联网整理三轮都没成：照本朝制度库先立起人事树，一回合就看得到（R-194） */
     }
+    if (S === s0 && seesCourt(s0) && !s0.org) orgFromLib(s0);
+    if (S === s0) s0.settledAt = s0.turn || 0;   /* 开局一次查齐：此后不再回头改已经摆出来的人和数 */
   } finally { PREP = null; if (PHASE === 'prep') PHASE = ''; setBusy(false); if (S === s0) { try { await store.save(s0); } catch (_) { /* 下回再存 */ } } }
 }
 /* ========== 后台：每回合写完之后的整理（不挡玩家） ========== */
