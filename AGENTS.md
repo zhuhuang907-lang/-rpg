@@ -40,7 +40,7 @@ Claude 不照这一页办事，Claude 照 `CLAUDE.md`。
 - 你能推的只有你自己前缀的分支（`glm/…` 或 `ds/…`）。**不要推 `claude/gallant-davinci-l8pni0` 和 `main`，不要开 PR，不要改诏令板和议题一览**——那些由 Claude 改。
 - Claude 有终审权和一票否决权；政事堂的事由 Claude 裁决。
 - 第一次在这个克隆里提交前执行 `git config core.hooksPath scripts/hooks`。提交检查没过就修，不许绕过（不许 `--no-verify`）。
-- 提交检查要求完整测试在当前源码上全过：提交前跑 `QUICK=1 bash web/tests/qa.sh`（约一个半小时，跑时不许改源码和测试）。所以把一件命令的改动全做完、自测完，最后跑一次完整测试再一次提交。
+- 你在自己分支上提交时，提交检查只提醒、不要求跑一个半小时的完整测试；跑命令「验收」一节列的快检查就行。完整测试由 Claude 在最后合并时统一跑（R-218）。
 
 ## 硬规矩
 
