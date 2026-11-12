@@ -9,6 +9,7 @@
 | [任务一 南北朝制度库](任务一.md) | zcode | opencode | 2026-11-12 19:00 UTC | 待办 | `zcode/task-1` | `opencode/review-1` |
 | [任务二 南北朝史料包](任务二.md) | opencode | zcode | 2026-11-12 19:00 UTC | 待办 | `opencode/task-2` | `zcode/review-2` |
 | [任务三 人事任职年表与朝堂先查表](任务三.md) | Claude | opencode、zcode | 2026-11-12 19:00 UTC | 在办 | `claude/staging` | — |
+| [任务四 清理史料里的任职记录](任务四.md) | zcode | opencode | 2026-11-12 19:10 UTC | 待办 | `zcode/task-4` | `opencode/review-4` |
 
 各自的差事单：[给 opencode](给opencode.md)、[给 zcode](给zcode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
 

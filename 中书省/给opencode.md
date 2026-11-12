@@ -28,6 +28,10 @@ git checkout -B opencode/review-1 origin/zcode/task-1
 ```
 照 `skills/交叉审查/SKILL.md` 逐项查，亲自跑测试，新建 `中书省/审查/任务一.md`（格式见 `中书省/README.md`），提交、推送这个分支。只写审查文件，不替对方改代码。
 
+## 二之二、审查任务四（zcode 清理史料任职记录）
+
+远端有 `zcode/task-4` 且回奏已填时做：`git checkout -B opencode/review-4 origin/zcode/task-4`，审查文件 `中书省/审查/任务四.md`。重点抽查：删掉的遭遇有没有挪进 note、改过的起止年是否照原文库。
+
 ## 三、有问题怎么办
 
 在你当前的分支里新建或追加 `中书省/问答/opencode.md`，一条写一节：

@@ -19,6 +19,15 @@ git add -A && git commit -m "任务一 进展：<做了什么>" && git push -u o
 ```
 4. 全做完：跑 `python3 web/build.py`、`node web/tests/prompt_guard.js`、`node web/tests/rules_regress.js`，把命令文件末尾「回奏」一节照格式填好，提交、推送。
 
+## 一之二、任务一交了以后做：任务四（清理史料里的任职记录）
+
+和任务一同样的做法，分支 `zcode/task-4`：
+```bash
+git fetch origin && git checkout claude/gallant-davinci-l8pni0 && git pull --ff-only
+git checkout -B zcode/task-4 origin/zcode/task-4 2>/dev/null || git checkout -B zcode/task-4
+```
+打开 `中书省/任务四.md` 照做；清单在 `中书省/附件/史料体检.md`。每改完一段年代就提交、推送一次。
+
 ## 二、上面做完再做：审查任务二（南北朝史料包）
 
 只有远端已经有 `opencode/task-2`、而且它的「回奏」已填时才做；还没有就跳过、等下回。
