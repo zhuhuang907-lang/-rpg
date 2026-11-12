@@ -13,7 +13,7 @@ description: 改完代码要构建三个版本、跑测试、提交推送时用�
 4. 快的先跑：`node web/tests/prompt_guard.js`、`node web/tests/rules_regress.js`、你新加的测试。
 5. 完整测试（`QUICK=1 bash web/tests/qa.sh`，约一个半小时）只在最后合并进发布分支时由 Claude 跑（R-218）。你在自己分支上提交，提交检查只提醒、不拦；跑时不许再构建、不许改源码和测试。
 6. 提交。提交检查（`scripts/check.sh`）会自动核：护栏、规则回归、台账三栏、无 Key 无型号名（发布分支另核完整测试指纹、三版同一次构建）。
-7. 推到自己的分支（`ds/任务X-…` 或 `glm/任务X-…`）。主开发分支只由 Claude 合并推送。
+7. 推到自己的分支（`opencode/task-X` 或 `zcode/task-X`）。主开发分支只由 Claude 合并推送。
 
 ## 不许
 

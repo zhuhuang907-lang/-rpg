@@ -8,7 +8,7 @@ description: 审查另一个模型提交的改动时用。逐条核对命令、�
 ## 步骤
 
 1. 读命令文件和承办者的「回奏」。
-2. 从对方的承办分支拉你的审查分支（如 `git checkout -b ds/review-1 origin/glm/task-1`），看改动：`git diff origin/claude/gallant-davinci-l8pni0...HEAD`。
+2. 从对方的承办分支拉你的审查分支（如 `git checkout -b opencode/review-1 origin/zcode/task-1`），看改动：`git diff origin/claude/gallant-davinci-l8pni0...HEAD`。
 3. **亲自跑测试**：至少 `python3 web/build.py`、`node web/tests/prompt_guard.js`、`node web/tests/rules_regress.js`、回奏里列的新测试。不要只信回奏里贴的结果。
 4. 逐项对照下面的清单。
 5. 新建 `中书省/审查/任务X.md`（格式见 `中书省/README.md`），每条问题写**在哪（搜索关键词）、什么问题、怎么复现、建议怎么改**；提交、推送你的审查分支。
