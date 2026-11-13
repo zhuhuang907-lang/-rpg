@@ -1,17 +1,17 @@
 # 中书省 · 诏令板
 
-中书省发命令，由 Claude 写、Claude 改状态。opencode、zcode 只读这一页，**不要改这一页**（各自的进度写在自己的分支上，见下）。
+中书省发命令，由 Claude 写、Claude 改状态。zcode 只读这一页，**不要改这一页**（各自的进度写在自己的分支上，见下）。
 
 ## 诏令板
 
-| 命令 | 承办 | 审查 | 发令 | 状态 | 承办分支 | 审查分支 |
-|---|---|---|---|---|---|---|
-| [任务一 南北朝制度库](任务一.md) | zcode | opencode | 2026-11-12 19:00 UTC | 待办 | `zcode/task-1` | `opencode/review-1` |
-| [任务二 南北朝史料包](任务二.md) | opencode | zcode | 2026-11-12 19:00 UTC | 待办 | `opencode/task-2` | `zcode/review-2` |
-| [任务三 人事任职年表与朝堂先查表](任务三.md) | Claude | opencode、zcode | 2026-11-12 19:00 UTC | 在办 | `claude/staging` | — |
-| [任务四 清理史料里的任职记录](任务四.md) | zcode | opencode | 2026-11-12 19:10 UTC | 待办 | `zcode/task-4` | `opencode/review-4` |
+| 命令 | 承办 | 审查 | 发令 | 状态 | 承办分支 |
+|---|---|---|---|---|---|
+| [任务一 南北朝制度库](任务一.md) | zcode | Claude | 2026-11-13 改派 | 待办（第二件） | `zcode/task-1` |
+| [任务二 南北朝史料包](任务二.md) | zcode | Claude | 2026-11-13 改派 | 待办（第一件） | `zcode/task-2` |
+| [任务三 人事任职年表与朝堂先查表](任务三.md) | Claude | Claude 自查 | 2026-11-12 | 在办 | `claude/staging` |
+| [任务四 清理史料里的任职记录](任务四.md) | zcode | Claude | 2026-11-12 | 待办（第三件） | `zcode/task-4` |
 
-各自的差事单：[给 opencode](给opencode.md)、[给 zcode](给zcode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
+差事单：[给 zcode](给zcode.md)。opencode 不派活（R-223），只在项目主人叫它时跑代码、做总结：[给 opencode](给opencode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
 
 状态只有这几种（Claude 改）：**待办** → **已交**（承办分支推上来了）→ **审毕**（审查分支推上来了）→ **准**（Claude 合进预备分支）或 **退回**（照审查和 Claude 的批语重做）→ **已发布**（项目主人拍板后发布）。
 

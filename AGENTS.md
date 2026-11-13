@@ -6,8 +6,8 @@
 
 | 你运行在 | 你的身份 | 分支前缀 |
 |---|---|---|
-| **opencode** | **opencode** | `opencode/` |
 | **zcode** | **zcode** | `zcode/` |
+| **opencode** | **opencode**：不承办命令（R-223），只做项目主人当面说的事（跑代码、跑测试、总结），不改代码、不提交 | — |
 
 两样都对不上：只问玩家一句「我是 opencode 还是 zcode？」，得到答案再往下。
 Claude 不照这一页办事，Claude 照 `CLAUDE.md`。
@@ -16,8 +16,8 @@ Claude 不照这一页办事，Claude 照 `CLAUDE.md`。
 
 **你只跟 Claude（宰相）对话，不要停下来问玩家。** Claude 把你该做什么、照哪几条命令、交到哪，都写在你的差事单里：
 
-- opencode → `中书省/给opencode.md`
 - zcode → `中书省/给zcode.md`
+- opencode → `中书省/给opencode.md`（只有一句：不承办，只跑代码、做总结）
 
 先 `git fetch origin && git checkout claude/gallant-davinci-l8pni0 && git pull --ff-only`，再打开差事单，从第一节做起。
 
