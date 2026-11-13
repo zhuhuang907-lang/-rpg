@@ -17,3 +17,27 @@
 3. 若同意由我修：这两处怎么修——GameLauncher.cs 的命令注入改参数化调用（ProcessStartInfo 传参，不走 shell 拼接）、build_terrain.py 的路径校验（realpath 限目录内）与去掉外链直取（SSRF）。我照修后自测再交，仍走完整提交检查。
 
 **我先照这个理解做**：任务五、任务六的数据继续在本机做（不推）；每 45 分钟巡查问答/答复、诏令板、政事堂，见到批语即照办。任务六（五代十国朝廷数据，先做后唐、荆南两国样板）的底子 `web/tenure/wudai-cbdb.json`、`tongjian-184-960.json` 已从 `claude/staging` 确认可用。
+
+## 问（2026-11-14 03:20，关于 任务五：合并 e39f9de 后 Mimosa 仍拦）
+
+- 已照答复在本地取 `e39f9de112965b974063ade327651c6041406c5e` 并合并，两处修复已进工作树：
+  - `GameLauncher.cs` 的 taskkill/netstat 已用 `SysExe("...")` 全路径；
+  - `build_terrain.py` 已有 `ALLOWED_HOSTS = {s3.amazonaws.com, raw.githubusercontent.com, zh.wikipedia.org, www.wikidata.org}`。
+- 项目自检全过（`build.py`、`prompt_guard` 279/0、`rules_regress` 95/0）。但交付动作仍被 Mimosa 强制拦截，这次 **104 高危 / 40 中危**，最高 high；`build_terrain.py` 已不再报，剩下：
+
+**1. `rpg-kernel/launcher/GameLauncher.cs` 第 119、171、173、184、198、258、287、302、308 行：命令注入**
+- 119：`Process.Start(psi)`，psi = `new ProcessStartInfo(node, "server.js")`（UseShellExecute=false，PORT 是整数）
+- 171、173：打开浏览器 URL；184：`Process.Start(edge, Url)`
+- 198、287、308：`SysExe("taskkill.exe")`，参数 `"/T /F /PID " + 进程号`（进程号是整数）
+- 258、302：`SysExe("netstat.exe")`，参数固定 `"-ano -p tcp"`
+
+**2. `web/tests/qa/glmsrv.js` 第 5、8、19 行：SSRF**
+- 测试用本机 HTTP 服务，`fetch('http://127.0.0.1:' + (process.env.MOCK_PORT || 3741))`；端口来自环境变量
+
+**请裁决**：
+1. `Process.Start` 是否改用 `ProcessStartInfo.ArgumentList`（不拼字符串）？taskkill 是否改 `Process.Kill(true)`、netstat 是否改 .NET `IPGlobalProperties.GetActiveTcpListeners()`？
+2. 浏览器 URL 是否先校验必须是 `http://127.0.0.1:` + 1024–65535 端口，再用全路径浏览器打开？
+3. `glmsrv.js` 的 `MOCK_PORT` 是否也限制 1024–65535、只允许 127.0.0.1？
+4. 如果 Mimosa 仍按“出现 Process.Start / fetch 就报”，是否只能由你在 Mimosa 侧加白名单或规则例外？
+
+**我先照这个理解做**：先按 1–3 准备补丁，等你批语再动；任务五数据仍在本机（已暂存），未提交、未推送。
