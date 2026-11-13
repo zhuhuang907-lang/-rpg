@@ -9458,6 +9458,22 @@ function dipOf(s, name) {
 function dipGeo(s, P) { const a = P.seat ? placeXY(s, P.seat, s.clock.y) : null, h = hereXY(s); return a && a.lat && h ? Math.round(liOf(hav(a, h))) : null; }
 const dipTroops = P => N0(String(P.troops || '').replace(/[^\d.万千百]/g, '')) || null;
 const myTroopsAll = s => arr(s.forces).filter(f => myForce(s, f)).reduce((a, f) => a + (N0(f.troops) || 0), 0);
+/** 你也能虚张声势（任务三，R-221 御示）：多立旗帜、增灶、四出传言，三个月里别家照多五成估你的兵；每月有两成五被探子识破，识破了名声掉、敌意涨 */
+const bluffOn = s => !!(s && s.bluff && ymOf(s.clock) < s.bluff.until);
+const myTroopsSeen = s => Math.round(myTroopsAll(s) * (bluffOn(s) ? 1.5 : 1));
+function bluffAct(s) {
+  if (!arr(s.forces).some(f => myForce(s, f))) return (ORGMSG = '你手下没有兵马，谈不上虚张声势');
+  if (bluffOn(s)) return (ORGMSG = '声势已经张着了');
+  const u = String((s.money && s.money.unit) || '两'), cost = /文/.test(u) ? 20000 : 20; if ((N0(s.money && s.money.cash) || 0) < cost) return (ORGMSG = `多立旗帜、增灶传言要花${fmtN(cost, u)}，钱不够`);
+  cashAdd(s, -cost); s.bluff = { since: ymOf(s.clock), until: ymOf(s.clock) + 3 };
+  return (ORGMSG = `多立旗帜、增灶、四出传言（花了${fmtN(cost, u)}）：三个月里别家会把你的兵估多五成；被识破就丢脸`);
+}
+function bluffMonthly(s) {
+  if (!s.bluff) return []; const ym = Math.floor(ymOf(s.clock)); if (s.bluff.chk === ym) return []; s.bluff.chk = ym;
+  if (!bluffOn(s)) { s.bluff = null; return ['虚张的声势散了，别家照实估你的兵']; }
+  if (seeded(ym * 61 + 17) < 0.25) { s.bluff = null; s.renown = Math.max(0, (num(s.renown) || 0) - 10); for (const d of Object.values(s.diplo || {})) if (d && d.att < 0) d.att = Math.max(-100, d.att - 5); return ['虚张声势被别家的探子识破了：名声掉了，敌视你的人更看轻你']; }
+  return [];
+}
 /** 一年的进项（照财政底账；没推出来就是 null，纳贡、互市、礼单都定不下来） */
 const annualRev = s => { const B = s.fisc && s.fisc.base; if (!B) return null; const v = ['tianfu', 'dingyi', 'yan', 'shang', 'cha', 'za'].reduce((a, k) => a + (num(B[k]) || 0), 0); return v > 0 ? v : null; };
 const myPrefs = s => { try { return Math.max(1, (myDomain(s).places || []).length); } catch (_) { return 1; } };
@@ -9484,7 +9500,7 @@ function dipAct(s, name, act) {
 }
 /** 每月：使者回报、纳贡互市进项、态度慢慢回到常态、敌视又强的邻国可能来犯 */
 function dipMonthly(s) {
-  const out = [], ym = Math.floor(ymOf(s.clock)), PW = realmPowers(s), mine = myTroopsAll(s), rev = annualRev(s), u = (s.money || {}).unit || '';
+  const out = [], ym = Math.floor(ymOf(s.clock)), PW = realmPowers(s), mine = myTroopsSeen(s), rev = annualRev(s), u = (s.money || {}).unit || '';
   if (!s.diplo || dipRole(s) !== 'realm') return out;
   if (s.dipYM === ym) return out; s.dipYM = ym;
   for (const [name, D] of Object.entries(s.diplo)) {
@@ -9770,6 +9786,10 @@ function prisonerAct(s, name, act) {
   if (act === '处斩') { s.prisoners = s.prisoners.filter(x => x !== p); if (D) D.att = Math.max(-100, D.att - 40); for (const d of Object.values(s.diplo || {})) d.att = Math.max(-100, d.att - 5); s.dread = (num(s.dread) || 0) + 10; return lifeNote(s, '军国', `斩${name}：${p.owner || '对方'}切齿，各家畏你狠辣`); }
   return null; }
 function war2Html(s) {
+  const BL = arr(s.forces).some(f => myForce(s, f)) ? `<div class="cr"><span>声势</span><b>${bluffOn(s) ? '正虚张着（别家照多五成估你）' : '照实'}</b>${bluffOn(s) ? '' : '<button class="link" data-bluff="1">虚张声势</button>'}</div>` : '';
+  return BL + war2Body(s);
+}
+function war2Body(s) {
   const M = mpOf(s), P = arr(s.prisoners), G = Object.entries(s.gens || {}).filter(([n, g]) => g.xp > 0 || arr(s.forces).some(f => myForce(s, f) && f.leader === n)), W = arr(s.wars).filter(w => w && w.state === '交战');
   return `${M ? `<div class="cr"><span>可征丁壮</span><b>${fmtN(M.pool, '人')}</b><span class="muted" style="font-size:12px">（上限${fmtN(M.max, '人')}：治下丁壮三成；每月回${fmtN(Math.round(M.max / 24), '人')}；募兵从这里出）</span></div>` : ''}
     ${W.length ? `<div class="muted" style="font-size:12px">${W.map(w => `对${esc(w.with)}：占领加分${(w.occ || 0).toFixed(1)}，我方厌战${Math.round(w.exh || 0)}、对方厌战${Math.round(w.exhThem || 0)}`).join('；')}</div>` : ''}
@@ -14243,7 +14263,7 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), SM('warMonthly2', () => warMonthly2(s)), SM('logiMonthly', () => logiMonthly(s)), SM('rushiMonthly', () => rushiMonthly(s)), SM('royalMonthly', () => royalMonthly(s)), SM('idSync', () => idSync(s)), SM('mpMonthly', () => mpMonthly(s)), SM('armsMonthly', () => armsMonthly(s)), SM('levyMonthly', () => levyMonthly(s)), SM('groupTick', () => groupTick(s)), SM('partyMonthly', () => partyMonthly(s)), SM('lairMonthly', () => lairMonthly(s)), SM('liegeMonthly', () => liegeMonthly(s)), SM('jailMonthly', () => jailMonthly(s)), SM('wishMonthly', () => wishMonthly(s)), SM('baseMonthly', () => baseMonthly(s)), SM('huntMonthly', () => huntMonthly(s)), SM('offMonthly', () => offMonthly(s)), SM('hhMonthly', () => hhMonthly(s)), SM('loanMonthly', () => loanMonthly(s)), SM('routeMonthly', () => routeMonthly(s)), SM('councilMonthly', () => councilMonthly(s)), SM('contractMonthly', () => contractMonthly(s)), SM('factionMonthly', () => factionMonthly(s)), SM('innerMonthly', () => innerMonthly(s)), SM('haremMonthly', () => haremMonthly(s)), SM('farmMonthly', () => farmMonthly(s)), SM('refugeMonthly', () => refugeMonthly(s)), SM('studyMonthly', () => studyMonthly(s)), SM('strifeMonthly', () => strifeMonthly(s)), SM('repMonthly', () => { const R = repOf(s); R.guan = Math.max(0, Math.min(100, R.guan + Math.sign(50 - R.guan) * 0.5)); R.jun = Math.max(0, Math.min(100, R.jun + Math.sign(50 - R.jun) * 0.5)); }), SM('trackMonthly', () => trackMonthly(s)), SM('dipMonthly', () => dipMonthly(s))), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), SM('warMonthly2', () => warMonthly2(s)), SM('logiMonthly', () => logiMonthly(s)), SM('rushiMonthly', () => rushiMonthly(s)), SM('royalMonthly', () => royalMonthly(s)), SM('idSync', () => idSync(s)), SM('mpMonthly', () => mpMonthly(s)), SM('armsMonthly', () => armsMonthly(s)), SM('levyMonthly', () => levyMonthly(s)), SM('groupTick', () => groupTick(s)), SM('partyMonthly', () => partyMonthly(s)), SM('lairMonthly', () => lairMonthly(s)), SM('liegeMonthly', () => liegeMonthly(s)), SM('jailMonthly', () => jailMonthly(s)), SM('wishMonthly', () => wishMonthly(s)), SM('baseMonthly', () => baseMonthly(s)), SM('huntMonthly', () => huntMonthly(s)), SM('offMonthly', () => offMonthly(s)), SM('hhMonthly', () => hhMonthly(s)), SM('loanMonthly', () => loanMonthly(s)), SM('routeMonthly', () => routeMonthly(s)), SM('councilMonthly', () => councilMonthly(s)), SM('contractMonthly', () => contractMonthly(s)), SM('factionMonthly', () => factionMonthly(s)), SM('innerMonthly', () => innerMonthly(s)), SM('haremMonthly', () => haremMonthly(s)), SM('farmMonthly', () => farmMonthly(s)), SM('refugeMonthly', () => refugeMonthly(s)), SM('studyMonthly', () => studyMonthly(s)), SM('strifeMonthly', () => strifeMonthly(s)), SM('repMonthly', () => { const R = repOf(s); R.guan = Math.max(0, Math.min(100, R.guan + Math.sign(50 - R.guan) * 0.5)); R.jun = Math.max(0, Math.min(100, R.jun + Math.sign(50 - R.jun) * 0.5)); }), SM('trackMonthly', () => trackMonthly(s)), SM('bluffMonthly', () => bluffMonthly(s)), SM('dipMonthly', () => dipMonthly(s))), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
       if (!s.yearSnap) s.yearSnap = yearSnap(s);
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
@@ -15704,6 +15724,7 @@ document.addEventListener('click', async e => {
   if (S && !BUSY && t.dataset.fig) { if (t.dataset.fig === 'visit') { const ta = $('#said'); if (ta) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + `去拜访${t.dataset.n}`; render(); return; } figRecruit(S, t.dataset.n); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.tlask) { tlAskAct(S, t.dataset.i, t.dataset.tlask === 'yes'); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.reform) { reformAct(S, t.dataset.i, t.dataset.reform); try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && t.dataset.bluff) { bluffAct(S); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.audit) { auditAct(S, t.dataset.audit); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.scout) { scoutAct(S, t.dataset.scout); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && (t.dataset.camp || t.dataset.merc || t.dataset.priv)) { if (t.dataset.camp) campAct(S, t.dataset.camp, ($('#campAmt') || {}).value); else if (t.dataset.merc) mercAct(S, t.dataset.merc, ($('#mercAmt') || {}).value); else privAct(S, t.dataset.priv); try { await store.save(S); } catch (_) {} render(); return; }

@@ -37,6 +37,15 @@ const path = require('path');
     await p.click('[data-audit="左卫军"]'); await p.waitForTimeout(100);
     const r = await ev(() => ({ gh: S.forces[0].ghost, msg: ORGMSG, e: troopEst(S, S.forces[0]) }));
     if (r.gh || !/空额/.test(r.msg) || !r.e.exact || r.e.mid !== g.t) errs.push('点验没查出空额、没照实数：' + JSON.stringify(r)); }
-  const mine = await ev(() => troopEst(S, S.forces[0])); if (!mine.exact || mine.mid !== g.t) errs.push('自己的兵没照实数：' + JSON.stringify(mine));
+  // 你也虚张声势：军务页真点「虚张声势」，花钱，别家照多五成估你；三个月内散掉或被识破
+  await ev(() => { S.money.cash = 100; TAB = 'army'; render(); });
+  const bb = await p.$('[data-bluff]'); if (!bb) errs.push('军务页没有「虚张声势」按钮'); else {
+    await p.click('[data-bluff]'); await p.waitForTimeout(100);
+    const r = await ev(() => ({ on: bluffOn(S), seen: myTroopsSeen(S), all: myTroopsAll(S), cash: S.money.cash }));
+    if (!r.on || r.seen !== Math.round(r.all * 1.5) || !(r.cash < 100)) errs.push('虚张声势没生效：' + JSON.stringify(r));
+    h = await ev(() => document.body.innerText); if (!/正虚张着/.test(h)) errs.push('军务页没写正虚张着');
+    const end = await ev(() => { const msgs = []; for (let i = 0; i < 5 && S.bluff; i++) { S.clock.m += 1; if (S.clock.m > 12) { S.clock.m = 1; S.clock.y++; } msgs.push(...bluffMonthly(S)); } return { left: !!S.bluff, msgs }; });
+    if (end.left || !end.msgs.some(m => /识破|散了/.test(m))) errs.push('虚张声势过了五个月还在、或散了没说：' + JSON.stringify(end)); }
+  const mine = await ev(() => { S.forces[0].auditYM = ymOf(S.clock); return troopEst(S, S.forces[0]); }); if (!mine.exact || mine.mid !== g.t) errs.push('自己的兵没照实数：' + JSON.stringify(mine));
   console.log('ERRS', JSON.stringify(errs)); await b.close();
 })();
