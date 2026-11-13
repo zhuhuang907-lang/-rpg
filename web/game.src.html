@@ -2898,6 +2898,29 @@ const UT = (s, id) => arr(s.unitTypes).find(t => t.id === id || t.name === id);
 /** 一支兵马的合计：人数、月饷、月粮、攻守冲击（按人数加权）、可支几日 */
 /** 哪些兵马归你调：你亲领的；你的部将、家将、属下领的；你是一方之主时，凡不属别家势力的 */
 const MY_TIE = /部将|部下|属下|家将|亲兵|麾下|偏裨|裨将|副将|参将|游击|都司|守备|千总|把总|中军|家丁/;
+/* ========== 兵力虚实（任务三，R-221 御示）：敌人和不归你直接统的部队，你只知道估计数（会虚张声势，传闻偏大）；派探子能把数探准，探报过三个月就旧了；
+ *  你直接统的部队照实数（缺额、吃空饷另记）。程序结算照实数，界面、正文给你看的照估计 ========== */
+function scoutLv(s, who) { const x = ((s && s.scout) || {})[who]; if (!x || !s.clock) return 0; const age = ymOf(s.clock) - x.ym; return age <= 3 ? 2 : age <= 12 ? 1 : 0; }
+const roundN = n => { if (!(n > 0)) return 0; const k = Math.pow(10, Math.max(0, Math.floor(Math.log10(n)) - 1)); return Math.round(n / k) * k; };
+const nTxt = n => n >= 10000 ? (Math.round(n / 1000) / 10) + '万' : fmtN(n);
+function troopEst(s, f, men) {
+  const real = men != null ? N0(men) || 0 : N0(f && f.troops) || 0;
+  if (myForce(s, f)) return { real, exact: true, mid: real, txt: fmtN(real) + '人', short: nTxt(real) };
+  const who = String((f && (f.owner || f.name)) || ''), lv = Math.max(scoutLv(s, who), scoutLv(s, String((f && f.name) || ''))), ym = s && s.clock ? Math.floor(ymOf(s.clock) / 3) : 0;
+  let h = 0; for (const ch of who) h = (h * 31 + ch.charCodeAt(0)) % 100003;
+  const bluff = lv >= 2 ? 0 : seeded(h + ym * 7) * 0.5, err = lv >= 2 ? 0.1 : lv === 1 ? 0.25 : 0.4, c = real * (1 + bluff);
+  const mid = roundN(c), lo = roundN(c * (1 - err)), hi = roundN(c * (1 + err));
+  if (!real) return { real, exact: false, mid: 0, txt: '兵数不明', short: '不明' };
+  return { real, exact: false, lv, mid, lo, hi, txt: lv >= 2 ? `约${nTxt(mid)}人（探子新报）` : `约${nTxt(lo)}至${nTxt(hi)}人（${lv ? '探报已旧' : '传闻，多半虚张'}）`, short: '约' + nTxt(mid) };
+}
+function scoutAct(s, who) {
+  who = one(who, 20); if (!who) return '';
+  if (scoutLv(s, who) >= 2) return (ORGMSG = `${who}那边的探报还新，不必再派`);
+  const u = String((s.money && s.money.unit) || '两'), cost = /文/.test(u) ? 5000 : 5, cash = N0(s.money && s.money.cash) || 0; if (cash < cost) return (ORGMSG = `派探子要盘缠${fmtN(cost, u)}，钱不够`);
+  cashAdd(s, -cost); s.scout = s.scout || {}; s.scout[who] = { ym: ymOf(s.clock) };
+  const F = arr(s.forces).filter(f => !myForce(s, f) && (f.owner === who || f.name === who)), e = F.length ? troopEst(s, F[0]) : null;
+  return (ORGMSG = `派了探子去打探${who}，花了${fmtN(cost, u)}${e ? '：回报' + F[0].name + e.txt : ''}`);
+}
 function myForce(s, f) {
   if (!f || !s || !s.protagonist) return false; const me = s.protagonist.name, ld = String(f.leader || ''), ow = String(f.owner || '');
   if (ld === me || ow === me || /^(你|主角|本人|我方|自己)$/.test(ow) || /^(主角|本人|你)$/.test(ld)) return true;
@@ -8100,7 +8123,7 @@ function stratMap(s) {
           const du = sp.from ? wrLoc(s, sp.from) : null;
           if (du && inBox(du) && !sp.none) out.push(`<line x1="${px(x.u).toFixed(0)}" y1="${py(x.u).toFixed(0)}" x2="${px(du).toFixed(0)}" y2="${py(du).toFixed(0)}" stroke="${sp.cut ? '#c0392b' : '#8a6d1d'}" stroke-width="${sp.cut ? 1.6 : 1}" ${sp.cut ? 'stroke-dasharray="4 3"' : ''} opacity=".8" pointer-events="none"><title>${esc(f.name)}的粮道：${esc(sp.from)}运粮，路耗${Math.round(sp.loss * 100)}%${sp.cut ? '，已被截断' : ''}</title></line>`);
           out.push(`<circle class="supdot" cx="${(X - 5).toFixed(0)}" cy="${(Y - 17).toFixed(0)}" r="5" fill="${supCol(sp)}" stroke="#fff" stroke-width="1.2" pointer-events="none"><title>${esc(f.name)}补给：${sp.cut ? '粮道断了' : sp.none ? '运不到粮' : '从' + esc(sp.from) + '运粮，路耗' + Math.round(sp.loss * 100) + '%'}</title></circle>`); } }
-        out.push(`<g data-mapforce="${esc(f.name)}" style="cursor:pointer"><title>${esc(f.name)}：${esc(f.leader || '')}统，${esc(fmtN(men))}人，士气${mo}、组织${org}，${esc(f.status || '')}${C ? '，往' + esc(C.target) : ''}</title><line x1="${px(x.u).toFixed(0)}" y1="${py(x.u).toFixed(0)}" x2="${X.toFixed(0)}" y2="${(Y - 6).toFixed(0)}" stroke="#333" stroke-width="1.2"/><rect x="${X.toFixed(0)}" y="${(Y - 30).toFixed(0)}" width="${w}" height="26" rx="3" fill="${col}" stroke="${sel ? '#ffd24a' : '#fff'}" stroke-width="${sel ? 2.5 : 1}"/><text x="${(X + 4).toFixed(0)}" y="${(Y - 18).toFixed(0)}" font-size="10" font-weight="700" fill="#fff">${esc(f.name)}</text><text x="${(X + w - 4).toFixed(0)}" y="${(Y - 18).toFixed(0)}" font-size="10" fill="#fff" text-anchor="end">${esc(men >= 10000 ? (men / 10000).toFixed(1) + '万' : fmtN(men))}</text>${bar(Y - 14, 100 * Math.min(1, men / Math.max(1, N0(f.troops0) || men)), '#fff')}${bar(Y - 10, mo, mo < 35 ? '#ff6b6b' : '#7ee07e')}${bar(Y - 6.5, org, '#7ec8ff')}</g>`); }
+        out.push(`<g data-mapforce="${esc(f.name)}" style="cursor:pointer"><title>${esc(f.name)}：${esc(f.leader || '')}统，${esc(mine ? fmtN(men) + '人' : troopEst(s, f, men).txt)}，士气${mo}、组织${org}，${esc(f.status || '')}${C ? '，往' + esc(C.target) : ''}</title><line x1="${px(x.u).toFixed(0)}" y1="${py(x.u).toFixed(0)}" x2="${X.toFixed(0)}" y2="${(Y - 6).toFixed(0)}" stroke="#333" stroke-width="1.2"/><rect x="${X.toFixed(0)}" y="${(Y - 30).toFixed(0)}" width="${w}" height="26" rx="3" fill="${col}" stroke="${sel ? '#ffd24a' : '#fff'}" stroke-width="${sel ? 2.5 : 1}"/><text x="${(X + 4).toFixed(0)}" y="${(Y - 18).toFixed(0)}" font-size="10" font-weight="700" fill="#fff">${esc(f.name)}</text><text x="${(X + w - 4).toFixed(0)}" y="${(Y - 18).toFixed(0)}" font-size="10" fill="#fff" text-anchor="end">${esc(mine ? (men >= 10000 ? (men / 10000).toFixed(1) + '万' : fmtN(men)) : troopEst(s, f, men).short)}</text>${bar(Y - 14, 100 * Math.min(1, men / Math.max(1, N0(f.troops0) || men)), '#fff')}${bar(Y - 10, mo, mo < 35 ? '#ff6b6b' : '#7ee07e')}${bar(Y - 6.5, org, '#7ec8ff')}</g>`); }
       return out.length ? `<defs><marker id="marr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a63a2a"/></marker></defs>` + out.join('') : ''; })()}
     ${provLbl}
     ${(() => { const R = selRoute(s); if (!R || !R.ok) return ''; const C = { 0: '#6b4a2a', 1: '#a05a1a', 2: '#b3452f', 3: '#3d78b5' }; return `<polyline points="${R.pts.map(p => XY({ lon: p[0], lat: p[1] })).join(' ')}" fill="none" stroke="#fff" stroke-width="5.5" stroke-linejoin="round" opacity=".8" pointer-events="none"/><polyline points="${R.pts.map(p => XY({ lon: p[0], lat: p[1] })).join(' ')}" fill="none" stroke="${R.kinds['山路'] ? C[2] : R.kinds['经关'] ? C[1] : C[0]}" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 4" pointer-events="none"><title>${esc(R.who)}去${esc(MAPZ.sel)}：约${R.li}里</title></polyline>`; })()}
@@ -8157,7 +8180,7 @@ function mapInfo(s) {
     ${u && u.lv === 2 ? cityHtml(s, n) : ''}
     ${u && admMine(s, u) ? `<details class="oadd"><summary class="muted">划分政区…</summary><div class="opost"><input class="oin" data-admto placeholder="新名字 / 等第 / 府州名"><button class="link" data-adm="rename" data-n="${esc(n)}">改名</button><button class="link" data-adm="type" data-n="${esc(n)}">改等第</button>${u.lv === 3 ? `<button class="link" data-adm="move" data-n="${esc(n)}">改隶到</button><button class="link" data-adm="split" data-n="${esc(n)}">以此县分置新州</button>` : ''}<button class="link" data-adm="capital" data-n="${esc(n)}">定都于此</button></div><div class="muted" style="font-size:11px">改名、改等第、改隶各花一点国策点，分置两点，定都三点</div></details>` : ''}
     ${t ? `<div class="muted">户${esc(fmtN(N0(t.pop)) || '正在照史料推')} · 守军${esc(fmtN(N0(t.troops)) || '正在照史料推')} · 存粮${esc(fmtN(N0(t.grain)) || '正在照史料推')}石 · 民心${esc(t.loyalty ?? '?')}</div>` : ''}
-    ${F.length ? `<div>驻军：${F.map(f => `${esc(f.name)}（${esc(f.leader || '')}，${esc(fmtN(N0(f.troops) || 0))}人，${esc(f.status || '')}）`).join('、')}</div>` : ''}
+    ${F.length ? `<div>驻军：${F.map(f => `${esc(f.name)}（${esc(f.leader || '')}，${esc(troopEst(s, f).txt)}，${esc(f.status || '')}）${myForce(s, f) ? '' : `<button class="link" data-scout="${esc(f.owner || f.name)}">派探子</button>`}`).join('、')}</div>` : ''}
     ${(() => { const R = selRoute(s); if (!R) return ''; if (!R.ok) return `<div class="warn">${esc(R.who || '你')}去这里：${esc(R.why)}</div>`;
       const ok = arr(R.opts).filter(o => o.allowed);
       return `<div class="route"><b>${esc(R.who)}从${esc(R.from)}去：</b>约${R.li}里（${Object.entries(R.kinds).map(([k, v]) => k + '×' + v).join('，')}${R.gates ? '，过关' + R.gates + '处' : ''}）${R.via.length ? `，取道${esc(R.via.join('、'))}` : ''}
@@ -15664,6 +15687,7 @@ document.addEventListener('click', async e => {
   if (S && !BUSY && t.dataset.fig) { if (t.dataset.fig === 'visit') { const ta = $('#said'); if (ta) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + `去拜访${t.dataset.n}`; render(); return; } figRecruit(S, t.dataset.n); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.tlask) { tlAskAct(S, t.dataset.i, t.dataset.tlask === 'yes'); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.reform) { reformAct(S, t.dataset.i, t.dataset.reform); try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && t.dataset.scout) { scoutAct(S, t.dataset.scout); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && (t.dataset.camp || t.dataset.merc || t.dataset.priv)) { if (t.dataset.camp) campAct(S, t.dataset.camp, ($('#campAmt') || {}).value); else if (t.dataset.merc) mercAct(S, t.dataset.merc, ($('#mercAmt') || {}).value); else privAct(S, t.dataset.priv); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.soldier) { soldierAct(S, t.dataset.soldier); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.entry) { entryAct(S, t.dataset.entry); try { await store.save(S); } catch (_) {} render(); return; }
