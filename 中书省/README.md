@@ -10,6 +10,8 @@
 | [任务二 南北朝史料包](任务二.md) | zcode | Claude | 2026-11-13 改派 | 待办（第一件） | `zcode/task-2` |
 | [任务三 人事任职年表与朝堂先查表](任务三.md) | Claude | Claude 自查 | 2026-11-12 | 在办 | `claude/staging` |
 | [任务四 清理史料里的任职记录](任务四.md) | zcode | Claude | 2026-11-12 | 待办（第三件） | `zcode/task-4` |
+| [任务五 大小政权总表](任务五.md) | zcode | Claude | 2026-11-13 | 待办（第四件） | `zcode/task-5` |
+| [任务六 晚明人物任职年表](任务六.md) | Claude | zcode | 2026-11-13 | 在办 | `claude/staging` |
 
 差事单：[给 zcode](给zcode.md)。opencode 不派活（R-223），只在项目主人叫它时跑代码、做总结：[给 opencode](给opencode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
 
