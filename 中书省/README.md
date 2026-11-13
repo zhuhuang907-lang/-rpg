@@ -10,11 +10,12 @@
 | [任务二 南北朝史料包](任务二.md) | zcode | Claude | 2026-11-13 改派 | 待办（第四件） | `zcode/task-2` |
 | [任务三 人事任职年表与朝堂先查表](任务三.md) | Claude | Claude 自查 | 2026-11-12 | 在办 | `claude/staging` |
 | [任务四 清理史料里的任职记录](任务四.md) | zcode | Claude | 2026-11-12 | 待办（第六件） | `zcode/task-4` |
-| [任务五 大小政权总表](任务五.md) | zcode | Claude | 2026-11-13 | 待办（五代十国一段第一件，其余年代第七件） | `zcode/task-5` |
-| [任务六 五代十国朝廷数据（三档、带出处）](任务六.md) | zcode | Claude | 2026-11-13 改派 | 待办（第二件） | `zcode/task-6` |
-| [任务七 游戏照五代十国数据排朝堂、补人记死、人物页注来路](任务七.md) | zcode | Claude | 2026-11-13 | 待办（第三件，等任务六样板两国审过） | `zcode/task-7` |
+| [任务五 大小政权总表](任务五.md) | 五代十国一段：Claude（zcode 十六小时没动静，改派）；其余年代：zcode | Claude | 2026-11-13 改派 | 五代十国一段在办；其余年代待办 | `claude/staging`；`zcode/task-5` |
+| [任务六 五代十国朝廷数据（三档、带出处）](任务六.md) | Claude（zcode 十六小时没动静，改派） | zcode 有空时 | 2026-11-13 改派 | 在办 | `claude/staging` |
+| [任务七 游戏照五代十国数据排朝堂、补人记死、人物页注来路](任务七.md) | Claude（同上改派） | zcode 有空时 | 2026-11-13 改派 | 待办（接任务六） | `claude/staging` |
+| [任务八 抽查任职年表的政权归属](任务八.md) | zcode | Claude | 2026-11-13 | 待办（第一件） | `zcode/task-8` |
 
-差事单：[给 zcode](给zcode.md)。opencode 不派活（R-223），只在项目主人叫它时跑代码、做总结：[给 opencode](给opencode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
+差事单：[给 zcode](给zcode.md)；Claude 自己的活：[Claude 自办](Claude自办.md)。opencode 不派活（R-223），只在项目主人叫它时跑代码、做总结：[给 opencode](给opencode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
 
 状态只有这几种（Claude 改）：**待办** → **已交**（承办分支推上来了）→ **审毕**（审查分支推上来了）→ **准**（Claude 合进预备分支）或 **退回**（照审查和 Claude 的批语重做）→ **已发布**（项目主人拍板后发布）。
 
