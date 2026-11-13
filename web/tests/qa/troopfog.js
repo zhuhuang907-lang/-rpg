@@ -25,6 +25,18 @@ const path = require('path');
     h = await ev(() => document.body.innerText); if (!/探子新报/.test(h)) errs.push('探过以后界面没写探子新报');
     const old = await ev(() => { S.clock.y += 1; return troopEst(S, S.forces[1]); }); if (old.lv !== 1) errs.push('一年前的探报没算旧：' + JSON.stringify(old));
   }
-  const mine = await ev(() => troopEst(S, S.forces[0])); if (!mine.exact || mine.mid !== 3000) errs.push('自己的兵没照实数：' + JSON.stringify(mine));
+  // 敌军的军情卡也只给估计
+  await ev(() => { S.clock.y -= 1; S.scout = {}; MAPZ.from = '突厥骑'; MAPC.k = ''; render(); });
+  h = await ev(() => document.body.innerText); if (/共 40,000人/.test(h)) errs.push('敌军军情卡露了实数');
+  // 吃空饷：李靖替你统的左卫军欠饷半年，名册不变、实有变少；军情卡写名册；真点「点验」查出空额、革除
+  const g = await ev(() => { S.forces[0].owed = 500; armyMonthly(S, 6); return { t: S.forces[0].troops, gh: S.forces[0].ghost }; });
+  if (!(g.gh > 0) || g.t + g.gh !== 3000) errs.push('欠饷半年没吃出空额，或名册对不上：' + JSON.stringify(g));
+  await ev(() => { MAPZ.from = '左卫军'; MAPC.k = ''; render(); });
+  h = await ev(() => document.body.innerText); if (!/共 3,000人（名册）/.test(h)) errs.push('没点验时军情卡没写名册数');
+  const ab = await p.$('[data-audit="左卫军"]'); if (!ab) errs.push('军情卡没有「点验」按钮'); else {
+    await p.click('[data-audit="左卫军"]'); await p.waitForTimeout(100);
+    const r = await ev(() => ({ gh: S.forces[0].ghost, msg: ORGMSG, e: troopEst(S, S.forces[0]) }));
+    if (r.gh || !/空额/.test(r.msg) || !r.e.exact || r.e.mid !== g.t) errs.push('点验没查出空额、没照实数：' + JSON.stringify(r)); }
+  const mine = await ev(() => troopEst(S, S.forces[0])); if (!mine.exact || mine.mid !== g.t) errs.push('自己的兵没照实数：' + JSON.stringify(mine));
   console.log('ERRS', JSON.stringify(errs)); await b.close();
 })();

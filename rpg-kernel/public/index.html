@@ -1653,7 +1653,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261113022029';
+const BUILD = '20261113024622';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4003,13 +4003,29 @@ const roundN = n => { if (!(n > 0)) return 0; const k = Math.pow(10, Math.max(0,
 const nTxt = n => n >= 10000 ? (Math.round(n / 1000) / 10) + '万' : fmtN(n);
 function troopEst(s, f, men) {
   const real = men != null ? N0(men) || 0 : N0(f && f.troops) || 0;
-  if (myForce(s, f)) return { real, exact: true, mid: real, txt: fmtN(real) + '人', short: nTxt(real) };
+  if (myForce(s, f)) { const gh = N0(f && f.ghost) || 0, roster = real + gh, hid = ghostHidden(s, f);   /* 你的兵：别人替你统的，你看到的是名册数（可能有空额），点验才知实有 */
+    return hid ? { real, exact: false, roster: true, mid: roster, txt: fmtN(roster) + '人（名册）', short: nTxt(roster) } : { real, exact: true, mid: real, txt: fmtN(real) + '人', short: nTxt(real) }; }
   const who = String((f && (f.owner || f.name)) || ''), lv = Math.max(scoutLv(s, who), scoutLv(s, String((f && f.name) || ''))), ym = s && s.clock ? Math.floor(ymOf(s.clock) / 3) : 0;
   let h = 0; for (const ch of who) h = (h * 31 + ch.charCodeAt(0)) % 100003;
   const bluff = lv >= 2 ? 0 : seeded(h + ym * 7) * 0.5, err = lv >= 2 ? 0.1 : lv === 1 ? 0.25 : 0.4, c = real * (1 + bluff);
   const mid = roundN(c), lo = roundN(c * (1 - err)), hi = roundN(c * (1 + err));
   if (!real) return { real, exact: false, mid: 0, txt: '兵数不明', short: '不明' };
   return { real, exact: false, lv, mid, lo, hi, txt: lv >= 2 ? `约${nTxt(mid)}人（探子新报）` : `约${nTxt(lo)}至${nTxt(hi)}人（${lv ? '探报已旧' : '传闻，多半虚张'}）`, short: '约' + nTxt(mid) };
+}
+/** 吃空饷：别人替你统的兵，逃亡病故的不报、照名册冒领饷，名册数慢慢比实有多；欠饷时更甚。你亲统的、刚点验过的没有 */
+function ghostHidden(s, f) { const me = (s.protagonist || {}).name, ld = String((f && f.leader) || ''); if (!ld || ld === me || /^(你|主角|本人)$/.test(ld)) return false; return !(f.auditYM != null && ymOf(s.clock) - f.auditYM < 3); }
+function ghostMonthly(s, f, m) {
+  if (!myForce(s, f) || !ghostHidden(s, f) || !m) return; const men = forceStats(s, f).men || N0(f.troops) || 0; if (men < 50) return;
+  const gh = N0(f.ghost) || 0, rate = N0(f.owed) > 0 ? 0.02 : 0.008, cap = Math.round((men + gh) * 0.2) - gh, g = Math.min(cap, Math.round(men * rate * m)); if (g <= 0) return;
+  if (arr(f.units).length) { uShrink(s, f, 1 - g / men); f.troops = forceStats(s, f).men; } else f.troops = Math.max(0, N0(f.troops) - g);
+  f.ghost = gh + g;
+}
+function auditAct(s, name) {
+  const f = arr(s.forces).find(x => x && x.name === name); if (!f || !myForce(s, f)) return (ORGMSG = '这支兵马不归你调');
+  if (!ghostHidden(s, f)) return (ORGMSG = `${f.name}刚点验过（或是你亲统），不必再点`);
+  const gh = N0(f.ghost) || 0, real = forceStats(s, f).men || N0(f.troops) || 0; f.ghost = 0; f.auditYM = ymOf(s.clock); f.morale = Math.max(0, (num(f.morale) ?? 60) - (gh ? 3 : 1));
+  const P = (s.people || {})[f.leader]; if (P && gh) P.favor = (num(P.favor) || 0) - Math.min(20, 2 + Math.round(gh / Math.max(1, real + gh) * 60));
+  return (ORGMSG = gh ? `点验${f.name}：名册${fmtN(real + gh)}人，实有${fmtN(real)}人，空额${fmtN(gh)}，已从名册革除；${f.leader}脸上不好看` : `点验${f.name}：名册与实有相符，${fmtN(real)}人`);
 }
 function scoutAct(s, who) {
   who = one(who, 20); if (!who) return '';
@@ -4065,6 +4081,7 @@ function armyMonthly(s, months) {
     if (!/交战|行军/.test(f.status || '')) f.garrisonYM = f.garrisonYM == null ? ymNow : f.garrisonYM; else f.garrisonYM = null;
   };
   for (const f of arr(s.forces)) {
+    if (f) ghostMonthly(s, f, Math.min(months, 24));
     if (f && !arr(f.units).length) { if (!f.party && myForce(s, f) && N0(f.troops) > 0 && depotsOf(s).length) { const m = Math.min(months, 24); let need = Math.round(N0(f.troops) * 0.6 * m); const g = N0(f.grain) || 0, t0 = Math.min(g, need); f.grain = g - t0; need -= t0;   /* 没编成营的兵马也要吃粮：一人一月约六斗（R-155） */
         if (need > 0) { const r = supDraw(s, f, need); need -= r.got; if (r.raid) out.push(r.raid); if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); out.push(`${f.name}${r.sp && r.sp.cut ? '粮道被' + (r.sp.foe || '敌军') + '截断，' : r.sp && r.sp.none ? '哪个仓都运不到，' : ''}军中断粮`); } } }
       moraleWatch(f, Math.min(months, 24)); continue; }
@@ -9246,7 +9263,7 @@ function armyCard(s, f) {
   const RK = RT ? routeRisk(s, RT, f, tgt) : [];
   const order = ([k, t]) => `<button class="link" data-write="${esc(t)}">${esc(k)}</button>`;
   return `<div class="affair acard"><b>⚑ ${esc(f.name)}</b> ${mine ? '<span class="att onpath">归你调</span>' : '<span class="att">别家的</span>'} <span class="muted">${esc(f.leader || '')}统 · ${esc(f.at ? '在' + f.at : '')} · ${esc(f.status || '')}${C ? ' · ' + (C.mode === '攻' ? '进攻' : '开赴') + esc(C.target) + (C.li ? `（已走${Math.round(C.done || 0)}/${Math.round(C.li)}里）` : '') : ''}</span>
-    <div>${st.U.length ? st.U.map(x => `${esc(x.t.name)}${esc(x.n)}${esc(x.t.unit || '营')}${x.short > 0 ? `<span class="muted">（缺额${esc(x.short)}）</span>` : ''}`).join('、') + ' · ' : ''}共 <b>${esc(fmtN(st.men || N0(f.troops) || 0, '人'))}</b>${st.days != null ? ` · 军粮够 <b>${st.days}</b> 日` : N0(f.grain) != null ? ` · 存粮${esc(fmtN(N0(f.grain), '石'))}` : ''}${f.owed ? ` · <span class="warn">欠饷${esc(fmtN(N0(f.owed)))}</span>` : ''}</div>
+    <div>${st.U.length ? st.U.map(x => `${esc(x.t.name)}${esc(x.n)}${esc(x.t.unit || '营')}${x.short > 0 ? `<span class="muted">（缺额${esc(x.short)}）</span>` : ''}`).join('、') + ' · ' : ''}共 <b>${esc(troopEst(s, f, st.men || N0(f.troops) || 0).txt)}</b>${mine && ghostHidden(s, f) ? `<button class="link" data-audit="${esc(f.name)}">点验</button>` : ''}${st.days != null ? ` · 军粮够 <b>${st.days}</b> 日` : N0(f.grain) != null ? ` · 存粮${esc(fmtN(N0(f.grain), '石'))}` : ''}${f.owed ? ` · <span class="warn">欠饷${esc(fmtN(N0(f.owed)))}</span>` : ''}</div>
     <div class="ggrid">${g('攻', st.atk)}${g('守', st.def)}${g('冲击', st.shock)}${g('机动', st.mob)}${g('士气', mo)}${g('组织', org)}${g('训练', tr)}</div>
     ${W && W.txt ? `<div class="muted" style="font-size:12px">驻地天候：${esc(W.txt)}</div>` : ''}
     ${O ? `<div class="route"><b>打${esc(tgt)}的胜算：${O.unknown ? '守军照城的等级推' : '约 ' + O.p + '%'}</b>${O.guess ? '（守军没探实，是推的）' : ''}<div class="list">${O.lines.map(l => `<div class="muted" style="font-size:12px">· ${esc(l)}</div>`).join('')}</div></div>` : mine ? '<div class="muted" style="font-size:12px">在图上点一处城池，看打那里的胜算、去那里要走几日。</div>' : ''}
@@ -16785,6 +16802,7 @@ document.addEventListener('click', async e => {
   if (S && !BUSY && t.dataset.fig) { if (t.dataset.fig === 'visit') { const ta = $('#said'); if (ta) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + `去拜访${t.dataset.n}`; render(); return; } figRecruit(S, t.dataset.n); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.tlask) { tlAskAct(S, t.dataset.i, t.dataset.tlask === 'yes'); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.reform) { reformAct(S, t.dataset.i, t.dataset.reform); try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && t.dataset.audit) { auditAct(S, t.dataset.audit); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.scout) { scoutAct(S, t.dataset.scout); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && (t.dataset.camp || t.dataset.merc || t.dataset.priv)) { if (t.dataset.camp) campAct(S, t.dataset.camp, ($('#campAmt') || {}).value); else if (t.dataset.merc) mercAct(S, t.dataset.merc, ($('#mercAmt') || {}).value); else privAct(S, t.dataset.priv); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.soldier) { soldierAct(S, t.dataset.soldier); try { await store.save(S); } catch (_) {} render(); return; }
