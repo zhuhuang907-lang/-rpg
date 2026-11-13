@@ -5,7 +5,18 @@
 import sqlite3, json, sys, pathlib
 from opencc import OpenCC
 db, y0, y1, hid, title, out = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6]
-pol = sys.argv[7]
+pol = sys.argv[7]   # 「*」：照哈佛库每条任职的朝代码分政权（五代十国这种并立的年代）
+DYP = {6: '唐', 34: '后梁', 47: '后唐', 48: '后晋', 52: '后汉', 49: '后周', 75: '前蜀', 8: '后蜀', 9: '吴', 36: '吴', 10: '南唐', 11: '吴越', 12: '闽', 13: '南汉', 38: '楚', 55: '荆南', 66: '北汉', 16: '辽', 15: '宋'}
+ZH5 = [(860, 907, '唐'), (907, 923, '后梁'), (923, 936, '后唐'), (936, 947, '后晋'), (947, 951, '后汉'), (951, 960, '后周'), (960, 2000, '宋')]
+def pol_at(dy, pdy, y):
+    for d in (dy, pdy):
+        if d in DYP:
+            p = DYP[d]
+            if p == '后唐' and y < 923: return '晋'
+            if p == '唐' and y >= 907: continue
+            if p == '宋' and y < 960: continue   # 后来仕宋的人，960 年以前的官照当时的朝代
+            return p
+    return next((p for a, b, p in ZH5 if a <= y < b), '')
 dys = set(int(x) for x in sys.argv[8].split(',')) if len(sys.argv) > 8 else None
 cc = OpenCC('t2s'); S = lambda t: cc.convert(t or '')
 c = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
@@ -24,27 +35,30 @@ by = {}
 for pid, post, fy, ly, dy, off, addr in rows:
     if dys and dy not in dys and dy not in (0, None): continue
     if not off or off in ('[未詳]', '未詳'): continue
-    by.setdefault(pid, []).append([fy, ly, S(off), S(addr or '')])
+    by.setdefault(pid, []).append([fy, ly, S(off), S(addr or ''), dy])
 figs = []
 for pid, P in by.items():
-    m = c.execute("select c_name_chn, c_birthyear, c_deathyear, c_index_addr_id, c_fl_latest_year from BIOG_MAIN where c_personid = ?", (pid,)).fetchone()
+    m = c.execute("select c_name_chn, c_birthyear, c_deathyear, c_index_addr_id, c_fl_latest_year, c_dy from BIOG_MAIN where c_personid = ?", (pid,)).fetchone()
     if not m or not m[0]: continue
     name = S(m[0]); born = m[1] or None; died = m[2] or None
     if name in known or len(name) < 2 or len(name) > 5 or '某' in name or '氏' == name[-1]: continue
     nat = c.execute("select c_name_chn from ADDR_CODES where c_addr_id = ?", (m[3],)).fetchone() if m[3] else None
     posts = []
-    for i, (fy, ly, off, addr) in enumerate(P):
+    for i, (fy, ly, off, addr, dy) in enumerate(P):
         nxt = next((q[0] for q in P[i + 1:] if q[0] > fy), None)
         end = ly if ly and ly >= fy else (nxt if nxt else fy + 3)
         if died: end = min(end, died)
         if end < y0 or fy > y1: continue
         place = addr.split('、')[0] if addr else ''
         t = place if place and (place.endswith(off) or (len(off) >= 2 and off in place)) else (place + off) if place and place not in off and len(place) <= 6 else off
-        posts.append([fy, max(fy, end), t])
+        posts.append([fy, max(fy, end), t] + ([pol_at(dy, m[5], fy)] if pol == '*' else []))
     if not posts: continue
     if died and died < y0: continue
-    figs.append({'name': name, 'born': born, 'died': died, 'native': S(nat[0]) if nat else '', 'posts': posts, 'src': 'CBDB'})
+    if pol == '*':   # 一人跨几国的，照国拆成几条（同名同生年，游戏照政权取）
+        for p in dict.fromkeys(x[3] for x in posts):
+            figs.append({'name': name, 'born': born, 'died': died, 'native': S(nat[0]) if nat else '', 'pol': p, 'posts': [x[:3] for x in posts if x[3] == p], 'src': 'CBDB'})
+    else: figs.append({'name': name, 'born': born, 'died': died, 'native': S(nat[0]) if nat else '', 'posts': posts, 'src': 'CBDB'})
 figs.sort(key=lambda f: (f['posts'][0][0], f['name']))
-res = {'id': hid, 'title': title, 'range': [y0, y1], 'polity': pol, 'source': '哈佛中国历代人物传记资料库（CBDB），非商业用途；简体由程序转换', 'figures': figs}
+res = {'id': hid, 'title': title, 'range': [y0, y1], 'polity': pol if pol != '*' else None, 'source': '哈佛中国历代人物传记资料库（CBDB），非商业用途；简体由程序转换', 'figures': figs}
 json.dump(res, open(out, 'w', encoding='utf8'), ensure_ascii=False, separators=(',', ':'))
 print(len(figs), '人', sum(len(f['posts']) for f in figs), '条任职', 'skip known', len(known))

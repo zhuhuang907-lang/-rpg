@@ -1821,11 +1821,14 @@ function courtTable(s, y) {
   const out = []; if (!s || !s.org) return out; const me = (s.protagonist || {}).name;
   const seen = new Set(), src = histFor(y, s).map(h => arr(h.figures)).concat(tenureFor(s, y).map(t => arr(t.figures)));   /* 手工整理的内置史料在前，任职年表补在后 */
   for (const L of src) for (const f of L) {
-    if (!f || !f.name || f.name === me || seen.has(f.name)) continue; seen.add(f.name);
+    if (!f || !f.name || f.name === me || seen.has(f.name)) continue;   /* 手工史料里有、却没对上位子的人，再照任职年表的写法试一回 */
     const st = figState(s, f, y, s.clock && s.clock.y === y ? s.clock.m : null); if (st.state !== 'alive' || !st.post) continue;
-    const post = String(st.post).replace(/^.*→/, ''), t = { name: f.name, post, born: f.born, seated: false }; out.push(t);
+    const post = String(st.post).replace(/^.*→/, ''), t0 = out.find(z => z.name === f.name), t = t0 || { name: f.name, post, born: f.born, seated: false }; if (!t0) out.push(t);
     if (trackOf(s, f.name) === '局') continue; const cur = findPost(s, f.name); if (cur && cur.byPlayer) continue;
-    const hit = matchPost(s, post); if (!hit) continue; const [n, q] = hit; if (q.byPlayer || q.noGrant) continue;
+    /* 同时兼几个官的（侍中、吏部尚书、辅国将军），照新到旧一个个对树上的位子，对上一个就坐 */
+    const cands = [...new Set(arr(f.posts).filter(p => p && p[0] <= y && (p[1] == null || p[1] >= y)).map(p => postOnly(String(p[2]).replace(/^.*→/, ''))).filter(Boolean).reverse().concat([post]))];
+    let hit = null; for (const c of cands) { const h = matchPost(s, c); if (h && !h[1].byPlayer && !h[1].noGrant) { hit = h; t.post = c; break; } }
+    if (!hit) continue; const [n, q] = hit; seen.add(f.name);
     if (q.holder === f.name || ((q.quota || 1) > 1 && arr(q.others).includes(f.name))) { t.seated = true; if (SEAT_RANK('史书') > SEAT_RANK(q.src)) q.src = '史书'; continue; }
     if ((q.quota || 1) > 1 && q.holder && SEAT_RANK(q.src) >= SEAT_RANK('史书')) { if (cur) { cur.holder = ''; cur.src = ''; } q.others = arr(q.others).concat([f.name]).slice(-6); t.seated = true; continue; }
     if (seatPut(s, n, q, f.name, '史书', { move: true })) t.seated = true;
@@ -4783,7 +4786,20 @@ let HIST = [];
 try { HIST = JSON.parse(document.getElementById('hist').textContent || '[]'); } catch (_) { HIST = []; }
 /* 任职年表（任务六，R-225）：开发时从哈佛库（CBDB，非商业用途）、原文库整理的「哪年谁任什么官」，按政权分；只拿来排朝堂、名册（先查表、后补缺），不进正文的名单扫描 */
 let TENURE = []; try { TENURE = JSON.parse((document.getElementById('tenure') || {}).textContent || '[]'); if (!Array.isArray(TENURE)) TENURE = []; } catch (_) { TENURE = []; }
-function tenureFor(s, y) { const pol = String((s && s.place && s.place.polity) || ''); return TENURE.filter(t => t && t.range && y >= t.range[0] && y <= t.range[1] && t.polity && pol.includes(t.polity)); }
+const POL_ALIAS = { 蜀汉: ['蜀', '汉', '季汉'], 吴: ['孙吴', '东吴', '杨吴', '淮南'], 魏: ['曹魏'], 西晋: ['晋'], 东晋: ['晋'], 汉: ['东汉', '后汉'], 宋: ['刘宋'], 南齐: ['齐', '萧齐'], 梁: ['萧梁', '南梁'], 北魏: ['魏', '元魏', '拓跋魏'], 东魏: ['魏'], 西魏: ['魏'], 北齐: ['齐', '高齐'], 北周: ['周', '宇文周'],
+  前秦: ['秦', '苻秦'], 后秦: ['秦', '姚秦'], 西秦: ['秦'], 前燕: ['燕'], 后燕: ['燕'], 北燕: ['燕'], 南燕: ['燕'], 前赵: ['汉', '赵', '汉赵'], 后赵: ['赵'], 成汉: ['成', '汉'], 前凉: ['凉'], 后凉: ['凉'], 北凉: ['凉'], 西凉: ['凉'], 南凉: ['凉'],
+  晋: ['河东'], 后梁: ['梁', '朱梁'], 后唐: ['唐'], 后晋: ['晋'], 后汉: ['汉'], 后周: ['周'], 南唐: ['唐'], 前蜀: ['蜀'], 后蜀: ['蜀'], 北汉: ['汉'], 南汉: ['汉'], 楚: ['马楚'], 荆南: ['南平'], 辽: ['契丹'], 明: ['大明'] };
+const polNorm = x => String(x || '').trim().replace(/^大(?=..)/, '').replace(/(?<=.)[国朝]$/, '');
+/** 这一年这个政权该用的任职表：整份标了政权的照政权；按人分政权的（通鉴、五代十国），先照本名对，对不上再照别称对，别称同时对上两国（东西魏都叫魏）就不认 */
+function tenureFor(s, y) {
+  const pol = polNorm(s && s.place && s.place.polity); if (!pol) return []; const out = [];
+  for (const t of TENURE) { if (!t || !t.range || y < t.range[0] || y > t.range[1]) continue;
+    if (t.polity) { if (polNorm(t.polity) === pol || arr(POL_ALIAS[t.polity]).includes(pol)) out.push(t); continue; }
+    const act = new Set(); for (const f of arr(t.figures)) if (f.pol && arr(f.posts).some(p => p[0] <= y && p[1] >= y)) act.add(f.pol);
+    let hit = [...act].filter(p => polNorm(p) === pol); if (!hit.length) { hit = [...act].filter(p => arr(POL_ALIAS[p]).includes(pol)); if (hit.length > 1) hit = []; }
+    if (hit.length) out.push({ id: t.id, figures: arr(t.figures).filter(f => hit.includes(f.pol)) }); }
+  return out;
+}
 /** 联网自建的史料包（桌面版：没有内置史料的年代，边玩边查边建，存在本机） */
 let RUNHIST = [];
 /** 自建史料只给同一政权的存档用（内置史料不分） */
