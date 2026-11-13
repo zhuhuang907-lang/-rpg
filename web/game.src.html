@@ -284,6 +284,7 @@ textarea{resize:vertical}
 </script>
 <script type="application/json" id="cal">__CAL__</script>
 <script type="application/json" id="hist">__HIST__</script>
+<script type="application/json" id="tenure">__TENURE__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -1818,8 +1819,9 @@ const courtDue = s => !!(s && s.org && arr(s.org.nodes).length > 1 && s.clock &&
  *  玩家任命的位子、本局轨道的人不动；对不上位子的照样交给模型照抄（别国的人模型自己剔掉） */
 function courtTable(s, y) {
   const out = []; if (!s || !s.org) return out; const me = (s.protagonist || {}).name;
-  for (const h of histFor(y, s)) for (const f of arr(h.figures)) {
-    if (!f || !f.name || f.name === me || out.some(t => t.name === f.name)) continue;
+  const seen = new Set(), src = histFor(y, s).map(h => arr(h.figures)).concat(tenureFor(s, y).map(t => arr(t.figures)));   /* 手工整理的内置史料在前，任职年表补在后 */
+  for (const L of src) for (const f of L) {
+    if (!f || !f.name || f.name === me || seen.has(f.name)) continue; seen.add(f.name);
     const st = figState(s, f, y, s.clock && s.clock.y === y ? s.clock.m : null); if (st.state !== 'alive' || !st.post) continue;
     const post = String(st.post).replace(/^.*→/, ''), t = { name: f.name, post, born: f.born, seated: false }; out.push(t);
     if (trackOf(s, f.name) === '局') continue; const cur = findPost(s, f.name); if (cur && cur.byPlayer) continue;
@@ -1828,7 +1830,7 @@ function courtTable(s, y) {
     if ((q.quota || 1) > 1 && q.holder && SEAT_RANK(q.src) >= SEAT_RANK('史书')) { if (cur) { cur.holder = ''; cur.src = ''; } q.others = arr(q.others).concat([f.name]).slice(-6); t.seated = true; continue; }
     if (seatPut(s, n, q, f.name, '史书', { move: true })) t.seated = true;
   }
-  return out.slice(0, 60);
+  return out.filter(t => t.seated).concat(out.filter(t => !t.seated)).slice(0, 80);   /* 坐了位子的先列给模型；全部都已照表坐好 */
 }
 async function courtFullDS(s) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '', me = s.protagonist.name || '';
@@ -4739,6 +4741,9 @@ function yearEnd(s, y0) {
 /* ========== 内置史料：史事、君主年号、真人生卒官职由程序给出，AI 不凭记忆编 ========== */
 let HIST = [];
 try { HIST = JSON.parse(document.getElementById('hist').textContent || '[]'); } catch (_) { HIST = []; }
+/* 任职年表（任务六，R-225）：开发时从哈佛库（CBDB，非商业用途）、原文库整理的「哪年谁任什么官」，按政权分；只拿来排朝堂、名册（先查表、后补缺），不进正文的名单扫描 */
+let TENURE = []; try { TENURE = JSON.parse((document.getElementById('tenure') || {}).textContent || '[]'); if (!Array.isArray(TENURE)) TENURE = []; } catch (_) { TENURE = []; }
+function tenureFor(s, y) { const pol = String((s && s.place && s.place.polity) || ''); return TENURE.filter(t => t && t.range && y >= t.range[0] && y <= t.range[1] && t.polity && pol.includes(t.polity)); }
 /** 联网自建的史料包（桌面版：没有内置史料的年代，边玩边查边建，存在本机） */
 let RUNHIST = [];
 /** 自建史料只给同一政权的存档用（内置史料不分） */
