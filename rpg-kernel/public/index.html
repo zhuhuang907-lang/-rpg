@@ -1653,7 +1653,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261113042055';
+const BUILD = '20261113051953';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -3430,7 +3430,10 @@ const factDue = s => s && s.clock && (!s.factSheet || s.factSheet.key !== factKe
 async function buildFacts(s) {
   const pol = s.place.polity || '', yl = s.clock.yearLabel || s.clock.y + '年', u = (s.money || {}).unit || '';
   const R = arr(s.research).slice(-12).map(x => `· 查「${x.q}」：${cut(x.text, 300)}`).join('\n');
-  const orgLine = s.org ? s.org.nodes.filter(n => n.path || n.depth <= 1).slice(0, 40).map(n => `${n.name}：` + n.posts.slice(0, 5).map(p => `${p.title}${p.rank ? '（' + p.rank + '）' : ''}员额${p.quota || 1}${p.holder ? '，' + p.holder : ''}`).join('；')).join('\n') : '';
+  /* 虚构人物戏份（任务三，R-221 御示）：开局补的虚构人物，玩家没提拔、没打过交道的，只按部就班当差，标给模型看，不给戏份 */
+  const FSb = fictionShow(s), bench = (h, p) => h && FSb.has(h) && !(p && p.byPlayer) && !fictActive(s, h);
+  const orgLine = s.org ? s.org.nodes.filter(n => n.path || n.depth <= 1).slice(0, 40).map(n => `${n.name}：` + n.posts.slice(0, 5).map(p => `${p.title}${p.rank ? '（' + p.rank + '）' : ''}员额${p.quota || 1}${p.holder ? '，' + p.holder + (bench(p.holder, p) ? '（虚构·照常供职）' : '') : ''}`).join('；')).join('\n') : '';
+  const benchNote = s.org && s.org.nodes.some(n => (n.path || n.depth <= 1) && n.posts.some(p => bench(p.holder, p))) ? '【虚构人物的戏份】标「虚构·照常供职」的人是史书没留名、程序补上的：主角没提拔他、没跟他打过交道，就只按部就班当差——不给他安排要事、不让他推动剧情、不让他突然升迁立功或犯大案；主角提拔了、找上了他，才照常写' : '';
   const nums = [arr(s.prices).length ? '物价：' + s.prices.slice(0, 12).map(x => `${x.item}${x.price != null ? x.price : '?'}${u}/${x.per || ''}`).join('、') : '',
     s.realm ? `国库${s.realm.treasury ?? '?'}、岁入${s.realm.revenue ?? '?'}、岁出${s.realm.outlay ?? '?'}、存粮${s.realm.granary ?? '?'}石、兵额${s.realm.army ?? '?'}` : '',
     arr(s.forces).length ? '兵马：' + s.forces.slice(0, 8).map(f => `${f.name}${f.troops ?? '?'}人、粮${f.grain ?? '?'}石`).join('、') : '',
@@ -3441,7 +3444,7 @@ ${histBlock(s)}
 ${s.inst ? '【本朝官制要览】' + cut(instText(s, 900), 900) : ''}
 ${officialsBlock(s)}
 ${R ? '【联网查到的资料】\n' + R : ''}
-${orgLine ? '【人事树（主角这一路和中枢）】\n' + orgLine : ''}
+${orgLine ? '【人事树（主角这一路和中枢）】\n' + orgLine : ''}${benchNote ? '\n' + benchNote : ''}
 ${nums ? '【账上的数目】\n' + nums : ''}
 要做三件事，只照上面的资料和确凿的史书，拿不准的不写：
 一、facts：这一年此地最要紧的史实十到二十条（君主年号、主角这一路的长官是谁、行政建置、本朝要紧制度、近一两年的大事、物价行情），每条一句。
@@ -14726,6 +14729,8 @@ function fictionSet(s) {
 /** 界面上标「虚拟」的只是确知虚构的（2026-11-02 玩家：「开局给人物的描述，把真实人物杨勇写成了虚拟……真实人物不要写虚拟」；
  *  查实：凡还没核过的名字一律当虚构，开局真人还没核完就被标了虚拟）：程序起的名字、开科招贤来的虚构人选、核过查无此人的、标了虚构的家人仆役、虚构主角；
  *  内置史料、名录、核过的真人一概不标；还没核的不标 */
+/** 玩家跟这个虚构人物打过交道没有：提拔过、见过、有情分、在你身边当差（打过交道的才照常给戏份） */
+function fictActive(s, name) { const P = (s.people || {})[name]; if (P && (P.byPlayer || P.met || (num(P.favor) || 0) !== 0 || arr(P.log).length)) return true; if (arr(s.chat).slice(-20).some(c => c && c.role === 'user' && String(c.text || '').includes(name))) return true; const q = findPost(s, name); return !!(q && q.byPlayer); }
 function fictionShow(s) {
   const R = realNameSet(s), F = new Set(), add = n => { if (n && n.length >= 2 && !R.has(n)) F.add(n); };
   for (const [k, v] of Object.entries(s.people || {})) { const c = chkOf(s, k); if ((v && (v.fic || v.real === false || /虚构|^拟/.test(String(v.src || '')))) || (c && !c.real)) add(k); }
