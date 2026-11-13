@@ -12,29 +12,29 @@ git checkout claude/gallant-davinci-l8pni0 && git pull --ff-only
 git config core.hooksPath scripts/hooks
 ```
 
-## 一、先做：任务二（南北朝史料包）
+## 先后（2026-11-13 项目主人改定：先做五代十国）
+
+1. 任务五，**只做五代十国那一段**（907–979 各政权）——分支 `zcode/task-5`
+2. 任务六 五代十国朝廷数据——分支 `zcode/task-6`；先交后唐、荆南两国，回奏写「样板两国已交」
+3. 任务七 游戏照数据排朝堂——分支 `zcode/task-7`；等 Claude 在任务六批语里写「样板准」再开工
+4. 任务二（南北朝史料包）——分支 `zcode/task-2`
+5. 任务一（南北朝制度库）——分支 `zcode/task-1`
+6. 任务四（清理史料里的任职记录）——分支 `zcode/task-4`，清单在 `中书省/附件/史料体检.md`
+7. 任务五其余年代（三国、两晋十六国、南北朝）
+
+前一件等 Claude 审查时，接着做下一件，不空等。
+
+## 每件活怎么开分支、怎么交
 
 ```bash
-git checkout -B zcode/task-2 origin/zcode/task-2 2>/dev/null || git checkout -B zcode/task-2
+git checkout -B zcode/task-N origin/zcode/task-N 2>/dev/null || git checkout -B zcode/task-N
 ```
-打开 `中书省/任务二.md`，照「要做什么」「改动范围」「做法提示」做；只动它写的文件。
-每做完一批（二三十条）就提交、推送一次，别攒到最后：
+打开 `中书省/任务N.md`，照「要做什么」「改动范围」「做法提示」做；只动它写的文件。
+每做完一批（一个政权、或二三十条）就提交、推送一次，别攒到最后：
 ```bash
-git add -A && git commit -m "任务二 进展：<做了什么>" && git push -u origin HEAD
+git add -A && git commit -m "任务N 进展：<做了什么>" && git push -u origin HEAD
 ```
-全做完：跑 `python3 web/build.py`、`node web/tests/prompt_guard.js`、`node web/tests/rules_regress.js`，把命令文件末尾「回奏」照格式填好，提交、推送。
-
-## 二、再做：任务一（南北朝制度库）
-
-同样的做法，分支 `zcode/task-1`（`git checkout -B zcode/task-1 origin/zcode/task-1 2>/dev/null || git checkout -B zcode/task-1`），命令在 `中书省/任务一.md`。
-
-## 三、最后做：任务四（清理史料里的任职记录）
-
-同样的做法，分支 `zcode/task-4`，命令在 `中书省/任务四.md`，清单在 `中书省/附件/史料体检.md`。每改完一段年代就提交、推送一次。
-
-## 三之二、再后：任务五（大小政权总表）
-
-同样的做法，分支 `zcode/task-5`，命令在 `中书省/任务五.md`。先读 `政事堂/议题三/裁决.md`。
+全做完：跑 `python3 web/build.py`、`node web/tests/prompt_guard.js`、`node web/tests/rules_regress.js`（和命令里点名的新测试），把命令文件末尾「回奏」照格式填好，提交、推送。
 
 ## 四、有问题怎么办
 
