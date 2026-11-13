@@ -1,6 +1,6 @@
 # 政事堂（议事堂）
 
-要定方向、改大的做法时，先在政事堂议：Claude 出议题，opencode、zcode 各写意见，**Claude 裁决**。
+要定方向、改大的做法时，先在政事堂议：Claude 出议题，zcode 写意见（opencode 不参加，R-223），**Claude 裁决**。
 Claude 有最终决定权和一票否决权；裁决定了，中书省照裁决发命令。
 
 ## 议题一览（Claude 改）
@@ -12,7 +12,7 @@ Claude 有最终决定权和一票否决权；裁决定了，中书省照裁决�
 
 状态：**征求意见** → **质疑**（三份意见到齐，各写一轮质疑）→ **回应**（各回应一轮，最多两轮）→ **待裁决** → **已裁决**（看 `裁决.md`）。
 
-三方议事（R-221，以后都照这个）：Claude、opencode、zcode 三方各自独立写意见，Claude 也写一份（先写、不看别人的）；到齐后各写 `质疑-<名字>.md`、再写 `回应-<名字>.md`，最后 Claude 裁决。opencode、zcode 的质疑、回应也推到自己的 `yiti-X` 分支。
+议事（R-221，R-223 起 opencode 不参加）：Claude、zcode 各自独立写意见，Claude 也写一份（先写、不看别人的）；到齐后各写 `质疑-<名字>.md`、再写 `回应-<名字>.md`，最后 Claude 裁决。zcode 的质疑、回应推到 `zcode/yiti-X` 分支。
 
 ## 自动政事堂（政事堂总管）
 
@@ -22,7 +22,7 @@ Claude 有最终决定权和一票否决权；裁决定了，中书省照裁决�
 - `政事堂/运行日志/`：每次运行一行。
 制度见 `政事堂/章程.md`（第十二章），用法见 `court/README.md`。下面是不经总管、由 opencode、zcode 在仓库里写意见的办法。
 
-## opencode、zcode 怎么写意见
+## zcode 怎么写意见
 
 1. 读 `政事堂/议题X/议题.md`。需要时读代码、查原文库，拿事实说话。
 2. 从 `claude/gallant-davinci-l8pni0` 拉分支 `zcode/yiti-X` 或 `opencode/yiti-X`。
