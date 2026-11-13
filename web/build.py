@@ -18,7 +18,7 @@ hist = []
 for f in sorted((here / 'history').glob('*.json')):
     try:
         h = json.load(open(f, encoding='utf8'))
-        hist.append({k: h.get(k) for k in ('id', 'title', 'range', 'polities', 'rulers', 'events', 'figures')})
+        hist.append({k: h.get(k) for k in ('id', 'title', 'range', 'polities', 'rulers', 'events', 'figures', 'rulersOnly')})
     except Exception as e:
         print('skip', f.name, e)
 hist_js = json.dumps(hist, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')

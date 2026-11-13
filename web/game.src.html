@@ -4821,7 +4821,7 @@ const evYM = e => e.y * 12 + evMonth(e) + (e.leap && e.m ? 0.5 : 0);   // 闰月
 const evKey = e => e.y + ':' + String(e.text).slice(0, 14);
 /** 覆盖本局年份的史料（可能两段交界都要） */
 function histFor(y, s) { return HALL(s).filter(h => y >= h.range[0] && y <= h.range[1]); }
-const hasHist = s => !!(s && histFor(s.clock.y, s).some(h => !h.sync));   // 只有同步来的零散史事不算有整套史料
+const hasHist = s => !!(s && histFor(s.clock.y, s).some(h => !h.sync && !h.rulersOnly));   // 只有君主年号表（南北朝、隋唐前期）的不算整套史料，史事真人照常联网自建   // 只有同步来的零散史事不算有整套史料
 function histEvents(s, fromYM, toYM) {
   const out = [], seen = new Set();
   for (const h of HALL(s)) {
@@ -4960,7 +4960,8 @@ function rulersAt(y, s, m) {
   const out = [], seen = new Set();
   const mm = m != null ? m : s && s.clock && s.clock.y === y ? s.clock.m : 12;
   const all = [];
-  for (const h of histFor(y, s)) for (const r of arr(h.rulers)) if (r.from <= y && r.to >= y && !seen.has(r.polity + r.name)) { seen.add(r.polity + r.name); all.push(r); }
+  const H = histFor(y, s), firm = H.some(h => !h.grade && arr(h.rulers).some(r => r.from <= y && r.to >= y));   // 有内置的君主年号表，就不采联网自建的（防年号写错）
+  for (const h of H) { if (firm && h.grade === 'B') continue; for (const r of arr(h.rulers)) if (r.from <= y && r.to >= y && !seen.has(r.polity + r.name)) { seen.add(r.polity + r.name); all.push(r); } }
   for (const r of all) {
     const rg0 = arr(r.reigns).slice().sort((a, b) => a[1] - b[1]);
     // 新君今年才即位、还没到即位的月份：先不算他
@@ -11608,7 +11609,7 @@ const polKey = p => [...String(p || 'x')].map(c => c.charCodeAt(0).toString(36))
 function packNeed(s) {
   if (!s || !s.clock) return null;
   if (s.hbFail != null && s.turn - s.hbFail < 2) return null;  // 刚失败过，隔几回合再试
-  const y = s.clock.y, cov = HALL(s).filter(h => !h.sync && y >= h.range[0] && y <= h.range[1]);
+  const y = s.clock.y, cov = HALL(s).filter(h => !h.sync && !h.rulersOnly && y >= h.range[0] && y <= h.range[1]);
   const end = cov.length ? Math.max(...cov.map(h => h.range[1])) : null;
   if (end != null && end >= y + 6) return null;   // 往后至少留六年的史书（2026-11-04 玩家：「我这可能是玩五六十年的游戏」——快到头就接着往后修）
   const from = end != null ? end + 1 : y - 3;
