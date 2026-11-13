@@ -24,6 +24,9 @@ static class GameLauncher
     const string TITLE = "历史模拟 RPG";
     static int Port = 8787;
     static string Url { get { return "http://127.0.0.1:" + Port + "/"; } }
+    // 系统命令一律用 System32 下的全路径（不靠 PATH 找，防同名程序顶替）；参数只有整数进程号和固定开关
+    static string SysExe(string name) { return Path.Combine(Environment.SystemDirectory, name); }
+    // 端口只认 1024–65535 的整数；网址只会是本机 127.0.0.1
     static string AppDir = AppDomain.CurrentDomain.BaseDirectory;
     static string GameDir;
     static string LogPath, LauncherLog;
@@ -123,7 +126,7 @@ static class GameLauncher
         for (int i = 0; i < 120 && !Server.HasExited; i++)
         {
             if (Ping()) { Ready = true; break; }
-            try { var pj = Path.Combine(GameDir, "data", "port.json"); if (File.Exists(pj)) { var m = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(pj), "\\d{4,5}"); int pp; if (m.Success && int.TryParse(m.Value, out pp) && pp != Port) { Port = pp; Log("服务改用了端口 " + Port); } } } catch { }
+            try { var pj = Path.Combine(GameDir, "data", "port.json"); if (File.Exists(pj)) { var m = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(pj), "\\d{4,5}"); int pp; if (m.Success && int.TryParse(m.Value, out pp) && pp >= 1024 && pp <= 65535 && pp != Port) { Port = pp; Log("服务改用了端口 " + Port); } } } catch { }
             if (i == 10) Say("第一次启动稍慢（杀毒软件可能在扫描），请稍等……");
             Thread.Sleep(500);
         }
@@ -192,7 +195,7 @@ static class GameLauncher
         {
             if (Server != null && !Server.HasExited)
             {
-                var k = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + Server.Id) { UseShellExecute = false, CreateNoWindow = true });
+                var k = Process.Start(new ProcessStartInfo(SysExe("taskkill.exe"), "/T /F /PID " + Server.Id) { UseShellExecute = false, CreateNoWindow = true });
                 if (k != null) k.WaitForExit(5000);
                 if (!Server.HasExited) Server.Kill();
             }
@@ -249,7 +252,7 @@ static class GameLauncher
         catch { }
         try
         {
-            var psi = new ProcessStartInfo("netstat", "-ano -p tcp")
+            var psi = new ProcessStartInfo(SysExe("netstat.exe"), "-ano -p tcp")
             { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
             string outp;
             using (var p = Process.Start(psi)) { outp = p.StandardOutput.ReadToEnd(); p.WaitForExit(3000); }
@@ -281,7 +284,7 @@ static class GameLauncher
                 string f = proc.MainModule.FileName ?? "";
                 if (!f.EndsWith("\\runtime\\node.exe", StringComparison.OrdinalIgnoreCase)) continue;
                 if (!File.Exists(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(f)), "server.js"))) continue;
-                var k = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + proc.Id) { UseShellExecute = false, CreateNoWindow = true });
+                var k = Process.Start(new ProcessStartInfo(SysExe("taskkill.exe"), "/T /F /PID " + proc.Id) { UseShellExecute = false, CreateNoWindow = true });
                 k.WaitForExit(3000); n++;
                 Log("关掉旧的游戏服务 pid " + proc.Id + "（" + f + "）");
             }
@@ -295,14 +298,14 @@ static class GameLauncher
     {
         try
         {
-            var psi = new ProcessStartInfo("netstat", "-ano -p tcp") { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
+            var psi = new ProcessStartInfo(SysExe("netstat.exe"), "-ano -p tcp") { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
             string outp; using (var p = Process.Start(psi)) { outp = p.StandardOutput.ReadToEnd(); p.WaitForExit(3000); }
             foreach (var line in outp.Split('\n'))
             {
                 var parts = line.Split(new[] { ' ', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length < 5 || !parts[1].EndsWith(":" + port) || parts[3] != "LISTENING") continue;
                 int pid; if (!int.TryParse(parts[4], out pid)) continue;
-                try { var k = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + pid) { UseShellExecute = false, CreateNoWindow = true }); k.WaitForExit(3000); } catch { }
+                try { var k = Process.Start(new ProcessStartInfo(SysExe("taskkill.exe"), "/T /F /PID " + pid) { UseShellExecute = false, CreateNoWindow = true }); k.WaitForExit(3000); } catch { }
             }
         }
         catch { }
