@@ -38,6 +38,7 @@ echo $$ > /tmp/rpg-qa.lock   # 完整测试跑着时不许别处重新构建（b
 FP0=$(bash "$ROOT/scripts/fingerprint.sh")   # 这一轮测的是哪一份源码（需求台账 R-132）
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
+say "五代十国朝廷数据（任务六）"; node "$ROOT/web/tests/court_data.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "五代十国朝廷数据"
 say "江山时序：本机服务替玩家下到 data/cache/jiangshan、只认两个文件、不是地图数据不收、下过不再下"; JS=$(node "$ROOT/web/tests/jsmapsrv.js" 2>&1 | tail -1); echo "$JS"; echo "$JS" | grep -q "ERRS \[\]" || bad "江山时序下载"
 say "历史原文库：65 本在库、按书检索真语料带出处、非法书号安全跳过"; CS=$(cd "$ROOT" && node "$ROOT/web/tests/qa/citesrv.js" 2>&1 | tail -1); echo "$CS"; echo "$CS" | grep -q "ERRS \[\]" || bad "历史原文库"
 say "端口被占：别的程序占着往后挪、游戏已经开着不另开"; PF=$(node "$ROOT/web/tests/portfallback.js" 2>&1 | tail -1); echo "$PF"; echo "$PF" | grep -q "ERRS \[\]" || bad "端口被占"
