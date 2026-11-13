@@ -27,14 +27,18 @@ for f in here.glob('*.json'):
     h = json.load(open(f, encoding='utf8'))
     if h.get('range') and h['range'][0] <= y1 and h['range'][1] >= y0:
         known |= {x['name'] for x in h.get('figures') or []}
+# 任务八抽查改法：县名不当州名（上党→潞州）；地址是县的，官名带「州」的换成它所属的州
 rows = c.execute("""select p.c_personid, p.c_posting_id, p.c_firstyear, p.c_lastyear, p.c_dy, o.c_office_chn,
-  (select group_concat(a.c_name_chn, '、') from POSTED_TO_ADDR_DATA pa join ADDR_CODES a on a.c_addr_id = pa.c_addr_id where pa.c_posting_id = p.c_posting_id and pa.c_office_id = p.c_office_id)
+  (select group_concat(case when lower(a.c_admin_type) = 'xian' and instr(o.c_office_chn, '州') > 0
+      then coalesce((select z.c_name_chn from ADDR_BELONGS_DATA b join ADDR_CODES z on z.c_addr_id = b.c_belongs_to where b.c_addr_id = a.c_addr_id and lower(z.c_admin_type) in ('zhou', 'fu', 'jun') limit 1), a.c_name_chn)
+      else a.c_name_chn end, '、') from POSTED_TO_ADDR_DATA pa join ADDR_CODES a on a.c_addr_id = pa.c_addr_id where pa.c_posting_id = p.c_posting_id and pa.c_office_id = p.c_office_id)
   from POSTED_TO_OFFICE_DATA p join OFFICE_CODES o on o.c_office_id = p.c_office_id
   where p.c_firstyear between ? and ? order by p.c_personid, p.c_firstyear, p.c_sequence""", (y0 - 15, y1)).fetchall()
 by = {}
 for pid, post, fy, ly, dy, off, addr in rows:
     if dys and dy not in dys and dy not in (0, None): continue
-    if not off or off in ('[未詳]', '未詳'): continue
+    off = off.replace('[未詳]', '').replace('[未详]', '').strip()
+    if not off or off in ('未詳', '未详'): continue
     by.setdefault(pid, []).append([fy, ly, S(off), S(addr or ''), dy])
 figs = []
 for pid, P in by.items():
@@ -49,8 +53,13 @@ for pid, P in by.items():
         end = ly if ly and ly >= fy else (nxt if nxt else fy + 3)
         if died: end = min(end, died)
         if end < y0 or fy > y1: continue
-        place = addr.split('、')[0] if addr else ''
+        if fy < y0: continue   # 只收这一段年代里上任的（任务八抽查改法）
+        place = next((p for p in (addr.split('、') if addr else []) if p and '未' not in p and '[' not in p), '')   # 地名写着「[未详]」的不当地名
+        off = off.replace('知某州軍州事', '知州事').replace('知某州军州事', '知州事').replace('某', '')
+        if place and off.startswith('州') and place.endswith('州'): off = off[1:]          # 潞州 + 州刺史 → 潞州刺史，不写成潞州州刺史
+        if place and off.startswith('知州') and place.endswith('州'): off = '知' + place; place = ''   # 知某州军州事 → 知泗州
         t = place if place and (place.endswith(off) or (len(off) >= 2 and off in place)) else (place + off) if place and place not in off and len(place) <= 6 else off
+        t = t.replace('州州', '州')
         posts.append([fy, max(fy, end), t] + ([pol_at(dy, m[5], fy)] if pol == '*' else []))
     if not posts: continue
     if died and died < y0: continue

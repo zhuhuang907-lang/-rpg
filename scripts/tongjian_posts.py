@@ -9,7 +9,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 D = json.load(open(NAMES, encoding='utf8'))
 for f in (ROOT / 'web' / 'history').glob('*.json'):
     for x in json.load(open(f, encoding='utf8')).get('figures') or []: D.setdefault(x['name'], []).append([x.get('born'), x.get('born'), x.get('died'), None])
-SUR1 = set('王李张刘陈杨赵黄周吴徐孙胡朱高林何郭马罗梁宋郑谢韩唐冯于董萧程曹袁邓许傅沈曾彭吕苏卢蒋蔡贾丁魏薛叶阎余潘杜戴夏钟汪田任姜范方石姚谭廖邹熊金陆郝孔白崔康毛邱秦江史顾侯邵孟龙万段雷钱汤尹黎易常武乔贺赖龚文庞樊兰殷施陶洪翟安颜倪严牛温芦季俞章鲁葛伍韦申尤毕聂丛焦向柳邢路岳齐沿梅莫庄辛管祝左涂谷祁时舒耿牟卜詹关苗凌费纪靳盛童欧甄项曲成游阳裴席卫查屈鲍位覃霍翁隋植甘景薄单包司柏宁柯阮桂闵解强柴华车冉房边辜吉饶刁瞿戚丘古米池滕晋苻姚吕慕乞赫沮秃宇独长尔贺斛高綦封羊荀伏蔺桓郗庾谯卞阴窦隗皇伏')
+SUR1 = set('王李张刘陈杨赵黄周吴徐孙胡朱高林何郭马罗梁宋郑谢韩唐冯于董萧程曹袁邓许傅沈曾彭吕苏卢蒋蔡贾丁魏薛叶阎余潘杜戴夏钟汪田任姜范方石姚谭廖邹熊金陆郝孔白崔康毛邱秦江史顾侯邵孟龙万段雷钱汤尹黎易常武乔贺赖龚文庞樊兰殷施陶洪翟安颜倪严牛温芦季俞章鲁葛伍韦申尤毕聂丛焦向柳邢路岳齐沿梅莫庄辛管祝左涂谷祁时舒耿牟卜詹关苗凌费纪靳盛童欧甄项曲成游阳裴席卫查屈鲍位覃霍翁隋植甘景薄单包司柏宁柯阮桂闵解强柴华车冉房边辜吉饶刁瞿戚丘古米池滕晋苻姚吕慕乞赫沮秃宇独尔贺斛高綦封羊荀伏蔺桓郗庾谯卞阴窦隗皇伏')
 SUR2 = ('司马', '诸葛', '慕容', '拓跋', '宇文', '独孤', '长孙', '尔朱', '欧阳', '皇甫', '夏侯', '公孙', '令狐', '上官', '沮渠', '秃发', '乞伏', '赫连', '贺拔', '斛律', '尉迟', '万俟', '纥干', '贺若', '段干', '呼延', '胡母', '钟离', '东方', '淳于', '綦毋', '侯莫', '叱罗', '可朱')
 OFF = re.compile(r'官|使|尉|令|守|史|丞|卿|侍|郎|尚书|将军|王|公|侯|帅|督|大夫|学士|府|州|牧|尹|参|判|节度|团练|宾客|少师|少傅|少保|太师|太傅|太保|司徒|司空|司马|中书|门下|仆射|录|监|祭酒|校尉|都护|长史|太宰|丞相|相国|大将军')
 def near(name, y):
@@ -20,6 +20,7 @@ def dy_pol(name, y):
     for r in D.get(name, []):
         dy = r[3] if len(r) > 3 else None
         if dy is None or not any(v and abs(v - y) <= 90 for v in r[:3]): continue
+        if (dy == 30 or dy in NORTH_E or dy in NORTH_W) and y >= 581: return zheng(y)   # 隋已立
         if dy == 30 or dy in NORTH_E or dy in NORTH_W:
             if y < 535: return '北魏'
             if dy in NORTH_W: return '西魏' if y < 557 else '北周'
@@ -27,9 +28,25 @@ def dy_pol(name, y):
         if dy == 82: return '西晋' if y < 317 else '东晋'
         if dy in WUDAI: return zheng(y) if y >= 907 else '唐'
         if dy == 47 and y < 923: return '晋'
-        if dy in DY: return DY[dy]
+        if dy in DY:
+            p = DY[dy]
+            if p == '唐' and y >= 907: return zheng(y)
+            L = DYLIFE.get(p)
+            if L and not (L[0] - 3 <= y <= L[1] + 1): continue   # 这一国那时还没立或已亡（皮日休 880 年不能记吴越）
+            return p
     return None
+DYLIFE = {'吴越': (907, 978), '吴': (902, 937), '前蜀': (903, 925), '南唐': (937, 975), '闽': (909, 945), '南汉': (917, 971), '楚': (907, 951), '荆南': (924, 963), '后蜀': (934, 965), '北汉': (951, 979), '辽': (916, 1125), '蜀汉': (214, 263), '吴（孙）': (194, 280)}
+STATE1 = set('汉魏吴蜀晋赵燕秦凉夏成代宋齐梁陈周隋唐闽楚岐')
+FIEF = STATE1 | set('越鲁卫郑韩楚荆湘襄蔡滕许邓雍豫兖徐青冀幽并益交广郡阳平原安城')
 def pick_name(x, y):
+    nm = _pick_name(x, y)
+    if not nm: return None
+    if len(nm) == 2 and nm[0] not in SUR1 and len(x) >= 3 and x[-3] in SUR1 and x.endswith(nm): nm = x[-3:]   # 胡长仁：「长仁」不是姓长，补回姓
+    if nm[-1] in '主王帝人公侯' and not near(nm, y): return None                         # 晋主、赵人不是人名
+    if nm[0] in '王主公侯' and len(x) >= 3 and (not near(nm, y) or x[-3] in FIEF): return None   # 越王秀、蜀王秀：「王秀」是爵位加名，不是姓王
+    if len(nm) == 2 and nm[0] in STATE1 and not near(nm, y): return None                  # 晋熙这类地名
+    return nm
+def _pick_name(x, y):
     x = re.sub(r'^(?:故|前|其|又|复|并|仍|遂|乃|更|皆)', '', x)
     for L in (4, 3, 2):
         if len(x) >= L and near(x[-L:], y): return x[-L:]
@@ -62,8 +79,8 @@ def pol_of(clause, y):
     if 907 <= y <= 978 and has('吴越'): return '吴越'
     if 907 <= y <= 963 and has('荆南', '南平'): return '荆南'
     if y >= 907 and has('契丹', '辽主'): return '辽'
-    m = re.search(r'(汉|魏|吴|蜀|晋|赵|燕|秦|凉|夏|成|代|宋|齐|梁|陈|周|隋|唐|闽|楚|岐)(?:主|王|帝|人|兵|将|国|之|大|丞|太|以|遣|使|复|又|乃)', c)
-    t = m.group(1) if m else ''
+    ms = list(re.finditer(r'(汉|魏|吴|蜀|晋|赵|燕|秦|凉|夏|成|代|宋|齐|梁|陈|周|隋|唐|闽|楚|岐)(?:主|王|帝|人|兵|将|国|之|大|丞|太|以|遣|使|复|又|乃)', c))
+    t = ms[-1].group(1) if ms else ''   # 取离「以」最近的政权主语（任务八抽查改法）
     z = zheng(y)
     if not t: return z
     if 189 <= y < 221:
@@ -84,16 +101,20 @@ def pol_of(clause, y):
     if 386 <= y < 589:
         if t == '魏': return '北魏' if y < 535 else '西魏'
         if t == '齐': return '南齐' if y < 502 else '北齐'
-        if t == '周': return '北周'
+        if t == '周': return '北周' if y < 581 else z
         if t == '梁': return '梁' if y < 557 else '西梁'
         if t in ('宋', '陈'): return t
         return z
+    if 875 <= y < 907:   # 唐末：黄巢的齐、杨行密的吴、李克用的晋、李茂贞的岐、王建的蜀各自任官，不一律记唐
+        mp = {'齐': '齐（黄巢）' if 880 <= y <= 884 else z, '吴': '吴' if y >= 902 else z, '晋': '晋' if y >= 895 else z, '岐': '岐' if y >= 901 else z, '蜀': '前蜀' if y >= 903 else z}
+        return mp.get(t, z)
     if 589 <= y < 907: return z
     if 907 <= y < 961:
         mp = {'晋': '晋' if y < 923 else '后晋', '岐': '岐', '吴': '吴' if y < 937 else '南唐', '蜀': '前蜀' if y < 926 else '后蜀', '唐': '南唐' if y >= 937 else '后唐', '汉': '南汉' if y < 947 else '后汉' if y < 951 else '北汉', '闽': '闽', '楚': '楚', '燕': '燕', '梁': '后梁', '周': '后周'}
         return mp.get(t, z)
     return z
 PAT = re.compile(r'(?:以|拜)([^，。；：「」、为]{2,14}?)为([^，。；：「」（]{2,16})')
+NEXT = re.compile(r'^，([^，。；：「」、为以]{2,8}?)为([^，。；：「」（]{2,16})')   # 「以甲为某官，乙为某官」：乙配他自己的官
 DIE = re.compile(r'([^，。；：「」、]{2,4}?)(?:卒|薨|死|遇害|被杀|伏诛|自杀|赐死|弃市)')
 rows, deaths = [], {}
 for y, v, n, t in entries(ROOT / 'corpus'):
@@ -105,7 +126,15 @@ for y, v, n, t in entries(ROOT / 'corpus'):
             if not OFF.search(off) or len(off) > 14: continue
             off = re.sub(r'(?:以|而|于|，).*$', '', off)
             clause = sent[:m.start()][-30:]
-            for x in xs.split('、'):
+            pairs = [(xs, off)]; rest = sent[m.end():]
+            while True:
+                n2 = NEXT.match(rest)
+                if not n2: break
+                o2 = re.split(r'[、]', n2.group(2))[0]
+                if OFF.search(o2) and len(o2) <= 14: pairs.append((n2.group(1), re.sub(r'(?:以|而|于|，).*$', '', o2)))
+                rest = rest[n2.end():]
+            for xs, off in pairs:
+              for x in xs.split('、'):
                 nm = pick_name(x, y)
                 if not nm or OFF.fullmatch(nm): continue
                 strong = pol_of(clause + x, y); wide = pol_of(t[:t.find(sent)][-200:] + clause + x, y) if sent in t else strong; dp = dy_pol(nm, y)
@@ -117,6 +146,12 @@ for y, v, n, t in entries(ROOT / 'corpus'):
         for m in DIE.finditer(sent):
             nm = pick_name(m.group(1), y)
             if nm and near(nm, y): deaths.setdefault(nm, y)
+LIFE = {'魏': (213, 265, '汉'), '蜀汉': (214, 263, '汉'), '吴': (194, 280, '汉'), '西晋': (265, 317, '魏'), '东晋': (317, 420, '西晋'), '宋': (420, 479, '东晋'), '南齐': (479, 502, '宋'), '梁': (502, 557, '南齐'), '陈': (557, 589, '梁'),
+        '东魏': (534, 550, '北魏'), '西魏': (535, 557, '北魏'), '北齐': (550, 577, '东魏'), '北周': (557, 580, '西魏'), '隋': (581, 618, '北周'), '唐': (618, 907, '隋'), '后梁': (907, 923, '唐'), '后唐': (923, 936, '晋'), '后晋': (936, 947, '后唐'), '后汉': (947, 951, '后晋'), '后周': (951, 960, '后汉'),
+        '前秦': (350, 394, '后赵'), '后秦': (384, 417, '前秦'), '后燕': (384, 409, '前秦'), '南唐': (937, 975, '吴'), '北汉': (951, 979, '后汉'), '辽': (907, 1125, '辽')}
+def alive(p, y):
+    L = LIFE.get(p)
+    return not L or L[0] <= y <= L[1]
 # 南北朝（420—589）照正史分南北：这人在魏书、北齐书、周书里出现得多，就是北朝的人（通鉴照南朝纪年，北朝的人常不写国号）
 import gzip
 def book(b): return ' '.join(json.loads(l)['text'] for l in gzip.open(ROOT / 'corpus' / f'{b}.jsonl.gz', 'rt', encoding='utf8'))
@@ -139,19 +174,23 @@ for r in rows: pr[r[1]].append(r)
 for nm, R in pr.items():
     for r in R:
         if r[5] == 2: continue
-        votes = Counter(q[3] for q in R if q is not r and q[5] >= 1 and abs(q[0] - r[0]) <= 10 and q[3] != zheng(r[0]))
+        votes = Counter(q[3] for q in R if q is not r and q[5] >= 1 and abs(q[0] - r[0]) <= 10 and q[3] != zheng(r[0]) and alive(q[3], r[0]))   # 那一年已亡、未立的国不投票
         if r[5] == 0 and votes: r[3] = votes.most_common(1)[0][0]
         elif r[5] == 1 and votes and votes.most_common(1)[0][1] >= 2 and votes.most_common(1)[0][0] != r[3]: r[3] = votes.most_common(1)[0][0]
 # 国号还没立就写成那一国的（陈霸先 545 年还是梁臣）：照前朝改
-LIFE = {'魏': (213, 265, '汉'), '蜀汉': (214, 263, '汉'), '吴': (194, 280, '汉'), '西晋': (265, 317, '魏'), '东晋': (317, 420, '西晋'), '宋': (420, 479, '东晋'), '南齐': (479, 502, '宋'), '梁': (502, 557, '南齐'), '陈': (557, 589, '梁'),
-        '东魏': (534, 550, '北魏'), '西魏': (535, 557, '北魏'), '北齐': (550, 577, '东魏'), '北周': (557, 581, '西魏'), '隋': (581, 618, '北周'), '唐': (618, 907, '隋'), '后梁': (907, 923, '唐'), '后唐': (923, 936, '晋'), '后晋': (936, 947, '后唐'), '后汉': (947, 951, '后晋'), '后周': (951, 960, '后汉'),
-        '前秦': (350, 394, '后赵'), '后秦': (384, 417, '前秦'), '后燕': (384, 409, '前秦'), '南唐': (937, 975, '吴'), '北汉': (951, 979, '后汉'), '辽': (907, 1125, '辽')}
 for r in rows:
     for _ in range(4):
         L = LIFE.get(r[3])
         if not L or L[0] <= r[0] <= L[1] or L[2] == r[3]: break
         r[3] = L[2] if r[0] < L[0] else r[3]
         if r[0] > L[1]: break
+# 国已亡还记那一国的（高颎 581 年后记成北周）：照继承的朝代改
+NEXTP = {'北周': '隋', '陈': '隋', '西魏': '北周', '东魏': '北齐', '北齐': '北周', '西梁': '隋', '隋': '唐', '东晋': '宋', '宋': '南齐', '南齐': '梁', '梁': '陈', '魏': '西晋', '蜀汉': '魏', '吴': '西晋', '汉': '魏', '西晋': '东晋', '唐': '后梁', '后梁': '后唐', '后唐': '后晋', '后晋': '后汉', '后汉': '后周'}
+for r in rows:
+    for _ in range(3):
+        L = LIFE.get(r[3])
+        if L and r[0] > L[1] and r[3] in NEXTP: r[3] = NEXTP[r[3]]
+        else: break
 by = {}
 for y, nm, off, pol, v, how in rows:
     if y < Y0: continue
@@ -163,7 +202,7 @@ for (nm, pol), P in by.items():
         nxt = next((q[0] for q in P[i + 1:] if q[0] > y), None); end = min(nxt, y + 6) if nxt else y + 4   # 通鉴不记离任：到下一回任命为止，最多六年
         dd = deaths.get(nm); dd = dd if dd and P[-1][0] <= dd <= P[-1][0] + 40 else None   # 同名的另一人卒年不算
         if dd and dd >= y: end = min(end, dd)
-        if posts and posts[-1][2] == off: posts[-1][1] = max(posts[-1][1], end); continue
+        if posts and posts[-1][2] == off and y <= posts[-1][1] + 1: posts[-1][1] = max(posts[-1][1], end); continue   # 同官相隔一年以内才并成一任（苏威几起几落不并成十八年）
         posts.append([y, max(y, min(end, Y1)), off, '资治通鉴·' + v])
     figs.append({'name': nm, 'pol': pol, 'died': deaths.get(nm) if deaths.get(nm) and P[-1][0] <= deaths[nm] <= P[-1][0] + 40 else None, 'posts': posts, 'src': '资治通鉴'})
 figs.sort(key=lambda f: (f['posts'][0][0], f['name']))
