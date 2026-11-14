@@ -74,6 +74,22 @@ const path = require('path');
     let ar; try { ar = applyActs(s, { actResults: [{ id: 't1', state: '办成', why: '河南尹照办', changed: '开了仓' }, { id: 't2', state: '办成', why: '卖了', changed: '得钱' }] }); } finally { CUR_RULING = null; }
     if (!ar.some(x => /开仓/.test(x.what) && x.state === '受阻')) bad.push('越权办不到的令被记成办成：' + JSON.stringify(ar.map(x => [x.what, x.state])));
     if (!ar.some(x => /麦子/.test(x.what) && x.state === '办成')) bad.push('能办的事没记办成');
+    // 11 对账（R-236）：落账前空跑各道闸，列出正文里账上不会认的事；不动存档；回执不把没认的账摆给玩家
+    s = mk(); s.money.cash = 300; const before = JSON.stringify(s);
+    let mm = ledgerMismatch(s, Object.assign(gift(), { identity: { role: '河南府参军', why: '授为河南府参军' } }), '我回家歇着', null);
+    if (!mm.some(x => /富商相赠/.test(x)) || !mm.some(x => /柳三娘/.test(x)) || !mm.some(x => /参军/.test(x))) bad.push('对账没列全：' + JSON.stringify(mm));
+    if (JSON.stringify(s) !== before) bad.push('对账空跑动了存档');
+    if (ledgerMismatch(s, gift(), '我把麦子卖了，再托媒人去柳家说亲，纳柳三娘为妾', null).length) bad.push('自己挣的、自己说的亲也被列成对不上');
+    const ri = reconcileInput('你回了家。', mm); if (!/富商相赠/.test(ri) || !/别处一个字不动/.test(ri)) bad.push('对账改稿的话不对');
+    if (/其实没成|没落账|没认/.test(receiptHtml([{ state: '受阻', type: '令', what: '开仓', why: '越权' }], ['进项「富商相赠」5000']))) bad.push('回执还在把没认的账摆给玩家看');
+    if (receiptHtml([], ['进项「富商相赠」5000']) !== '') bad.push('只有没认的账时回执没收起来');
+    // 12 写戏的材料：上一回没发生的事注明；缺数先查账；查到的账给它
+    s = mk(); s.turn = 4; s.unbooked = [{ turn: 4, text: '正文写了进项「富商相赠」5000，可这一步你没有做带来它的事，账上没认' }];
+    let si = JSON.stringify(storyInput(s, '我去东市看看', '', '', false, null));
+    if (!/上一回其实没有发生的事/.test(si) || !/富商相赠/.test(si)) bad.push('上一回没发生的事没告诉写戏的');
+    if (!/缺数先查账/.test(si)) bad.push('没告诉写戏的可以查账');
+    EXTRA_LOOK = '现钱 300'; try { si = JSON.stringify(storyInput(s, '我去东市看看', '', '', false, null)); } finally { EXTRA_LOOK = ''; }
+    if (!/你要查的账/.test(si) || !/现钱 300/.test(si) || /缺数先查账/.test(si)) bad.push('查到的账没给写戏的');
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));
