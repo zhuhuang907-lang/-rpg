@@ -47,6 +47,19 @@ const path = require('path');
       const xz = P4.find(q => /平章事/.test(q.title)) || {}; if (!all(xz).some(n => ['范质', '王溥', '李谷'].includes(n))) bad.push('955 年后周宰相里没有范质、王溥、李谷：' + JSON.stringify(all(xz)));
       if (P4.filter(q => /平章事|枢密使|三司使|侍卫|点检/.test(q.title)).some(q => all(q).some(n => s4.courtWho[n] === '虚构'))) bad.push('后周大官位子补了虚构人');
       const smz = P4.find(q => q.title === '枢密使') || {}; if (!all(smz).includes('魏仁浦')) bad.push('955 年后周枢密使里没有魏仁浦：' + JSON.stringify(all(smz))); }
+    // 逐年照数据换人：后唐 930 年开局，走到 934 年，宰相照数据换（冯道 930 在、934 年已不在原位或换了人），你自己的位子不动、补的虚构人照旧
+    { const s5 = (() => { const s = newSave({ name: '某丁', gender: '男', age: 35, role: '中书舍人', gregorianYear: 930, month: 6, day: 1, place: '洛阳', polity: '后唐' }); s.chat = [{ role: 'gm', text: '开场。' }]; return s; })();
+      callClaude = async () => ({ text: '{}' }); try { await buildOrg(s5); } finally { callClaude = oc; }
+      const xz = s => (s.org.nodes.flatMap(n => n.posts).find(q => /平章事/.test(q.title)) || {}), all = q => [q.holder].concat(arr(q.others)).filter(Boolean);
+      const fic0 = s5.org.nodes.flatMap(n => n.posts).filter(q => q.src === '拟').map(q => q.seat + ':' + q.holder).sort().join('|');
+      const before = all(xz(s5)).join('、');
+      s5.clock.y = 934; const msgs = histTick(s5);
+      const after = all(xz(s5)).join('、');
+      if (s5.org.y !== 934) bad.push('跨年后朝堂没照新一年重排');
+      if (before === after) bad.push('930 到 934 年宰相一个没换：' + before);
+      if (!msgs.some(m => /平章事|宰相/.test(m))) bad.push('换人没进月报：' + JSON.stringify(msgs));
+      const fic1 = s5.org.nodes.flatMap(n => n.posts).filter(q => q.src === '拟').map(q => q.seat + ':' + q.holder).sort().join('|');
+      if (fic0 !== fic1) bad.push('跨年后补的虚构人变了'); }
     S = s1; return bad;
   });
   errs.push(...out);

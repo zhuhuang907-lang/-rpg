@@ -1655,7 +1655,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261114062019';
+const BUILD = '20261114071926';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -3063,8 +3063,24 @@ function matchPost(s, postTxt) {
   return bs >= 2 ? best : null;
 }
 /** 时间走到了：照档案里的履历（和内置史料的任职），真人该升该调的照史书调；玩家自己任命的位子不动（本局已改，记一笔） */
+/** 照朝廷数据搭的朝堂，逐年照数据换人（R-227）：跨了年，照新的一年重排；你任命的位子、你自己的位子不动，补过的虚构人照旧（同一位子同一人） */
+function courtYearly(s) {
+  if (!s || !s.org || !s.org.court || !s.clock || s.org.y === s.clock.y) return [];
+  const CD = courtDataFor(s, s.clock.y); if (!CD || CD.P.name !== s.org.court) { s.org.y = s.clock.y; return []; }
+  const me = (s.protagonist || {}).name, old = s.org, keep = [];
+  for (const n of arr(old.nodes)) for (const q of arr(n.posts)) if (q.byPlayer || (q.holder && q.holder === me)) keep.push({ seat: q.seat, title: q.title, node: n.name, q });
+  const before = new Map(); for (const n of arr(old.nodes)) for (const q of arr(n.posts)) if (q.seat) before.set(q.seat, [q.holder].concat(arr(q.others)).filter(Boolean).join('、'));
+  const neu = orgFromCourt(s, CD);
+  for (const k of keep) { const n = neu.nodes.find(z => z.name === k.node); const q = n && n.posts.find(z => (k.seat && z.seat === k.seat) || z.title === k.title); if (q) Object.assign(q, { holder: k.q.holder, src: k.q.src, byPlayer: k.q.byPlayer, others: arr(k.q.others) }); }
+  neu.log = arr(old.log); neu.at = old.at; s.org = neu;
+  const out = []; for (const n of neu.nodes) for (const q of n.posts) { const now = [q.holder].concat(arr(q.others)).filter(Boolean).join('、'), was = before.get(q.seat);
+    if (q.seat && was !== undefined && now !== was && !/虚构/.test(String((s.courtWho || {})[q.holder] || ''))) out.push(`${CD.P.name}${q.title}：${was || '空缺'} → ${now || '空缺'}（${s.clock.y}年）`); }
+  return out.slice(0, 6);
+}
 function histTick(s) {
-  if (!s.org) return []; const ym = Math.floor(ymOf(s.clock)), out = [];
+  const cy = SH(() => courtYearly(s), 'courtYearly') || [];
+  if (!s.org) return []; if (s.org.court) return arr(cy);   // 照朝廷数据搭的朝堂只照数据逐年换人，不再照零散史料挪人
+  const ym = Math.floor(ymOf(s.clock)), out = [];
   const P = []; for (const [n, d] of Object.entries(s.dossiers || {})) if (d && arr(d.career).length && !(d.died != null && d.died < s.clock.y)) P.push([n, d.career]);
   for (const h of histFor(s.clock.y, s)) for (const f of arr(h.figures)) if (f && f.name && !P.some(x => x[0] === f.name) && arr(f.posts).length && !(f.died != null && f.died < s.clock.y)) P.push([f.name, arr(f.posts).map(ps => ({ y: ps[0], m: null, post: postOnly(String(ps[2]).replace(/^.*→/, '')) })).filter(x => x.post)]);
   s.carApplied = s.carApplied || {};
