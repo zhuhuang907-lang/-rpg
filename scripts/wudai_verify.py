@@ -19,6 +19,10 @@ STATES = {
     '后汉': ('hh', 947, 951, [
         ('苏逢吉', 'xz', XZ), ('苏禹珪', 'xz', XZ), ('窦贞固', 'xz', XZ), ('李涛', 'xz', XZ), ('杨邠', 'smz', ['枢密使']), ('郭威', 'smz', ['枢密使']),
         ('王章', 'ss', ['三司使']), ('史弘肇', 'sw', ['侍卫'])]),
+    '吴': ('wu', 902, 937, [
+        ('徐温', 'xz', ['大丞相', '左仆射', '同平章事']), ('徐知诰', 'xz', ['左仆射', '同平章事', '知政事']), ('严可求', 'xz', ['门下侍郎', '同平章事', '右仆射']), ('王令谋', 'xz', ['同平章事', '右仆射']),
+        ('骆知祥', 'ss', ['支计官', '度支']), ('张颢', 'sw', ['左牙指挥使', '左牙都指挥使']), ('徐知训', 'sw', ['内外马步军都军使', '马步军都军使']), ('朱瑾', 'sw', ['行营副都统']),
+        ('徐知询', 'sw', ['诸军都虞候', '金陵尹']), ('宋齐丘', 'smz', ['中书侍郎', '同平章事'])]),
     '前蜀': ('qs', 907, 925, [
         ('王宗佶', 'xz', XZ + ['中书令']), ('张格', 'xz', XZ), ('韦庄', 'xz', XZ), ('王锴', 'xz', XZ), ('庾传素', 'xz', XZ), ('周庠', 'xz', XZ), ('宋光嗣', 'smz', ['枢密使']), ('潘炕', 'smz', ['枢密使']),
         ('唐道袭', 'smz', ['枢密使']), ('王宗弼', 'sw', ['马步都指挥使', '六军使'])]),
@@ -55,7 +59,8 @@ def verify():
             for y2, v2, t2 in ([] if end else E):
                 if y2 <= y: continue
                 if any(ENDP(nm).search(s2) for s2 in re.split(r'[。；]', t2)): end = y2; break
-            got_all.append({'name': '郑珏' if nm == '郑玨' else nm, 'seat': pre + '-' + seat, 'from': y, 'to': min(end or y + 4, y1), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how})
+            last = max([yy for yy, vv, tt in E if nm in tt] or [y])
+            got_all.append({'name': '郑珏' if nm == '郑玨' else nm, 'seat': pre + '-' + seat, 'from': y, 'to': min(end or y + 4, y1), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how, 'lastSeen': last, 'seen': sorted(set(yy for yy, vv, tt in E if nm in tt))})
         for d in got_all:
             later = [e['from'] for e in got_all if e['name'] == d['name'] and e is not d and e['from'] > d['from']]
             if later and min(later) < d['to']: d['to'] = min(later); d['endHow'] = '明载'

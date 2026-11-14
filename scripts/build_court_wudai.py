@@ -50,13 +50,32 @@ PEOPLE = [
   P('李景威', [po('jn-jiang', '将', 963, 963)], clan='李', fate='宋师假道，谏不用，扼吭而死'),
   P('孙光宪', [po('jn-zsj', '掌书记', 926, 962, '推定', 'CBDB（926—963 节度使掌书记）；' + XW), po('jn-pg', '节度判官', 963, 963)], clan='孙', native='贵平', fate='归宋，拜黄州刺史'),
 ]
+# 卒年：哈佛库任职表、内置史料里有的，延长任期不许过卒年（张颢 908 年被杀，通鉴只写「颢」，程序认不出）
+_DIED = {}
+for _f in list((ROOT / 'web' / 'tenure').glob('*.json')) + list((ROOT / 'web' / 'history').glob('*.json')):
+    try:
+        for _x in json.load(open(_f, encoding='utf8')).get('figures') or []:
+            if _x.get('died') and _x.get('name'): _DIED.setdefault(_x['name'], _x['died'])
+    except Exception: pass
+def _gapcut(L):
+    """不管史书写没写离任年：中间连着五年没提他全名的，任期截到最后一次被提到的次年（追述旧事不算在任）"""
+    for d in L:
+        seen = sorted(set(d.get('seen') or []))
+        if not seen or d.get('endHow') != '明载' or d['to'] - d['from'] <= 6: continue   # 只管「史书写了离任、却隔了很多年」的（多半是追述旧事），别的不动
+        y = d['from']
+        while y < d['to']:
+            if not any(z in seen for z in range(y + 1, y + 6)): d['to'] = y + 1 if y + 1 <= d['to'] else d['to']; d['endHow'] = '推定'; break
+            y += 1
 def _extend(L, quota, y1):
     """离任年不知道的（推定）：一直在任到接任的人上来、位子满了为止，最多十年，不过该朝亡年（任务六，2026-11-14 改：原来一律算四年，王处回这类长任的被截短）"""
     for d in sorted(L, key=lambda d: d['from']):
         if d.get('endHow') != '推定': continue
-        cap = min(y1, d['from'] + 10)
+        cap = min(y1, d['from'] + 10, _DIED.get(d['name'], 9999), d.get('lastSeen', 9999) + 1)   # 不过通鉴最后一次提到他全名的次年（张颢）
+        if d['to'] > cap: d['to'] = max(d['from'], cap)
+        seen = set(d.get('seen') or [])
         while d['to'] < cap:
             y = d['to'] + 1
+            if seen and not any(z in seen for z in range(y - 2, y + 1)): break   # 连着三年通鉴没提他全名，不再往下推（张颢 908 年被杀，919 年才又被追述）
             on = [e for e in L if e is not d and e['seat'] == d['seat'] and e['from'] <= y <= e['to']]
             if len(on) + 1 > quota.get(d['seat'], 1): break
             if any(e['name'] == d['name'] and e is not d and e['from'] <= y for e in L if e['from'] > d['from']): break   # 这人改任别官了
@@ -100,7 +119,7 @@ for _ in range(3):
             if len(on) > _quota[d['seat']]:
                 old = sorted([e for e in on if e['endHow'] == '推定' and e['from'] < y], key=lambda e: e['from'])
                 for e in old[:len(on) - _quota[d['seat']]]: e['to'] = max(e['from'], y - 1)
-_extend(_ht, _quota, 936)
+_gapcut(_ht); _extend(_ht, _quota, 936)
 _hp = {}
 for d in _ht:
     seat = next(q for q in HOUTANG['seats'] if q['id'] == d['seat'])
@@ -136,7 +155,7 @@ def _court(pol, pre, y0, y1, grade, why, recruit, extra=None):
                 if len(on) > quota.get(d['seat'], 1):
                     old = sorted([e for e in on if e['endHow'] == '推定' and e['from'] < y], key=lambda e: e['from'])
                     for e in old[:len(on) - quota.get(d['seat'], 1)]: e['to'] = max(e['from'], y - 1)
-    _extend(L, quota, y1)
+    _gapcut(L); _extend(L, quota, y1)
     ppl = {}
     for d in L:
         st = next((q for q in seats if q['id'] == d['seat']), None)
@@ -162,6 +181,9 @@ _S = [
          [_R('起家旧部', 0.4, ['郭', '王', '郑', '张', '赵', '李'], ['邢州', '太原', '涿州'], _X + '：王峻、郑仁诲、张永德等出郭威幕府军中'), _R('文士', 0.35, ['范', '王', '李', '魏', '景'], ['大名', '太原', '洛阳'], _X + '：范质、王溥、李谷、魏仁浦、景范以学士、枢密院吏入相'),
           _R('降将', 0.15, ['刘', '高', '慕容'], ['河东', '太原'], _X), _R('当地大族', 0.1, ['冯', '窦', '卢'], ['瀛州', '幽州', '范阳'], _X)],
          extra=[{'id': 'hz-dq', 'dept': '殿前司', 'office': '殿前都点检', 'rank': '', 'quota': 1, 'from': 954, 'to': 960, 'src': '资治通鉴·卷293（以张永德为殿前都点检）', 'noFill': True}]),
+  _court('吴', 'wu', 902, 937, '中', '新五代史吴世家、资治通鉴唐纪末至后晋纪里的吴事；919 年建吴国始置百官，以前是淮南使府',
+         [_R('起家旧部', 0.45, ['徐', '张', '朱', '王', '李'], ['庐州', '海州', '淮南'], _X + '：张颢、徐温等出杨行密淮南牙军'), _R('文士', 0.3, ['严', '骆', '宋', '王'], ['同州', '洪州', '庐陵'], _X + '：严可求、骆知祥、宋齐丘以幕僚理政'),
+          _R('当地大族', 0.25, ['周', '刘', '陶'], ['扬州', '润州', '江州'], _X)]),
   _court('前蜀', 'qs', 907, 925, '中', '新五代史前蜀世家、资治通鉴后梁纪后唐纪里的蜀事；十国春秋不在原文库',
          [_R('起家旧部', 0.4, ['王', '唐', '宋'], ['许州', '舞阳'], _X + '：王宗佶、唐道袭等出王建忠武军旧部（假子多改姓王）'), _R('文士', 0.35, ['韦', '张', '庾', '周', '潘'], ['京兆', '河间', '蜀'], _X + '：韦庄、张格等唐衣冠避乱入蜀为相'),
           _R('当地大族', 0.25, ['杜', '何', '毋'], ['成都', '蜀州'], _X)]),
