@@ -57,3 +57,23 @@
    - core/passes.js 等这一批「Shell 执行策略违反」你之前没核过——它们多数是构建/测试脚本调 child_process 固定命令，是否也算误报？如果是，请项目主人把例外清单扩到这些文件；如果需要逐条核，我按你给的清单配合。
 
 **我先照这个理解做**：任务五、六数据保持已暂存在本机，不动；等你批语。
+
+## 答宰相所问：提交门禁到底读哪份例外（2026-11-14 19:10，实测，附原话）
+
+**结论：这款扫描器（Mimosa 1.0.4）没有文件级的例外/白名单功能。** 我按它自带说明逐条试过，四条路都不通：
+
+1. **`mimosa policy` 的 `threatModel.exclusions`（字符串数组）不管用。** 它自带帮助原文：「策略文件: `<project>/.mimosa/security-policy.json`」「覆盖范围: threatModel（资产/不可信输入/信任边界/安全不变量/排除项）…白名单数组为空表示暂不额外限制静态字面量」。我把 `GameLauncher.cs`、`web/tests/qa/glmsrv.js` 写进 `exclusions`，`policy check` 报「✓ 项目安全策略有效」，但 `mimosa audit .` 照样报这两文件（9 处、3 处）。可见 `exclusions` 是威胁模型说明，不是扫描放行名单。
+2. **`command.allowedBinaries` / `network.allowedHosts` 也不是放行名单。** 填上 node/git/taskkill/netstat/python 与 127.0.0.1/localhost 后，整库高危只从 86 降到 85（只少一条），两文件照报。
+3. **代码里的 `mimosa-ignore` 抑制注释不生效。** 帮助里有 `--no-ignore-comments  不尊重代码里的 mimosa-ignore 抑制注释`，说明官方确有注释通道；但我写了对照实验（同一段正则 `.exec(s)` 五行，分别冠 `// mimosa-ignore`、`// mimosa-ignore-next-line`、`// mimosa-ignore: command-injection`、`/* mimosa-ignore */`、无注释），**五处全报**，一处也没抑制。写入前门禁同样照拦（`probe_ignores.js` 五处全拦）。
+4. **`mimosa git-gate` 只有 deny/warn 两种模式，没有例外清单。** 帮助原文：「默认 deny：高危会阻断；warn 仅提示、不阻断」。`git-gate status` 显示仓库里 pre-commit/pre-push 都已装。用 `--mode warn` 等于关掉拦截，是绕过，我不动。
+
+**另外两处实测事实，供你判断误报范围：**
+- `passes.js` 那 11 处确认是正则 `.exec(s)`（`re.exec(s)`，变量入参），扫描器把「`.exec(` + 变量」一律判成「命令注入」；同一正则传字面量（`re.exec('abc')`）不报。你判误报是对的。
+- 固定程序 + 参数列表的 `spawnSync('git',['status'])`、固定命令串的 `execSync('git status')` 都**不报**；报的是带变量的 `.exec()` 与 Python `subprocess.run` 的某些形态。
+
+**所以现在卡住的不是「例外写法没找对」，是这版工具不支持文件级例外。** 请宰相/项目主人定一条（我照办，不自行选）：
+- 甲：把误报真修掉——`passes.js` 等处的 `re.exec(s)` 改成 `s.match(re)` 或 `re.test(s)`，行为等价、扫描器不再误判。这是「修」不是「绕」，但动的是核心正文检查文件，要你逐处核过再让我改。
+- 乙：项目主人本人在不受此扫描器管制的环境里提交推送（他只授权过文件例外，没授权换通道）。
+- 丙：项目主人明示改用 `warn` 模式或卸载门禁（等于放弃这道门，须他明说）。
+
+**我先照这个理解做**：任务五/六/九/二的数据继续留本机，一件不推；等上一条定下来。
