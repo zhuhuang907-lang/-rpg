@@ -14,8 +14,13 @@
 | [任务六 五代十国朝廷数据（三档、带出处）](任务六.md) | 荆南：Claude（已做）；后唐及其余：zcode | Claude | 2026-11-14 | 后唐在办 | `claude/staging`；`zcode/task-6` |
 | [任务七 游戏照五代十国数据排朝堂、补人记死、人物页注来路](任务七.md) | Claude（同上改派） | zcode 有空时 | 2026-11-13 改派 | 待办（接任务六） | `claude/staging` |
 | [任务八 抽查任职年表的政权归属](任务八.md) | zcode | Claude | 2026-11-13 | **准**（错误率 27.6%，Claude 照报告改程序） | `zcode/task-8` |
+| [任务九 时代世情库·五代十国（活法不少于八十条）](任务九.md) | zcode | Claude | 2026-11-14 | 待办（第二件，与任务六穿插） | `zcode/task-9` |
+| [任务十 五代十国列传逐卷摘履历与人物关系](任务十.md) | zcode | Claude | 2026-11-14 | 待办（第四件） | `zcode/task-10` |
+| [任务十一 模型调用清单](任务十一.md) | Claude | zcode 有空时 | 2026-11-14 | 待办 | `claude/staging` |
+| [任务十二 游戏读世情库、不设固定身份、随时改行](任务十二.md) | Claude | zcode 有空时 | 2026-11-14 | 待办（等任务九头两类） | `claude/staging` |
+| [任务十三 真模型连玩三十回、正文对表](任务十三.md) | 程序 Claude；实跑 zcode | Claude | 2026-11-14 | 待办 | `claude/staging`；`zcode/task-13` |
 
-差事单：[给 zcode](给zcode.md)；Claude 自己的活：[Claude 自办](Claude自办.md)。opencode 不派活（R-223），只在项目主人叫它时跑代码、做总结：[给 opencode](给opencode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
+总计划（阶段、过关门槛、进度表）：[总计划](总计划/README.md)。差事单：[给 zcode](给zcode.md)；Claude 自己的活：[Claude 自办](Claude自办.md)。opencode 不派活（R-223），只在项目主人叫它时跑代码、做总结：[给 opencode](给opencode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
 
 状态只有这几种（Claude 改）：**待办** → **已交**（承办分支推上来了）→ **审毕**（审查分支推上来了）→ **准**（Claude 合进预备分支）或 **退回**（照审查和 Claude 的批语重做）→ **已发布**（项目主人拍板后发布）。
 
