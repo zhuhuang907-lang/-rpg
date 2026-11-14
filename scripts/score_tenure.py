@@ -1,7 +1,8 @@
 # 用法：python3 -I scripts/score_tenure.py <旧表.json> <新表.json>  （拿 zcode 任务八两轮抽查当标尺，看改生成程序后原本对的保住多少、原本错的改对多少）
 """拿 zcode 两轮抽查当标尺：「对」的行（人＋政权确认无误）在新表里还对不对；「错」的行说明里写了正确政权的，新表改对没有。"""
 import json, re, subprocess, sys
-rep = subprocess.run(['git', '-C', '/home/user/-rpg', 'show', 'origin/zcode/task-8:中书省/附件/任职年表抽查.md'], capture_output=True, text=True).stdout
+import pathlib
+rep = subprocess.run(['git', '-C', str(pathlib.Path(__file__).resolve().parent.parent), 'show', 'origin/zcode/task-8:中书省/附件/任职年表抽查.md'], capture_output=True, text=True).stdout
 POLS = ['后秦', '西秦', '南燕', '北燕', '后燕', '西燕', '南凉', '北凉', '西凉', '后凉', '前燕', '前秦', '前凉', '前赵', '后赵', '成汉', '东魏', '西魏', '北齐', '北周', '北魏', '南齐', '东晋', '西晋', '蜀汉', '后梁', '后唐', '后晋', '后汉', '后周', '南唐', '吴越', '北汉', '南汉', '前蜀', '后蜀', '刘宋', '宋', '梁', '陈', '隋', '唐', '魏', '吴', '汉', '晋', '辽', '闽', '楚', '岐', '齐']
 good, fixable = [], []
 for line in rep.split('\n'):
