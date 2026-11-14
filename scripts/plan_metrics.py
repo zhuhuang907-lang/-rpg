@@ -6,12 +6,10 @@ import glob, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 P = lambda *a: os.path.join(ROOT, *a)
-LINES = ['小兵', '将领', '地方官', '百姓', '起义', '读书入仕', '小宗室', '王爷', '贵族']
 PERIODS = [('wudai', '五代十国'), ('sanguo', '汉末三国'), ('jin16', '两晋十六国'), ('nanbei', '南北朝'), ('tangmo', '唐末')]
 WUDAI = ['后梁', '后唐', '后晋', '后汉', '后周', '吴', '南唐', '吴越', '前蜀', '后蜀', '楚', '闽', '南汉', '荆南', '北汉',
          '岐', '燕', '赵', '定难军', '归义军', '契丹']
 THICK = ['后梁', '后唐', '后晋', '后汉', '后周', '南唐', '吴越', '前蜀', '后蜀']
-CARD_KEYS = ['entry', 'ladder', 'duties', 'income', 'above', 'risks', 'exits', 'address', 'scenes']
 
 
 def read(path):
@@ -61,16 +59,15 @@ def court():
 
 
 def roles():
+    """时代世情库（R-232）：只数条数和有没有出处，不设固定的几条线。"""
     out = {}
     for key, name in PERIODS:
         d = load(P('web', 'roles', key + '.json')) or {}
-        ok = set()
-        for c in d.get('cards', []):
-            full = all(c.get(k) for k in CARD_KEYS) or c.get('exists') is False and c.get('absent')
-            cited = all(x.get('src') for k in ('entry', 'ladder') for x in (c.get(k) or []))
-            if full and cited and (c.get('exists') is False or len(c.get('scenes') or []) >= 8):
-                ok.add(c.get('line'))
-        out[name] = {'齐了的线': len([x for x in LINES if x in ok]), '缺的线': [x for x in LINES if x not in ok]}
+        ways = d.get('ways', [])
+        good = [w for w in ways if w.get('name') and w.get('what') and w.get('src') and len(w.get('happens') or []) >= 8
+                and all(x.get('src') for k in ('become', 'doing') for x in (w.get(k) or []))]
+        out[name] = {'活法条数': len(ways), '合格条数': len(good), '类别数': len({w.get('kind') for w in ways if w.get('kind')}),
+                     '够八十条': len(good) >= 80}
     return out
 
 
@@ -90,7 +87,7 @@ def gates():
 
 
 def main():
-    r = {'源码': source(), '台账': ledger(), '朝廷数据': court(), '时代门路表': roles(), '实玩': plays(), '门槛': gates()}
+    r = {'源码': source(), '台账': ledger(), '朝廷数据': court(), '时代世情库': roles(), '实玩': plays(), '门槛': gates()}
     if '--json' in sys.argv:
         print(json.dumps(r, ensure_ascii=False, indent=1)); return
     for k, v in r.items():
