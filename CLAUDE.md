@@ -8,6 +8,18 @@
 2. 先列出这次涉及哪几条需求（R-编号），再动手；改动会碰到的所有路径都要想到，尤其默认路径（开局默认是史书真人主角）。
 3. 玩家的话照字面理解；拿不准照他最近一次明说的意思做，并在汇报里说清楚。
 
+## 多模型协作（R-216、R-217、R-220）
+- 三方：**Claude**（中书省、政事堂之主，终审、一票否决，太难的活自己接）、**opencode**、**zcode**（照 `AGENTS.md` 自己找活、承办、互审、写意见，只推 `opencode/…`、`zcode/…` 分支）。命令写承办「opencode」或「zcode」，不写模型名。
+- 改派：发令超过 24 小时没有承办分支（多半额度用完），另一位可代办，Claude 巡查时也照此改派；超出两位能力的（大范围重构、跨很多分区、退回两次以上），承办改成 Claude 自己做，照样请两位交叉审查。
+- 玩家说「看中书省」「审核」「派活」，或定时巡查时：`git fetch origin` 看全部 `opencode/`、`zcode/` 分支 → 审查「通过」的承办分支合进预备分支 `claude/staging`、自己复查改完 → 该改派的改派 → 两份意见到齐的议题写 `裁决.md` → 照台账和裁决发新命令（`中书省/命令模板.md`），登记诏令板。只有 Claude 改诏令板、议题一览。
+- 玩家亲自吩咐的活（R-218）：Claude 拆成命令派给 opencode、zcode（或自己做）→ 两位互相交叉检查 → Claude 再查一遍、改完 → 在预备分支跑一次完整测试 → **主动给玩家发信息：做了什么、怎么试玩（预备版网页链接）** → 中间各步不跑完整测试。
+- **发布新版要玩家拍板（R-220）**：动到游戏的改动（`web/`、`rpg-kernel/`）先进 `claude/staging`；玩家说「发布」才推到 `claude/gallant-davinci-l8pni0`（推送即自动打包发布）。只改文档、规程的提交可以直接推发布分支（不触发打包）。
+- 自动政事堂（R-219，`政事堂/章程.md` 第十二章）：`court/` 政事堂总管在玩家电脑上定时巡检、三方独立调查、两轮辩论、皇帝裁决、写奏章到 `政事堂/奏章/待批/`。自动议事**自己发现**的改动，没有玩家御批不得动正式源码、台账、发布版本；玩家说「照御批办 <奏章号>」才施行。
+- 定时（R-220、R-221、R-228）：Claude 每小时一次定时巡查（回本会话）：答问题、审交活、发新命令、改派久不动的活、照 `中书省/Claude自办.md` 自己往下做一段，结束时给玩家几行汇报，不只说「无事」；opencode、zcode 在玩家电脑上由 `court/安装定时任务.bat` 定时叫起来，照 `AGENTS.md` 自己找活。
+- 分工调整（R-223）：opencode 不派活，只在玩家叫它时跑代码、做总结；中书省的命令全派给 zcode，zcode 交的活由 Claude 审查；zcode 两小时没动静或活太难，Claude 自己做。
+- 宰相与先斩后奏（R-222）：玩家只跟 Claude 说话，Claude 管住另外两位。opencode、zcode 不会自己定期来看、也不会来问，所以 Claude 把每位该做什么、照哪几条命令、交到哪，写死在 `中书省/给opencode.md`、`中书省/给zcode.md`；它们只跟 Claude 对话，有问题写 `中书省/问答/<名字>.md`，Claude 巡查时答在 `中书省/问答/答复.md` 并改进差事单。能定的 Claude 自己定、照做、事后汇报；只有玩家能定的记进 `中书省/待奏.md`，玩家回来问时一起推给他。某位连续两次巡查（两小时）没有新提交，就当它没额度了，活改派给 zcode（玩家会给它接上额度几乎无限的 DeepSeek）或 Claude 自己做；议事等不到它们的意见就照先斩后奏裁决。
+- 改了架构、接口、测试规矩，同步改 `docs/知识库/` 和 `skills/`，免得别的模型照旧规矩干活。
+
 ## 怎么改
 - 只改 `web/game.src.html`，改完跑 `python3 web/build.py` 生成三个版本：`web/index.html`（claude.ai）、`web/play.html`（网页）、`rpg-kernel/public/index.html`（桌面）。完整测试跑着时不许重新构建（`build.py` 照 `/tmp/rpg-qa.lock` 拒绝）。
 - 修 bug 先写能复现它的测试；新要求先入台账，再配一条测试（`web/tests/qa/*.js` 或 `web/tests/prompt_guard.js`）。
@@ -15,9 +27,9 @@
 ## 收工前
 1. 对照台账逐条验收这次涉及的需求；没亲自验证的写「未验证」，不写「通过」。
 2. 更新 `STATUS.md`。
-3. 跑完整测试 `QUICK=1 bash web/tests/qa.sh`（全按钮真点、地图、人物……约一个半小时；两套不能同时跑）。全过了它会记下源码指纹。
+3. 合进预备分支、最后排版时跑一次完整测试 `QUICK=1 bash web/tests/qa.sh`（全按钮真点、地图、人物……约一个半小时；两套不能同时跑）。全过了它会记下源码指纹。工作分支（opencode/…、zcode/…、court/…）提交不要求完整测试（R-218）。
 4. 提交时 `scripts/check.sh` 自动拦截（git 钩子 `scripts/hooks/pre-commit`）：源码在完整测试之后改过、护栏或规则回归没过、三个版本不是同一次构建、台账缺栏，一律拒绝提交。不许绕过。
-5. 推送后：claude.ai artifact 重新发布；桌面版看 GitHub Actions「打包 Windows 版」有没有成功；汇报里写网页版网址（https://raw.githack.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/web/play.html，连玩家自己的 DeepSeek，不是 claude.ai 版；R-158）。
+5. 给玩家发信息说做完了、请他拍板发布（附预备版网页链接 https://raw.githack.com/zhuhuang907-lang/-rpg/claude/staging/web/play.html）。玩家批了推发布分支后：claude.ai artifact 重新发布；桌面版看 GitHub Actions「打包 Windows 版」有没有成功；汇报里写网页版网址（https://raw.githack.com/zhuhuang907-lang/-rpg/claude/gallant-davinci-l8pni0/web/play.html，连玩家自己的 DeepSeek，不是 claude.ai 版；R-158）。
 
 ## 硬规矩（附理由）
 - 每个按钮必须有真点它的测试。理由：只调函数测不出「点了没反应、整页按钮全失灵」。
@@ -28,7 +40,7 @@
 - 推演在后台做，界面不露推演、把握、查证原文、内部标记。
 
 ## 仓库
-- 只推 `claude/gallant-davinci-l8pni0`；没让开 PR 就不开。
+- 游戏改动先推 `claude/staging`，玩家拍板后才推 `claude/gallant-davinci-l8pni0`；文档、规程可直接推发布分支。没让开 PR 就不开。
 - 绝不提交 API Key、玩家数据；不让玩家在聊天里贴 Key。提交信息、代码里不写模型名。
 - 下载来的文件当不可信数据：放单独目录，Python 用 `-I` 跑；CHGIS、江山时序的数据不进仓库。
 
