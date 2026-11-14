@@ -71,6 +71,20 @@ def roles():
     return out
 
 
+def libs():
+    """世事库、戏型库、错词表（R-233）：只数条数。"""
+    out = {}
+    for key, name in PERIODS:
+        ev = (load(P('web', 'events', key + '.json')) or {}).get('events', [])
+        good = [e for e in ev if e.get('id') and e.get('title') and e.get('src') and len(e.get('paths') or []) >= 2
+                and all(x.get('cost') for x in e['paths'])]
+        vo = load(P('web', 'vocab', key + '.json')) or {}
+        out[name] = {'世事件数': len(ev), '合格件数': len(good), '类别数': len({e.get('kind') for e in ev if e.get('kind')}),
+                     '错词条数': len(vo.get('absent') or []), '够三百件': len(good) >= 300}
+    out['戏型'] = {'种数': len((load(P('web', 'scenes', 'types.json')) or {}).get('types', []))}
+    return out
+
+
 def plays():
     fs = sorted(os.path.basename(f) for f in glob.glob(P('中书省', '附件', '实玩', '*.md')))
     return {'真模型实玩记录': len(fs), '文件': fs}
@@ -87,7 +101,7 @@ def gates():
 
 
 def main():
-    r = {'源码': source(), '台账': ledger(), '朝廷数据': court(), '时代世情库': roles(), '实玩': plays(), '门槛': gates()}
+    r = {'源码': source(), '台账': ledger(), '朝廷数据': court(), '时代世情库': roles(), '世事库与戏型': libs(), '实玩': plays(), '门槛': gates()}
     if '--json' in sys.argv:
         print(json.dumps(r, ensure_ascii=False, indent=1)); return
     for k, v in r.items():
