@@ -60,6 +60,10 @@ const path = require('path');
       if (!msgs.some(m => /平章事|宰相/.test(m))) bad.push('换人没进月报：' + JSON.stringify(msgs));
       const fic1 = s5.org.nodes.flatMap(n => n.posts).filter(q => q.src === '拟').map(q => q.seat + ':' + q.holder).sort().join('|');
       if (fic0 !== fic1) bad.push('跨年后补的虚构人变了'); }
+    { const s6 = newSave({ name: '某戊', gender: '男', age: 30, role: '郎官', gregorianYear: 940, month: 6, day: 1, place: '成都', polity: '后蜀' }); s6.chat = [{ role: 'gm', text: '开场。' }];
+      callClaude = async () => ({ text: '{}' }); try { await buildOrg(s6); } finally { callClaude = oc; }
+      const xz = (s6.org && s6.org.nodes.flatMap(n => n.posts).find(q => /平章事/.test(q.title))) || {};
+      if (!s6.org || s6.org.court !== '后蜀' || xz.holder !== '张业') bad.push('940 年后蜀宰相不是张业：' + JSON.stringify(xz)); }
     S = s1; return bad;
   });
   errs.push(...out);
