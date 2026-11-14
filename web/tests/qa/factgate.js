@@ -90,6 +90,10 @@ const path = require('path');
     if (!/缺数先查账/.test(si)) bad.push('没告诉写戏的可以查账');
     EXTRA_LOOK = '现钱 300'; try { si = JSON.stringify(storyInput(s, '我去东市看看', '', '', false, null)); } finally { EXTRA_LOOK = ''; }
     if (!/你要查的账/.test(si) || !/现钱 300/.test(si) || /缺数先查账/.test(si)) bad.push('查到的账没给写戏的');
+    // 13 改稿没改掉的：带着那几个名字的句子由程序删掉；进项、办没办成这类没有名字可认的不乱删
+    const mc = mismatchCut('你回了家，院门虚掩着。柳三娘已在堂上等着。你把担子放下，天已经黑了。灶上还温着一碗粥，你端起来喝了。隔壁的狗叫了两声，又静了。', ['主角没有得到：家里添了妾「柳三娘」']);
+    if (/柳三娘/.test(mc) || !/灶上还温着/.test(mc)) bad.push('点了名的没删干净：' + mc);
+    const mc2 = '你卖了麦子，得了五千钱。'; if (mismatchCut(mc2, ['主角没有得到：进项「富商相赠」5000']) !== mc2) bad.push('没名字可认的被乱删');
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));

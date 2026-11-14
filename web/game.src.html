@@ -6297,6 +6297,14 @@ function ledgerMismatch(s, d, said, ruling) {
     if (rs && /办不到|办不成/.test(String(rs.ok || '')) || /越权/.test(String(an.ok || ''))) out.push(`「${one(an.what, 24)}」没有办成${rs && rs.why ? '（' + one(rs.why, 40) + '）' : '（越了主角的权限）'}`); }
   return [...new Set(out)].slice(0, 8);
 }
+/** 对不上的事里点了名的（凭空来的妻妾、新立的兵马、新得的地方、凭空的官职）：正文里还带着这些名字的句子删掉；删多了（剩不到一半）不删 */
+function mismatchCut(text, mm) {
+  const keys = []; for (const x of arr(mm)) { if (/进项|办成/.test(x)) continue; for (const m of String(x).matchAll(/「([^」]{2,12})」/g)) keys.push(m[1]); }
+  if (!keys.length) return text;
+  const sents = String(text).match(/[^。！？!?\n]*[。！？!?\n]+[」』”’）)]*|[^。！？!?\n]+$/g) || [];
+  const kept = sents.filter(st => !keys.some(k => st.includes(k))).join('').replace(/\n{3,}/g, '\n\n').trim();
+  return kept.length >= String(text).length * 0.5 && kept.length >= 20 ? kept : text;
+}
 const reconcileInput = (text, mm) => `下面是一回已经写好的正文。核对账册以后，正文里有几件事其实没有发生：
 ${mm.map((x, i) => `${i + 1}. ${x}`).join('\n')}
 把正文里写到这几件事的地方改掉：写主角得到了的，改成没有得到（对方没给、只是嘴上说说、落了空、被人拦下）；写办成了的，改成没办成、受阻，照括号里的缘由写对方怎么回的。别处一个字不动，篇幅、口气、人物、结尾都照旧，仍称主角为「你」。不加任何说明、标题、括号按语，直接输出改好的整篇正文。
@@ -15726,9 +15734,14 @@ async function send(said, span, note, resume) {
       if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
       // 对账改稿（R-236）：账上不会认的事，正文里先改掉，玩家看到的话和账一致；改稿失败照旧走各道闸（账不认），下一回的材料里注明
       if (ok) { const mm = ledgerMismatch(S, d, said, ruling); if (mm.length) { noteErr('对账改稿', mm.map(x => x.slice(0, 30)).join(' / '), { said: cut(said, 60) });
-        try { const rr = await callClaude(reconcileInput(fx.text, mm), null, { json: false, temperature: 0.2, maxTokens: 6000, kind: '改稿', thinking: false }); const t2 = String((splitStory(rr.text) || {}).text || '').trim();
-          if (t2.length > fx.text.length * 0.6 && t2.length < fx.text.length * 1.4) { fx.text = stripFacts(S, said, t2, ruling).text; STREAM = fx.text; S.reconciled = (num(S.reconciled) || 0) + 1; }
-        } catch (e) { if (e && e.code === 'cancelled') throw e; } } }
+        let done = false;
+        for (let k = 0; k < 2 && !done; k++) {   // 改稿没成再试一次
+          try { const rr = await callClaude(reconcileInput(fx.text, mm), null, { json: false, temperature: 0.2, maxTokens: 6000, kind: '改稿', thinking: false }); const t2 = String((splitStory(rr.text) || {}).text || '').trim();
+            if (t2.length > fx.text.length * 0.6 && t2.length < fx.text.length * 1.4) { fx.text = stripFacts(S, said, t2, ruling).text; done = true; S.reconciled = (num(S.reconciled) || 0) + 1; }
+          } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+        // 两次都没改成，或改完那几个名字还在：程序直接删掉带这些名字的句子（玩家看到的那一版必须和账一致）
+        { const cut2 = mismatchCut(fx.text, mm); if (cut2 !== fx.text) { fx.text = cut2; noteErr('对账删句', mm.map(x => x.slice(0, 20)).join(' / ')); } }
+        STREAM = fx.text; } }
       // 账里哪一项格式怪到程序出错：正文照样留下，这一回标成「账没记上」，可以补记，不让整回作废
       const snap = clone(S);
       if (PERF) { const t = Date.now(); if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); S.perf = arr(S.perf).concat([{ turn: (S.turn || 0) + 1, secs: Math.round((t - PERF.t0) / 1000), ph: Object.fromEntries(Object.entries(PERF.ph).map(([k, v]) => [k, Math.round(v / 1000)])), rw: (st.rewrote ? 1 : 0) + (early ? 1 : 0) }]).slice(-20); PERF = null; }

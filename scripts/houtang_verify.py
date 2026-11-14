@@ -40,7 +40,8 @@ def verify():
             for s2 in re.split(r'[。；]', t2):
                 if ENDP(nm).search(s2): end = y2; break
             if end: break
-        out.append({'name': '郑珏' if nm == '郑玨' else nm, 'seat': seat, 'from': y, 'to': min(end or y + 4, 936), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how})
+        last = max([yy for yy, vv, tt in E if nm in tt] or [y])
+        out.append({'name': '郑珏' if nm == '郑玨' else nm, 'seat': seat, 'from': y, 'to': min(end or y + 4, 936), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how, 'lastSeen': last, 'seen': sorted(set(yy for yy, vv, tt in E if nm in tt))})
     # 同一人后来坐了别的位子：前一任到后一任上任那年为止（冯道 927 拜相，翰林学士就到 927）
     for d in out:
         later = [e['from'] for e in out if e['name'] == d['name'] and e is not d and e['from'] > d['from']]

@@ -19,12 +19,55 @@ STATES = {
     '后汉': ('hh', 947, 951, [
         ('苏逢吉', 'xz', XZ), ('苏禹珪', 'xz', XZ), ('窦贞固', 'xz', XZ), ('李涛', 'xz', XZ), ('杨邠', 'smz', ['枢密使']), ('郭威', 'smz', ['枢密使']),
         ('王章', 'ss', ['三司使']), ('史弘肇', 'sw', ['侍卫'])]),
+    '吴': ('wu', 902, 937, [
+        ('徐温', 'xz', ['大丞相', '左仆射', '同平章事']), ('徐知诰', 'xz', ['左仆射', '同平章事', '知政事']), ('严可求', 'xz', ['门下侍郎', '同平章事', '右仆射']), ('王令谋', 'xz', ['同平章事', '右仆射']),
+        ('骆知祥', 'ss', ['支计官', '度支']), ('张颢', 'sw', ['左牙指挥使', '左牙都指挥使']), ('徐知训', 'sw', ['内外马步军都军使', '马步军都军使']), ('朱瑾', 'sw', ['行营副都统']),
+        ('徐知询', 'sw', ['诸军都虞候', '金陵尹']), ('宋齐丘', 'xz', ['中书侍郎', '同平章事'])]),
+    '北汉': ('bh', 951, 979, [
+        ('郑珙', 'xz', XZ), ('赵华', 'xz', XZ), ('卫融', 'xz', XZ + ['枢密使']), ('段常', 'smz', ['枢密使']), ('张元徽', 'sw', ['都指挥使', '马军都指挥使'])]),
+    '南汉': ('nh', 917, 971, [
+        ('赵光裔', 'xz', XZ + ['兵部尚书']), ('杨洞潜', 'xz', XZ + ['兵部侍郎']), ('李殷衡', 'xz', XZ + ['礼部侍郎']), ('钟允章', 'xz', XZ), ('赵损', 'xz', XZ), ('龚澄枢', 'smz', ['内太师', '枢密使', '左龙虎军观军容使'])]),
+    '楚': ('chu', 907, 951, [
+        ('高郁', 'smz', ['行军司马']), ('许德勋', 'xz', ['右丞相']), ('姚彦章', 'xz', ['左丞相']), ('李铎', 'xz', ['司徒', '同平章事']), ('拓跋恒', 'xz', ['仆射', '同平章事']), ('廖匡图', 'ss', ['天策府学士']), ('李宏皋', 'ss', ['天策府学士'])]),
+    '南唐': ('nt', 937, 975, [
+        ('宋齐丘', 'xz', ['左丞相', '同平章事', '中书令', '太保']), ('李建勋', 'xz', XZ + ['右丞相']), ('张居咏', 'xz', XZ), ('冯延巳', 'xz', XZ), ('冯延己', 'xz', XZ), ('孙晟', 'xz', XZ), ('徐玠', 'xz', XZ), ('严续', 'xz', XZ),
+        ('陈觉', 'smz', ['枢密使']), ('查文徽', 'smz', ['枢密使', '枢密副使']), ('魏岑', 'smz', ['枢密副使', '枢密使']), ('李征古', 'smz', ['枢密使', '枢密副使'])]),
+    '吴越': ('wy', 907, 978, [
+        ('杜建徽', 'xz', ['丞相', '同平章事']), ('沈崧', 'xz', ['丞相']), ('皮光业', 'xz', ['丞相']), ('曹仲达', 'xz', ['丞相']), ('林鼎', 'xz', ['丞相']), ('胡进思', 'sw', ['内牙统军使', '统军使']), ('程昭悦', 'smz', ['内牙上统军使'])]),
+    '闽': ('min', 909, 945, [
+        ('王倓', 'xz', XZ), ('李敏', 'xz', XZ), ('杨沂丰', 'xz', XZ), ('王继业', 'xz', XZ), ('李仿', 'sw', ['都指挥使', '皇城使']),
+        ('薛文杰', 'smz', ['国计使', '内枢密使']), ('林兴', 'smz', ['巫']), ('连重遇', 'sw', ['拱宸都指挥使', '控鹤都指挥使', '都指挥使']), ('朱文进', 'sw', ['阁门使', '都指挥使'])]),
+    '前蜀': ('qs', 907, 925, [
+        ('王宗佶', 'xz', XZ + ['中书令']), ('张格', 'xz', XZ), ('韦庄', 'xz', XZ), ('王锴', 'xz', XZ), ('庾传素', 'xz', XZ), ('周庠', 'xz', XZ), ('宋光嗣', 'smz', ['枢密使']), ('潘炕', 'smz', ['枢密使']),
+        ('唐道袭', 'smz', ['枢密使']), ('王宗弼', 'sw', ['马步都指挥使', '六军使'])]),
+    '后蜀': ('hs', 934, 965, [
+        ('赵季良', 'xz', XZ), ('毋昭裔', 'xz', XZ), ('李昊', 'xz', XZ), ('张业', 'xz', XZ), ('欧阳迥', 'xz', XZ), ('徐光溥', 'xz', XZ), ('范仁恕', 'xz', XZ),
+        ('王处回', 'smz', ['枢密使']), ('伊审徵', 'smz', ['枢密使']), ('李廷珪', 'sw', ['都指挥使']), ('赵廷隐', 'sw', ['都指挥使'])]),
     '后周': ('hz', 951, 960, [
         ('王峻', 'xz', XZ), ('范质', 'xz', XZ), ('李谷', 'xz', XZ), ('冯道', 'xz', XZ), ('王溥', 'xz', XZ), ('魏仁浦', 'xz', XZ), ('景范', 'xz', XZ),
         ('王峻', 'smz', ['枢密使']), ('郑仁诲', 'smz', ['枢密使']), ('魏仁浦', 'smz', ['枢密使']), ('吴廷祚', 'smz', ['枢密使']),
         ('张美', 'ss', ['三司使']), ('李重进', 'sw', ['侍卫']), ('张永德', 'dq', ['殿前都点检', '殿前']), ('赵匡胤', 'dq', ['殿前都点检', '殿前都指挥使'])]),
 }
-def ENDP(nm): return re.compile(re.escape(nm) + r'[^，。]{0,6}(?:罢|免|贬|伏诛|被杀|遇害|卒|薨|赐死|自杀|出为|致仕)|(?:杀|诛|斩)' + re.escape(nm))
+def ENDP(nm): return re.compile(re.escape(nm) + r'[^，。]{0,6}(?:罢|免|贬|伏诛|被杀|遇害|卒|薨|赐死|自杀|出为|致仕|既死)|(?:杀|诛|斩)' + re.escape(nm) + '|' + re.escape(nm) + r'[^。；]{0,30}，[^，。]{0,4}罢(?:守本官|为)')   # 「徐光溥坐……，丁酉，罢守本官」「张业既死」
+def _pats(nm, k):
+    n, kk = re.escape(nm), re.escape(k)
+    return [re.compile(n + r'[^，。]{0,14}?为[^，。]{0,10}' + kk),           # （以）某（、某）为某官
+            re.compile(n + r'[^。]{0,40}?为[^。]{0,30}?[并皆]' + kk),       # 某为中书侍郎，并同平章事；某为左仆射，……皆同平章事
+            re.compile(r'(?:^|[，、])(?:复以|以)?[^，。]{0,8}' + n + r'[^，。]{0,4}[并皆]' + kk),   # 与中书侍郎冯延己皆同平章事
+            re.compile(r'(?:加|复以[^，。]{0,6})' + n + r'[^，。]{0,6}' + kk)]   # 加王峻同平章事；复以左仆射冯延己同平章事
+def _find(nm, keys, E, after=None):
+    """找这人这官的那一句：先找明载（任命句），没有就退而取称呼句（推定）；after 给了只找那年以后的明载再任"""
+    got = None
+    for y, v, t in E:
+        if after is not None and y <= after: continue
+        for sent in re.split(r'[。；]', t):
+            if nm not in sent: continue
+            for k in keys:
+                m1 = any(p.search(sent) for p in _pats(nm, k))
+                m2 = re.search(re.escape(k) + r'[、，]?' + re.escape(nm), sent)
+                if m1 and not re.search('贬|罢|免', sent[:sent.find(nm)]) and not ENDP(nm).search(sent): return (y, v, sent.strip()[:70], k, '明载')
+                if (m2 or m1) and after is None: got = got or (y, v, sent.strip()[:70], k, '推定')
+    return got
 def verify():
     allE = [(y, v, t) for y, v, n, t in entries(ROOT / 'corpus') if 905 <= y <= 960]
     out = {}
@@ -32,24 +75,26 @@ def verify():
         E = [e for e in allE if y0 <= e[0] <= y1]
         got_all = []
         for nm, seat, keys in cands:
-            got = None
-            for y, v, t in E:
-                for sent in re.split(r'[。；]', t):
-                    if nm not in sent: continue
-                    for k in keys:
-                        m1 = re.search(re.escape(nm) + r'[^，。]{0,14}?为[^，。]{0,10}' + re.escape(k), sent)
-                        m2 = re.search(re.escape(k) + r'[、，]?' + re.escape(nm), sent)
-                        if m1 and not re.search('贬|罢|免', sent[:sent.find(nm)]): got = (y, v, sent.strip()[:70], k, '明载'); break
-                        if m2 or m1: got = got or (y, v, sent.strip()[:70], k, '推定')
-                    if got and got[4] == '明载': break
-                if got and got[4] == '明载': break
-            if not got: print('找不到：', pol, nm, keys, file=sys.stderr); continue
-            y, v, sent, k, how = got
-            end = y if ENDP(nm).search(sent) else None   # 找到的这句本身就是卒、罢（「同平章事张文蔚卒」）：那一年就是任满
-            for y2, v2, t2 in ([] if end else E):
-                if y2 <= y: continue
-                if any(ENDP(nm).search(s2) for s2 in re.split(r'[。；]', t2)): end = y2; break
-            got_all.append({'name': '郑珏' if nm == '郑玨' else nm, 'seat': pre + '-' + seat, 'from': y, 'to': min(end or y + 4, y1), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how})
+            after = None
+            for _term in range(4):   # 同一人可以几上几下（冯延巳三次拜相）：前一任罢了，往后再找明载的再任
+                got = _find(nm, keys, E, after)
+                if not got: break
+                y, v, sent, k, how = got
+                end = y if ENDP(nm).search(sent) else None   # 找到的这句本身就是卒、罢（「同平章事张文蔚卒」）：那一年就是任满
+                passed = False   # 同一年里任命句之后的罢免也算（徐光溥 948 年拜相、同年罢守本官）
+                for y2, v2, t2 in ([] if end else E):
+                    if y2 < y: continue
+                    for s2 in re.split(r'[。；]', t2):
+                        if y2 == y and not passed:
+                            passed = s2.strip()[:70] == sent; continue
+                        if ENDP(nm).search(s2): end = y2; break
+                    if end: break
+                last = max([yy for yy, vv, tt in E if nm in tt] or [y])
+                got_all.append({'name': {'郑玨': '郑珏', '冯延己': '冯延巳'}.get(nm, nm), 'seat': pre + '-' + seat, 'from': y, 'to': min(end or y + 4, y1), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how, 'lastSeen': last, 'seen': sorted(set(yy for yy, vv, tt in E if nm in tt))})
+                if not end: break
+                after = end
+            if after is None and not any(d['name'] == {'郑玨': '郑珏', '冯延己': '冯延巳'}.get(nm, nm) and d['seat'] == pre + '-' + seat for d in got_all):
+                print('找不到：', pol, nm, keys, file=sys.stderr)
         for d in got_all:
             later = [e['from'] for e in got_all if e['name'] == d['name'] and e is not d and e['from'] > d['from']]
             if later and min(later) < d['to']: d['to'] = min(later); d['endHow'] = '明载'

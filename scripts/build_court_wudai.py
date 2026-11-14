@@ -50,6 +50,43 @@ PEOPLE = [
   P('李景威', [po('jn-jiang', '将', 963, 963)], clan='李', fate='宋师假道，谏不用，扼吭而死'),
   P('孙光宪', [po('jn-zsj', '掌书记', 926, 962, '推定', 'CBDB（926—963 节度使掌书记）；' + XW), po('jn-pg', '节度判官', 963, 963)], clan='孙', native='贵平', fate='归宋，拜黄州刺史'),
 ]
+# 卒年：哈佛库任职表、内置史料里有的，延长任期不许过卒年（张颢 908 年被杀，通鉴只写「颢」，程序认不出）
+_DIED = {}
+for _f in list((ROOT / 'web' / 'tenure').glob('*.json')) + list((ROOT / 'web' / 'history').glob('*.json')):
+    try:
+        for _x in json.load(open(_f, encoding='utf8')).get('figures') or []:
+            if _x.get('died') and _x.get('name'): _DIED.setdefault(_x['name'], set()).add(_x['died'])
+    except Exception: pass
+# 库里没有卒年、通鉴原文写明的，手补（带出处）
+for _nm, _y, _src in [('张业', 948, '资治通鉴卷288「甲子，业入朝，蜀主命壮士就都堂击杀之」')]:
+    _DIED.setdefault(_nm, set()).add(_y)
+def _died(nm, y0):
+    """同名的人不止一个（唐末王溥 905 年卒，后周宰相王溥 982 年卒）：只认上任以后的卒年"""
+    return min([y for y in _DIED.get(nm, ()) if isinstance(y, int) and y >= y0] or [9999])
+def _gapcut(L):
+    """不管史书写没写离任年：中间连着五年没提他全名的，任期截到最后一次被提到的次年（追述旧事不算在任）"""
+    for d in L:
+        seen = sorted(set(d.get('seen') or []))
+        if not seen or d.get('endHow') != '明载' or d['to'] - d['from'] <= 6: continue
+        if _died(d['name'], d['from']) == d['to']: continue   # 离任那年就是卒年（张业 948 年在相位上被杀）：不是追述旧事，不截   # 只管「史书写了离任、却隔了很多年」的（多半是追述旧事），别的不动
+        y = d['from']
+        while y < d['to']:
+            if not any(z in seen for z in range(y + 1, y + 6)): d['to'] = y + 1 if y + 1 <= d['to'] else d['to']; d['endHow'] = '推定'; break
+            y += 1
+def _extend(L, quota, y1):
+    """离任年不知道的（推定）：一直在任到接任的人上来、位子满了为止，最多十年，不过该朝亡年（任务六，2026-11-14 改：原来一律算四年，王处回这类长任的被截短）"""
+    for d in sorted(L, key=lambda d: d['from']):
+        if d.get('endHow') != '推定': continue
+        cap = min(y1, d['from'] + 10, _died(d['name'], d['from']), d.get('lastSeen', 9999) + 1)   # 不过通鉴最后一次提到他全名的次年（张颢）
+        if d['to'] > cap: d['to'] = max(d['from'], cap)
+        seen = set(d.get('seen') or [])
+        while d['to'] < cap:
+            y = d['to'] + 1
+            if seen and not any(z in seen for z in range(y - 2, y + 1)): break   # 连着三年通鉴没提他全名，不再往下推（张颢 908 年被杀，919 年才又被追述）
+            on = [e for e in L if e is not d and e['seat'] == d['seat'] and e['from'] <= y <= e['to']]
+            if len(on) + 1 > quota.get(d['seat'], 1): break
+            if any(e['name'] == d['name'] and e is not d and e['from'] <= y for e in L if e['from'] > d['from']): break   # 这人改任别官了
+            d['to'] = y
 # ---------- 后唐（大国样板，唐制）：中枢大官照资治通鉴逐句核过才收（scripts/houtang_verify.py），大官位子不补虚构人 ----------
 import sys as _sys
 _sys.path.insert(0, str(ROOT / 'scripts'))
@@ -89,6 +126,7 @@ for _ in range(3):
             if len(on) > _quota[d['seat']]:
                 old = sorted([e for e in on if e['endHow'] == '推定' and e['from'] < y], key=lambda e: e['from'])
                 for e in old[:len(on) - _quota[d['seat']]]: e['to'] = max(e['from'], y - 1)
+_gapcut(_ht); _extend(_ht, _quota, 936)
 _hp = {}
 for d in _ht:
     seat = next(q for q in HOUTANG['seats'] if q['id'] == d['seat'])
@@ -100,20 +138,29 @@ PEOPLE += [{'name': n, 'tier': 1, 'clan': '', 'native': '', 'born': None, 'died'
 # ---------- 后梁、后晋、后汉、后周：中枢大官照资治通鉴逐句核过才收（scripts/wudai_verify.py）；位子照唐制，大官不补虚构 ----------
 from wudai_verify import verify as _wd_verify
 _WD = _wd_verify()
-def _court(pol, pre, y0, y1, grade, why, recruit, extra=None):
+def _court(pol, pre, y0, y1, grade, why, recruit, extra=None, court0=None):
+    """court0：称帝建国、始置百官那年（吴 919、吴越 923、楚 927、闽 933）。以前是节度使府，只有使府属官，没有宰相、枢密、翰林这一套"""
+    c0 = court0 or y0
     smz = '崇政院使' if pol == '后梁' else '枢密使'
     ss = '租庸使' if pol == '后梁' else '三司使'
     seats = [
-        {'id': pre + '-xz', 'dept': '中书门下', 'office': '同中书门下平章事（宰相）', 'rank': '', 'quota': 4, 'from': y0, 'to': y1, 'src': TZ + '；资治通鉴（' + pol + '纪）', 'noFill': True},
-        {'id': pre + '-smz', 'dept': '崇政院' if pol == '后梁' else '枢密院', 'office': smz, 'rank': '', 'quota': 2, 'from': y0, 'to': y1, 'src': '资治通鉴（' + pol + '纪）', 'noFill': True},
-        {'id': pre + '-ss', 'dept': '租庸司' if pol == '后梁' else '三司', 'office': ss, 'rank': '', 'quota': 1, 'from': y0, 'to': y1, 'src': '资治通鉴（' + pol + '纪）', 'noFill': True},
-        {'id': pre + '-sw', 'dept': '侍卫亲军', 'office': '侍卫亲军马步军都指挥使', 'rank': '', 'quota': 1, 'from': y0, 'to': y1, 'src': '资治通鉴（' + pol + '纪）', 'noFill': True},
-        {'id': pre + '-hl', 'dept': '翰林院', 'office': '翰林学士', 'rank': '', 'quota': 4, 'from': y0, 'to': y1, 'src': TZ},
-        {'id': pre + '-zssr', 'dept': '中书门下', 'office': '中书舍人', 'rank': '', 'quota': 4, 'from': y0, 'to': y1, 'src': TZ},
-        {'id': pre + '-jsz', 'dept': '中书门下', 'office': '给事中', 'rank': '', 'quota': 4, 'from': y0, 'to': y1, 'src': TZ},
-        {'id': pre + '-jydf', 'dept': '中书门下', 'office': '谏议大夫', 'rank': '', 'quota': 2, 'from': y0, 'to': y1, 'src': TZ},
-        {'id': pre + '-jcys', 'dept': '御史台', 'office': '监察御史', 'rank': '', 'quota': 4, 'from': y0, 'to': y1, 'src': TZ},
-    ] + (extra or [])
+        {'id': pre + '-xz', 'dept': '中书门下', 'office': '同中书门下平章事（宰相）', 'rank': '', 'quota': 4, 'from': c0, 'to': y1, 'src': TZ + '；资治通鉴（' + pol + '纪）', 'noFill': True},
+        {'id': pre + '-smz', 'dept': '崇政院' if pol == '后梁' else '枢密院', 'office': smz, 'rank': '', 'quota': 2, 'from': c0, 'to': y1, 'src': '资治通鉴（' + pol + '纪）', 'noFill': True},
+        {'id': pre + '-ss', 'dept': '租庸司' if pol == '后梁' else '三司', 'office': ss, 'rank': '', 'quota': 1, 'from': c0, 'to': y1, 'src': '资治通鉴（' + pol + '纪）', 'noFill': True},
+        {'id': pre + '-sw', 'dept': '侍卫亲军', 'office': '侍卫亲军马步军都指挥使', 'rank': '', 'quota': 1, 'from': c0, 'to': y1, 'src': '资治通鉴（' + pol + '纪）', 'noFill': True},
+        {'id': pre + '-hl', 'dept': '翰林院', 'office': '翰林学士', 'rank': '', 'quota': 4, 'from': c0, 'to': y1, 'src': TZ},
+        {'id': pre + '-zssr', 'dept': '中书门下', 'office': '中书舍人', 'rank': '', 'quota': 4, 'from': c0, 'to': y1, 'src': TZ},
+        {'id': pre + '-jsz', 'dept': '中书门下', 'office': '给事中', 'rank': '', 'quota': 4, 'from': c0, 'to': y1, 'src': TZ},
+        {'id': pre + '-jydf', 'dept': '中书门下', 'office': '谏议大夫', 'rank': '', 'quota': 2, 'from': c0, 'to': y1, 'src': TZ},
+        {'id': pre + '-jcys', 'dept': '御史台', 'office': '监察御史', 'rank': '', 'quota': 4, 'from': c0, 'to': y1, 'src': TZ},
+    ] + (extra or []) + ([   # 建国以前：节度使府（新唐书百官志四下）
+        {'id': pre + '-mf-xjsm', 'dept': '使府', 'office': '行军司马', 'rank': '', 'quota': 1, 'from': y0, 'to': c0 - 1, 'src': MUFU},
+        {'id': pre + '-mf-pg', 'dept': '使府', 'office': '节度判官', 'rank': '', 'quota': 1, 'from': y0, 'to': c0 - 1, 'src': MUFU},
+        {'id': pre + '-mf-zsj', 'dept': '使府', 'office': '掌书记', 'rank': '', 'quota': 1, 'from': y0, 'to': c0 - 1, 'src': MUFU},
+        {'id': pre + '-mf-tg', 'dept': '使府', 'office': '推官', 'rank': '', 'quota': 1, 'from': y0, 'to': c0 - 1, 'src': MUFU},
+        {'id': pre + '-mf-zj', 'dept': '使府', 'office': '支计官', 'rank': '', 'quota': 1, 'from': y0, 'to': c0 - 1, 'src': MUFU + '；资治通鉴卷266（支计官骆知祥）', 'noFill': True},
+        {'id': pre + '-mf-yj', 'dept': '牙军', 'office': '牙军指挥使', 'rank': '', 'quota': 2, 'from': y0, 'to': c0 - 1, 'src': MUFU + '；资治通鉴卷266（左牙、右牙指挥使）', 'noFill': True},
+    ] if c0 > y0 else [])
     P = {'name': pol, 'grade': grade, 'gradeWhy': why, 'model': '唐制', 'seats': seats, 'recruit': recruit}
     L = _WD.get(pol, [])
     quota = {q['id']: q['quota'] for q in seats}
@@ -124,12 +171,16 @@ def _court(pol, pre, y0, y1, grade, why, recruit, extra=None):
                 if len(on) > quota.get(d['seat'], 1):
                     old = sorted([e for e in on if e['endHow'] == '推定' and e['from'] < y], key=lambda e: e['from'])
                     for e in old[:len(on) - quota.get(d['seat'], 1)]: e['to'] = max(e['from'], y - 1)
+    _gapcut(L); _extend(L, quota, y1)
     ppl = {}
     for d in L:
+        if d['to'] < c0 and d['seat'] in (pre + '-ss', pre + '-sw'): d['seat'] = pre + ('-mf-zj' if d['seat'].endswith('-ss') else '-mf-yj')   # 建国前的财赋、牙军：坐使府位子（骆知祥支计官、张颢左牙指挥使）
         st = next((q for q in seats if q['id'] == d['seat']), None)
         if not st: continue
         a, b = max(d['from'], st['from']), min(d['to'], st['to'])
-        ppl.setdefault(d['name'], []).append({'polity': pol, 'seat': d['seat'], 'office': st['office'].replace('（宰相）', ''), 'from': a, 'to': b,
+        if a > b: continue
+        offc = d['key'] if '-mf-' in d['seat'] and d.get('key') else d['key'] if d.get('key') in ('左丞相', '右丞相', '丞相', '太保', '司徒', '仆射', '中书令', '兵部尚书', '兵部侍郎', '礼部侍郎', '大丞相') else st['office'].replace('（宰相）', '')   # 楚、南汉、吴这类不叫同平章事的照原文官名
+        ppl.setdefault(d['name'], []).append({'polity': pol, 'seat': d['seat'], 'office': offc, 'from': a, 'to': b,
             'how': '明载' if d['how'] == '明载' and d['endHow'] == '明载' else '推定',
             'src': '资治通鉴·' + d['vol'] + '「' + d['quote'][:40] + '」' + ('' if d['endHow'] == '明载' else '；离任年照下一任或任期惯例推')})
     return P, ppl
@@ -149,6 +200,30 @@ _S = [
          [_R('起家旧部', 0.4, ['郭', '王', '郑', '张', '赵', '李'], ['邢州', '太原', '涿州'], _X + '：王峻、郑仁诲、张永德等出郭威幕府军中'), _R('文士', 0.35, ['范', '王', '李', '魏', '景'], ['大名', '太原', '洛阳'], _X + '：范质、王溥、李谷、魏仁浦、景范以学士、枢密院吏入相'),
           _R('降将', 0.15, ['刘', '高', '慕容'], ['河东', '太原'], _X), _R('当地大族', 0.1, ['冯', '窦', '卢'], ['瀛州', '幽州', '范阳'], _X)],
          extra=[{'id': 'hz-dq', 'dept': '殿前司', 'office': '殿前都点检', 'rank': '', 'quota': 1, 'from': 954, 'to': 960, 'src': '资治通鉴·卷293（以张永德为殿前都点检）', 'noFill': True}]),
+  _court('北汉', 'bh', 951, 979, '薄', '新五代史东汉世家、资治通鉴后周纪里的北汉事；960 年后通鉴不载，只到 960 前后',
+         [_R('宗室', 0.3, ['刘'], ['太原'], _X + '：刘承钧等宗室掌兵'), _R('起家旧部', 0.4, ['张', '郑', '王', '李'], ['太原', '代北'], _X + '：张元徽等河东旧将'), _R('文士', 0.3, ['卫', '郑', '赵'], ['太原', '晋州'], _X + '：郑珙、卫融以学士入相')]),
+  _court('南汉', 'nh', 917, 971, '中', '新五代史南汉世家、资治通鉴后梁纪至后周纪里的汉事',
+         [_R('宗室', 0.25, ['刘'], ['封州', '广州'], _X), _R('文士', 0.35, ['赵', '杨', '李', '钟'], ['京兆', '广州'], _X + '：赵光裔、杨洞潜、李殷衡等唐衣冠与幕僚入相'), _R('宦官', 0.25, ['龚', '陈', '李'], ['广州'], _X + '：龚澄枢等宦官掌枢要'), _R('当地大族', 0.15, ['陈', '黄', '梁'], ['广州', '韶州'], _X)]),
+  _court('楚', 'chu', 907, 951, '中', '新五代史楚世家、资治通鉴后梁纪至后汉纪里的楚事；927 年建楚国始设丞相',
+         [_R('起家旧部', 0.45, ['马', '许', '姚', '李'], ['许州', '潭州'], _X + '：许德勋、姚彦章等出马殷旧部'), _R('文士', 0.3, ['拓跋', '廖', '李', '高'], ['潭州', '衡州'], _X + '：拓跋恒等文士'), _R('当地大族', 0.25, ['周', '廖', '彭'], ['潭州', '辰州', '溪州'], _X)], court0=927),
+  _court('南唐', 'nt', 937, 975, '厚', '陆游、马令两种南唐书不在原文库；资治通鉴后晋纪至后周纪、新五代史南唐世家记事较详',
+         [_R('文士', 0.4, ['宋', '冯', '孙', '严', '李', '查', '陈', '魏'], ['洪州', '广陵', '高密', '金陵'], _X + '：宋齐丘、冯延巳、孙晟、严续等以文学、幕僚入相掌枢密'), _R('起家旧部', 0.25, ['周', '李', '刘', '边'], ['庐州', '扬州'], _X + '：周宗等徐知诰旧部'),
+          _R('当地大族', 0.2, ['徐', '韩', '江'], ['金陵', '润州', '宣州'], _X), _R('降将', 0.15, ['王', '朱', '何'], ['闽', '楚'], _X + '：灭闽、楚后收其将吏')]),
+  _court('吴越', 'wy', 907, 978, '中', '吴越备史不在原文库；资治通鉴后梁纪至后周纪里的吴越事、新五代史吴越世家',
+         [_R('宗室', 0.25, ['钱'], ['杭州', '临安'], _X + '：钱氏子弟分镇州郡'), _R('起家旧部', 0.35, ['杜', '胡', '阚', '程'], ['杭州', '临安', '越州'], _X + '：杜建徽、胡进思等出钱镠八都旧部'),
+          _R('文士', 0.3, ['沈', '皮', '曹', '林'], ['杭州', '湖州', '福州'], _X + '：沈崧、皮光业、曹仲达、林鼎以幕僚为丞相'), _R('当地大族', 0.1, ['陆', '顾', '朱'], ['苏州', '湖州'], _X)], court0=923),
+  _court('吴', 'wu', 902, 937, '中', '新五代史吴世家、资治通鉴唐纪末至后晋纪里的吴事；919 年建吴国始置百官，以前是淮南使府',
+         [_R('起家旧部', 0.45, ['徐', '张', '朱', '王', '李'], ['庐州', '海州', '淮南'], _X + '：张颢、徐温等出杨行密淮南牙军'), _R('文士', 0.3, ['严', '骆', '宋', '王'], ['同州', '洪州', '庐陵'], _X + '：严可求、骆知祥、宋齐丘以幕僚理政'),
+          _R('当地大族', 0.25, ['周', '刘', '陶'], ['扬州', '润州', '江州'], _X)], court0=919),
+  _court('前蜀', 'qs', 907, 925, '中', '新五代史前蜀世家、资治通鉴后梁纪后唐纪里的蜀事；十国春秋不在原文库',
+         [_R('起家旧部', 0.4, ['王', '唐', '宋'], ['许州', '舞阳'], _X + '：王宗佶、唐道袭等出王建忠武军旧部（假子多改姓王）'), _R('文士', 0.35, ['韦', '张', '庾', '周', '潘'], ['京兆', '河间', '蜀'], _X + '：韦庄、张格等唐衣冠避乱入蜀为相'),
+          _R('当地大族', 0.25, ['杜', '何', '毋'], ['成都', '蜀州'], _X)]),
+  _court('闽', 'min', 909, 945, '薄', '新五代史闽世家、资治通鉴后梁纪至后晋纪里的闽事；十国春秋、三山志不在原文库；933 年王延钧称帝始设宰相，以前是威武军使府',
+         [_R('起家旧部', 0.45, ['王', '朱', '连', '李'], ['光州', '固始'], _X + '：王审知兄弟率光州固始兵入闽，朱文进、连重遇出禁军拱宸、控鹤都'), _R('文士', 0.3, ['杨', '王', '薛', '潘'], ['福州', '建州'], _X + '：杨沂丰、王倓以文学入相'),
+          _R('当地大族', 0.25, ['林', '陈', '黄'], ['福州', '泉州', '建州'], _X)], court0=933),
+  _court('后蜀', 'hs', 934, 965, '中', '新五代史后蜀世家、资治通鉴后唐纪至后周纪里的蜀事；十国春秋不在原文库',
+         [_R('起家旧部', 0.35, ['赵', '王', '李', '张'], ['太原', '邢州'], _X + '：赵季良、王处回、李廷珪等随孟知祥自河东入蜀'), _R('文士', 0.35, ['毋', '徐', '范', '欧阳'], ['龙门', '成都'], _X + '：毋昭裔、徐光溥、范仁恕以文学入相'),
+          _R('当地大族', 0.3, ['杜', '何', '冯'], ['成都', '眉州', '阆州'], _X)]),
 ]
 _extra_pols = [p for p, _ in _S]
 for _, ppl in _S:
