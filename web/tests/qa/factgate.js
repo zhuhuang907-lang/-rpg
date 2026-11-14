@@ -48,6 +48,20 @@ const path = require('path');
     s = mk(); const said3 = `我带人闯进府里，杀了${fig}`;
     applyReply(s, { reply: `你带人闯进府里。${fig}被你一刀砍倒，当场身死。`, mode: 'play', elapsedDays: 1, realFates: [{ name: fig, alive: false, why: '被主角所杀' }] }, said3);
     if (!((s.figOver || {})[fig] || {}).dead) bad.push('玩家亲手杀的真人没记');
+    // 8 凭空的好处不落账：横财、妻妾、过头的好感；小钱照记；自己挣的照记；破财结仇照记
+    s = mk(); s.money.cash = 300; s.people['赵四'] = { favor: 10 }; s.people['钱六'] = { favor: 0 };
+    const gift = () => ({ reply: '你在东市卖了麦子。回来的路上，有个过路的富商硬塞给你五千钱，又把女儿许给了你。', mode: 'play', elapsedDays: 1,
+      ledger: [{ item: '富商相赠', amount: 5000 }, { item: '路上捡的', amount: 20 }, { item: '被偷', amount: -100 }],
+      household: [{ name: '柳三娘', relation: '妾', change: '纳妾' }], presentNpcs: [{ name: '赵四', favor: 90 }, { name: '钱六', favor: -70 }] });
+    let c0 = s.money.cash; applyReply(s, gift(), '我回家歇着');
+    if (!(s.money.cash < c0)) bad.push('横财进了存档：' + c0 + '→' + s.money.cash);
+    if (arr(s.household).some(m => m.name === '柳三娘')) bad.push('凭空的妾进了存档');
+    if (!(s.people['赵四'].favor <= 30)) bad.push('没打交道的人好感一回涨了：' + s.people['赵四'].favor);
+    if (s.people['钱六'].favor !== -70) bad.push('结仇被拦了：' + s.people['钱六'].favor);
+    if (!arr(s.unbooked).some(u => /富商相赠/.test(u.text)) || !arr(s.unbooked).some(u => /柳三娘/.test(u.text))) bad.push('没认的横财、妾没摆给玩家看');
+    s = mk(); s.money.cash = 300; c0 = 300; applyReply(s, gift(), '我把麦子卖了，再托媒人去柳家说亲，纳柳三娘为妾');
+    if (!(s.money.cash > c0)) bad.push('自己卖货挣的钱没落账：' + s.money.cash);
+    if (!arr(s.household).some(m => m.name === '柳三娘')) bad.push('自己说亲纳的妾没落账');
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));

@@ -6278,6 +6278,34 @@ function stripFacts(s, said, text, ruling) {
   if (t.length < String(text).length * 0.6 || t.length < 40) return { text, cut: [] };
   return { text: t, cut: hits };
 }
+/* ========== 凭空的好处不落账（任务十六第二步，R-233）：正文顺手送主角的横财、妻妾、突然的交情，没有正文以外的凭据就不认。
+ *  只管「得」，不管「失」：破财、丧偶、结仇照记（不暗中救场）。小来小去不管（朋友塞几个钱、人家多看你一眼），只拦大的。 ========== */
+const WIND_MONEY = /卖|售|出手|脱手|收|租|讨|索|要回|借|贷|当|典|赏|赐|俸|禄|饷|薪|工钱|佣|利|息|账|买卖|生意|贩|运|货|铺|店|分红|分赃|劫|抢|掠|夺|勒|敲|贿|礼|献|捐|募|税|赋|征|没收|抄|缴|赌|博|赢|挖|采|猎|渔|种|割|收成|做工|帮工|扛活|雇|差|打擂|卖艺|行医|看诊|写字|卖文|教|馆|赎|嫁妆|聘|遗产|分家|承继|继承|钱|银|粮/;
+const WIND_MARRY = /娶|纳|聘|婚|亲事|成亲|说亲|议亲|提亲|嫁|收房|买妾|迎|过门|入赘|赐婚|和亲|抢亲|掳|收了|留下她|留下他/;
+function windfallGuard(s, d, said, ruling) {
+  const unb = []; if (!s || !d) return unb;
+  const E = [String(said || '')].concat(arr(s.actsNow).map(a => a && a.what), actOpen(s).map(a => a && a.what), arr(s.press).filter(z => z && z.state === '临门').map(z => `${z.title || ''}${z.who || ''}`), arr(s.armyPending).map(x => x && x.line)).filter(Boolean).join(' ');
+  const fought = !!(ruling && ruling.battleResult);
+  // 一、横财：一笔进项比手里的现钱、三个月的固定进项、这一回的花销都多，又不是玩家这一步挣的讨的抢的——不认
+  const cash = N0((s.money || {}).cash);
+  if (Array.isArray(d.ledger) && cash != null && !fought && !WIND_MONEY.test(E)) {
+    const monthly = arr((s.estate || {}).income).reduce((a, x) => a + Math.max(0, N0(x && x.amount) || 0), 0);
+    const spent = d.ledger.reduce((a, x) => a + Math.max(0, -(N0(x && x.amount) || 0)), 0);
+    const cap = Math.max(Math.abs(cash), monthly * 3, spent);
+    d.ledger = d.ledger.filter(x => { const a = N0(x && x.amount); if (a != null && a > 0 && cap > 0 && a > cap) { unb.push(`进项「${one(x.item, 16)}」${a}`); return false; } return true; });
+  }
+  // 二、妻妾夫婿：正文凭空送来的不认
+  if (Array.isArray(d.household) && !WIND_MARRY.test(E)) d.household = d.household.filter(h => {
+    if (!h || !h.name) return true; const old = arr(s.household).some(m => m.name === h.name);
+    if (!old && /妻|妾|室|通房|夫婿|丈夫|赘婿|驸马/.test(String(h.relation || '')) && !/子|女|媳|母|父|兄|弟|姐|妹|嫂|婶|姑|舅|甥|侄|孙/.test(String(h.relation || '').replace(/妻|妾|室|通房|夫婿|丈夫|赘婿/g, ''))) { unb.push(`家里添了${one(h.relation, 6)}「${one(h.name, 8)}」`); return false; }
+    return true; });
+  // 三、交情：没打交道的人，一回里好感最多涨二十；玩家这一步点到的人最多涨四十。跌多少不限
+  for (const n of arr(d.presentNpcs)) { if (!n || !n.name) continue; const o = (s.people || {})[one(n.name, 12)], fv = N0(n.favor), ofv = N0(o && o.favor); if (fv == null) continue;
+    const base = ofv != null ? ofv : 0, lim = String(said || '').includes(n.name) || E.includes(n.name) ? 40 : 20;
+    if (fv - base > lim) n.favor = base + lim; }
+  if (unb.length) s.unbooked = arr(s.unbooked).concat(unb.map(t => ({ turn: s.turn + 1, text: `正文写了${t}，可这一步你没有做带来它的事，账上没认` }))).slice(-30);
+  return unb;
+}
 /* ========== 收回账房的权：主角名下的兵马增加、新得的地盘，要有对应的令（募兵、攻取、受封）或打了胜仗；没有的不落账，摆给玩家看 ========== */
 function ledgerGuard(s, d, ruling) {
   const unb = [], acts = arr(s.actsNow).concat(actOpen(s)), said = acts.map(x => x.what).join(' ') + ' ' + arr(s.armyPending).map(x => x.line).join(' ');
@@ -14132,6 +14160,7 @@ function applyReply(s, d, said) {
   const H = hasHist(s);
   if (H) { syncHist(s); d.worldUpcoming = []; d.worldEvents = arr(d.worldEvents).filter(x => x && x.changed); }
   const extra = {};
+  if (play) { const wf = windfallGuard(s, d, said, CUR_RULING); if (wf.length) extra.unbooked = arr(extra.unbooked).concat(wf); }   // 凭空的好处不落账（任务十六第二步）
   if (play) {
     s.turn += 1;
     const turn = s.turn;
