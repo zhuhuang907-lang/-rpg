@@ -39,6 +39,14 @@ const path = require('path');
       const smz = P3.find(q => q.title === '枢密使') || {}; if (!all(smz).includes('范延光')) bad.push('930 年枢密使里没有范延光');
       const zs = P3.find(q => q.title === '中书舍人') || {}; if (!all(zs).length || !all(zs).every(n => s3.courtWho[n] === '虚构')) bad.push('中书舍人这类中层位子没照来路补人');
       if (P3.length > 30) bad.push('后唐中枢位子数不对：' + P3.length); }
+    // 后周 955：中枢照通鉴核过的人，大官不补虚构
+    const s4 = (() => { const s = newSave({ name: '某丙', gender: '男', age: 35, role: '监察御史', gregorianYear: 955, month: 6, day: 1, place: '开封', polity: '后周' }); s.chat = [{ role: 'gm', text: '开场。' }]; return s; })();
+    callClaude = async () => ({ text: '{}' }); try { await buildOrg(s4); } finally { callClaude = oc; }
+    if (!s4.org || s4.org.court !== '后周') bad.push('后周没照朝廷数据搭人事树');
+    else { const P4 = s4.org.nodes.flatMap(n => n.posts), all = q => [q.holder].concat(arr(q.others)).filter(Boolean);
+      const xz = P4.find(q => /平章事/.test(q.title)) || {}; if (!all(xz).some(n => ['范质', '王溥', '李谷'].includes(n))) bad.push('955 年后周宰相里没有范质、王溥、李谷：' + JSON.stringify(all(xz)));
+      if (P4.filter(q => /平章事|枢密使|三司使|侍卫|点检/.test(q.title)).some(q => all(q).some(n => s4.courtWho[n] === '虚构'))) bad.push('后周大官位子补了虚构人');
+      const smz = P4.find(q => q.title === '枢密使') || {}; if (!all(smz).includes('魏仁浦')) bad.push('955 年后周枢密使里没有魏仁浦：' + JSON.stringify(all(smz))); }
     S = s1; return bad;
   });
   errs.push(...out);
