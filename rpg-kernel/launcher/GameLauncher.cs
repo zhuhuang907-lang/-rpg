@@ -23,7 +23,7 @@ static class GameLauncher
 {
     const string TITLE = "历史模拟 RPG";
     static int Port = 8787;
-    static string Url { get { return "http://127.0.0.1:" + Port + "/"; } }
+    static string Url { get { int p = (Port >= 1024 && Port <= 65535) ? Port : 8787; return "http://127.0.0.1:" + p.ToString() + "/"; } }   // 只会是本机地址，端口只认 1024—65535
     // 系统命令一律用 System32 下的全路径（不靠 PATH 找，防同名程序顶替）；参数只有整数进程号和固定开关
     static string SysExe(string name) { return Path.Combine(Environment.SystemDirectory, name); }
     // 端口只认 1024–65535 的整数；网址只会是本机 127.0.0.1
