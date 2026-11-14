@@ -1654,7 +1654,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261114011907';
+const BUILD = '20261114021919';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -7121,6 +7121,11 @@ async function buildRoster(s) {
   const base = [], seen = new Set();
   for (const r of rulersAt(y, s)) if (!seen.has(r.name)) { seen.add(r.name); base.push({ g: r.polity || pol, name: r.name, post: r.title || r.polity, src: '内置史料' }); }
   for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && postOnly(ps[2]) && !seen.has(f.name + ps[2])) { seen.add(f.name + ps[2]); base.push({ g: '', name: f.name, post: postOnly(ps[2]), since: ps[0], src: '内置史料' }); }
+  /* 任职年表、朝廷数据也进名录（Claude 自办 4，R-225/R-227）：本政权这一年在任的，按官的轻重排，大官在前 */
+  { const PRI = t => /宰相|平章|丞相|仆射|侍中|中书令|尚书令|枢密|大学士|首辅/.test(t) ? 6 : /尚书|节度使|总督|巡抚|都督|大将军|太尉|司徒|司空/.test(t) ? 5 : /侍郎|御史|学士|观察|留守|总兵|刺史|知府|太守/.test(t) ? 4 : /将军|指挥使|判官|掌书记|郎中|给事中/.test(t) ? 3 : 1;
+    const T = []; for (const t of tenureFor(s, y)) for (const f of arr(t.figures)) { if (seen.has(f.name)) continue; const st = figState(s, f, y, s.clock.m); if (st.state !== 'alive' || !st.post) continue; T.push({ g: pol, name: f.name, post: st.post, src: '任职年表', pr: PRI(st.post) }); }
+    const CD = courtDataFor(s, y); if (CD) for (const p of arr(CD.D.people)) { const x = arr(p.posts).find(z => z.polity === CD.P.name && z.from <= y && z.to >= y); if (x && !seen.has(p.name)) T.push({ g: pol, name: p.name, post: x.office, src: '朝廷数据', pr: PRI(x.office) + 1 }); }
+    T.sort((a, b) => b.pr - a.pr).slice(0, 60).forEach(x => { if (!seen.has(x.name)) { seen.add(x.name); base.push({ g: x.g, name: x.name, post: x.post, src: x.src }); } }); }
   const RA = realmsAt(y, s.clock.m), RL = rulersAt(y, s).map(r => String(r.polity || '')), big = n => RL.some(p0 => p0 && (p0.includes(n) || n.includes(p0.replace(/[（(].*$/, '')))),
     realms = [...new Set([pol].concat(RA ? RA.list.map(r => r.name).sort((a, b) => big(b) - big(a)) : []).filter(Boolean))].slice(0, 18);   // 自己那家、史料里有君主的大国先问（921 年楚、南汉、荆南排在三十几家后头漏了）
   const blocks = []; for (let i = 0; i < realms.length; i += 3) blocks.push(realms.slice(i, i + 3));
