@@ -90,7 +90,7 @@ def gates():
 
 
 def main():
-    r = {'源码': source(), '台账': ledger(), '朝廷数据': court(), '身份时代卡': roles(), '实玩': plays(), '门槛': gates()}
+    r = {'源码': source(), '台账': ledger(), '朝廷数据': court(), '时代门路表': roles(), '实玩': plays(), '门槛': gates()}
     if '--json' in sys.argv:
         print(json.dumps(r, ensure_ascii=False, indent=1)); return
     for k, v in r.items():
