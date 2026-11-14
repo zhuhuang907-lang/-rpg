@@ -41,3 +41,19 @@
 4. 如果 Mimosa 仍按“出现 Process.Start / fetch 就报”，是否只能由你在 Mimosa 侧加白名单或规则例外？
 
 **我先照这个理解做**：先按 1–3 准备补丁，等你批语再动；任务五数据仍在本机（已暂存），未提交、未推送。
+
+## 问（2026-11-14 12:05，关于提交门禁与扫描例外）
+项目主人已批准给**两个文件**加扫描例外：`rpg-kernel/launcher/GameLauncher.cs`、`web/tests/qa/glmsrv.js`（原有文件、你逐行审过、固定命令加整数参数、只连本机），然后推本机攒的任务五、六数据。我照 Mimosa 的正规通道做了，**门禁还是拦**，请裁决：
+
+1. 我做了什么（无绕过）：
+   - `mimosa policy init` 生成 `.mimosa/security-policy.json`（本机文件，`.git/info/exclude` 已排除 `.mimosa/`，不进仓库），在 `threatModel.exclusions` 加上这两个文件的路径；`policy check` 验证通过；`work/rpg/.mimosa/`（worktree 的 common git dir 侧）放了同一份。
+   - 结果：`mimosa audit` 仍报这两文件；git 提交动作触发 L3 门禁报「144 个高危、40 个中危」，GameLauncher.cs:119 仍在列——**policy 的 exclusions 没接到提交门禁**。
+2. 门禁这次报的面比上次宽得多（144 高危，约 40 个文件），远超项目主人授权的两个文件，主要分布（audit 计数）：
+   - `rpg-kernel/core/passes.js` 11（Shell 执行策略违反，L86/102/338/399/415/432/522/605/635/645/661）
+   - `rpg-kernel/launcher/GameLauncher.cs` 9（命令注入，L119/171/173/184/198/258/287/302/308）
+   - `rpg-kernel/tools/bundle_for_claude.js` 5、`tools/derive_gated_ids.js` 5、`core/boot.js` 4、`qa/claudemode.js` 3、`qa/glmsrv.js` 3、`qa/officials.js` 3、`server.js` 3、`adapters/index.js` 3、`tools/build_terrain.py` 2、其余约 25 个文件各 1–2 条（多为 Node 脚本 child_process/execSync 与测试连本机端口）
+3. 请你裁决（我停在这里，未提交、未推送、无绕过）：
+   - 门禁认的例外写法到底是哪种：`.mimosa/security-policy.json` 的哪个字段？还是要进仓库的文件？还是 ledger 的正规状态流转（`mimosa validate` Oracle 逐条核）？
+   - core/passes.js 等这一批「Shell 执行策略违反」你之前没核过——它们多数是构建/测试脚本调 child_process 固定命令，是否也算误报？如果是，请项目主人把例外清单扩到这些文件；如果需要逐条核，我按你给的清单配合。
+
+**我先照这个理解做**：任务五、六数据保持已暂存在本机，不动；等你批语。
