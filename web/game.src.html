@@ -285,6 +285,7 @@ textarea{resize:vertical}
 <script type="application/json" id="cal">__CAL__</script>
 <script type="application/json" id="hist">__HIST__</script>
 <script type="application/json" id="tenure">__TENURE__</script>
+<script type="application/json" id="courtdata">__COURT__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -1662,7 +1663,9 @@ function orgLibText(s, part) {
   }).join('\n');
 }
 async function buildOrg(s) {
-  if (ORGING) return; ORGING = true; ORGMSG = '正在联网查制度，分中枢、地方、军事三路整理人事树……'; render();
+  if (ORGING) return;
+  { const CD = courtDataFor(s, s.clock.y); if (CD) { s.org = orgFromCourt(s, CD); SH(() => seatSelf(s), 'seatSelf'); ORGMSG = ''; return; } }   // 有朝廷数据的政权照数据搭，不再联网现编（R-227）
+  ORGING = true; ORGMSG = '正在联网查制度，分中枢、地方、军事三路整理人事树……'; render();
   try {
     const pol = s.place.polity || '', dy = pol + (/[代朝]$/.test(pol) ? '' : '代'), yl = s.clock.yearLabel || s.clock.y + '年', ruler = isRuler(s), p = s.protagonist, here = geoCenter(s);
     const emp = s.idm === 'emperor' || /皇帝|天子|官家/.test(String(p.role || ''));
@@ -2269,7 +2272,7 @@ function courtTab(s) {
   </div>`;
   const people = [...new Set(livePeople(s).map(([k]) => k).concat(Object.keys(s.dossiers || {}).filter(k => { const d = s.dossiers[k] || {}; return d.real !== false && !d.doubt && eraPersonOk(s, k, d.born ?? null, d.died ?? null) && (d.died == null || d.died >= s.clock.y) && (d.born == null || d.born <= s.clock.y); }), arr(s.household).map(m => m.name)))].filter(n => n && n !== s.protagonist.name).slice(0, 80);
   const SC = orgScope(s), can = SC.lv === 'decree', vb = '下令';
-  const FS = fictionShow(s), nm = h => h ? esc(h) + (FS.has(h) ? '<span class="vt">虚拟</span>' : '') : '<span class="muted">空缺</span>';
+  const FS = fictionShow(s), CW = s.courtWho || {}, nm = h => h ? esc(h) + (CW[h] === '虚构' ? '<span class="vt" title="史书未载，照该国用人惯例补">虚构</span>' : CW[h] === '推定' ? '<span class="muted" style="font-size:11px">（照履历推定）</span>' : FS.has(h) ? '<span class="vt">虚拟</span>' : '') : '<span class="muted">空缺</span>';
   const kids = pid => O.nodes.filter(n => (n.parent || '') === pid && n.status !== '已裁撤');
   // 要紧的：君主和中枢最上两层、你这一路、你的衙门往下两层；其余照制度有，收进「其余」里，不占地方
   const MY = O ? myOrgNode(s) : null, near = n => n.id === 'root' || (n.depth || 0) <= 2 || n.path || (MY && (n.id === MY.id || n.parent === MY.id || (O.nodes.find(m => m.id === n.parent) || {}).parent === MY.id)) || n.src === '玩家';
@@ -4794,6 +4797,36 @@ const POL_ALIAS = { 蜀汉: ['蜀', '汉', '季汉'], 吴: ['孙吴', '东吴', 
   晋: ['河东'], 后梁: ['梁', '朱梁'], 后唐: ['唐'], 后晋: ['晋'], 后汉: ['汉'], 后周: ['周'], 南唐: ['唐'], 前蜀: ['蜀'], 后蜀: ['蜀'], 北汉: ['汉'], 南汉: ['汉'], 楚: ['马楚'], 荆南: ['南平'], 辽: ['契丹'], 明: ['大明'] };
 const polNorm = x => String(x || '').trim().replace(/^大(?=..)/, '').replace(/(?<=.)[国朝]$/, '');
 /** 这一年这个政权该用的任职表：整份标了政权的照政权；按人分政权的（通鉴、五代十国），先照本名对，对不上再照别称对，别称同时对上两国（东西魏都叫魏）就不认 */
+/* ========== 五代十国朝廷数据（任务七，R-227）：开在有朝廷数据的政权，人事树照数据搭（位子照该国官制、小国照小国的规模）；
+ *  史书明载、照履历推定的人先坐；史书没留名的位子照该国用人来路补人——种子＝政权＋位子＋起年，同一位子谁开局都补出同一个人，补了记进存档永不再变，不与真人重名，标虚构 ========== */
+let COURTDATA = []; try { COURTDATA = JSON.parse((document.getElementById('courtdata') || {}).textContent || '[]'); if (!Array.isArray(COURTDATA)) COURTDATA = []; } catch (_) { COURTDATA = []; }
+function courtDataFor(s, y) { const pol = polNorm(s && s.place && s.place.polity); if (!pol) return null;
+  for (const D of COURTDATA) { if (!D || !D.range || y < D.range[0] || y > D.range[1]) continue; const P = arr(D.polities).find(p => polNorm(p.name) === pol || arr(POL_ALIAS[p.name]).includes(pol)); if (P) return { D, P }; } return null; }
+function fictName(seed, fam, taken) { for (let k = 0; k < 40; k++) { const r = seeded(seed + k * 101), r2 = seeded(seed + k * 101 + 7); const sur = fam[Math.floor(r * fam.length) % fam.length]; const nm = sur + GIVEN[Math.floor(r2 * GIVEN.length) % GIVEN.length]; /* 名字照已有的士人名表取 */ if (!taken.has(nm)) return nm; } return ''; }
+function realNamesAll() { const R = new Set(); for (const h of HIST) for (const f of arr(h.figures)) if (f && f.name) R.add(f.name); for (const t of TENURE) for (const f of arr(t.figures)) if (f && f.name) R.add(f.name); for (const D of COURTDATA) for (const p of arr(D.people)) R.add(p.name); return R; }
+function orgFromCourt(s, C) {
+  const { D, P } = C, y = s.clock.y, hk = str => { let h = 0; for (const ch of String(str)) h = (h * 31 + ch.charCodeAt(0)) % 1000003; return h; };
+  s.courtWho = s.courtWho || {}; s.courtFixed = s.courtFixed || {};   // 补的人记进存档，永不再变
+  const nodes = [{ id: 'root', name: P.name, depth: 0, tier: '中枢', posts: [], path: true }], byDept = {};
+  const live = arr(D.people).map(p => ({ p, x: arr(p.posts).filter(x => x.polity === P.name && x.from <= y && x.to >= y) })).filter(o => o.x.length);
+  const taken = realNamesAll(); for (const v of Object.values(s.courtFixed)) taken.add(v.name);
+  for (const st of arr(P.seats).filter(q => q.from <= y && q.to >= y)) {
+    const dept = st.dept || '使府'; let n = byDept[dept]; if (!n) { n = byDept[dept] = { id: 'cd' + (nodes.length), name: dept, depth: 1, parent: 'root', tier: /州|郡|县/.test(dept) ? '地方' : /军/.test(dept) ? '军事' : '中枢', posts: [], path: true, src: '史' }; nodes.push(n); }
+    const who = live.filter(o => o.x.some(x => x.seat === st.id)).map(o => ({ name: o.p.name, how: o.x.find(x => x.seat === st.id).how }));
+    const q = { title: st.office.replace(n.name, '') || st.office, rank: st.rank || '', quota: st.quota || 1, holder: '', src: '', others: [], seat: st.id };
+    who.forEach((w, i) => { s.courtWho[w.name] = w.how === '推定' ? '推定' : '明载'; if (i === 0) { q.holder = w.name; q.src = '史书'; } else q.others.push(w.name); });
+    for (let k = (q.holder ? 1 + q.others.length : 0); k < q.quota && k < 4; k++) {   // 史书没留名的：照用人来路补，种子定死
+      const key = P.name + '|' + st.id + '|' + st.from + '|' + k; let F = s.courtFixed[key];
+      if (!F) { const R = arr(P.recruit); let r = seeded(hk(key)), acc = 0, route = R[R.length - 1]; for (const x of R) { acc += x.share; if (r <= acc) { route = x; break; } }
+        const nm = route ? fictName(hk(key) + 17, arr(route.families).length ? route.families : ['王'], taken) : ''; if (!nm) continue; taken.add(nm);
+        F = s.courtFixed[key] = { name: nm, from: route.from, native: arr(route.native)[Math.floor(seeded(hk(key) + 3) * arr(route.native).length)] || '' }; }
+      s.courtWho[F.name] = '虚构'; if (!q.holder) { q.holder = F.name; q.src = '拟'; } else q.others.push(F.name);
+      s.people = s.people || {}; if (!s.people[F.name]) s.people[F.name] = { name: F.name, role: P.name + q.title, fic: true, native: F.native, origin: F.from, seen: 0 };
+    }
+    n.posts.push(q);
+  }
+  return { regime: `${P.name} ${s.clock.yearLabel || y + '年'}`, pol: s.place.polity || '', ruler: isRuler(s), at: s.turn, y, nodes, log: [], lib: true, court: P.name };
+}
 function tenureFor(s, y) {
   const pol = polNorm(s && s.place && s.place.polity); if (!pol) return []; const out = [];
   for (const t of TENURE) { if (!t || !t.range || y < t.range[0] || y > t.range[1]) continue;

@@ -128,6 +128,7 @@ start ai.js && {
   run "任职年表：晚明照哈佛库整理的表先坐位子（户部尚书照表），后金不套明朝的表，朝局页看得见（任务六，R-225）" 150 env PLAY="$ROOT/web/play.html" node tenure.js
   run "各年代任职年表：资治通鉴逐年任免（三国两晋十六国南北朝五代）与哈佛库唐末五代十国表照政权取；前秦王猛不混进东晋；东西魏并立只写魏不乱认；前秦开局吏部尚书照表坐王猛（R-226）" 150 env PLAY="$ROOT/web/play.html" node tenure2.js
   run "南北朝、隋唐前期君主年号：君主照正史、年号照哈佛库年号表，换君改元同年归对人；只有君主年号的表不挡联网自建史事；东魏开局年号是武定（R-226）" 120 env PLAY="$ROOT/web/play.html" node rulers2.js
+  run "五代十国朝廷照数据排：荆南小国十几个位子，明载、推定的人坐原位，空位照用人来路补人、标虚构、不与真人重名、重开同一人；南平也认（任务七，R-227）" 150 env PLAY="$ROOT/web/play.html" node wudai_court.js
   run "兵力虚实：敌军只给估计（传闻虚张、给范围），真点派探子探准，探报一年就旧；自己直接统的兵照实数（任务三，R-221）" 150 env PLAY="$ROOT/web/play.html" node troopfog.js
   run "虚构人物戏份：程序补的虚构人物，没提拔、没打过交道的，写给模型时标「虚构·照常供职」并附不给戏份的规矩；提拔了、有情分、找上他的照常写（任务三，R-221）" 120 env PLAY="$ROOT/web/play.html" node fictbench.js
   run "大人物照真官：隋唐尚书令照例不授、不起虚构的；三品以上查不到真人就空着待查、后台再查；小吏照旧起名；旧存档清掉大位子上的虚构名字；一方之主能破例除授、小官保举不了" 120 env PLAY="$ROOT/web/play.html" node officials.js
