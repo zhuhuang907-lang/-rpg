@@ -49,6 +49,25 @@ STATES = {
         ('张美', 'ss', ['三司使']), ('李重进', 'sw', ['侍卫']), ('张永德', 'dq', ['殿前都点检', '殿前']), ('赵匡胤', 'dq', ['殿前都点检', '殿前都指挥使'])]),
 }
 def ENDP(nm): return re.compile(re.escape(nm) + r'[^，。]{0,6}(?:罢|免|贬|伏诛|被杀|遇害|卒|薨|赐死|自杀|出为|致仕)|(?:杀|诛|斩)' + re.escape(nm))
+def _pats(nm, k):
+    n, kk = re.escape(nm), re.escape(k)
+    return [re.compile(n + r'[^，。]{0,14}?为[^，。]{0,10}' + kk),           # （以）某（、某）为某官
+            re.compile(n + r'[^。]{0,40}?为[^。]{0,30}?[并皆]' + kk),       # 某为中书侍郎，并同平章事；某为左仆射，……皆同平章事
+            re.compile(r'(?:^|[，、])(?:复以|以)?[^，。]{0,8}' + n + r'[^，。]{0,4}[并皆]' + kk),   # 与中书侍郎冯延己皆同平章事
+            re.compile(r'(?:加|复以[^，。]{0,6})' + n + r'[^，。]{0,6}' + kk)]   # 加王峻同平章事；复以左仆射冯延己同平章事
+def _find(nm, keys, E, after=None):
+    """找这人这官的那一句：先找明载（任命句），没有就退而取称呼句（推定）；after 给了只找那年以后的明载再任"""
+    got = None
+    for y, v, t in E:
+        if after is not None and y <= after: continue
+        for sent in re.split(r'[。；]', t):
+            if nm not in sent: continue
+            for k in keys:
+                m1 = any(p.search(sent) for p in _pats(nm, k))
+                m2 = re.search(re.escape(k) + r'[、，]?' + re.escape(nm), sent)
+                if m1 and not re.search('贬|罢|免', sent[:sent.find(nm)]) and not ENDP(nm).search(sent): return (y, v, sent.strip()[:70], k, '明载')
+                if (m2 or m1) and after is None: got = got or (y, v, sent.strip()[:70], k, '推定')
+    return got
 def verify():
     allE = [(y, v, t) for y, v, n, t in entries(ROOT / 'corpus') if 905 <= y <= 960]
     out = {}
@@ -56,25 +75,21 @@ def verify():
         E = [e for e in allE if y0 <= e[0] <= y1]
         got_all = []
         for nm, seat, keys in cands:
-            got = None
-            for y, v, t in E:
-                for sent in re.split(r'[。；]', t):
-                    if nm not in sent: continue
-                    for k in keys:
-                        m1 = re.search(re.escape(nm) + r'[^，。]{0,14}?为[^，。]{0,10}' + re.escape(k), sent)
-                        m2 = re.search(re.escape(k) + r'[、，]?' + re.escape(nm), sent)
-                        if m1 and not re.search('贬|罢|免', sent[:sent.find(nm)]): got = (y, v, sent.strip()[:70], k, '明载'); break
-                        if m2 or m1: got = got or (y, v, sent.strip()[:70], k, '推定')
-                    if got and got[4] == '明载': break
-                if got and got[4] == '明载': break
-            if not got: print('找不到：', pol, nm, keys, file=sys.stderr); continue
-            y, v, sent, k, how = got
-            end = y if ENDP(nm).search(sent) else None   # 找到的这句本身就是卒、罢（「同平章事张文蔚卒」）：那一年就是任满
-            for y2, v2, t2 in ([] if end else E):
-                if y2 <= y: continue
-                if any(ENDP(nm).search(s2) for s2 in re.split(r'[。；]', t2)): end = y2; break
-            last = max([yy for yy, vv, tt in E if nm in tt] or [y])
-            got_all.append({'name': {'郑玨': '郑珏', '冯延己': '冯延巳'}.get(nm, nm), 'seat': pre + '-' + seat, 'from': y, 'to': min(end or y + 4, y1), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how, 'lastSeen': last, 'seen': sorted(set(yy for yy, vv, tt in E if nm in tt))})
+            after = None
+            for _term in range(4):   # 同一人可以几上几下（冯延巳三次拜相）：前一任罢了，往后再找明载的再任
+                got = _find(nm, keys, E, after)
+                if not got: break
+                y, v, sent, k, how = got
+                end = y if ENDP(nm).search(sent) else None   # 找到的这句本身就是卒、罢（「同平章事张文蔚卒」）：那一年就是任满
+                for y2, v2, t2 in ([] if end else E):
+                    if y2 <= y: continue
+                    if any(ENDP(nm).search(s2) for s2 in re.split(r'[。；]', t2)): end = y2; break
+                last = max([yy for yy, vv, tt in E if nm in tt] or [y])
+                got_all.append({'name': {'郑玨': '郑珏', '冯延己': '冯延巳'}.get(nm, nm), 'seat': pre + '-' + seat, 'from': y, 'to': min(end or y + 4, y1), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how, 'lastSeen': last, 'seen': sorted(set(yy for yy, vv, tt in E if nm in tt))})
+                if not end: break
+                after = end
+            if after is None and not any(d['name'] == {'郑玨': '郑珏', '冯延己': '冯延巳'}.get(nm, nm) and d['seat'] == pre + '-' + seat for d in got_all):
+                print('找不到：', pol, nm, keys, file=sys.stderr)
         for d in got_all:
             later = [e['from'] for e in got_all if e['name'] == d['name'] and e is not d and e['from'] > d['from']]
             if later and min(later) < d['to']: d['to'] = min(later); d['endHow'] = '明载'

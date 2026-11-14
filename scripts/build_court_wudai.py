@@ -55,8 +55,11 @@ _DIED = {}
 for _f in list((ROOT / 'web' / 'tenure').glob('*.json')) + list((ROOT / 'web' / 'history').glob('*.json')):
     try:
         for _x in json.load(open(_f, encoding='utf8')).get('figures') or []:
-            if _x.get('died') and _x.get('name'): _DIED.setdefault(_x['name'], _x['died'])
+            if _x.get('died') and _x.get('name'): _DIED.setdefault(_x['name'], set()).add(_x['died'])
     except Exception: pass
+def _died(nm, y0):
+    """同名的人不止一个（唐末王溥 905 年卒，后周宰相王溥 982 年卒）：只认上任以后的卒年"""
+    return min([y for y in _DIED.get(nm, ()) if isinstance(y, int) and y >= y0] or [9999])
 def _gapcut(L):
     """不管史书写没写离任年：中间连着五年没提他全名的，任期截到最后一次被提到的次年（追述旧事不算在任）"""
     for d in L:
@@ -70,7 +73,7 @@ def _extend(L, quota, y1):
     """离任年不知道的（推定）：一直在任到接任的人上来、位子满了为止，最多十年，不过该朝亡年（任务六，2026-11-14 改：原来一律算四年，王处回这类长任的被截短）"""
     for d in sorted(L, key=lambda d: d['from']):
         if d.get('endHow') != '推定': continue
-        cap = min(y1, d['from'] + 10, _DIED.get(d['name'], 9999), d.get('lastSeen', 9999) + 1)   # 不过通鉴最后一次提到他全名的次年（张颢）
+        cap = min(y1, d['from'] + 10, _died(d['name'], d['from']), d.get('lastSeen', 9999) + 1)   # 不过通鉴最后一次提到他全名的次年（张颢）
         if d['to'] > cap: d['to'] = max(d['from'], cap)
         seen = set(d.get('seen') or [])
         while d['to'] < cap:

@@ -45,6 +45,7 @@ const path = require('path');
     if (!s4.org || s4.org.court !== '后周') bad.push('后周没照朝廷数据搭人事树');
     else { const P4 = s4.org.nodes.flatMap(n => n.posts), all = q => [q.holder].concat(arr(q.others)).filter(Boolean);
       const xz = P4.find(q => /平章事/.test(q.title)) || {}; if (!all(xz).some(n => ['范质', '王溥', '李谷'].includes(n))) bad.push('955 年后周宰相里没有范质、王溥、李谷：' + JSON.stringify(all(xz)));
+      if (!['王溥', '李谷', '范质'].every(n => all(xz).includes(n))) bad.push('955 年后周宰相王溥、李谷、范质应同时在任（同名的唐末王溥卒年不许截后周王溥）：' + JSON.stringify(all(xz)));
       if (P4.filter(q => /平章事|枢密使|三司使|侍卫|点检/.test(q.title)).some(q => all(q).some(n => s4.courtWho[n] === '虚构'))) bad.push('后周大官位子补了虚构人');
       const smz = P4.find(q => q.title === '枢密使') || {}; if (!all(smz).includes('魏仁浦')) bad.push('955 年后周枢密使里没有魏仁浦：' + JSON.stringify(all(smz))); }
     // 逐年照数据换人：后唐 930 年开局，走到 934 年，宰相照数据换（冯道 930 在、934 年已不在原位或换了人），你自己的位子不动、补的虚构人照旧
@@ -64,6 +65,11 @@ const path = require('path');
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s6); } finally { callClaude = oc; }
       const xz = (s6.org && s6.org.nodes.flatMap(n => n.posts).find(q => /平章事/.test(q.title))) || {};
       if (!s6.org || s6.org.court !== '后蜀' || ![xz.holder].concat(arr(xz.others)).includes('张业')) bad.push('940 年后蜀宰相里没有张业：' + JSON.stringify(xz)); }
+    // 南唐 953：冯延巳再度拜相（951 年复相，三上三下），孙晟同在相位
+    { const s8 = newSave({ name: '某庚', gender: '男', age: 30, role: '郎官', gregorianYear: 953, month: 3, day: 1, place: '金陵', polity: '南唐' }); s8.chat = [{ role: 'gm', text: '开场。' }];
+      callClaude = async () => ({ text: '{}' }); try { await buildOrg(s8); } finally { callClaude = oc; }
+      const xz = s8.org ? (s8.org.nodes.flatMap(n => n.posts).find(q => /平章事/.test(q.title)) || {}) : {}, w = [xz.holder].concat(arr(xz.others));
+      if (!w.includes('冯延巳') || !w.includes('孙晟')) bad.push('953 年南唐宰相里没有冯延巳、孙晟：' + JSON.stringify(w)); }
     // 闽 944：宰相王倓、杨沂丰照通鉴；拱宸都指挥使朱文进坐禁军位子；殷的潘承祐不混进闽
     { const s7 = newSave({ name: '某己', gender: '男', age: 30, role: '郎官', gregorianYear: 944, month: 3, day: 1, place: '福州', polity: '闽' }); s7.chat = [{ role: 'gm', text: '开场。' }];
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s7); } finally { callClaude = oc; }
