@@ -94,6 +94,8 @@ const path = require('path');
     const mc = mismatchCut('你回了家，院门虚掩着。柳三娘已在堂上等着。你把担子放下，天已经黑了。灶上还温着一碗粥，你端起来喝了。隔壁的狗叫了两声，又静了。', ['主角没有得到：家里添了妾「柳三娘」']);
     if (/柳三娘/.test(mc) || !/灶上还温着/.test(mc)) bad.push('点了名的没删干净：' + mc);
     const mc2 = '你卖了麦子，得了五千钱。'; if (mismatchCut(mc2, ['主角没有得到：进项「富商相赠」5000']) !== mc2) bad.push('没名字可认的被乱删');
+    // 14 山寨的名字不硬截（真模型实测：截出「府菏泽县境内山」）
+    for (const [r, want] of [['曹州府菏泽县境内山寨寨主，手下有数十名喽啰', '胡家寨'], ['黑风寨寨主', '黑风寨'], ['梁山泊头领', '梁山泊'], ['太行山上的山寨寨主', '胡家寨'], ['曹县城外二龙山寨主', '二龙山']]) { const g = bandName(r, '胡大彪'); if (g !== want) bad.push('山寨名不对：' + r + ' → ' + g); }
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));

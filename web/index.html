@@ -1655,7 +1655,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261114221936';
+const BUILD = '20261114222250';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -3632,7 +3632,7 @@ function orgMigrate(s) {
   if (!s || !s.protagonist || s.orgMig) return; s.orgMig = 1; const me = s.protagonist.name, role = String(s.protagonist.role || ''), roleOwn = ID_REL.test(role) ? '' : role;
   for (const c of arr(s.circles)) if (c && c.leader === me && !orgsLive(s).some(o => o.name === c.name)) orgNew(s, { name: c.name, kind: /寨|山/.test(c.name + c.kind) ? '山寨' : /镖|帮|会/.test(c.name + c.kind) ? '帮会' : c.kind, head: me });
   const own = arr(s.forces).filter(f => f && f.leader === me);
-  if (ID_BANDIT.test(roleOwn) && ID_BANDIT_HEAD.test(roleOwn) && !orgsLive(s).some(o => o.head === me && ORG_ARMED.test(o.kind))) { const nm = (roleOwn.match(/[一-龥]{1,6}(寨|山|岭|泊|岗)/) || [])[0] || one(roleOwn, 10); orgNew(s, { name: nm, kind: /绿林|响马|强人/.test(roleOwn) ? '绿林' : '山寨', head: me, force: own[0] ? own[0].name : '', seat: nm }); }
+  if (ID_BANDIT.test(roleOwn) && ID_BANDIT_HEAD.test(roleOwn) && !orgsLive(s).some(o => o.head === me && ORG_ARMED.test(o.kind))) { const nm = bandName(roleOwn, me); orgNew(s, { name: nm, kind: /绿林|响马|强人/.test(roleOwn) ? '绿林' : '山寨', head: me, force: own[0] ? own[0].name : '', seat: nm }); }
   if (/族长|宗长|家主|族中长房/.test(roleOwn) && !orgsLive(s).some(o => o.kind === '宗族' && o.head === me)) { const sur = String(me).slice(0, 1); orgNew(s, { name: sur + '氏宗族', kind: '宗族', head: me, members: arr(s.household).filter(m => !m.dead).map(m => m.name).slice(0, 12), seat: geoCenter(s) }); }
   for (const b of arr(s.business)) if (b && b.name && /商|贾|东家|掌柜|老板/.test(roleOwn) && !orgsLive(s).some(o => o.biz === b.name)) orgNew(s, { name: b.name, kind: /行商|贩|船|货/.test(String(b.kind || '')) ? '商队' : '商号', head: me, biz: b.name, seat: b.place || geoCenter(s) });
 }
@@ -3695,6 +3695,13 @@ function orgsHtml(s) {
         <div>${w(`在${o.name}里招人：`, ORG_ARMED.test(o.kind) ? '招人入伙' : '添人手')}${w(`把${o.name}的据点迁到`, '迁据点')}${w(`让${o.name}去结交`, '结交')}${w(`把${o.name}交给……接掌：`, '换头领')}${w(`把${o.name}散了：`, '散伙')}</div>` : `<div>${w(`退出${o.name}：`, '退出')}</div>`}
         ${arr(o.log).length ? `<details class="fold"><summary>经过（${o.log.length}）</summary><div class="list">${o.log.slice().reverse().slice(0, 10).map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.text)}</div>`).join('')}</div></details>` : ''}</div>`; }).join('')}
     ${gone.length ? `<div class="muted" style="font-size:12px">已散：${esc(gone.map(o => o.name).join('、'))}</div>` : ''}`;
+}
+/** 山寨叫什么：身份里有正经名号（「黑风寨寨主」「梁山泊头领」）就用它；只有「某府某县境内山寨寨主」这种说法的，叫「某家寨」。
+ *  以前照着前六个字硬截，截出「府菏泽县境内山」这种怪名（2026-11-14 真模型实测查出） */
+function bandName(role, me) {
+  const t = String(role || '').replace(/^.*(?:境内|境上|交界|城外|附近|一带|县|州|府|省|的)(?=[一-龥]{1,5}(?:寨|山|岭|泊|岗))/, '');
+  const m = t.replace(/(寨主|头领|大当家|二当家|当家|首领|头目|大王|好汉|强人).*$/, '').trim();
+  return /^[一-龥]{2,6}$/.test(m) && /(寨|泊|岭|岗|山)$/.test(m) && !/^(山寨|大寨|小寨|土寨|山上|深山|荒山|大山|野山)$/.test(m) && !/[府州县省]/.test(m) ? m : String(me || '').slice(0, 1) + '家寨';
 }
 /** 身份决定开哪些面板：一方之主（君主、藩镇、军阀、有封地的）全开；地方官有辖区、时政、召见属官、人事树可上疏；京官有人事树和上疏；统兵的武官有军务；平头百姓、商人、读书人没有朝局和军务 */
 const MIL_OFFICE = /总兵|参将|游击|守备|千总|把总|都司|提督|将军|都督|指挥|卫所|统领|都统|参领|佐领|节度|镇守|兵备/;
@@ -7387,7 +7394,7 @@ function ledgerMismatch(s, d, said, ruling) {
   let d2; try { d2 = JSON.parse(JSON.stringify(d)); } catch (_) { return out; }
   const T = Object.create(s); T.unbooked = [];
   try { for (const t of windfallGuard(T, d2, said, ruling)) out.push('主角没有得到：' + t); } catch (_) {}
-  try { for (const t of ledgerGuard(T, d2, ruling)) out.push('没有的事：' + t); } catch (_) {}
+  // 兵马、地盘那道老闸不进对账：它拦的多半是账房把原有的人马地盘换个名字又报一遍，正文并没有写错（真模型实测：寨主的喽啰、山寨被重报），照它改稿反而把对的改错
   const idc = d.identity && typeof d.identity === 'object' && String(d.identity.role || '').trim().length >= 2 ? d.identity : null;
   if (idGainBarred(s, idc, said, ruling)) out.push(`主角没有成为「${one(idc.role, 24)}」（这一步没有求官应举，也没有在办的升迁）`);
   for (const r of arr(d.actResults)) { if (!r || !/办成/.test(String(r.state || ''))) continue; const an = arr(s.actsNow).find(a => a && a.tmp === one(r.id, 8)); if (!an) continue;
