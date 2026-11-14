@@ -6214,7 +6214,9 @@ function applyActs(s, d) {
   const idOf = id => { const t = arr(s.actsNow).find(a => a.tmp === id); return t ? t.realId : id; };
   for (const r of arr(d && d.actResults).slice(0, 12)) {
     if (!r || !r.id) continue; const x = arr(s.acts).find(z => z.id === idOf(one(r.id, 8))); if (!x) continue;
-    const st = /办成|成了|完成/.test(r.state || '') && !/部分/.test(r.state || '') ? '办成' : /部分/.test(r.state || '') ? '部分办成' : /驳/.test(r.state || '') ? '驳回' : /受阻|失败|没成|办砸/.test(r.state || '') ? '受阻' : /搁/.test(r.state || '') ? '搁下' : '拖着';
+    let st = /办成|成了|完成/.test(r.state || '') && !/部分/.test(r.state || '') ? '办成' : /部分/.test(r.state || '') ? '部分办成' : /驳/.test(r.state || '') ? '驳回' : /受阻|失败|没成|办砸/.test(r.state || '') ? '受阻' : /搁/.test(r.state || '') ? '搁下' : '拖着';
+    // 裁定在写之前定的成败压过正文（任务十六第四步）：这一回新开的单子，裁定说办不到、越权的，记账报「办成」也只记受阻
+    { const an = arr(s.actsNow).find(z => z.realId === x.id); if (an && /办成/.test(st)) { const rs = arr(CUR_RULING && CUR_RULING.steps).find(t => t && simText(t.what || '', x.what) >= 0.3); if (rs && /办不到|办不成/.test(String(rs.ok || '')) || /越权/.test(String(an.ok || ''))) { st = '受阻'; r.why = one((rs && rs.why) || '越了权限，办不下去', 60); r.changed = '没改'; s.unbooked = arr(s.unbooked).concat([{ turn: s.turn, text: `正文写「${one(x.what, 20)}」办成了，可照你的身份和手里的东西这一步办不到，账上记受阻` }]).slice(-30); } } }
     x.state = st; x.touched = s.turn; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state: st, why: one(r.why, 60), changed: one(r.changed, 60) }]).slice(-8);
     out.push({ id: x.id, type: x.type, what: x.what, state: st, why: one(r.why, 60), changed: one(r.changed, 60) });
   }

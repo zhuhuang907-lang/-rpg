@@ -68,6 +68,12 @@ const path = require('path');
     if (factClaims(s, said2, fake, yes).some(x => x.kind === 'gain')) bad.push('裁定说能办的也被挑了');
     s = mk(); CUR_RULING = no; try { applyReply(s, led(), said2); } finally { CUR_RULING = null; }
     if (s.protagonist.role !== role0 || (s.career || {}).office === '河南府参军') bad.push('裁定说办不到的官进了存档：' + s.protagonist.role);
+    // 10 行动单：裁定说办不到、越权的，记账报办成也只记受阻；裁定说能的照记办成
+    s = mk(); s.turn = 3; s.actsNow = [{ tmp: 't1', type: '令', what: '命河南尹开仓放粮', who: '河南尹', ok: '越权' }, { tmp: 't2', type: '试', what: '去粮行把麦子卖掉', who: '自己', ok: '能' }];
+    CUR_RULING = { steps: [{ what: '命河南尹开仓放粮', ok: '办不到', why: '佃户管不到河南尹' }, { what: '去粮行把麦子卖掉', ok: '能' }] };
+    let ar; try { ar = applyActs(s, { actResults: [{ id: 't1', state: '办成', why: '河南尹照办', changed: '开了仓' }, { id: 't2', state: '办成', why: '卖了', changed: '得钱' }] }); } finally { CUR_RULING = null; }
+    if (!ar.some(x => /开仓/.test(x.what) && x.state === '受阻')) bad.push('越权办不到的令被记成办成：' + JSON.stringify(ar.map(x => [x.what, x.state])));
+    if (!ar.some(x => /麦子/.test(x.what) && x.state === '办成')) bad.push('能办的事没记办成');
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));
