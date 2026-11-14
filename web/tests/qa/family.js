@@ -6,7 +6,9 @@ const { chromium } = require('playwright');
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
   const idle = () => p.waitForFunction(() => !BUSY && !BG, null, { timeout: 120000, polling: 300 }).catch(() => bad('卡住了'));
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart'); await p.waitForSelector('#said', { timeout: 300000 }); await idle();
-  const turn = async (t, span) => { await p.fill('#said', t); if (span) await p.selectOption('#span', span); await p.click('#bSend'); await p.waitForTimeout(500); await idle(); };
+  // 发出去以后要等到这一回真回了话再看（机器忙时 0.5 秒内还没开工，光等「不忙」会提前读到旧状态）
+  const turn = async (t, span) => { const n0 = await p.evaluate(() => S.chat.length); await p.fill('#said', t); if (span) await p.selectOption('#span', span); await p.click('#bSend');
+    await p.waitForFunction(n => S.chat.slice(n).some(c => c.role === 'gm'), n0, { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没回话：' + t)); await idle(); };
   const inc0 = await p.evaluate(() => arr(S.estate.income).length);
   await turn('纳柳氏为妾');
   const st1 = await p.evaluate(() => ({ hh: S.household.map(m => m.relation + m.name), al: S.household.filter(m => m.alias === '柳氏').map(m => m.name), inc: S.estate.income.map(x => x.item), exp: S.estate.expense.length }));
