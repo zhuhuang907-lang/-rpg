@@ -185,6 +185,26 @@ for r in rows:
     if 420 <= r[0] < 589 and r[5] < 2 and r[3] in ('宋', '南齐', '梁', '陈'):
         p = ns_pol(r[1], r[0])
         if p: r[3], r[5] = p, 2
+# 两晋十六国（304—439）照晋书载记分国：这人在哪一国的载记里出现得多，就是那一国的人（通鉴照晋纪年，十六国的人常不写国号）
+JIN = {}
+for l in gzip.open(ROOT / 'corpus' / 'jinshu.jsonl.gz', 'rt', encoding='utf8'):
+    p = json.loads(l); JIN.setdefault(p['volume'], []).append(p['text'])
+JIN = {k: ' '.join(v) for k, v in JIN.items()}
+ZAIJI = [('前赵', (101, 103), 304, 329), ('后赵', (104, 107), 319, 351), ('前燕', (108, 111), 337, 370), ('前秦', (112, 115), 351, 394), ('后秦', (116, 119), 384, 417),
+         ('成汉', (120, 121), 304, 347), ('后凉', (122, 122), 386, 403), ('后燕', (123, 124), 384, 409), ('南凉', (126, 126), 397, 414), ('南燕', (127, 128), 398, 410), ('北凉', (129, 129), 397, 439), ('夏', (130, 130), 407, 431)]
+def zj_pol(nm, y):
+    best, bc = None, 0
+    for pol, (a, b), y0, y1 in ZAIJI:
+        if not (y0 - 2 <= y <= y1 + 1): continue
+        c = sum(JIN.get('卷%03d' % v, '').count(nm) for v in range(a, b + 1))
+        if c > bc: best, bc = pol, c
+    if bc < 2: return None
+    rest = sum(t.count(nm) for k, t in JIN.items() if int(re.sub(r'\D', '', k) or 0) <= 100)   # 晋书列传、本纪里出现得更多的是晋臣
+    return best if bc > rest else None
+for r in rows:
+    if 304 <= r[0] < 440 and r[5] < 2 and r[3] in ('西晋', '东晋'):
+        p = zj_pol(r[1], r[0])
+        if p: r[3], r[5] = p, 2
 # 同一人十年内别处明写了是哪一国的，没写的照那一国（史书只在头一回写国号）
 from collections import defaultdict, Counter
 pr = defaultdict(list)
