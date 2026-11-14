@@ -48,7 +48,7 @@ STATES = {
         ('王峻', 'smz', ['枢密使']), ('郑仁诲', 'smz', ['枢密使']), ('魏仁浦', 'smz', ['枢密使']), ('吴廷祚', 'smz', ['枢密使']),
         ('张美', 'ss', ['三司使']), ('李重进', 'sw', ['侍卫']), ('张永德', 'dq', ['殿前都点检', '殿前']), ('赵匡胤', 'dq', ['殿前都点检', '殿前都指挥使'])]),
 }
-def ENDP(nm): return re.compile(re.escape(nm) + r'[^，。]{0,6}(?:罢|免|贬|伏诛|被杀|遇害|卒|薨|赐死|自杀|出为|致仕)|(?:杀|诛|斩)' + re.escape(nm))
+def ENDP(nm): return re.compile(re.escape(nm) + r'[^，。]{0,6}(?:罢|免|贬|伏诛|被杀|遇害|卒|薨|赐死|自杀|出为|致仕|既死)|(?:杀|诛|斩)' + re.escape(nm) + '|' + re.escape(nm) + r'[^。；]{0,30}，[^，。]{0,4}罢(?:守本官|为)')   # 「徐光溥坐……，丁酉，罢守本官」「张业既死」
 def _pats(nm, k):
     n, kk = re.escape(nm), re.escape(k)
     return [re.compile(n + r'[^，。]{0,14}?为[^，。]{0,10}' + kk),           # （以）某（、某）为某官
@@ -81,9 +81,14 @@ def verify():
                 if not got: break
                 y, v, sent, k, how = got
                 end = y if ENDP(nm).search(sent) else None   # 找到的这句本身就是卒、罢（「同平章事张文蔚卒」）：那一年就是任满
+                passed = False   # 同一年里任命句之后的罢免也算（徐光溥 948 年拜相、同年罢守本官）
                 for y2, v2, t2 in ([] if end else E):
-                    if y2 <= y: continue
-                    if any(ENDP(nm).search(s2) for s2 in re.split(r'[。；]', t2)): end = y2; break
+                    if y2 < y: continue
+                    for s2 in re.split(r'[。；]', t2):
+                        if y2 == y and not passed:
+                            passed = s2.strip()[:70] == sent; continue
+                        if ENDP(nm).search(s2): end = y2; break
+                    if end: break
                 last = max([yy for yy, vv, tt in E if nm in tt] or [y])
                 got_all.append({'name': {'郑玨': '郑珏', '冯延己': '冯延巳'}.get(nm, nm), 'seat': pre + '-' + seat, 'from': y, 'to': min(end or y + 4, y1), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how, 'lastSeen': last, 'seen': sorted(set(yy for yy, vv, tt in E if nm in tt))})
                 if not end: break

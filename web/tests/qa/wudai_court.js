@@ -65,6 +65,12 @@ const path = require('path');
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s6); } finally { callClaude = oc; }
       const xz = (s6.org && s6.org.nodes.flatMap(n => n.posts).find(q => /平章事/.test(q.title))) || {};
       if (!s6.org || s6.org.court !== '后蜀' || ![xz.holder].concat(arr(xz.others)).includes('张业')) bad.push('940 年后蜀宰相里没有张业：' + JSON.stringify(xz)); }
+    // 后蜀 946：张业在相位到 948 年被杀（中间几年通鉴没提他，不许当成追述截短）；吴越 948：杜建徽丞相到 950 年卒于任上
+    for (const [pol, y, pl, who] of [['后蜀', 946, '成都', '张业'], ['吴越', 948, '杭州', '杜建徽']]) {
+      const sx = newSave({ name: '某辛', gender: '男', age: 30, role: '郎官', gregorianYear: y, month: 3, day: 1, place: pl, polity: pol }); sx.chat = [{ role: 'gm', text: '开场。' }];
+      callClaude = async () => ({ text: '{}' }); try { await buildOrg(sx); } finally { callClaude = oc; }
+      const names = sx.org ? sx.org.nodes.flatMap(n => n.posts).flatMap(q => [q.holder].concat(arr(q.others))) : [];
+      if (!names.includes(who)) bad.push(y + ' 年' + pol + '朝里没有' + who + '（任期被截短）'); }
     // 南唐 953：冯延巳再度拜相（951 年复相，三上三下），孙晟同在相位
     { const s8 = newSave({ name: '某庚', gender: '男', age: 30, role: '郎官', gregorianYear: 953, month: 3, day: 1, place: '金陵', polity: '南唐' }); s8.chat = [{ role: 'gm', text: '开场。' }];
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s8); } finally { callClaude = oc; }

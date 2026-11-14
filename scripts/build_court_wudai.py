@@ -57,6 +57,9 @@ for _f in list((ROOT / 'web' / 'tenure').glob('*.json')) + list((ROOT / 'web' / 
         for _x in json.load(open(_f, encoding='utf8')).get('figures') or []:
             if _x.get('died') and _x.get('name'): _DIED.setdefault(_x['name'], set()).add(_x['died'])
     except Exception: pass
+# 库里没有卒年、通鉴原文写明的，手补（带出处）
+for _nm, _y, _src in [('张业', 948, '资治通鉴卷288「甲子，业入朝，蜀主命壮士就都堂击杀之」')]:
+    _DIED.setdefault(_nm, set()).add(_y)
 def _died(nm, y0):
     """同名的人不止一个（唐末王溥 905 年卒，后周宰相王溥 982 年卒）：只认上任以后的卒年"""
     return min([y for y in _DIED.get(nm, ()) if isinstance(y, int) and y >= y0] or [9999])
@@ -64,7 +67,8 @@ def _gapcut(L):
     """不管史书写没写离任年：中间连着五年没提他全名的，任期截到最后一次被提到的次年（追述旧事不算在任）"""
     for d in L:
         seen = sorted(set(d.get('seen') or []))
-        if not seen or d.get('endHow') != '明载' or d['to'] - d['from'] <= 6: continue   # 只管「史书写了离任、却隔了很多年」的（多半是追述旧事），别的不动
+        if not seen or d.get('endHow') != '明载' or d['to'] - d['from'] <= 6: continue
+        if _died(d['name'], d['from']) == d['to']: continue   # 离任那年就是卒年（张业 948 年在相位上被杀）：不是追述旧事，不截   # 只管「史书写了离任、却隔了很多年」的（多半是追述旧事），别的不动
         y = d['from']
         while y < d['to']:
             if not any(z in seen for z in range(y + 1, y + 6)): d['to'] = y + 1 if y + 1 <= d['to'] else d['to']; d['endHow'] = '推定'; break
