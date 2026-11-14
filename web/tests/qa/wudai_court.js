@@ -36,5 +36,11 @@ const path = require('path');
   if (!/照履历推定/.test(h)) errs.push('朝局页看不到「照履历推定」');
   if (!/虚构/.test(h)) errs.push('朝局页看不到补的人标「虚构」');
   if (!/高季兴/.test(h)) errs.push('朝局页没摆出高季兴');
+  // 真点：点「人物」标签，补的人写明来路，照履历推定的写明推定
+  await p.evaluate(() => { TAB = 'board'; render0(); });
+  const tb = await p.$$('[data-tab="people"]'); if (!tb.length) errs.push('找不到人物页标签'); else { await tb[0].click(); await p.waitForTimeout(150); }
+  const hp = await p.evaluate(() => document.body.innerText);
+  if (!/史书未载，照该国用人惯例补/.test(hp)) errs.push('人物页上补的人没写来路');
+  if (!/任职年份照履历推定/.test(hp)) errs.push('人物页上高从诲没写照履历推定');
   console.log('ERRS', JSON.stringify(errs)); await b.close();
 })();
