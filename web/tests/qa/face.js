@@ -9,7 +9,7 @@ const { chromium } = require('playwright');
   for (const tab of ['board', 'people']) { await p.click(`[data-tab="${tab}"]`).catch(() => {}); await p.waitForTimeout(400);
     const r = await p.evaluate(() => ({ cv: document.querySelectorAll('canvas[data-face], canvas[data-face-npc]').length, btn: !!document.querySelector('#bFaceEdit, #bFaceRand'), txt: /捏脸|换一张脸/.test(document.body.innerText) }));
     if (r.cv || r.btn || r.txt) bad(tab + ' 页还有画像或捏脸按钮：' + JSON.stringify(r)); }
-  await p.fill('#said', '找程立德问亏空的事'); await p.click('#bSend'); await p.waitForTimeout(500); await idle();
+  { const n0 = await p.evaluate(() => S.chat.length); await p.fill('#said', '找程立德问亏空的事'); await p.click('#bSend'); await p.waitForFunction(n => S.chat.slice(n).some(c => c.role === 'gm'), n0, { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没回话')); await idle(); }
   const prompt = require('fs').existsSync('last_story_prompt.txt') ? require('fs').readFileSync('last_story_prompt.txt', 'utf8') : '';
   if (/【主角的相貌/.test(prompt)) bad('写正文的材料里还塞着捏出来的相貌');
   console.log('ERRS', JSON.stringify(errs));

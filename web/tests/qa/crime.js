@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
   const idle = () => p.waitForFunction(() => !BUSY && !BG, null, { timeout: 120000, polling: 300 }).catch(() => bad('卡住了'));
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart'); await p.waitForSelector('#said', { timeout: 300000 }); await idle();
-  const turn = async t => { await p.fill('#said', t); await p.click('#bSend'); await p.waitForTimeout(500); await idle(); };
+  const turn = async t => { const n0 = await p.evaluate(() => S.chat.length); await p.fill('#said', t); await p.click('#bSend'); await p.waitForFunction(n => S.chat.slice(n).some(c => c.role === 'gm'), n0, { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没回话')); await idle(); };   // 等这一回真回了话（机器忙时 0.5 秒内还没开工）
   await turn('去县衙告状，告周四盗卖官盐');
   if (!(await p.evaluate(() => arr(S.cases).some(c => c.name === '周四盗盐案' && c.stage === '报案')))) bad('告状没立案');
   await turn('在东关街开铺卖盐');
