@@ -71,6 +71,15 @@ const path = require('path');
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(sx); } finally { callClaude = oc; }
       const names = sx.org ? sx.org.nodes.flatMap(n => n.posts).flatMap(q => [q.holder].concat(arr(q.others))) : [];
       if (!names.includes(who)) bad.push(y + ' 年' + pol + '朝里没有' + who + '（任期被截短）'); }
+    // 建国以前是节度使府：闽 920（933 年才称帝）没有宰相、枢密，只有行军司马、判官这类使府位子；吴 909 张颢坐牙军指挥使
+    for (const [pol, y, pl, who] of [['闽', 920, '福州', ''], ['吴', 909, '扬州', '张颢']]) {
+      const sx = newSave({ name: '某壬', gender: '男', age: 30, role: '推官', gregorianYear: y, month: 3, day: 1, place: pl, polity: pol }); sx.chat = [{ role: 'gm', text: '开场。' }];
+      callClaude = async () => ({ text: '{}' }); try { await buildOrg(sx); } finally { callClaude = oc; }
+      const P = sx.org ? sx.org.nodes.flatMap(n => n.posts) : [];
+      if (!sx.org || sx.org.court !== pol) { bad.push(y + ' 年' + pol + '没照朝廷数据搭'); continue; }
+      if (P.some(q => /平章事|枢密|翰林/.test(q.title))) bad.push(y + ' 年' + pol + '还没建国，却有宰相、枢密、翰林：' + P.map(q => q.title).join('、'));
+      if (!P.some(q => q.title === '行军司马')) bad.push(y + ' 年' + pol + '使府没有行军司马');
+      if (who && !P.flatMap(q => [q.holder].concat(arr(q.others))).includes(who)) bad.push(y + ' 年' + pol + '牙军里没有' + who); }
     // 南唐 953：冯延巳再度拜相（951 年复相，三上三下），孙晟同在相位
     { const s8 = newSave({ name: '某庚', gender: '男', age: 30, role: '郎官', gregorianYear: 953, month: 3, day: 1, place: '金陵', polity: '南唐' }); s8.chat = [{ role: 'gm', text: '开场。' }];
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s8); } finally { callClaude = oc; }
