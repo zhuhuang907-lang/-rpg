@@ -28,6 +28,16 @@ const path = require('path');
     const s2 = mk('南平'); callClaude = async () => ({ text: '{}' }); try { await buildOrg(s2); } finally { callClaude = oc; }
     if (!s2.org || s2.org.court !== '荆南') bad.push('写「南平」没认出是荆南');
     else { const pick = s => s.org.nodes.flatMap(n => n.posts).filter(q => q.src === '拟').map(q => q.seat + ':' + q.holder).sort().join('|'); if (pick(s1) !== pick(s2)) bad.push('重开一局，同一位子补出来的人变了'); }
+    // 后唐 930（大国样板）：宰相、枢密使照通鉴核过的人坐；大官位子不补虚构人；中书舍人这类中层位子照用人来路补
+    const s3 = (() => { const s = newSave({ name: '某乙', gender: '男', age: 35, role: '监察御史', gregorianYear: 930, month: 6, day: 1, place: '洛阳', polity: '后唐' }); s.chat = [{ role: 'gm', text: '开场。' }]; return s; })();
+    callClaude = async () => ({ text: '{}' }); try { await buildOrg(s3); } finally { callClaude = oc; }
+    if (!s3.org || s3.org.court !== '后唐') bad.push('后唐没照朝廷数据搭人事树');
+    else { const P3 = s3.org.nodes.flatMap(n => n.posts), all = q => [q.holder].concat(arr(q.others)).filter(Boolean);
+      const xz = P3.find(q => /平章事/.test(q.title)) || {}; if (!all(xz).includes('冯道')) bad.push('930 年后唐宰相里没有冯道：' + JSON.stringify(xz));
+      if (all(xz).some(n => s3.courtWho[n] === '虚构')) bad.push('宰相位子补了虚构人');
+      const smz = P3.find(q => q.title === '枢密使') || {}; if (!all(smz).includes('范延光')) bad.push('930 年枢密使里没有范延光');
+      const zs = P3.find(q => q.title === '中书舍人') || {}; if (!all(zs).length || !all(zs).every(n => s3.courtWho[n] === '虚构')) bad.push('中书舍人这类中层位子没照来路补人');
+      if (P3.length > 30) bad.push('后唐中枢位子数不对：' + P3.length); }
     S = s1; return bad;
   });
   errs.push(...out);

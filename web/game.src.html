@@ -4816,7 +4816,8 @@ function orgFromCourt(s, C) {
     const q = { title: st.office.replace(n.name, '') || st.office, rank: st.rank || '', quota: st.quota || 1, holder: '', src: '', others: [], seat: st.id };
     who.forEach((w, i) => { s.courtWho[w.name] = w.how === '推定' ? '推定' : '明载'; if (i === 0) { q.holder = w.name; q.src = '史书'; } else q.others.push(w.name);
       s.people = s.people || {}; if (!s.people[w.name]) s.people[w.name] = { name: w.name, role: P.name + (st.office.replace(n.name, '') || st.office), seen: 0, court: true, real: true }; });
-    for (let k = (q.holder ? 1 + q.others.length : 0); k < q.quota && k < 4; k++) {   // 史书没留名的：照用人来路补，种子定死
+    if (st.noFill && !q.holder) q.status = '出缺';   /* 宰执、枢密这类大官史书这年没载在任者：空着，不补虚构人 */
+    for (let k = (q.holder ? 1 + q.others.length : 0); !st.noFill && k < q.quota && k < 4; k++) {   // 史书没留名的：照用人来路补，种子定死
       const key = P.name + '|' + st.id + '|' + st.from + '|' + k; let F = s.courtFixed[key];
       if (!F) { const R = arr(P.recruit); let r = seeded(hk(key)), acc = 0, route = R[R.length - 1]; for (const x of R) { acc += x.share; if (r <= acc) { route = x; break; } }
         const nm = route ? fictName(hk(key) + 17, arr(route.families).length ? route.families : ['王'], taken) : ''; if (!nm) continue; taken.add(nm);

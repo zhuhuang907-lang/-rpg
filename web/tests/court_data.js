@@ -19,5 +19,7 @@ for (const p of D.people) {
     for (let y = x.from; y <= x.to; y++) { const k = x.seat + '|' + y; (occ[k] = occ[k] || new Set()).add(p.name); }
   }
 }
-for (const [k, S] of Object.entries(occ)) { const [id, y] = k.split('|'); if (S.size > (seat[id].quota || 1) && !(seat[id].office.endsWith('节度使') && S.size === 2)) bad.push(`${seat[id].office} ${y} 年有 ${S.size} 人：${[...S].join('、')}`); }
+const span = {}; for (const p of D.people) for (const x of p.posts) span[p.name + '|' + x.seat] = x;
+for (const [k, S] of Object.entries(occ)) { const [id, y] = k.split('|'); const full = [...S].filter(n => { const x = span[n + '|' + id]; return x.from < +y && x.to > +y; });   // 这一年上任、离任的算交接，不算超员
+  if (full.length > (seat[id].quota || 1)) bad.push(`${seat[id].office} ${y} 年有 ${S.size} 人：${[...S].join('、')}`); }
 console.log(bad.length ? '五代十国朝廷数据：不合格\n' + bad.join('\n') : `五代十国朝廷数据：${D.polities.length} 国、${D.people.length} 人，全部合格`); process.exit(bad.length ? 1 : 0);
