@@ -51,19 +51,19 @@ const path = require('path');
     { const s5 = (() => { const s = newSave({ name: '某丁', gender: '男', age: 35, role: '中书舍人', gregorianYear: 930, month: 6, day: 1, place: '洛阳', polity: '后唐' }); s.chat = [{ role: 'gm', text: '开场。' }]; return s; })();
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s5); } finally { callClaude = oc; }
       const xz = s => (s.org.nodes.flatMap(n => n.posts).find(q => /平章事/.test(q.title)) || {}), all = q => [q.holder].concat(arr(q.others)).filter(Boolean);
-      const fic0 = s5.org.nodes.flatMap(n => n.posts).filter(q => q.src === '拟').map(q => q.seat + ':' + q.holder).sort().join('|');
+      const fix0 = JSON.parse(JSON.stringify(s5.courtFixed || {}));
       const before = all(xz(s5)).join('、');
       s5.clock.y = 934; const msgs = histTick(s5);
       const after = all(xz(s5)).join('、');
       if (s5.org.y !== 934) bad.push('跨年后朝堂没照新一年重排');
       if (before === after) bad.push('930 到 934 年宰相一个没换：' + before);
       if (!msgs.some(m => /平章事|宰相/.test(m))) bad.push('换人没进月报：' + JSON.stringify(msgs));
-      const fic1 = s5.org.nodes.flatMap(n => n.posts).filter(q => q.src === '拟').map(q => q.seat + ':' + q.holder).sort().join('|');
-      if (fic0 !== fic1) bad.push('跨年后补的虚构人变了'); }
+      const changed = Object.keys(fix0).filter(k => (s5.courtFixed[k] || {}).name !== fix0[k].name);   // 同一位子同一个空档，补的人永远是同一个
+      if (changed.length) bad.push('跨年后补的虚构人变了：' + changed.join('、')); }
     { const s6 = newSave({ name: '某戊', gender: '男', age: 30, role: '郎官', gregorianYear: 940, month: 6, day: 1, place: '成都', polity: '后蜀' }); s6.chat = [{ role: 'gm', text: '开场。' }];
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s6); } finally { callClaude = oc; }
       const xz = (s6.org && s6.org.nodes.flatMap(n => n.posts).find(q => /平章事/.test(q.title))) || {};
-      if (!s6.org || s6.org.court !== '后蜀' || xz.holder !== '张业') bad.push('940 年后蜀宰相不是张业：' + JSON.stringify(xz)); }
+      if (!s6.org || s6.org.court !== '后蜀' || ![xz.holder].concat(arr(xz.others)).includes('张业')) bad.push('940 年后蜀宰相里没有张业：' + JSON.stringify(xz)); }
     S = s1; return bad;
   });
   errs.push(...out);

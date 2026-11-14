@@ -50,6 +50,17 @@ PEOPLE = [
   P('李景威', [po('jn-jiang', '将', 963, 963)], clan='李', fate='宋师假道，谏不用，扼吭而死'),
   P('孙光宪', [po('jn-zsj', '掌书记', 926, 962, '推定', 'CBDB（926—963 节度使掌书记）；' + XW), po('jn-pg', '节度判官', 963, 963)], clan='孙', native='贵平', fate='归宋，拜黄州刺史'),
 ]
+def _extend(L, quota, y1):
+    """离任年不知道的（推定）：一直在任到接任的人上来、位子满了为止，最多十年，不过该朝亡年（任务六，2026-11-14 改：原来一律算四年，王处回这类长任的被截短）"""
+    for d in sorted(L, key=lambda d: d['from']):
+        if d.get('endHow') != '推定': continue
+        cap = min(y1, d['from'] + 10)
+        while d['to'] < cap:
+            y = d['to'] + 1
+            on = [e for e in L if e is not d and e['seat'] == d['seat'] and e['from'] <= y <= e['to']]
+            if len(on) + 1 > quota.get(d['seat'], 1): break
+            if any(e['name'] == d['name'] and e is not d and e['from'] <= y for e in L if e['from'] > d['from']): break   # 这人改任别官了
+            d['to'] = y
 # ---------- 后唐（大国样板，唐制）：中枢大官照资治通鉴逐句核过才收（scripts/houtang_verify.py），大官位子不补虚构人 ----------
 import sys as _sys
 _sys.path.insert(0, str(ROOT / 'scripts'))
@@ -89,6 +100,7 @@ for _ in range(3):
             if len(on) > _quota[d['seat']]:
                 old = sorted([e for e in on if e['endHow'] == '推定' and e['from'] < y], key=lambda e: e['from'])
                 for e in old[:len(on) - _quota[d['seat']]]: e['to'] = max(e['from'], y - 1)
+_extend(_ht, _quota, 936)
 _hp = {}
 for d in _ht:
     seat = next(q for q in HOUTANG['seats'] if q['id'] == d['seat'])
@@ -124,6 +136,7 @@ def _court(pol, pre, y0, y1, grade, why, recruit, extra=None):
                 if len(on) > quota.get(d['seat'], 1):
                     old = sorted([e for e in on if e['endHow'] == '推定' and e['from'] < y], key=lambda e: e['from'])
                     for e in old[:len(on) - quota.get(d['seat'], 1)]: e['to'] = max(e['from'], y - 1)
+    _extend(L, quota, y1)
     ppl = {}
     for d in L:
         st = next((q for q in seats if q['id'] == d['seat']), None)
