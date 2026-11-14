@@ -1662,9 +1662,21 @@ function orgLibText(s, part) {
     return [h.military ? '军制：' + cut(typeof h.military === 'string' ? h.military : JSON.stringify(h.military), 1600) : '', h.ranks ? '品级俸禄：' + cut(typeof h.ranks === 'string' ? h.ranks : JSON.stringify(h.ranks), 500) : ''].filter(Boolean).join('\n');
   }).join('\n');
 }
+/** 国策书：照这个政权此刻真有的处境列能推行的施政与改革（人事树照数据搭的政权也要有，R-227） */
+async function polBookDS(s, head) {
+  const o = (v, n) => one(v, n || 40);
+    try {
+      const { text } = await callClaude(`${head}\n国策书：照这个政权此刻真有的处境，列出能推行的施政与改革，分「政治」「经济」「民生」「军事」「制度」五类，每类三到六条；有前后次序的写 need（前置的 id）；历史上谁、何时推行过同类的写在 real（没有写空）；effect 写推行了会怎样，利弊都写；cost 是国策点（2 到 8）。不收与这个年代不符的东西。\n只输出一个 JSON 对象：{"policies":[{"id":"p1","area":"政治","name":"","desc":"一句话做什么","cost":3,"need":[],"real":"","effect":""}]}`, null, { maxTokens: 4000, temperature: 0.3, kind: '研读', detached: true });
+      const d = parseJSON(text);
+      if (d && Array.isArray(d.policies) && d.policies.length) s.polBook = d.policies.filter(x => x && x.name).slice(0, 30).map((x, i) => ({ id: o(x.id, 8) || 'p' + (i + 1), area: /政|经|民|军|制/.test(x.area || '') ? o(x.area, 4) : '政治', name: o(x.name, 20), desc: o(x.desc, 80), cost: Math.max(1, Math.min(10, num(x.cost) || 3)), need: arr(x.need).map(v => o(v, 8)).filter(Boolean), real: o(x.real, 60), effect: o(x.effect, 120), state: (arr(s.polBook).find(q => q.name === o(x.name, 20)) || {}).state || '' }));
+    } catch (e) { if (e && e.code === 'cancelled') throw e; }
+}
 async function buildOrg(s) {
   if (ORGING) return;
-  { const CD = courtDataFor(s, s.clock.y); if (CD) { s.org = orgFromCourt(s, CD); SH(() => seatSelf(s), 'seatSelf'); ORGMSG = ''; return; } }   // 有朝廷数据的政权照数据搭，不再联网现编（R-227）
+  { const CD = courtDataFor(s, s.clock.y); if (CD) { s.org = orgFromCourt(s, CD); SH(() => seatSelf(s), 'seatSelf'); ORGMSG = '';
+    if (!arr(s.polBook).length) { ORGING = true; try { await polBookDS(s, `你是精通历代职官、政制、军制的史家，替一局历史游戏整理国策。此刻：${timeText(s.clock)}，政权${s.place.polity || ''}（${CD.P.name}，${CD.P.model}），主角${(s.protagonist || {}).name || ''}（${(s.protagonist || {}).role || ''}）。`); } catch (e) { if (e && e.code === 'cancelled') throw e; } finally { ORGING = false; } }
+    if (permLevel(s) === 'decree' && !s.polGranted) { s.polPts = Math.max(s.polPts || 0, 6); s.polGranted = true; } else if (s.polPts == null) s.polPts = 0;
+    return; } }   // 有朝廷数据的政权照数据搭，不再联网现编（R-227）
   ORGING = true; ORGMSG = '正在联网查制度，分中枢、地方、军事三路整理人事树……'; render();
   try {
     const pol = s.place.polity || '', dy = pol + (/[代朝]$/.test(pol) ? '' : '代'), yl = s.clock.yearLabel || s.clock.y + '年', ruler = isRuler(s), p = s.protagonist, here = geoCenter(s);
@@ -1743,12 +1755,7 @@ ${vacantText(s.clock.y) ? '【这一年照例空着、不授人的职位（照�
     s.org = { regime: `${pol} ${yl}`, pol: s.place.polity || '', ruler, at: s.turn, y: s.clock.y, nodes, log: lg0, lib: !!instLibFor(s).length };
     SH(() => seatSelf(s), 'seatSelf');   // R-204 做了官的主角先落进树里，朝局才是你的戏
     orgFillReal(s); orgVacantFix(s);
-    // 国策书另起一路（照这个政权此刻的处境）
-    try {
-      const { text } = await callClaude(`${head}\n国策书：照这个政权此刻真有的处境，列出能推行的施政与改革，分「政治」「经济」「民生」「军事」「制度」五类，每类三到六条；有前后次序的写 need（前置的 id）；历史上谁、何时推行过同类的写在 real（没有写空）；effect 写推行了会怎样，利弊都写；cost 是国策点（2 到 8）。不收与这个年代不符的东西。\n只输出一个 JSON 对象：{"policies":[{"id":"p1","area":"政治","name":"","desc":"一句话做什么","cost":3,"need":[],"real":"","effect":""}]}`, null, { maxTokens: 4000, temperature: 0.3, kind: '研读', detached: true });
-      const d = parseJSON(text);
-      if (d && Array.isArray(d.policies) && d.policies.length) s.polBook = d.policies.filter(x => x && x.name).slice(0, 30).map((x, i) => ({ id: o(x.id, 8) || 'p' + (i + 1), area: /政|经|民|军|制/.test(x.area || '') ? o(x.area, 4) : '政治', name: o(x.name, 20), desc: o(x.desc, 80), cost: Math.max(1, Math.min(10, num(x.cost) || 3)), need: arr(x.need).map(v => o(v, 8)).filter(Boolean), real: o(x.real, 60), effect: o(x.effect, 120), state: (arr(s.polBook).find(q => q.name === o(x.name, 20)) || {}).state || '' }));
-    } catch (e) { if (e && e.code === 'cancelled') throw e; }
+    await polBookDS(s, head);   // 国策书另起一路（照这个政权此刻的处境）
     if (permLevel(s) === 'decree' && !s.polGranted) { s.polPts = Math.max(s.polPts || 0, 6); s.polGranted = true; } else if (s.polPts == null) s.polPts = 0;   // 成了一方之主，头一回给六点起步
     ORGMSG = '';
   } catch (e) { if (e && e.code === 'cancelled') throw e; s.orgFail = s.turn; ORGMSG = '没整理成：' + errText(e) + '（下一回合自动再试）'; }

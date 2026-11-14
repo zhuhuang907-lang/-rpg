@@ -9,9 +9,10 @@ const path = require('path');
   const out = await p.evaluate(async () => {
     const bad = [], mk = pol => { const s = newSave({ name: '某甲', gender: '男', age: 30, role: '推官', gregorianYear: 926, month: 6, day: 1, place: '江陵', polity: pol }); s.chat = [{ role: 'gm', text: '开场。' }]; return s; };
     if (!COURTDATA.length) return ['游戏里没有朝廷数据'];
-    const oc = callClaude; let asked = 0; callClaude = async () => { asked++; return { text: '{}' }; };
+    const oc = callClaude; let asked = 0; callClaude = async pr => { if (/国策书/.test(pr)) return { text: JSON.stringify({ policies: [{ id: 'p1', area: '军事', name: '修战舰习水战' }] }) }; asked++; return { text: '{}' }; };
     const s1 = mk('荆南'); try { await buildOrg(s1); } finally { callClaude = oc; }
     if (asked) bad.push('有朝廷数据的荆南还去问模型现编人事树');
+    if (!arr(s1.polBook).some(p => p.name === '修战舰习水战')) bad.push('照数据搭了人事树，国策书却没整');
     if (!s1.org || s1.org.court !== '荆南') return bad.concat('荆南没照朝廷数据搭人事树');
     const posts = s1.org.nodes.flatMap(n => n.posts.map(q => ({ n: n.name, q })));
     if (posts.length < 10 || posts.length > 20) bad.push('荆南位子数不像小国：' + posts.length);
