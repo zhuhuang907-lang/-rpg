@@ -64,6 +64,14 @@ const path = require('path');
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s6); } finally { callClaude = oc; }
       const xz = (s6.org && s6.org.nodes.flatMap(n => n.posts).find(q => /平章事/.test(q.title))) || {};
       if (!s6.org || s6.org.court !== '后蜀' || ![xz.holder].concat(arr(xz.others)).includes('张业')) bad.push('940 年后蜀宰相里没有张业：' + JSON.stringify(xz)); }
+    // 闽 944：宰相王倓、杨沂丰照通鉴；拱宸都指挥使朱文进坐禁军位子；殷的潘承祐不混进闽
+    { const s7 = newSave({ name: '某己', gender: '男', age: 30, role: '郎官', gregorianYear: 944, month: 3, day: 1, place: '福州', polity: '闽' }); s7.chat = [{ role: 'gm', text: '开场。' }];
+      callClaude = async () => ({ text: '{}' }); try { await buildOrg(s7); } finally { callClaude = oc; }
+      const P7 = s7.org ? s7.org.nodes.flatMap(n => n.posts) : [], all = q => [q.holder].concat(arr(q.others)).filter(Boolean), names = P7.flatMap(all);
+      if (!s7.org || s7.org.court !== '闽') bad.push('闽没照朝廷数据搭人事树');
+      else { const xz = P7.find(q => /平章事/.test(q.title)) || {}; if (!all(xz).some(n => ['王倓', '杨沂丰'].includes(n))) bad.push('944 年闽宰相里没有王倓、杨沂丰：' + JSON.stringify(all(xz)));
+        if (!names.includes('朱文进')) bad.push('944 年闽朝里没有朱文进');
+        if (names.includes('潘承祐')) bad.push('殷的潘承祐混进了闽朝'); } }
     S = s1; return bad;
   });
   errs.push(...out);
