@@ -2534,7 +2534,7 @@ function orgMigrate(s) {
   if (!s || !s.protagonist || s.orgMig) return; s.orgMig = 1; const me = s.protagonist.name, role = String(s.protagonist.role || ''), roleOwn = ID_REL.test(role) ? '' : role;
   for (const c of arr(s.circles)) if (c && c.leader === me && !orgsLive(s).some(o => o.name === c.name)) orgNew(s, { name: c.name, kind: /寨|山/.test(c.name + c.kind) ? '山寨' : /镖|帮|会/.test(c.name + c.kind) ? '帮会' : c.kind, head: me });
   const own = arr(s.forces).filter(f => f && f.leader === me);
-  if (ID_BANDIT.test(roleOwn) && ID_BANDIT_HEAD.test(roleOwn) && !orgsLive(s).some(o => o.head === me && ORG_ARMED.test(o.kind))) { const nm = (roleOwn.match(/[一-龥]{1,6}(寨|山|岭|泊|岗)/) || [])[0] || one(roleOwn, 10); orgNew(s, { name: nm, kind: /绿林|响马|强人/.test(roleOwn) ? '绿林' : '山寨', head: me, force: own[0] ? own[0].name : '', seat: nm }); }
+  if (ID_BANDIT.test(roleOwn) && ID_BANDIT_HEAD.test(roleOwn) && !orgsLive(s).some(o => o.head === me && ORG_ARMED.test(o.kind))) { const nm = bandName(roleOwn, me); orgNew(s, { name: nm, kind: /绿林|响马|强人/.test(roleOwn) ? '绿林' : '山寨', head: me, force: own[0] ? own[0].name : '', seat: nm }); }
   if (/族长|宗长|家主|族中长房/.test(roleOwn) && !orgsLive(s).some(o => o.kind === '宗族' && o.head === me)) { const sur = String(me).slice(0, 1); orgNew(s, { name: sur + '氏宗族', kind: '宗族', head: me, members: arr(s.household).filter(m => !m.dead).map(m => m.name).slice(0, 12), seat: geoCenter(s) }); }
   for (const b of arr(s.business)) if (b && b.name && /商|贾|东家|掌柜|老板/.test(roleOwn) && !orgsLive(s).some(o => o.biz === b.name)) orgNew(s, { name: b.name, kind: /行商|贩|船|货/.test(String(b.kind || '')) ? '商队' : '商号', head: me, biz: b.name, seat: b.place || geoCenter(s) });
 }
@@ -2597,6 +2597,13 @@ function orgsHtml(s) {
         <div>${w(`在${o.name}里招人：`, ORG_ARMED.test(o.kind) ? '招人入伙' : '添人手')}${w(`把${o.name}的据点迁到`, '迁据点')}${w(`让${o.name}去结交`, '结交')}${w(`把${o.name}交给……接掌：`, '换头领')}${w(`把${o.name}散了：`, '散伙')}</div>` : `<div>${w(`退出${o.name}：`, '退出')}</div>`}
         ${arr(o.log).length ? `<details class="fold"><summary>经过（${o.log.length}）</summary><div class="list">${o.log.slice().reverse().slice(0, 10).map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.text)}</div>`).join('')}</div></details>` : ''}</div>`; }).join('')}
     ${gone.length ? `<div class="muted" style="font-size:12px">已散：${esc(gone.map(o => o.name).join('、'))}</div>` : ''}`;
+}
+/** 山寨叫什么：身份里有正经名号（「黑风寨寨主」「梁山泊头领」）就用它；只有「某府某县境内山寨寨主」这种说法的，叫「某家寨」。
+ *  以前照着前六个字硬截，截出「府菏泽县境内山」这种怪名（2026-11-14 真模型实测查出） */
+function bandName(role, me) {
+  const t = String(role || '').replace(/^.*(?:境内|境上|交界|城外|附近|一带|县|州|府|省|的)(?=[一-龥]{1,5}(?:寨|山|岭|泊|岗))/, '');
+  const m = t.replace(/(寨主|头领|大当家|二当家|当家|首领|头目|大王|好汉|强人).*$/, '').trim();
+  return /^[一-龥]{2,6}$/.test(m) && /(寨|泊|岭|岗|山)$/.test(m) && !/^(山寨|大寨|小寨|土寨|山上|深山|荒山|大山|野山)$/.test(m) && !/[府州县省]/.test(m) ? m : String(me || '').slice(0, 1) + '家寨';
 }
 /** 身份决定开哪些面板：一方之主（君主、藩镇、军阀、有封地的）全开；地方官有辖区、时政、召见属官、人事树可上疏；京官有人事树和上疏；统兵的武官有军务；平头百姓、商人、读书人没有朝局和军务 */
 const MIL_OFFICE = /总兵|参将|游击|守备|千总|把总|都司|提督|将军|都督|指挥|卫所|统领|都统|参领|佐领|节度|镇守|兵备/;
@@ -6237,8 +6244,8 @@ function actsHtml(s, mini) {
 /** 回执：这一回各张单子怎样了、正文说了却没落账的 */
 function receiptHtml(r, unb) {
   r = arr(r).filter(x => x && !/^办成$/.test(x.state || ''));   // 办成了正文里已经写着，回执只提没办成、受阻、拖着的
-  if (!arr(r).length && !arr(unb).length) return '';
-  return `<div class="receipt"><b>没办成的、还拖着的</b>${arr(r).map(x => `<div>· <span class="att ${/受阻|驳回|没有下文/.test(x.state) ? 'b-bad' : ''}">${esc(x.state)}</span> ${esc(ACT_T[x.type] || '')}：${esc(x.what)}${x.why ? `<span class="muted">——${esc(x.why)}</span>` : ''}</div>`).join('')}${arr(unb).length ? `<div class="muted" style="font-size:12px">正文里说了、其实没成的：${arr(unb).map(esc).join('；')}</div>` : ''}</div>`;
+  if (!arr(r).length) return '';
+  return `<div class="receipt"><b>没办成的、还拖着的</b>${arr(r).map(x => `<div>· <span class="att ${/受阻|驳回|没有下文/.test(x.state) ? 'b-bad' : ''}">${esc(x.state)}</span> ${esc(ACT_T[x.type] || '')}：${esc(x.what)}${x.why ? `<span class="muted">——${esc(x.why)}</span>` : ''}</div>`).join('')}</div>`;   // 玩家只管扮演：没认的账不摆出来，由对账改稿在后台把正文改到和账一致（R-236）
 }
 /* ========== 正文不作凭据（任务十六第一步，R-233；2026-11-14 玩家：「他的剧情很多写的不好，错误很多，你要想办法限制……不会有错误」）：
  *  以前的规矩是「正文里写了授官就认」，于是写戏的模型顺手一句「授你为刺史」，账上就真成了刺史；写一句在世的真人死了，以后回回当他死了。
@@ -6280,6 +6287,37 @@ function factClaims(s, said, text, ruling) {
   return out;
 }
 const factFaults = (s, said, text, ruling) => factClaims(s, said, text, ruling).map(x => x.msg);
+/** 账房报主角得了官爵功名，却没有正文以外的凭据 */
+const idGainBarred = (s, idc, said, ruling) => !!idc && /考中|中了|及第|登科|授|擢|升|袭|封|册|称王|称帝|即位|登基|拜|辟|署|补/.test(String(idc.why || '')) && !/罢|革|贬|降|免|夺|削|致仕|落草|出家|还俗|退伍|嫁|入赘|过继|被俘|下狱/.test(String(idc.why || '')) && !gainSanction(s, said, ruling);
+/** 对账（R-236，2026-11-14 玩家：「玩家只负责扮演，不负责纠错……不希望玩着玩着发现货不对板，说的话跟账本要一致」）：
+ *  记账回来、落账之前先空跑一遍各道闸，看正文写了哪些账上不会认的事；有就在后台把正文改到和账一致，玩家看到的只有改好的。不改存档。 */
+function ledgerMismatch(s, d, said, ruling) {
+  const out = []; if (!s || !d) return out;
+  let d2; try { d2 = JSON.parse(JSON.stringify(d)); } catch (_) { return out; }
+  const T = Object.create(s); T.unbooked = [];
+  try { for (const t of windfallGuard(T, d2, said, ruling)) out.push('主角没有得到：' + t); } catch (_) {}
+  // 兵马、地盘那道老闸不进对账：它拦的多半是账房把原有的人马地盘换个名字又报一遍，正文并没有写错（真模型实测：寨主的喽啰、山寨被重报），照它改稿反而把对的改错
+  const idc = d.identity && typeof d.identity === 'object' && String(d.identity.role || '').trim().length >= 2 ? d.identity : null;
+  if (idGainBarred(s, idc, said, ruling)) out.push(`主角没有成为「${one(idc.role, 24)}」（这一步没有求官应举，也没有在办的升迁）`);
+  for (const r of arr(d.actResults)) { if (!r || !/办成/.test(String(r.state || ''))) continue; const an = arr(s.actsNow).find(a => a && a.tmp === one(r.id, 8)); if (!an) continue;
+    const rs = arr(ruling && ruling.steps).find(t => t && simText(t.what || '', an.what || '') >= 0.3);
+    if (rs && /办不到|办不成/.test(String(rs.ok || '')) || /越权/.test(String(an.ok || ''))) out.push(`「${one(an.what, 24)}」没有办成${rs && rs.why ? '（' + one(rs.why, 40) + '）' : '（越了主角的权限）'}`); }
+  return [...new Set(out)].slice(0, 8);
+}
+/** 对不上的事里点了名的（凭空来的妻妾、新立的兵马、新得的地方、凭空的官职）：正文里还带着这些名字的句子删掉；删多了（剩不到一半）不删 */
+function mismatchCut(text, mm) {
+  const keys = []; for (const x of arr(mm)) { if (/进项|办成/.test(x)) continue; for (const m of String(x).matchAll(/「([^」]{2,12})」/g)) keys.push(m[1]); }
+  if (!keys.length) return text;
+  const sents = String(text).match(/[^。！？!?\n]*[。！？!?\n]+[」』”’）)]*|[^。！？!?\n]+$/g) || [];
+  const kept = sents.filter(st => !keys.some(k => st.includes(k))).join('').replace(/\n{3,}/g, '\n\n').trim();
+  return kept.length >= String(text).length * 0.5 && kept.length >= 20 ? kept : text;
+}
+const reconcileInput = (text, mm) => `下面是一回已经写好的正文。核对账册以后，正文里有几件事其实没有发生：
+${mm.map((x, i) => `${i + 1}. ${x}`).join('\n')}
+把正文里写到这几件事的地方改掉：写主角得到了的，改成没有得到（对方没给、只是嘴上说说、落了空、被人拦下）；写办成了的，改成没办成、受阻，照括号里的缘由写对方怎么回的。别处一个字不动，篇幅、口气、人物、结尾都照旧，仍称主角为「你」。不加任何说明、标题、括号按语，直接输出改好的整篇正文。
+
+【正文】
+${text}`;
 /** 重写了还在的：把那一句删掉。删多了（剩不到六成）就不删，留给账闸把关 */
 function stripFacts(s, said, text, ruling) {
   const hits = factClaims(s, said, text, ruling); if (!hits.length) return { text, cut: [] };
@@ -13438,8 +13476,11 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const sb2 = spanBlock(s, span, said);
   const dir = directorBlock(s, said) + (sb2 ? sb2 + '\n' : '') + (s.mainNow && s.mainNow.upcoming && s.mainNow.days > 3 && !SPANS[span] && /歇着|歇几天|歇一阵|等着|等等看|观望|过几天|过些日子|闲着|没什么事|养病|守孝|读书度日/.test(said) ? `【这一回的时间】玩家要歇着、等着：把日子往前推，写这几天到几十天里主线的前兆一件件来，推到离那件大事更近的时候（它约${s.mainNow.days}天后到来，可以直接写到它前一两天或当天）。\n` : '');
   const bb = ruling && ruling.battleResult ? battleBlock(ruling.battleResult) : '';
+  const lastUnb = arr(s.unbooked).filter(u => u && u.turn === s.turn).map(u => String(u.text || '').replace(/^正文写了?/, '').replace(/，可这一步.*$|，没有凭据.*$|，可照你的.*$/, '')).filter(Boolean).slice(0, 5);
+  const unbNote = lastUnb.length ? `\n【上一回其实没有发生的事（别当它发生过；人物也不提它）】${lastUnb.join('；')}` : '';
+  const lookNote = EXTRA_LOOK ? `\n【你要查的账（照这个写，不要再写「查账」）】\n${EXTRA_LOOK}` : '\n【缺数先查账】材料里找不到你这一回要用的确数（兵马、军务、家宅、钱粮、国势、行动单、势力、某个人、某个地方）时，不要估、不要编：整篇只回一行「【查账：要查的几样，用顿号隔开；人写「人物:姓名」，地方写「地图:地名」】」，程序把账给你再写。材料够就直接写。';
   const noGain = !gainSanction(s, said, ruling) ? '\n【这一回账上不会有的】玩家这一步没有求官应举，行动单上也没有在办的升迁：不写主角得官、封爵、登科、得称号（写了程序会删，也不记账）；史书上此时在世的人，主角没碰他就不写他死。' : '';
-  return pushUser(turns, IRON_HEAD + what + noGain + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文。');
+  return pushUser(turns, IRON_HEAD + what + noGain + unbNote + lookNote + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文。');
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
 function ledgerInput(s, said, story, hidden, span, ruling) {
@@ -13978,6 +14019,7 @@ let DRAFTN = 0, CUR_SAID = '', LOGIC_FIX = [], LIGHT_REVIEW = null;   // 写稿�
 /** 边写边显示：写到哪儿给玩家看到哪儿（标明是初稿，核实、记账做完换成定稿），不用对着转圈干等 */
 let DRAFT_LIVE = '', DRAFT_T = 0;
 const draftCb = t => {
+  if (/^\s*【查账/.test(String(t || ''))) return;   // 写戏的在向程序要账：不给玩家看
   DRAFTN = String(t || '').length; DRAFT_LIVE = String(t || '');
   const el = $('#draftN'); if (el) el.textContent = DRAFTN;
   if (Date.now() - DRAFT_T < 350) return; DRAFT_T = Date.now();
@@ -14184,7 +14226,7 @@ function applyReply(s, d, said) {
     // 身份变化要有正文为凭：正文里真写了授官、考中、罢官、从军、出嫁……才认；账房自己给主角换身份不认
     const ID_EV = /考中|中了|及第|登科|授|任为|除为|擢|迁为|升|降为|贬|罢|革职|革去|免官|致仕|成了|改做|改行|入了|出家|还俗|从军|投军|应募|退伍|落草|招安|嫁|入赘|过继|袭爵|袭了|封为|册为|捐了|纳捐|称王|称帝|即位|登基|拜为|辟为|署为|补为/;
     if (idc && !ID_EV.test(String(d.reply || '') + String(said || ''))) { noteErr('账房擅自改了主角的身份，没认', one(idc.role, 30)); }
-    else if (idc && /考中|中了|及第|登科|授|擢|升|袭|封|册|称王|称帝|即位|登基|拜|辟|署|补/.test(String(idc.why || '')) && !/罢|革|贬|降|免|夺|削|致仕|落草|出家|还俗|退伍|嫁|入赘|过继|被俘|下狱/.test(String(idc.why || '')) && !gainSanction(s, said, CUR_RULING)) {
+    else if (idGainBarred(s, idc, said, CUR_RULING)) {
       // 正文不作凭据（任务十六）：得官、登科、封爵要有玩家这一步或在办的事为凭，光是正文写了不认
       noteErr('正文写主角得了官爵功名，没有凭据，没认', one(idc.role, 30)); s.unbooked = arr(s.unbooked).concat([{ turn, text: `正文写你成了「${one(idc.role, 24)}」，可这一步你没有求官应举，也没有在办的升迁，账上没认` }]).slice(-30); extra.unbooked = arr(extra.unbooked).concat([`成了「${one(idc.role, 24)}」`]);
     }
@@ -14659,7 +14701,7 @@ function openFaceEditor() {
   };
   pane(); draw();
 }
-let PERF = null, CUR_RULING = null;
+let PERF = null, CUR_RULING = null, EXTRA_LOOK = '';
 /** 账里的列表只留像样的条目：AI 记账偶尔留下 null、一个字、缺名字的条目，一条坏的就能让整页画不出来、按钮全失灵（2026-10-30 玩家：第二回合说一句就没反应了） */
 function tidyState(s) {
   if (!s || typeof s !== 'object') return s;
@@ -15612,6 +15654,11 @@ async function send(said, span, note, resume) {
       const { text } = await callClaude(storyInput(S, said, span, note, sys, ruling), draftCb,
         { json: false, temperature: STORY_T, maxTokens: 6000, system: sys ? storyRules() : '', resumeJob: resume && resume.job, onJob: job => pend({ job, ruling }), ...(resume && resume.fix ? { kind: '改稿' } : {}), ...(LIGHT ? { thinking: false } : {}) });   // 家常的一步不深想，像聊天一样快
       st = splitStory(text);
+      // 写戏的要查账（R-236「ai 要可以随时看游戏目前的信息」）：它只回了一行「【查账：……】」，程序把这几样账给它，再写一次（只一次）
+      { const lk = /^\s*【查账[:：]([^】]{1,80})】\s*$/.exec(String(text || '').trim().slice(0, 120)) || (String(text || '').trim().length < 160 ? /【查账[:：]([^】]{1,80})】/.exec(String(text || '')) : null);
+        if (lk) { const keys = lk[1].split(/[、，,；;\s]+/).map(x => x.trim()).filter(Boolean).slice(0, 8); EXTRA_LOOK = ledgerLookup(S, keys, said) || '账上没有这几样的记载：照材料里已有的写，没有的不写确数。'; S.lookAsked = arr(S.lookAsked).concat([{ turn: S.turn, keys }]).slice(-20);
+          try { const rl = await callClaude(storyInput(S, said, span, note, sys, ruling), draftCb, { json: false, temperature: STORY_T, maxTokens: 6000, system: sys ? storyRules() : '', ...(LIGHT ? { thinking: false } : {}) }); st = splitStory(rl.text); } finally { EXTRA_LOOK = ''; }
+          if (/^\s*【查账/.test(String(st.text || ''))) st = { ...st, text: '' }; } }
       // 偶尔一个字没写出来：自动再写一次，不让玩家点
       if (!st.text) {
         const r2 = await callClaude(storyInput(S, said, span, note, sys, ruling), draftCb, { json: false, temperature: STORY_T, maxTokens: 6000, system: sys ? storyRules() : '' });
@@ -15692,6 +15739,16 @@ async function send(said, span, note, resume) {
       d = d || { elapsedDays: 0 };
       const fx = applyFixes(st.text, d.fixes);
       if (st.hidden) d.gmNotes = [st.hidden].concat(arr(d.gmNotes));
+      // 对账改稿（R-236）：账上不会认的事，正文里先改掉，玩家看到的话和账一致；改稿失败照旧走各道闸（账不认），下一回的材料里注明
+      if (ok) { const mm = ledgerMismatch(S, d, said, ruling); if (mm.length) { noteErr('对账改稿', mm.map(x => x.slice(0, 30)).join(' / '), { said: cut(said, 60) });
+        let done = false;
+        for (let k = 0; k < 2 && !done; k++) {   // 改稿没成再试一次
+          try { const rr = await callClaude(reconcileInput(fx.text, mm), null, { json: false, temperature: 0.2, maxTokens: 6000, kind: '改稿', thinking: false }); const t2 = String((splitStory(rr.text) || {}).text || '').trim();
+            if (t2.length > fx.text.length * 0.6 && t2.length < fx.text.length * 1.4) { fx.text = stripFacts(S, said, t2, ruling).text; done = true; S.reconciled = (num(S.reconciled) || 0) + 1; }
+          } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+        // 两次都没改成，或改完那几个名字还在：程序直接删掉带这些名字的句子（玩家看到的那一版必须和账一致）
+        { const cut2 = mismatchCut(fx.text, mm); if (cut2 !== fx.text) { fx.text = cut2; noteErr('对账删句', mm.map(x => x.slice(0, 20)).join(' / ')); } }
+        STREAM = fx.text; } }
       // 账里哪一项格式怪到程序出错：正文照样留下，这一回标成「账没记上」，可以补记，不让整回作废
       const snap = clone(S);
       if (PERF) { const t = Date.now(); if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); S.perf = arr(S.perf).concat([{ turn: (S.turn || 0) + 1, secs: Math.round((t - PERF.t0) / 1000), ph: Object.fromEntries(Object.entries(PERF.ph).map(([k, v]) => [k, Math.round(v / 1000)])), rw: (st.rewrote ? 1 : 0) + (early ? 1 : 0) }]).slice(-20); PERF = null; }
