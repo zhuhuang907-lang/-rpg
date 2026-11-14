@@ -6238,6 +6238,46 @@ function receiptHtml(r, unb) {
   if (!arr(r).length && !arr(unb).length) return '';
   return `<div class="receipt"><b>没办成的、还拖着的</b>${arr(r).map(x => `<div>· <span class="att ${/受阻|驳回|没有下文/.test(x.state) ? 'b-bad' : ''}">${esc(x.state)}</span> ${esc(ACT_T[x.type] || '')}：${esc(x.what)}${x.why ? `<span class="muted">——${esc(x.why)}</span>` : ''}</div>`).join('')}${arr(unb).length ? `<div class="muted" style="font-size:12px">正文里说了、其实没成的：${arr(unb).map(esc).join('；')}</div>` : ''}</div>`;
 }
+/* ========== 正文不作凭据（任务十六第一步，R-233；2026-11-14 玩家：「他的剧情很多写的不好，错误很多，你要想办法限制……不会有错误」）：
+ *  以前的规矩是「正文里写了授官就认」，于是写戏的模型顺手一句「授你为刺史」，账上就真成了刺史；写一句在世的真人死了，以后回回当他死了。
+ *  现在：主角得官、封爵、登科、称号，在世真人的死讯，要有正文以外的凭据——玩家这一步自己求的、行动单上在办的、临门的事、打了仗。
+ *  没凭据的：先打回重写（并进 preFaults）；重写了还在，那一句从正文里删掉；存档一概不认，摆进「没落账的」给玩家看。丢官、贬、罢、落难不在此列（不暗中救场）。 ========== */
+const FACT_GAIN = /(?:授|擢|拜|封|除|署|辟|补|迁|升|晋|加)(?:你|汝|尔|卿)(?:为|作|做)|你(?:已|便|遂|就|即|当即|竟|终于|果然|如愿)?(?:被|蒙|奉旨|奉诏|奉命|奉敕)?(?:授为|授以|擢为|擢升|升任|升为|拜为|封为|除为|除授|任命为|补为|署为|迁为|进封|加封|晋封|袭了爵|袭爵|登基|即位|称帝|称王|考中|及第|登科|中了(?:举|进士|秀才|状元|解元))/;
+const FACT_IF = /若|如果|倘|要是|假如|只要|等到|待到|日后|将来|他日|来日|早晚|迟早|必当|定当|愿|想|欲|盼|许你|许了|答应|保举|保你|举荐|荐你|奏请|请旨|拟|打算|商量|未|不曾|没有|没能|不肯|不许|岂|难道|怎|何|吗|么？|？|梦|戏言|玩笑|传言|谣|讹/;
+const FACT_SANC = /官|职|缺|授|擢|拜|封|升|迁|举|荐|辟|补|考|试|科|应举|赴任|上任|就任|到任|袭|爵|称王|称帝|即位|登基|自立|建号|招安|归附|投效|投奔|从军|投军|入幕|铨|选|叙|功|赏|请命|自荐|上书|上疏/;
+const FACT_DEATH = /死了|已死|身死|战死|病死|暴死|死于|卒于|病卒|薨|崩|殁|亡故|身故|病故|遇害|被杀|被斩|伏诛|自尽|自刎|自缢|赐死|毙命|殒命|授首|枭首|绞死|杖毙|处斩|斩首/;
+const FACT_HEARSAY = /未|没|不曾|若|恐|怕|险些|几乎|差点|听说|据说|传言|风闻|谣|讹|有人说|都说|说是|咒|恨不得|该死|找死|送死|怕死|不怕|想|欲|要|将|必|谁|吗|？|梦/;
+/** 这一步有没有正文以外的凭据让主角得官：玩家自己这一步求的、行动单上在办的、临门的事、军令、打了仗 */
+function gainSanction(s, said, ruling) {
+  if (ruling && ruling.battleResult) return true;
+  const t = [String(said || '')].concat(arr(s.actsNow).map(a => a && a.what), actOpen(s).map(a => a && a.what), arr(s.press).filter(z => z && z.state === '临门').map(z => `${z.title || ''}${z.who || ''}`), arr(s.armyPending).map(x => x && x.line)).filter(Boolean).join(' ');
+  return FACT_SANC.test(t);
+}
+/** 正文里没凭据的大事：[{ kind:'gain'|'death', who, sent, msg }]。只挑拿得准的：带假设、许诺、传闻、否定口气的不算 */
+function factClaims(s, said, text, ruling) {
+  const out = [], T = String(text || ''); if (!s || !s.protagonist || T.length < 20) return out;
+  const sents = (T.match(/[^。！？!?\n]*[。！？!?\n]+[」』”’）)]*|[^。！？!?\n]+$/g) || []).filter(x => x.trim());
+  const sanc = gainSanction(s, said, ruling), y = (s.clock || {}).y, m = (s.clock || {}).m;
+  const mine = [String(said || '')].concat(arr(s.actsNow).map(a => a && a.what), actOpen(s).map(a => a && a.what)).filter(Boolean).join(' ');
+  let figs = []; try { const seen = new Set(); for (const h of histFor(y, s)) for (const f of arr(h.figures)) { if (!f || !f.name || f.name.length < 2 || seen.has(f.name) || !T.includes(f.name) || f.name === s.protagonist.name) continue; seen.add(f.name); const g = figState(s, f, y, m); if (g && (g.state === 'unborn' || g.state === 'gone' || g.state === 'dead')) continue; if (f.died != null && f.died <= y + 1) continue; figs.push(f.name); } } catch (_) { figs = []; }
+  for (const st of sents) {
+    for (const cl of st.split(/[，；：,;]/)) {
+      if (!sanc && FACT_GAIN.test(cl) && !FACT_IF.test(st)) { out.push({ kind: 'gain', who: s.protagonist.name, sent: st, msg: `正文写主角得了官爵功名（「${cl.trim().slice(0, 24)}」），可玩家这一步没有求官应举，行动单上也没有在办的升迁：删掉这件事，照玩家这一步实际做的写` }); break; }
+      const who = figs.find(n => cl.includes(n) && !mine.includes(n));
+      if (who && FACT_DEATH.test(st.slice(st.indexOf(who), st.indexOf(who) + who.length + 30)) && !FACT_HEARSAY.test(st) && !(ruling && ruling.battleResult)) { out.push({ kind: 'death', who, sent: st, msg: `正文写${who}死了（「${cl.trim().slice(0, 24)}」），照史书此人这一年还在世，主角这一步也没有碰他：删掉这件事` }); break; }
+    }
+  }
+  return out;
+}
+const factFaults = (s, said, text, ruling) => factClaims(s, said, text, ruling).map(x => x.msg);
+/** 重写了还在的：把那一句删掉。删多了（剩不到六成）就不删，留给账闸把关 */
+function stripFacts(s, said, text, ruling) {
+  const hits = factClaims(s, said, text, ruling); if (!hits.length) return { text, cut: [] };
+  let t = String(text); for (const h of hits) t = t.split(h.sent).join('');
+  t = t.replace(/\n{3,}/g, '\n\n').trim();
+  if (t.length < String(text).length * 0.6 || t.length < 40) return { text, cut: [] };
+  return { text: t, cut: hits };
+}
 /* ========== 收回账房的权：主角名下的兵马增加、新得的地盘，要有对应的令（募兵、攻取、受封）或打了胜仗；没有的不落账，摆给玩家看 ========== */
 function ledgerGuard(s, d, ruling) {
   const unb = [], acts = arr(s.actsNow).concat(actOpen(s)), said = acts.map(x => x.what).join(' ') + ' ' + arr(s.armyPending).map(x => x.line).join(' ');
@@ -13357,7 +13397,8 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const sb2 = spanBlock(s, span, said);
   const dir = directorBlock(s, said) + (sb2 ? sb2 + '\n' : '') + (s.mainNow && s.mainNow.upcoming && s.mainNow.days > 3 && !SPANS[span] && /歇着|歇几天|歇一阵|等着|等等看|观望|过几天|过些日子|闲着|没什么事|养病|守孝|读书度日/.test(said) ? `【这一回的时间】玩家要歇着、等着：把日子往前推，写这几天到几十天里主线的前兆一件件来，推到离那件大事更近的时候（它约${s.mainNow.days}天后到来，可以直接写到它前一两天或当天）。\n` : '');
   const bb = ruling && ruling.battleResult ? battleBlock(ruling.battleResult) : '';
-  return pushUser(turns, IRON_HEAD + what + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文。');
+  const noGain = !gainSanction(s, said, ruling) ? '\n【这一回账上不会有的】玩家这一步没有求官应举，行动单上也没有在办的升迁：不写主角得官、封爵、登科、得称号（写了程序会删，也不记账）；史书上此时在世的人，主角没碰他就不写他死。' : '';
+  return pushUser(turns, IRON_HEAD + what + noGain + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文。');
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
 function ledgerInput(s, said, story, hidden, span, ruling) {
@@ -14101,6 +14142,10 @@ function applyReply(s, d, said) {
     // 身份变化要有正文为凭：正文里真写了授官、考中、罢官、从军、出嫁……才认；账房自己给主角换身份不认
     const ID_EV = /考中|中了|及第|登科|授|任为|除为|擢|迁为|升|降为|贬|罢|革职|革去|免官|致仕|成了|改做|改行|入了|出家|还俗|从军|投军|应募|退伍|落草|招安|嫁|入赘|过继|袭爵|袭了|封为|册为|捐了|纳捐|称王|称帝|即位|登基|拜为|辟为|署为|补为/;
     if (idc && !ID_EV.test(String(d.reply || '') + String(said || ''))) { noteErr('账房擅自改了主角的身份，没认', one(idc.role, 30)); }
+    else if (idc && /考中|中了|及第|登科|授|擢|升|袭|封|册|称王|称帝|即位|登基|拜|辟|署|补/.test(String(idc.why || '')) && !/罢|革|贬|降|免|夺|削|致仕|落草|出家|还俗|退伍|嫁|入赘|过继|被俘|下狱/.test(String(idc.why || '')) && !gainSanction(s, said, CUR_RULING)) {
+      // 正文不作凭据（任务十六）：得官、登科、封爵要有玩家这一步或在办的事为凭，光是正文写了不认
+      noteErr('正文写主角得了官爵功名，没有凭据，没认', one(idc.role, 30)); s.unbooked = arr(s.unbooked).concat([{ turn, text: `正文写你成了「${one(idc.role, 24)}」，可这一步你没有求官应举，也没有在办的升迁，账上没认` }]).slice(-30); extra.unbooked = arr(extra.unbooked).concat([`成了「${one(idc.role, 24)}」`]);
+    }
     else if (idc) {
       const from = s.protagonist.role, to = one(idc.role, 40);
       // 只是换个说法（「扬州盐商」→「扬州两淮盐商」）、身份大类没变：改个称呼就行，不清数值、不清目标、不重立家底
@@ -14195,6 +14240,7 @@ function applyReply(s, d, said) {
     for (const f of arr(d.realFates)) {
       const k = one(f && f.name, 10); if (!k || k.length < 2 || k === s.protagonist.name || !f.why) continue;
       if (!String(d.reply || '').includes(k)) continue;   // 正文里没出现这个人：不认
+      { const mineTxt = [String(said || '')].concat(arr(s.actsNow).map(x => x && x.what), actOpen(s).map(x => x && x.what)).filter(Boolean).join(' '); if (!mineTxt.includes(k) && !(CUR_RULING && CUR_RULING.battleResult)) { noteErr('真人的命运不是主角这一步改的，没认', k); continue; } }   // 正文不作凭据（任务十六）：玩家这一步、行动单里得点到这个人
       s.figOver = s.figOver || {}; const o = s.figOver[k] || {}, n = { ...o, note: one(f.why, 60), fate: true };
       if (f.alive === false) { n.dead = true; n.deadY = s.clock.y; }
       else if (f.alive === true) { n.dead = false; delete n.deadY; for (const h of HALL(s)) { const df = arr(h.figures).find(x => x.name === k); if (df && df.died != null && df.died <= s.clock.y + 1) n.aliveY = s.clock.y; } }   // 救下了史书上这时该死的人
@@ -14390,6 +14436,8 @@ function applyReply(s, d, said) {
     const c = Object.assign({}, s.career || {}), k = { ...d.career };
     // 官职变了，正文里得有任命的事（升、调、补、授、署，或者革、降、罢）：记账的凭空改官不算
     if (k.office && k.office !== c.office && c.office && !/擢|升|迁|调|补|授|署|除|拜|任命|简放|革|降|罢|撤|免|致仕|丁忧|告身|敕|札|部文|上谕|圣旨|旨意/.test(String(d.reply || ''))) { delete k.office; delete k.rank; }
+    // 正文不作凭据（任务十六）：正文里那句得官是没凭据被挑出来的，官职照旧
+    if (k.office && k.office !== c.office && factClaims(s, said, d.reply, CUR_RULING).some(x => x.kind === 'gain')) { delete k.office; delete k.rank; delete k.post; s.unbooked = arr(s.unbooked).concat([{ turn: s.turn, text: `正文写你的官职成了「${one(d.career.office, 24)}」，没有凭据，账上照旧` }]).slice(-30); }
     for (const f of ['office', 'rank', 'post', 'duties', 'powers', 'superior', 'subordinates', 'evaluation', 'tenure']) if (k[f] != null && k[f] !== '') c[f] = one(k[f], f === 'powers' || f === 'duties' || f === 'subordinates' ? 120 : 50);
     if (Array.isArray(k.titles)) { const v = k.titles.map(x => one(x, 30)).filter(Boolean).slice(0, 12); if (v.length) c.titles = v; }
     if (Array.isArray(k.nextSteps)) { const v = k.nextSteps.filter(x => x && x.to).slice(0, 5).map(x => ({ to: one(x.to, 40), need: one(x.need, 80) })); if (v.length) c.nextSteps = v; }
@@ -15531,7 +15579,8 @@ async function send(said, span, note, resume) {
       // 程序查一遍（一再请示、又写回禁写的题材、打仗没写伤亡）：毛病留到下面和审读、核实的意见一起，只重写一次
       preFaults = st.talk ? [] : draftFaults(S, said, st.text, span);
       if (!st.talk) preFaults = preFaults.concat(storyRpgCheck(S, said, st.text, LIGHT));
-      if (!st.talk) preFaults = preFaults.concat(vocabFaults(S, st.text));   // 这一年代还没有的说法：打回照当时的说法改（任务十七）   // 写成史论/课件的打回：RPG 要戏、要对话、要停在拿主意处
+      if (!st.talk) preFaults = preFaults.concat(vocabFaults(S, st.text));
+      if (!st.talk) preFaults = preFaults.concat(factFaults(S, said, st.text, ruling));   // 没凭据的得官、在世真人的死讯：打回（任务十六）   // 这一年代还没有的说法：打回照当时的说法改（任务十七）   // 写成史论/课件的打回：RPG 要戏、要对话、要停在拿主意处
       if (!st.talk && ruling && ruling.battleResult && !/伤|死|阵亡|折了/.test(st.text)) preFaults.push(`这一仗写成了只有胜负：照【这一仗的结果】写出伤亡（我方约 ${ruling.battleResult.deadUs}、敌方约 ${ruling.battleResult.deadThem}）、士气、粮草和战后的事`);
       if (preFaults.length) noteErr('审稿退回', preFaults.map(f => f.slice(0, 40)).join(' / '), { said: cut(said, 60) });   // 记下来，问题报告里能看到常犯哪几条
     }
@@ -15574,6 +15623,7 @@ async function send(said, span, note, resume) {
           }
         } catch (e) { if (e && e.code === 'cancelled') throw e; }
       }
+      if (!next.talk) { const sf = stripFacts(S, said, next.text, ruling); if (sf.cut.length) { next = { ...next, text: sf.text, audit: arr(next.audit).concat(sf.cut.map(c => ({ wrong: one(c.sent, 40), right: '（删去）', why: c.kind === 'gain' ? '没有凭据的官爵功名' : '此人这一年还在世' }))) }; noteErr('正文里没凭据的大事已删', sf.cut.map(c => c.kind + ':' + c.who).join(' / '), { said: cut(said, 60) }); } }
       st = next;
       if (!st.talk) pend({ story: st, ruling });
     }

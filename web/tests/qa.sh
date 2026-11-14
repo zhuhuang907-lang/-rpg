@@ -96,6 +96,7 @@ start ai.js && {
   run "朝局核实与主角落位：原文库核人、核不上腾位、seatSelf 落位、你的位子卡、人名门禁（R-203~205）" 240 env PLAY="$ROOT/web/play.html" node orgself.js
   run "剧情像 RPG：史论总结腔打回、第二人称、对话场面、结尾停在拿主意处；家常短步只查史论（R-206~208）" 120 env PLAY="$ROOT/web/play.html" node storychk.js
   run "真人硬门槛：模型夹带的古人（李白）不收、名单外不立档、真人档案只列此刻在世且核实过的、旧档打开就清（R-209~211）" 120 env PLAY="$ROOT/web/play.html" node eragate.js
+  run "正文不作凭据：凭空写主角得官、写在世真人死了——挑得出、重写还在就删句、存档不认；玩家自己求的照认；许诺传闻丢官不误伤（任务十六第一步，R-233）" 120 env PLAY="$ROOT/web/play.html" node factgate.js
   run "朝局可玩：朝议摆上页面、玩家表态定成败、待办与回音看得到、位子没落树也有卡、空缺数不虚高（R-212~214）" 120 env PLAY="$ROOT/web/play.html" node courtissue.js
   run "原文库检索：照朝代政权挑书、整词比对、同段多词排前、在命中处摘句、真语料查得到（R-189）" 300 env PLAY="$ROOT/web/play.html" node libsearch.js
   run "三方分工：整理归 DeepSeek、写故事想事情归 GLM、互为后备、材料过长删中间；原文佐证进推演（R-189）" 150 env PLAY="$ROOT/web/play.html" node r189.js
