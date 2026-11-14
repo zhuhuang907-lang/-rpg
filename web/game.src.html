@@ -286,6 +286,7 @@ textarea{resize:vertical}
 <script type="application/json" id="hist">__HIST__</script>
 <script type="application/json" id="tenure">__TENURE__</script>
 <script type="application/json" id="courtdata">__COURT__</script>
+<script type="application/json" id="eravocab">__ERAVOCAB__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -4835,6 +4836,18 @@ function orgFromCourt(s, C) {
     n.posts.push(q);
   }
   return { regime: `${P.name} ${s.clock.yearLabel || y + '年'}`, pol: s.place.polity || '', ruler: isRuler(s), at: s.turn, y, nodes, log: [], lib: true, court: P.name };
+}
+/* 错词表（任务十五、十七，R-233）：这一年代还没有的说法（总兵、师爷、衙役……），正文写了就打回重写，并告诉模型当时怎么说；
+ *  标了「今义」「可通融」「语境」的两可词只提醒、不打回 */
+let ERAVOCAB = []; try { ERAVOCAB = JSON.parse((document.getElementById('eravocab') || {}).textContent || '[]'); if (!Array.isArray(ERAVOCAB)) ERAVOCAB = []; } catch (_) { ERAVOCAB = []; }
+function vocabFaults(s, text) {
+  const y = s && s.clock ? s.clock.y : 0, t = String(text || ''), out = [];
+  for (const V of ERAVOCAB) { if (!V || !V.range || y < V.range[0] || y > V.range[1]) continue;
+    for (const x of arr(V.absent)) { const raw = String(x.w || ''); if (/今义|可通融|语境/.test(raw)) continue;
+      const words = raw.replace(/[（(][^）)]*[）)]/g, '').split(/[、，,／/]/).map(w => w.trim()).filter(w => w.length >= 2);
+      const hit = words.find(w => t.includes(w)); if (hit) out.push(`写了这时还没有的「${hit}」：这时说「${String(x.say || '').split(/[、，]/)[0]}」之类，照当时的说法改`);
+      if (out.length >= 4) return out; } }
+  return out;
 }
 function tenureFor(s, y) {
   const pol = polNorm(s && s.place && s.place.polity); if (!pol) return []; const out = [];
@@ -15501,7 +15514,8 @@ async function send(said, span, note, resume) {
       }
       // 程序查一遍（一再请示、又写回禁写的题材、打仗没写伤亡）：毛病留到下面和审读、核实的意见一起，只重写一次
       preFaults = st.talk ? [] : draftFaults(S, said, st.text, span);
-      if (!st.talk) preFaults = preFaults.concat(storyRpgCheck(S, said, st.text, LIGHT));   // 写成史论/课件的打回：RPG 要戏、要对话、要停在拿主意处
+      if (!st.talk) preFaults = preFaults.concat(storyRpgCheck(S, said, st.text, LIGHT));
+      if (!st.talk) preFaults = preFaults.concat(vocabFaults(S, st.text));   // 这一年代还没有的说法：打回照当时的说法改（任务十七）   // 写成史论/课件的打回：RPG 要戏、要对话、要停在拿主意处
       if (!st.talk && ruling && ruling.battleResult && !/伤|死|阵亡|折了/.test(st.text)) preFaults.push(`这一仗写成了只有胜负：照【这一仗的结果】写出伤亡（我方约 ${ruling.battleResult.deadUs}、敌方约 ${ruling.battleResult.deadThem}）、士气、粮草和战后的事`);
       if (preFaults.length) noteErr('审稿退回', preFaults.map(f => f.slice(0, 40)).join(' / '), { said: cut(said, 60) });   // 记下来，问题报告里能看到常犯哪几条
     }
