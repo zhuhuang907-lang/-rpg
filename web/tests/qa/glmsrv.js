@@ -1,7 +1,8 @@
 // 桌面版：本机服务存 GLM 的 Key、试连、照页面说的把这一件转给 GLM，不说的照旧走 DeepSeek（需求台账 R-135）
 const fs = require('fs');
 (async () => {
-  const G = 'http://127.0.0.1:' + (process.env.GAME_PORT || 8741), M = process.env.MOCK_PORT || 3741, bad = [];
+  const port = (v, d) => { const n = parseInt(v, 10); return n >= 1024 && n <= 65535 ? n : d; };   // 端口只认 1024—65535 的整数，地址只连本机
+  const G = 'http://127.0.0.1:' + port(process.env.GAME_PORT, 8741), M = port(process.env.MOCK_PORT, 3741), bad = [];
   const post = (u, b) => fetch(G + u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) }).then(r => r.json());
   const k = await post('/api/glm-key', { apiKey: 'glm-test-key', baseUrl: `http://127.0.0.1:${M}/glm`, model: 'glm-test' });
   if (!k.ok || !k.test || !k.test.ok) bad.push('存 GLM Key、试连没通：' + JSON.stringify(k));

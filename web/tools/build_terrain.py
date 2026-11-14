@@ -2,7 +2,7 @@
 """舆图底图：高程（AWS Terrain Tiles / terrarium）、河流湖泊海岸山脉（Natural Earth 10m）、关隘坐标（维基百科），
 古黄河、大运河的走向用复旦/哈佛 CHGIS 地名库（geo.json）里沿线州县的坐标串起来。输出 web/terrain.json，build.py 嵌进页面。
 用法：python3 web/tools/build_terrain.py <缓存目录>"""
-import sys, os, json, math, io, base64, urllib.request, urllib.parse, time
+import sys, os, re, json, math, io, base64, urllib.request, urllib.parse, time
 from PIL import Image
 CACHE = sys.argv[1] if len(sys.argv) > 1 else '/tmp/terrain-cache'
 os.makedirs(CACHE, exist_ok=True)
@@ -10,8 +10,13 @@ HERE = os.path.dirname(os.path.abspath(__file__)); WEB = os.path.dirname(HERE)
 LON0, LON1, LAT0, LAT1, RES = 73.0, 135.0, 17.0, 54.0, 0.1
 UA = {'User-Agent': 'rpg-map-builder/1.0 (github.com/zhuhuang907-lang/-rpg)'}
 
+ALLOWED_HOSTS = {'s3.amazonaws.com', 'raw.githubusercontent.com', 'zh.wikipedia.org', 'www.wikidata.org'}   # 只从这几家取数据
 def get(url, fn):
-    p = os.path.join(CACHE, fn)
+    u = urllib.parse.urlparse(url)
+    if u.scheme != 'https' or u.hostname not in ALLOWED_HOSTS: raise ValueError('不在许可名单里的网址：' + url)
+    fn = re.sub(r'[^\w.\-]', '_', fn)[:120] or 'x'   # 缓存文件名只留字母数字（地名里的斜杠、点点不许拼出缓存目录以外的路径）
+    p = os.path.realpath(os.path.join(CACHE, fn))
+    if os.path.dirname(p) != os.path.realpath(CACHE): raise ValueError('缓存路径出了缓存目录：' + fn)
     if not os.path.exists(p):
         for i in range(4):
             try:

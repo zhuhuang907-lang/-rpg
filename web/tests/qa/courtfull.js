@@ -16,7 +16,8 @@ const path = require('path');
     const oc = callClaude; callClaude = async pr => { if (/是不是史书上真有其人/.test(pr)) { const rows = []; pr.split('\n').forEach(l => { const m = /^(\d+)\. (.+?)（/.exec(l); if (m) rows.push({ i: +m[1], real: m[2] === '杨勇' ? '真' : m[2] === '王小二' ? '假' : '不详', who: m[2] === '杨勇' ? '隋皇太子' : '' }); }); return { text: JSON.stringify({ rows }) }; } return { text: '{}' }; };
     try { await pplChkDS(S); } finally { callClaude = oc; }
     if (S.people.杨勇.real !== true) bad.push('DS 表说是真人的没记成真人'); if (!S.people.王小二.fic) bad.push('DS 表说是编的没记成虚构'); if (fictionShow(S).has('杨勇')) bad.push('核成真人以后还标虚拟');
-    // 3 朝堂全表并进人事树
+    // 3 朝堂全表并进人事树（这一段只测模型的表怎么并进树；照任职年表先坐位子另有测试，这里把年表挪开，免得史料上 600 年已罢官的高颎被年表改掉）
+    const T0 = TENURE; TENURE = [];
     S.org = { nodes: [{ id: 'root', name: '朝廷', depth: 0, posts: [{ title: '皇帝', holder: '杨坚' }] }, { id: 'A1', name: '尚书省', depth: 1, parent: 'root', posts: [{ title: '尚书令', rank: '正二品', holder: '', noGrant: '隋尚书令照例不授', status: '照例不授' }, { title: '左仆射', rank: '从二品', holder: '' }, { title: '右仆射', rank: '从二品', holder: '王虚拟', src: '拟' }] }, { id: 'A2', name: '吏部', depth: 2, parent: 'A1', posts: [{ title: '吏部尚书', rank: '正三品', holder: '' }] }], log: [] };
     let asks = 0; callClaude = async pr => { if (/朝廷里的要紧人物列成一整张表/.test(pr)) { asks++; if (/中枢/.test(pr.split('这一张只写：')[1] || '')) return { text: JSON.stringify({ people: [{ name: '高颎', post: '尚书左仆射', organ: '尚书省', rank: '从二品', faction: '太子党', real: '真', ties: [{ to: '杨勇', rel: '姻亲' }], stance: '力保太子' }, { name: '杨素', post: '尚书右仆射', organ: '尚书省', rank: '从二品', faction: '晋王党', real: '真', ties: [{ to: '杨广', rel: '同党' }] }, { name: '牛弘', post: '吏部尚书', organ: '吏部', rank: '正三品', real: '真' }, { name: '苏威', post: '纳言', organ: '门下省', rank: '正三品', real: '真' }, { name: '尚书令', post: '尚书令', organ: '尚书省', real: '真' }, { name: '柳虚生', post: '门下录事', organ: '门下省', rank: '从七品', real: '假' }], factions: [{ name: '太子党', leader: '高颎', members: ['高颎', '杨勇'], aim: '保住东宫' }, { name: '晋王党', leader: '杨素', members: ['杨素', '杨广'], aim: '易储' }] }) };
         return { text: JSON.stringify({ people: [{ name: '独孤伽罗', post: '皇后', organ: '后宫', real: '真' }], factions: [] }) }; } return { text: '{}' }; };
@@ -31,6 +32,7 @@ const path = require('path');
     if (!S.org.nodes.some(z => z.posts.some(x => x.holder === '柳虚生' && x.src === '拟'))) bad.push('表上虚构的小官没标虚拟：' + JSON.stringify(S.org.nodes.map(z => [z.name, z.posts.map(x => x.title + ':' + x.holder + ':' + x.src)])));
     if (!arr(S.factions).some(f => f.name === '晋王党' && /杨广/.test(f.members))) bad.push('派系没并进派系账');
     if (!S.court || !S.court.people.some(x => x.name === '高颎' && x.ties.some(t => t.to === '杨勇'))) bad.push('关系没存下');
+    TENURE = T0;
 
     return bad;
   });

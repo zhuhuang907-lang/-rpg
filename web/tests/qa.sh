@@ -38,6 +38,7 @@ echo $$ > /tmp/rpg-qa.lock   # 完整测试跑着时不许别处重新构建（b
 FP0=$(bash "$ROOT/scripts/fingerprint.sh")   # 这一轮测的是哪一份源码（需求台账 R-132）
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
+say "五代十国朝廷数据（任务六）"; node "$ROOT/web/tests/court_data.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "五代十国朝廷数据"
 say "江山时序：本机服务替玩家下到 data/cache/jiangshan、只认两个文件、不是地图数据不收、下过不再下"; JS=$(node "$ROOT/web/tests/jsmapsrv.js" 2>&1 | tail -1); echo "$JS"; echo "$JS" | grep -q "ERRS \[\]" || bad "江山时序下载"
 say "历史原文库：65 本在库、按书检索真语料带出处、非法书号安全跳过"; CS=$(cd "$ROOT" && node "$ROOT/web/tests/qa/citesrv.js" 2>&1 | tail -1); echo "$CS"; echo "$CS" | grep -q "ERRS \[\]" || bad "历史原文库"
 say "端口被占：别的程序占着往后挪、游戏已经开着不另开"; PF=$(node "$ROOT/web/tests/portfallback.js" 2>&1 | tail -1); echo "$PF"; echo "$PF" | grep -q "ERRS \[\]" || bad "端口被占"
@@ -122,6 +123,16 @@ start ai.js && {
   run "百姓科举、经营：功名照朝代一级级考、到月程序定中不中、进士授官、隋以前察举；开铺子由 DeepSeek 判行情、程序按月结算、增资收铺、记账改不了本钱" 120 env PLAY="$ROOT/web/play.html" node livelihood.js
   run "各种身份都能玩：地方官管辖区、山大王管山寨能劫掠、武官管自己的兵、节度使土司酋长是一方之主、开局照史料查统带的兵、局面页摆出辖区和兵马" 120 env PLAY="$ROOT/web/play.html" node roles.js
   run "朝局令当场办：一方之主任命跟前的当场到任、远处的下一回到任、罢免增设裁撤当场办、国策走诏令回报了才算已行；写正文吩咐了就办不说空话；日本新罗西域西南夷南越林邑都在" 120 env PLAY="$ROOT/web/play.html" node courtnow.js
+  run "任职里的遭遇不算官职：削籍归里、罢归、致仕、下狱论死不再当成此刻的官职，括注里的经历去掉（任务三，R-221）" 120 env PLAY="$ROOT/web/play.html" node postclean.js
+  run "朝堂先查表、后补缺：内置史料里这一年在任的真人先坐位子，模型改不了他们的官、抢不了位子；玩家任命的不动；朝廷可以不满员（任务三，R-221）" 120 env PLAY="$ROOT/web/play.html" node courttable.js
+  run "任职年表：晚明照哈佛库整理的表先坐位子（户部尚书照表），后金不套明朝的表，朝局页看得见（任务六，R-225）" 150 env PLAY="$ROOT/web/play.html" node tenure.js
+  run "各年代任职年表：资治通鉴逐年任免（三国两晋十六国南北朝五代）与哈佛库唐末五代十国表照政权取；前秦王猛不混进东晋；东西魏并立只写魏不乱认；前秦开局吏部尚书照表坐王猛（R-226）" 150 env PLAY="$ROOT/web/play.html" node tenure2.js
+  run "南北朝、隋唐前期君主年号：君主照正史、年号照哈佛库年号表，换君改元同年归对人；只有君主年号的表不挡联网自建史事；东魏开局年号是武定（R-226）" 120 env PLAY="$ROOT/web/play.html" node rulers2.js
+  run "五代十国朝廷照数据排：荆南小国十几个位子，明载、推定的人坐原位，空位照用人来路补人、标虚构、不与真人重名、重开同一人；南平也认（任务七，R-227）" 150 env PLAY="$ROOT/web/play.html" node wudai_court.js
+  run "官员名录也照任职年表和朝廷数据：明 1625 年表上的户部尚书、荆南 926 年高季兴高从诲进名录，模型不给人也有；真点人物页看得到（R-225、R-227）" 150 env PLAY="$ROOT/web/play.html" node rostertable.js
+  run "错词表进写戏：后唐正文写了总兵、衙役这类这时还没有的说法打回并给当时说法，两可今义词不打回，明朝的总兵不算错（任务十五、十七，R-233）" 120 env PLAY="$ROOT/web/play.html" node eravocab.js
+  run "兵力虚实：敌军只给估计（传闻虚张、给范围），真点派探子探准，探报一年就旧；自己直接统的兵照实数（任务三，R-221）" 150 env PLAY="$ROOT/web/play.html" node troopfog.js
+  run "虚构人物戏份：程序补的虚构人物，没提拔、没打过交道的，写给模型时标「虚构·照常供职」并附不给戏份的规矩；提拔了、有情分、找上他的照常写（任务三，R-221）" 120 env PLAY="$ROOT/web/play.html" node fictbench.js
   run "大人物照真官：隋唐尚书令照例不授、不起虚构的；三品以上查不到真人就空着待查、后台再查；小吏照旧起名；旧存档清掉大位子上的虚构名字；一方之主能破例除授、小官保举不了" 120 env PLAY="$ROOT/web/play.html" node officials.js
   run "出征真能打：军务页出征单列邻近的城（归谁、多远、几日、胜算、守军不详不编）、点进攻当场立行军、静候军报、撤回；营数整数、总数和战报对得上；胜负折损看对面战力" 120 env PLAY="$ROOT/web/play.html" node march.js
   run "用江山时序的版图：只当数据解析不执行、照多边形认各家、没画到的照内置；测试里不自动下；玩家亲手打下丢掉的才改图" 120 env PLAY="$ROOT/web/play.html" node jsmap.js

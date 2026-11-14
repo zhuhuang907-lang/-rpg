@@ -284,6 +284,9 @@ textarea{resize:vertical}
 </script>
 <script type="application/json" id="cal">__CAL__</script>
 <script type="application/json" id="hist">__HIST__</script>
+<script type="application/json" id="tenure">__TENURE__</script>
+<script type="application/json" id="courtdata">__COURT__</script>
+<script type="application/json" id="eravocab">__ERAVOCAB__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -1660,8 +1663,22 @@ function orgLibText(s, part) {
     return [h.military ? '军制：' + cut(typeof h.military === 'string' ? h.military : JSON.stringify(h.military), 1600) : '', h.ranks ? '品级俸禄：' + cut(typeof h.ranks === 'string' ? h.ranks : JSON.stringify(h.ranks), 500) : ''].filter(Boolean).join('\n');
   }).join('\n');
 }
+/** 国策书：照这个政权此刻真有的处境列能推行的施政与改革（人事树照数据搭的政权也要有，R-227） */
+async function polBookDS(s, head) {
+  const o = (v, n) => one(v, n || 40);
+    try {
+      const { text } = await callClaude(`${head}\n国策书：照这个政权此刻真有的处境，列出能推行的施政与改革，分「政治」「经济」「民生」「军事」「制度」五类，每类三到六条；有前后次序的写 need（前置的 id）；历史上谁、何时推行过同类的写在 real（没有写空）；effect 写推行了会怎样，利弊都写；cost 是国策点（2 到 8）。不收与这个年代不符的东西。\n只输出一个 JSON 对象：{"policies":[{"id":"p1","area":"政治","name":"","desc":"一句话做什么","cost":3,"need":[],"real":"","effect":""}]}`, null, { maxTokens: 4000, temperature: 0.3, kind: '研读', detached: true });
+      const d = parseJSON(text);
+      if (d && Array.isArray(d.policies) && d.policies.length) s.polBook = d.policies.filter(x => x && x.name).slice(0, 30).map((x, i) => ({ id: o(x.id, 8) || 'p' + (i + 1), area: /政|经|民|军|制/.test(x.area || '') ? o(x.area, 4) : '政治', name: o(x.name, 20), desc: o(x.desc, 80), cost: Math.max(1, Math.min(10, num(x.cost) || 3)), need: arr(x.need).map(v => o(v, 8)).filter(Boolean), real: o(x.real, 60), effect: o(x.effect, 120), state: (arr(s.polBook).find(q => q.name === o(x.name, 20)) || {}).state || '' }));
+    } catch (e) { if (e && e.code === 'cancelled') throw e; }
+}
 async function buildOrg(s) {
-  if (ORGING) return; ORGING = true; ORGMSG = '正在联网查制度，分中枢、地方、军事三路整理人事树……'; render();
+  if (ORGING) return;
+  { const CD = courtDataFor(s, s.clock.y); if (CD) { s.org = orgFromCourt(s, CD); SH(() => seatSelf(s), 'seatSelf'); ORGMSG = '';
+    if (!arr(s.polBook).length) { ORGING = true; try { await polBookDS(s, `你是精通历代职官、政制、军制的史家，替一局历史游戏整理国策。此刻：${timeText(s.clock)}，政权${s.place.polity || ''}（${CD.P.name}，${CD.P.model}），主角${(s.protagonist || {}).name || ''}（${(s.protagonist || {}).role || ''}）。`); } catch (e) { if (e && e.code === 'cancelled') throw e; } finally { ORGING = false; } }
+    if (permLevel(s) === 'decree' && !s.polGranted) { s.polPts = Math.max(s.polPts || 0, 6); s.polGranted = true; } else if (s.polPts == null) s.polPts = 0;
+    return; } }   // 有朝廷数据的政权照数据搭，不再联网现编（R-227）
+  ORGING = true; ORGMSG = '正在联网查制度，分中枢、地方、军事三路整理人事树……'; render();
   try {
     const pol = s.place.polity || '', dy = pol + (/[代朝]$/.test(pol) ? '' : '代'), yl = s.clock.yearLabel || s.clock.y + '年', ruler = isRuler(s), p = s.protagonist, here = geoCenter(s);
     const emp = s.idm === 'emperor' || /皇帝|天子|官家/.test(String(p.role || ''));
@@ -1739,12 +1756,7 @@ ${vacantText(s.clock.y) ? '【这一年照例空着、不授人的职位（照�
     s.org = { regime: `${pol} ${yl}`, pol: s.place.polity || '', ruler, at: s.turn, y: s.clock.y, nodes, log: lg0, lib: !!instLibFor(s).length };
     SH(() => seatSelf(s), 'seatSelf');   // R-204 做了官的主角先落进树里，朝局才是你的戏
     orgFillReal(s); orgVacantFix(s);
-    // 国策书另起一路（照这个政权此刻的处境）
-    try {
-      const { text } = await callClaude(`${head}\n国策书：照这个政权此刻真有的处境，列出能推行的施政与改革，分「政治」「经济」「民生」「军事」「制度」五类，每类三到六条；有前后次序的写 need（前置的 id）；历史上谁、何时推行过同类的写在 real（没有写空）；effect 写推行了会怎样，利弊都写；cost 是国策点（2 到 8）。不收与这个年代不符的东西。\n只输出一个 JSON 对象：{"policies":[{"id":"p1","area":"政治","name":"","desc":"一句话做什么","cost":3,"need":[],"real":"","effect":""}]}`, null, { maxTokens: 4000, temperature: 0.3, kind: '研读', detached: true });
-      const d = parseJSON(text);
-      if (d && Array.isArray(d.policies) && d.policies.length) s.polBook = d.policies.filter(x => x && x.name).slice(0, 30).map((x, i) => ({ id: o(x.id, 8) || 'p' + (i + 1), area: /政|经|民|军|制/.test(x.area || '') ? o(x.area, 4) : '政治', name: o(x.name, 20), desc: o(x.desc, 80), cost: Math.max(1, Math.min(10, num(x.cost) || 3)), need: arr(x.need).map(v => o(v, 8)).filter(Boolean), real: o(x.real, 60), effect: o(x.effect, 120), state: (arr(s.polBook).find(q => q.name === o(x.name, 20)) || {}).state || '' }));
-    } catch (e) { if (e && e.code === 'cancelled') throw e; }
+    await polBookDS(s, head);   // 国策书另起一路（照这个政权此刻的处境）
     if (permLevel(s) === 'decree' && !s.polGranted) { s.polPts = Math.max(s.polPts || 0, 6); s.polGranted = true; } else if (s.polPts == null) s.polPts = 0;   // 成了一方之主，头一回给六点起步
     ORGMSG = '';
   } catch (e) { if (e && e.code === 'cancelled') throw e; s.orgFail = s.turn; ORGMSG = '没整理成：' + errText(e) + '（下一回合自动再试）'; }
@@ -1814,13 +1826,34 @@ ${B.map((x, i) => `${i + 1}. ${x.n.name}｜${x.q.title}｜现任${x.q.holder || 
  *  一回分三块并发问 DeepSeek（中枢；宗室后妃外戚勋贵内廷；地方大员和统兵大将），每块整张表：谁、什么官、几品、哪一派、跟谁什么关系、立场；
  *  并进人事树（对得上的位子填上，树上没有的衙门、官位添上），派系并进派系账，关系存进 s.court；大官照史书写真人，次要位子史书查不到的可以虚构（标虚拟）；三年再整一回 ========== */
 const courtDue = s => !!(s && s.org && arr(s.org.nodes).length > 1 && s.clock && (!s.court || s.clock.y - (s.court.y || 0) >= 1 || s.court.pol !== (s.place.polity || '')) && !(s.ctFail != null && s.turn - s.ctFail < 2));
+/** 任务三（R-221）：朝堂先查表——内置史料里这一年在任（不算遭遇）的真人，照任职先坐上树上对得上的位子（史书，压过模型的表和拟的人）；
+ *  玩家任命的位子、本局轨道的人不动；对不上位子的照样交给模型照抄（别国的人模型自己剔掉） */
+function courtTable(s, y) {
+  const out = []; if (!s || !s.org) return out; const me = (s.protagonist || {}).name;
+  const seen = new Set(), src = histFor(y, s).map(h => arr(h.figures)).concat(tenureFor(s, y).map(t => arr(t.figures)));   /* 手工整理的内置史料在前，任职年表补在后 */
+  for (const L of src) for (const f of L) {
+    if (!f || !f.name || f.name === me || seen.has(f.name)) continue;   /* 手工史料里有、却没对上位子的人，再照任职年表的写法试一回 */
+    const st = figState(s, f, y, s.clock && s.clock.y === y ? s.clock.m : null); if (st.state !== 'alive' || !st.post) continue;
+    const post = String(st.post).replace(/^.*→/, ''), t0 = out.find(z => z.name === f.name), t = t0 || { name: f.name, post, born: f.born, seated: false }; if (!t0) out.push(t);
+    if (trackOf(s, f.name) === '局') continue; const cur = findPost(s, f.name); if (cur && cur.byPlayer) continue;
+    /* 同时兼几个官的（侍中、吏部尚书、辅国将军），照新到旧一个个对树上的位子，对上一个就坐 */
+    const cands = [...new Set(arr(f.posts).filter(p => p && p[0] <= y && (p[1] == null || p[1] >= y)).map(p => postOnly(String(p[2]).replace(/^.*→/, ''))).filter(Boolean).reverse().concat([post]))];
+    let hit = null; for (const c of cands) { const h = matchPost(s, c); if (h && !h[1].byPlayer && !h[1].noGrant) { hit = h; t.post = c; break; } }
+    if (!hit) continue; const [n, q] = hit; seen.add(f.name);
+    if (q.holder === f.name || ((q.quota || 1) > 1 && arr(q.others).includes(f.name))) { t.seated = true; if (SEAT_RANK('史书') > SEAT_RANK(q.src)) q.src = '史书'; continue; }
+    if ((q.quota || 1) > 1 && q.holder && SEAT_RANK(q.src) >= SEAT_RANK('史书')) { if (cur) { cur.holder = ''; cur.src = ''; } q.others = arr(q.others).concat([f.name]).slice(-6); t.seated = true; continue; }
+    if (seatPut(s, n, q, f.name, '史书', { move: true })) t.seated = true;
+  }
+  return out.filter(t => t.seated).concat(out.filter(t => !t.seated)).slice(0, 80);   /* 坐了位子的先列给模型；全部都已照表坐好 */
+}
 async function courtFullDS(s) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '', me = s.protagonist.name || '';
   const parts = ['中枢：宰执（照本朝叫法）、各省部寺监台的长官和副贰、谏官、翰林学士、掌兵的中枢长官', '宗室（诸王、太子、公主驸马）、后妃、外戚、开国勋贵、内廷宦官女官', '地方大员（各道各州的总管、刺史或督抚布按、留守）和各路统兵大将'];
   const vt = vacantText(y), libC = await libEvidence(s, [histEraName(s)].concat(figuresAt(s, y).filter(f => f.alive && f.post).slice(0, 5).map(f => f.name + '*2')), '官制', 6);   /* 原文库佐证（R-189） */
+  const TB = courtTable(s, y), tbTxt = TB.map(t => t.name + '：' + t.post).join('；');   /* 任务三（R-221）：先查表——内置史料里这一年在任的人先坐上位子，再请模型补缺 */
   const ask = part => callClaude(`你是熟读正史、通鉴、职官年表的史家。替一局历史游戏把${yl}（公元${y}年${s.clock.m ? s.clock.m + '月' : ''}）${pol}朝廷里的要紧人物列成一整张表，要像真的朝堂一样，该有人的位子都有人。这一张只写：${part}。
 每人写：name 姓名；post 官职（写全，带衙门）；organ 衙门或所属；rank 品级；born、died 生卒年（公元，确知的写数，不知道写 null——防同名混人，必须照实）；faction 派系（照史书，这一年朝中分成哪几派、谁跟谁一伙；说不上派系的写空）；ties 和别人的关系（父子、兄弟、夫妻、姻亲、师生、举主门生、同党、政敌、旧部），to 写那人姓名；stance 对时局的立场一句；real 写「真」（史书确有其人此时在此任）或「假」。
-规矩：大官（三品以上、宰执、诸王、后妃、督抚大将）一律写史书真人；次要的位子史书查不到是谁的，可以起一个合那时士人样子的名字，real 写「假」；史书上这一年确实空着的位子不写人。${vt ? '\n这一年照例不授的职位不写人：' + vt : ''}${libC ? '\n' + libC : ''}${me ? `\n主角是${me}，照他的身份列在表里（${s.protagonist.role || ''}），不要另安排别人做他的位子。` : ''}
+规矩：大官（三品以上、宰执、诸王、后妃、督抚大将）一律写史书真人；次要的位子史书查不到是谁的，可以起一个合那时士人样子的名字，real 写「假」；史书上这一年确实空着的位子不写人；朝廷不一定满员，照这一年的实际情况定（流亡、草创、兵乱中的朝廷，许多位子就是空的），宁缺不凑。${tbTxt ? '\n下面这些人这一年的官职史书已定，照抄，不许改他们的官、不许让别人坐他们的位子（其中不是本朝的人不写进表）：' + tbTxt : ''}${vt ? '\n这一年照例不授的职位不写人：' + vt : ''}${libC ? '\n' + libC : ''}${me ? `\n主角是${me}，照他的身份列在表里（${s.protagonist.role || ''}），不要另安排别人做他的位子。` : ''}
 只输出一个 JSON 对象：{"people":[{"name":"","post":"","organ":"","rank":"","born":null,"died":null,"faction":"","real":"真","ties":[{"to":"","rel":""}],"stance":""}],"factions":[{"name":"","leader":"","members":[""],"aim":"这一派要什么"}]}`, null, { maxTokens: 8000, temperature: 0.1, kind: '研读', detached: true, thinking: false }).then(r => parseJSON(r.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; });
   const R = await Promise.all(parts.map(ask)); if (R.every(d => !d)) { s.ctFail = s.turn; throw { code: 'bad_json' }; }
   const P = [], seen = new Set(), FA = [];
@@ -1834,9 +1867,11 @@ async function courtFullDS(s) {
         noteErr('档案退人', `${n}（朝堂表）：模型给的生卒（${cb0 ?? '?'}—${cd0 ?? '?'}）与这一朝不合，不采信`);
         cb0 = null; cd0 = null;
       }
+      const tb = TB.find(t => t.name === n); if (tb) { x.post = tb.post; x.organ = ''; x.real = '真'; }   /* 表上已定的人，官职照表，模型改的不算 */
       P.push({ name: n, post: one(x.post, 30), organ: one(x.organ, 20), rank: one(x.rank, 10), faction: one(x.faction, 16), real: !/^假/.test(String(x.real || '')), stance: one(x.stance, 40), born: cb0, died: cd0, ties: arr(x.ties).filter(t => t && t.to).slice(0, 6).map(t => ({ to: one(t.to, 8), rel: one(t.rel, 8) })) }); }
     for (const f of arr(d && d.factions)) if (f && f.name && !FA.some(z => z.name === one(f.name, 16))) FA.push({ name: one(f.name, 16), leader: one(f.leader, 8), members: arr(f.members).map(m => one(m, 8)).filter(Boolean).slice(0, 20), aim: one(f.aim, 40) }); }
   const O = s.org; let added = 0, filled = 0; const held = orgHolders(s);
+  for (const t of TB) if (t.seated && !seen.has(t.name)) { seen.add(t.name); P.unshift({ name: t.name, post: t.post, organ: '', rank: '', faction: '', real: true, stance: '', born: t.born ?? null, died: null, ties: [] }); }   /* 表上坐了位子、模型没列的，也进朝堂全表 */
   for (const x of P.slice(0, 300)) {
     if (x.name === me || !x.post) continue;
     const hit = matchPost(s, (x.organ || '') + x.post) || matchPost(s, x.post);
@@ -1930,10 +1965,26 @@ function matchPost(s, postTxt) {
   return bs >= 2 ? best : null;
 }
 /** 时间走到了：照档案里的履历（和内置史料的任职），真人该升该调的照史书调；玩家自己任命的位子不动（本局已改，记一笔） */
+/** 照朝廷数据搭的朝堂，逐年照数据换人（R-227）：跨了年，照新的一年重排；你任命的位子、你自己的位子不动，补过的虚构人照旧（同一位子同一人） */
+function courtYearly(s) {
+  if (!s || !s.org || !s.org.court || !s.clock || s.org.y === s.clock.y) return [];
+  const CD = courtDataFor(s, s.clock.y); if (!CD || CD.P.name !== s.org.court) { s.org.y = s.clock.y; return []; }
+  const me = (s.protagonist || {}).name, old = s.org, keep = [];
+  for (const n of arr(old.nodes)) for (const q of arr(n.posts)) if (q.byPlayer || (q.holder && q.holder === me)) keep.push({ seat: q.seat, title: q.title, node: n.name, q });
+  const before = new Map(); for (const n of arr(old.nodes)) for (const q of arr(n.posts)) if (q.seat) before.set(q.seat, [q.holder].concat(arr(q.others)).filter(Boolean).join('、'));
+  const neu = orgFromCourt(s, CD);
+  for (const k of keep) { const n = neu.nodes.find(z => z.name === k.node); const q = n && n.posts.find(z => (k.seat && z.seat === k.seat) || z.title === k.title); if (q) Object.assign(q, { holder: k.q.holder, src: k.q.src, byPlayer: k.q.byPlayer, others: arr(k.q.others) }); }
+  neu.log = arr(old.log); neu.at = old.at; s.org = neu;
+  const out = []; for (const n of neu.nodes) for (const q of n.posts) { const now = [q.holder].concat(arr(q.others)).filter(Boolean).join('、'), was = before.get(q.seat);
+    if (q.seat && was !== undefined && now !== was && !/虚构/.test(String((s.courtWho || {})[q.holder] || ''))) out.push(`${CD.P.name}${q.title}：${was || '空缺'} → ${now || '空缺'}（${s.clock.y}年）`); }
+  return out.slice(0, 6);
+}
 function histTick(s) {
-  if (!s.org) return []; const ym = Math.floor(ymOf(s.clock)), out = [];
+  const cy = SH(() => courtYearly(s), 'courtYearly') || [];
+  if (!s.org) return []; if (s.org.court) return arr(cy);   // 照朝廷数据搭的朝堂只照数据逐年换人，不再照零散史料挪人
+  const ym = Math.floor(ymOf(s.clock)), out = [];
   const P = []; for (const [n, d] of Object.entries(s.dossiers || {})) if (d && arr(d.career).length && !(d.died != null && d.died < s.clock.y)) P.push([n, d.career]);
-  for (const h of histFor(s.clock.y, s)) for (const f of arr(h.figures)) if (f && f.name && !P.some(x => x[0] === f.name) && arr(f.posts).length && !(f.died != null && f.died < s.clock.y)) P.push([f.name, arr(f.posts).map(ps => ({ y: ps[0], m: null, post: String(ps[2]).replace(/^.*→/, '') }))]);
+  for (const h of histFor(s.clock.y, s)) for (const f of arr(h.figures)) if (f && f.name && !P.some(x => x[0] === f.name) && arr(f.posts).length && !(f.died != null && f.died < s.clock.y)) P.push([f.name, arr(f.posts).map(ps => ({ y: ps[0], m: null, post: postOnly(String(ps[2]).replace(/^.*→/, '')) })).filter(x => x.post)]);
   s.carApplied = s.carApplied || {};
   for (const [who, car] of P) {
     if (trackOf(s, who) === '局') continue;   // 本局轨道的人不再照史书调
@@ -2245,7 +2296,7 @@ function courtTab(s) {
   </div>`;
   const people = [...new Set(livePeople(s).map(([k]) => k).concat(Object.keys(s.dossiers || {}).filter(k => { const d = s.dossiers[k] || {}; return d.real !== false && !d.doubt && eraPersonOk(s, k, d.born ?? null, d.died ?? null) && (d.died == null || d.died >= s.clock.y) && (d.born == null || d.born <= s.clock.y); }), arr(s.household).map(m => m.name)))].filter(n => n && n !== s.protagonist.name).slice(0, 80);
   const SC = orgScope(s), can = SC.lv === 'decree', vb = '下令';
-  const FS = fictionShow(s), nm = h => h ? esc(h) + (FS.has(h) ? '<span class="vt">虚拟</span>' : '') : '<span class="muted">空缺</span>';
+  const FS = fictionShow(s), CW = s.courtWho || {}, nm = h => h ? esc(h) + (CW[h] === '虚构' ? '<span class="vt" title="史书未载，照该国用人惯例补">虚构</span>' : CW[h] === '推定' ? '<span class="muted" style="font-size:11px">（照履历推定）</span>' : FS.has(h) ? '<span class="vt">虚拟</span>' : '') : '<span class="muted">空缺</span>';
   const kids = pid => O.nodes.filter(n => (n.parent || '') === pid && n.status !== '已裁撤');
   // 要紧的：君主和中枢最上两层、你这一路、你的衙门往下两层；其余照制度有，收进「其余」里，不占地方
   const MY = O ? myOrgNode(s) : null, near = n => n.id === 'root' || (n.depth || 0) <= 2 || n.path || (MY && (n.id === MY.id || n.parent === MY.id || (O.nodes.find(m => m.id === n.parent) || {}).parent === MY.id)) || n.src === '玩家';
@@ -2308,7 +2359,10 @@ const factDue = s => s && s.clock && (!s.factSheet || s.factSheet.key !== factKe
 async function buildFacts(s) {
   const pol = s.place.polity || '', yl = s.clock.yearLabel || s.clock.y + '年', u = (s.money || {}).unit || '';
   const R = arr(s.research).slice(-12).map(x => `· 查「${x.q}」：${cut(x.text, 300)}`).join('\n');
-  const orgLine = s.org ? s.org.nodes.filter(n => n.path || n.depth <= 1).slice(0, 40).map(n => `${n.name}：` + n.posts.slice(0, 5).map(p => `${p.title}${p.rank ? '（' + p.rank + '）' : ''}员额${p.quota || 1}${p.holder ? '，' + p.holder : ''}`).join('；')).join('\n') : '';
+  /* 虚构人物戏份（任务三，R-221 御示）：开局补的虚构人物，玩家没提拔、没打过交道的，只按部就班当差，标给模型看，不给戏份 */
+  const FSb = fictionShow(s), bench = (h, p) => h && FSb.has(h) && !(p && p.byPlayer) && !fictActive(s, h);
+  const orgLine = s.org ? s.org.nodes.filter(n => n.path || n.depth <= 1).slice(0, 40).map(n => `${n.name}：` + n.posts.slice(0, 5).map(p => `${p.title}${p.rank ? '（' + p.rank + '）' : ''}员额${p.quota || 1}${p.holder ? '，' + p.holder + (bench(p.holder, p) ? '（虚构·照常供职）' : '') : ''}`).join('；')).join('\n') : '';
+  const benchNote = s.org && s.org.nodes.some(n => (n.path || n.depth <= 1) && n.posts.some(p => bench(p.holder, p))) ? '【虚构人物的戏份】标「虚构·照常供职」的人是史书没留名、程序补上的：主角没提拔他、没跟他打过交道，就只按部就班当差——不给他安排要事、不让他推动剧情、不让他突然升迁立功或犯大案；主角提拔了、找上了他，才照常写' : '';
   const nums = [arr(s.prices).length ? '物价：' + s.prices.slice(0, 12).map(x => `${x.item}${x.price != null ? x.price : '?'}${u}/${x.per || ''}`).join('、') : '',
     s.realm ? `国库${s.realm.treasury ?? '?'}、岁入${s.realm.revenue ?? '?'}、岁出${s.realm.outlay ?? '?'}、存粮${s.realm.granary ?? '?'}石、兵额${s.realm.army ?? '?'}` : '',
     arr(s.forces).length ? '兵马：' + s.forces.slice(0, 8).map(f => `${f.name}${f.troops ?? '?'}人、粮${f.grain ?? '?'}石`).join('、') : '',
@@ -2319,7 +2373,7 @@ ${histBlock(s)}
 ${s.inst ? '【本朝官制要览】' + cut(instText(s, 900), 900) : ''}
 ${officialsBlock(s)}
 ${R ? '【联网查到的资料】\n' + R : ''}
-${orgLine ? '【人事树（主角这一路和中枢）】\n' + orgLine : ''}
+${orgLine ? '【人事树（主角这一路和中枢）】\n' + orgLine : ''}${benchNote ? '\n' + benchNote : ''}
 ${nums ? '【账上的数目】\n' + nums : ''}
 要做三件事，只照上面的资料和确凿的史书，拿不准的不写：
 一、facts：这一年此地最要紧的史实十到二十条（君主年号、主角这一路的长官是谁、行政建置、本朝要紧制度、近一两年的大事、物价行情），每条一句。
@@ -2877,6 +2931,45 @@ const UT = (s, id) => arr(s.unitTypes).find(t => t.id === id || t.name === id);
 /** 一支兵马的合计：人数、月饷、月粮、攻守冲击（按人数加权）、可支几日 */
 /** 哪些兵马归你调：你亲领的；你的部将、家将、属下领的；你是一方之主时，凡不属别家势力的 */
 const MY_TIE = /部将|部下|属下|家将|亲兵|麾下|偏裨|裨将|副将|参将|游击|都司|守备|千总|把总|中军|家丁/;
+/* ========== 兵力虚实（任务三，R-221 御示）：敌人和不归你直接统的部队，你只知道估计数（会虚张声势，传闻偏大）；派探子能把数探准，探报过三个月就旧了；
+ *  你直接统的部队照实数（缺额、吃空饷另记）。程序结算照实数，界面、正文给你看的照估计 ========== */
+function scoutLv(s, who) { const x = ((s && s.scout) || {})[who]; if (!x || !s.clock) return 0; const age = ymOf(s.clock) - x.ym; return age <= 3 ? 2 : age <= 12 ? 1 : 0; }
+const roundN = n => { if (!(n > 0)) return 0; const k = Math.pow(10, Math.max(0, Math.floor(Math.log10(n)) - 1)); return Math.round(n / k) * k; };
+const nTxt = n => n >= 10000 ? (Math.round(n / 1000) / 10) + '万' : fmtN(n);
+function troopEst(s, f, men) {
+  const real = men != null ? N0(men) || 0 : N0(f && f.troops) || 0;
+  if (myForce(s, f)) { const gh = N0(f && f.ghost) || 0, roster = real + gh, hid = ghostHidden(s, f);   /* 你的兵：别人替你统的，你看到的是名册数（可能有空额），点验才知实有 */
+    return hid ? { real, exact: false, roster: true, mid: roster, txt: fmtN(roster) + '人（名册）', short: nTxt(roster) } : { real, exact: true, mid: real, txt: fmtN(real) + '人', short: nTxt(real) }; }
+  const who = String((f && (f.owner || f.name)) || ''), lv = Math.max(scoutLv(s, who), scoutLv(s, String((f && f.name) || ''))), ym = s && s.clock ? Math.floor(ymOf(s.clock) / 3) : 0;
+  let h = 0; for (const ch of who) h = (h * 31 + ch.charCodeAt(0)) % 100003;
+  const bluff = lv >= 2 ? 0 : seeded(h + ym * 7) * 0.5, err = lv >= 2 ? 0.1 : lv === 1 ? 0.25 : 0.4, c = real * (1 + bluff);
+  const mid = roundN(c), lo = roundN(c * (1 - err)), hi = roundN(c * (1 + err));
+  if (!real) return { real, exact: false, mid: 0, txt: '兵数不明', short: '不明' };
+  return { real, exact: false, lv, mid, lo, hi, txt: lv >= 2 ? `约${nTxt(mid)}人（探子新报）` : `约${nTxt(lo)}至${nTxt(hi)}人（${lv ? '探报已旧' : '传闻，多半虚张'}）`, short: '约' + nTxt(mid) };
+}
+/** 吃空饷：别人替你统的兵，逃亡病故的不报、照名册冒领饷，名册数慢慢比实有多；欠饷时更甚。你亲统的、刚点验过的没有 */
+function ghostHidden(s, f) { const me = (s.protagonist || {}).name, ld = String((f && f.leader) || ''); if (!ld || ld === me || /^(你|主角|本人)$/.test(ld)) return false; return !(f.auditYM != null && ymOf(s.clock) - f.auditYM < 3); }
+function ghostMonthly(s, f, m) {
+  if (!myForce(s, f) || !ghostHidden(s, f) || !m) return; const men = forceStats(s, f).men || N0(f.troops) || 0; if (men < 50) return;
+  const gh = N0(f.ghost) || 0, rate = N0(f.owed) > 0 ? 0.02 : 0.008, cap = Math.round((men + gh) * 0.2) - gh, g = Math.min(cap, Math.round(men * rate * m)); if (g <= 0) return;
+  if (arr(f.units).length) { uShrink(s, f, 1 - g / men); f.troops = forceStats(s, f).men; } else f.troops = Math.max(0, N0(f.troops) - g);
+  f.ghost = gh + g;
+}
+function auditAct(s, name) {
+  const f = arr(s.forces).find(x => x && x.name === name); if (!f || !myForce(s, f)) return (ORGMSG = '这支兵马不归你调');
+  if (!ghostHidden(s, f)) return (ORGMSG = `${f.name}刚点验过（或是你亲统），不必再点`);
+  const gh = N0(f.ghost) || 0, real = forceStats(s, f).men || N0(f.troops) || 0; f.ghost = 0; f.auditYM = ymOf(s.clock); f.morale = Math.max(0, (num(f.morale) ?? 60) - (gh ? 3 : 1));
+  const P = (s.people || {})[f.leader]; if (P && gh) P.favor = (num(P.favor) || 0) - Math.min(20, 2 + Math.round(gh / Math.max(1, real + gh) * 60));
+  return (ORGMSG = gh ? `点验${f.name}：名册${fmtN(real + gh)}人，实有${fmtN(real)}人，空额${fmtN(gh)}，已从名册革除；${f.leader}脸上不好看` : `点验${f.name}：名册与实有相符，${fmtN(real)}人`);
+}
+function scoutAct(s, who) {
+  who = one(who, 20); if (!who) return '';
+  if (scoutLv(s, who) >= 2) return (ORGMSG = `${who}那边的探报还新，不必再派`);
+  const u = String((s.money && s.money.unit) || '两'), cost = /文/.test(u) ? 5000 : 5, cash = N0(s.money && s.money.cash) || 0; if (cash < cost) return (ORGMSG = `派探子要盘缠${fmtN(cost, u)}，钱不够`);
+  cashAdd(s, -cost); s.scout = s.scout || {}; s.scout[who] = { ym: ymOf(s.clock) };
+  const F = arr(s.forces).filter(f => !myForce(s, f) && (f.owner === who || f.name === who)), e = F.length ? troopEst(s, F[0]) : null;
+  return (ORGMSG = `派了探子去打探${who}，花了${fmtN(cost, u)}${e ? '：回报' + F[0].name + e.txt : ''}`);
+}
 function myForce(s, f) {
   if (!f || !s || !s.protagonist) return false; const me = s.protagonist.name, ld = String(f.leader || ''), ow = String(f.owner || '');
   if (ld === me || ow === me || /^(你|主角|本人|我方|自己)$/.test(ow) || /^(主角|本人|你)$/.test(ld)) return true;
@@ -2923,6 +3016,7 @@ function armyMonthly(s, months) {
     if (!/交战|行军/.test(f.status || '')) f.garrisonYM = f.garrisonYM == null ? ymNow : f.garrisonYM; else f.garrisonYM = null;
   };
   for (const f of arr(s.forces)) {
+    if (f) ghostMonthly(s, f, Math.min(months, 24));
     if (f && !arr(f.units).length) { if (!f.party && myForce(s, f) && N0(f.troops) > 0 && depotsOf(s).length) { const m = Math.min(months, 24); let need = Math.round(N0(f.troops) * 0.6 * m); const g = N0(f.grain) || 0, t0 = Math.min(g, need); f.grain = g - t0; need -= t0;   /* 没编成营的兵马也要吃粮：一人一月约六斗（R-155） */
         if (need > 0) { const r = supDraw(s, f, need); need -= r.got; if (r.raid) out.push(r.raid); if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); out.push(`${f.name}${r.sp && r.sp.cut ? '粮道被' + (r.sp.foe || '敌军') + '截断，' : r.sp && r.sp.none ? '哪个仓都运不到，' : ''}军中断粮`); } } }
       moraleWatch(f, Math.min(months, 24)); continue; }
@@ -4720,6 +4814,66 @@ function yearEnd(s, y0) {
 /* ========== 内置史料：史事、君主年号、真人生卒官职由程序给出，AI 不凭记忆编 ========== */
 let HIST = [];
 try { HIST = JSON.parse(document.getElementById('hist').textContent || '[]'); } catch (_) { HIST = []; }
+/* 任职年表（任务六，R-225）：开发时从哈佛库（CBDB，非商业用途）、原文库整理的「哪年谁任什么官」，按政权分；只拿来排朝堂、名册（先查表、后补缺），不进正文的名单扫描 */
+let TENURE = []; try { TENURE = JSON.parse((document.getElementById('tenure') || {}).textContent || '[]'); if (!Array.isArray(TENURE)) TENURE = []; } catch (_) { TENURE = []; }
+const POL_ALIAS = { 蜀汉: ['蜀', '汉', '季汉'], 吴: ['孙吴', '东吴', '杨吴', '淮南'], 魏: ['曹魏'], 西晋: ['晋'], 东晋: ['晋'], 汉: ['东汉', '后汉'], 宋: ['刘宋'], 南齐: ['齐', '萧齐'], 梁: ['萧梁', '南梁'], 北魏: ['魏', '元魏', '拓跋魏'], 东魏: ['魏'], 西魏: ['魏'], 北齐: ['齐', '高齐'], 北周: ['周', '宇文周'],
+  前秦: ['秦', '苻秦'], 后秦: ['秦', '姚秦'], 西秦: ['秦'], 前燕: ['燕'], 后燕: ['燕'], 北燕: ['燕'], 南燕: ['燕'], 前赵: ['汉', '赵', '汉赵'], 后赵: ['赵'], 成汉: ['成', '汉'], 前凉: ['凉'], 后凉: ['凉'], 北凉: ['凉'], 西凉: ['凉'], 南凉: ['凉'],
+  晋: ['河东'], 后梁: ['梁', '朱梁'], 后唐: ['唐'], 后晋: ['晋'], 后汉: ['汉'], 后周: ['周'], 南唐: ['唐'], 前蜀: ['蜀'], 后蜀: ['蜀'], 北汉: ['汉'], 南汉: ['汉'], 楚: ['马楚'], 荆南: ['南平'], 辽: ['契丹'], 明: ['大明'] };
+const polNorm = x => String(x || '').trim().replace(/^大(?=..)/, '').replace(/(?<=.)[国朝]$/, '');
+/** 这一年这个政权该用的任职表：整份标了政权的照政权；按人分政权的（通鉴、五代十国），先照本名对，对不上再照别称对，别称同时对上两国（东西魏都叫魏）就不认 */
+/* ========== 五代十国朝廷数据（任务七，R-227）：开在有朝廷数据的政权，人事树照数据搭（位子照该国官制、小国照小国的规模）；
+ *  史书明载、照履历推定的人先坐；史书没留名的位子照该国用人来路补人——种子＝政权＋位子＋起年，同一位子谁开局都补出同一个人，补了记进存档永不再变，不与真人重名，标虚构 ========== */
+let COURTDATA = []; try { COURTDATA = JSON.parse((document.getElementById('courtdata') || {}).textContent || '[]'); if (!Array.isArray(COURTDATA)) COURTDATA = []; } catch (_) { COURTDATA = []; }
+function courtDataFor(s, y) { const pol = polNorm(s && s.place && s.place.polity); if (!pol) return null;
+  for (const D of COURTDATA) { if (!D || !D.range || y < D.range[0] || y > D.range[1]) continue; const P = arr(D.polities).find(p => polNorm(p.name) === pol || arr(POL_ALIAS[p.name]).includes(pol)); if (P) return { D, P }; } return null; }
+function fictName(seed, fam, taken) { for (let k = 0; k < 40; k++) { const r = seeded(seed + k * 101), r2 = seeded(seed + k * 101 + 7); const sur = fam[Math.floor(r * fam.length) % fam.length]; const nm = sur + GIVEN[Math.floor(r2 * GIVEN.length) % GIVEN.length]; /* 名字照已有的士人名表取 */ if (!taken.has(nm)) return nm; } return ''; }
+function realNamesAll() { const R = new Set(); for (const h of HIST) for (const f of arr(h.figures)) if (f && f.name) R.add(f.name); for (const t of TENURE) for (const f of arr(t.figures)) if (f && f.name) R.add(f.name); for (const D of COURTDATA) for (const p of arr(D.people)) R.add(p.name); return R; }
+function orgFromCourt(s, C) {
+  const { D, P } = C, y = s.clock.y, hk = str => { let h = 0; for (const ch of String(str)) h = (h * 31 + ch.charCodeAt(0)) % 1000003; return h; };
+  s.courtWho = s.courtWho || {}; s.courtFixed = s.courtFixed || {};   // 补的人记进存档，永不再变
+  const nodes = [{ id: 'root', name: P.name, depth: 0, tier: '中枢', posts: [], path: true }], byDept = {};
+  const live = arr(D.people).map(p => ({ p, x: arr(p.posts).filter(x => x.polity === P.name && x.from <= y && x.to >= y) })).filter(o => o.x.length);
+  const taken = realNamesAll(); for (const v of Object.values(s.courtFixed)) taken.add(v.name);
+  for (const st of arr(P.seats).filter(q => q.from <= y && q.to >= y)) {
+    const dept = st.dept || '使府'; let n = byDept[dept]; if (!n) { n = byDept[dept] = { id: 'cd' + (nodes.length), name: dept, depth: 1, parent: 'root', tier: /州|郡|县/.test(dept) ? '地方' : /军/.test(dept) ? '军事' : '中枢', posts: [], path: true, src: '史' }; nodes.push(n); }
+    const who = live.filter(o => o.x.some(x => x.seat === st.id)).map(o => ({ name: o.p.name, how: o.x.find(x => x.seat === st.id).how }));
+    const q = { title: st.office.replace(n.name, '') || st.office, rank: st.rank || '', quota: st.quota || 1, holder: '', src: '', others: [], seat: st.id };
+    who.forEach((w, i) => { s.courtWho[w.name] = w.how === '推定' ? '推定' : '明载'; if (i === 0) { q.holder = w.name; q.src = '史书'; } else q.others.push(w.name);
+      s.people = s.people || {}; if (!s.people[w.name]) s.people[w.name] = { name: w.name, role: P.name + (st.office.replace(n.name, '') || st.office), seen: 0, court: true, real: true }; });
+    if (st.noFill && !q.holder) q.status = '出缺';   /* 宰执、枢密这类大官史书这年没载在任者：空着，不补虚构人 */
+    for (let k = (q.holder ? 1 + q.others.length : 0); !st.noFill && k < q.quota && k < 4; k++) {   // 史书没留名的：照用人来路补，种子定死
+      const key = P.name + '|' + st.id + '|' + st.from + '|' + k; let F = s.courtFixed[key];
+      if (!F) { const R = arr(P.recruit); let r = seeded(hk(key)), acc = 0, route = R[R.length - 1]; for (const x of R) { acc += x.share; if (r <= acc) { route = x; break; } }
+        const nm = route ? fictName(hk(key) + 17, arr(route.families).length ? route.families : ['王'], taken) : ''; if (!nm) continue; taken.add(nm);
+        F = s.courtFixed[key] = { name: nm, from: route.from, native: arr(route.native)[Math.floor(seeded(hk(key) + 3) * arr(route.native).length)] || '' }; }
+      s.courtWho[F.name] = '虚构'; if (!q.holder) { q.holder = F.name; q.src = '拟'; } else q.others.push(F.name);
+      s.people = s.people || {}; if (!s.people[F.name]) s.people[F.name] = { name: F.name, role: P.name + q.title, fic: true, native: F.native, origin: F.from, seen: 0 };
+    }
+    n.posts.push(q);
+  }
+  return { regime: `${P.name} ${s.clock.yearLabel || y + '年'}`, pol: s.place.polity || '', ruler: isRuler(s), at: s.turn, y, nodes, log: [], lib: true, court: P.name };
+}
+/* 错词表（任务十五、十七，R-233）：这一年代还没有的说法（总兵、师爷、衙役……），正文写了就打回重写，并告诉模型当时怎么说；
+ *  标了「今义」「可通融」「语境」的两可词只提醒、不打回 */
+let ERAVOCAB = []; try { ERAVOCAB = JSON.parse((document.getElementById('eravocab') || {}).textContent || '[]'); if (!Array.isArray(ERAVOCAB)) ERAVOCAB = []; } catch (_) { ERAVOCAB = []; }
+function vocabFaults(s, text) {
+  const y = s && s.clock ? s.clock.y : 0, t = String(text || ''), out = [];
+  for (const V of ERAVOCAB) { if (!V || !V.range || y < V.range[0] || y > V.range[1]) continue;
+    for (const x of arr(V.absent)) { const raw = String(x.w || ''); if (/今义|可通融|语境/.test(raw)) continue;
+      const words = raw.replace(/[（(][^）)]*[）)]/g, '').split(/[、，,／/]/).map(w => w.trim()).filter(w => w.length >= 2);
+      const hit = words.find(w => t.includes(w)); if (hit) out.push(`写了这时还没有的「${hit}」：这时说「${String(x.say || '').split(/[、，]/)[0]}」之类，照当时的说法改`);
+      if (out.length >= 4) return out; } }
+  return out;
+}
+function tenureFor(s, y) {
+  const pol = polNorm(s && s.place && s.place.polity); if (!pol) return []; const out = [];
+  for (const t of TENURE) { if (!t || !t.range || y < t.range[0] || y > t.range[1]) continue;
+    if (t.polity) { if (polNorm(t.polity) === pol || arr(POL_ALIAS[t.polity]).includes(pol)) out.push(t); continue; }
+    const act = new Set(); for (const f of arr(t.figures)) if (f.pol && arr(f.posts).some(p => p[0] <= y && p[1] >= y)) act.add(f.pol);
+    let hit = [...act].filter(p => polNorm(p) === pol); if (!hit.length) { hit = [...act].filter(p => arr(POL_ALIAS[p]).includes(pol)); if (hit.length > 1) hit = []; }
+    if (hit.length) out.push({ id: t.id, figures: arr(t.figures).filter(f => hit.includes(f.pol)) }); }
+  return out;
+}
 /** 联网自建的史料包（桌面版：没有内置史料的年代，边玩边查边建，存在本机） */
 let RUNHIST = [];
 /** 自建史料只给同一政权的存档用（内置史料不分） */
@@ -4741,7 +4895,7 @@ const evYM = e => e.y * 12 + evMonth(e) + (e.leap && e.m ? 0.5 : 0);   // 闰月
 const evKey = e => e.y + ':' + String(e.text).slice(0, 14);
 /** 覆盖本局年份的史料（可能两段交界都要） */
 function histFor(y, s) { return HALL(s).filter(h => y >= h.range[0] && y <= h.range[1]); }
-const hasHist = s => !!(s && histFor(s.clock.y, s).some(h => !h.sync));   // 只有同步来的零散史事不算有整套史料
+const hasHist = s => !!(s && histFor(s.clock.y, s).some(h => !h.sync && !h.rulersOnly));   // 只有君主年号表（南北朝、隋唐前期）的不算整套史料，史事真人照常联网自建   // 只有同步来的零散史事不算有整套史料
 function histEvents(s, fromYM, toYM) {
   const out = [], seen = new Set();
   for (const h of HALL(s)) {
@@ -4780,6 +4934,17 @@ function syncHist(s) {
 /** 一个史料人物在 y 年（m 月）的状态：未生 / 在世 / 已故、官职；本局的改动优先。
    只认史料里明写的生卒；生年不详的按头一次任官推断，卒年不详的按寿数推断，免得把别朝的人当成此时在世 */
 const DEATH_RE = /卒|死|杀|崩|薨|殉|自尽|自缢|遇害|伏诛|被害|病逝/;
+/* 任职记录里的遭遇不算官职（任务三，R-221）：史料 posts 里有把「削籍归里」「罢归」「致仕」「下狱论死」「降清」这类遭遇记成了官职的，
+ * 旧代码直接拿来当「此刻的官职」，高攀龙 1625 年成了官职「削籍归里」、被排进朝堂。整条只有遭遇的不算官职（此刻闲居）；
+ * 「知江宁府（罢相）」这类括注里夹着经历的，只留官名 */
+const POST_STATUS = /削籍|下狱|论死|弃市|赐死|被杀|遇害|流放|流崖|贬为庶|归里|致仕|罢归|罢职|罢相|闲住|闲居|安置|隐居|出家|起兵|叛|反正|反清|反唐|被俘|囚|(?:^|[，、；（])降(?!虏|号|随)|降[唐清金元宋魏吴蜀明后伪蒙]/;
+const POST_OFFICE = /官|使|尉|令|守|史|丞|卿|侍|郎|尚书|将军|王|公|侯|帅|督|大夫|学士|府|州|县|尹|参|判|节度|团练|宾客|少师|少傅|少保|太师|太傅|太保|首领/;
+function postOnly(t) {
+  let x = String(t || '').trim(); if (!x) return '';
+  x = x.replace(/（([^）]*)）|\(([^)]*)\)/g, (all, a, b) => POST_STATUS.test(a || b || '') ? '' : all).trim();   // 括注是经历的，去掉
+  if (POST_STATUS.test(x) && !POST_OFFICE.test(x.replace(new RegExp(POST_STATUS.source, 'g'), ''))) return '';   // 整条只有遭遇
+  return x;
+}
 function figState(s, f, y, m) {
   const o = (s.figOver || {})[f.name] || {};
   const posts = arr(f.posts).filter(p => Array.isArray(p) && Number.isFinite(p[0]));
@@ -4805,7 +4970,7 @@ function figState(s, f, y, m) {
   // 任官可以带起始月日（[起年, 止年, 官, 起月, 起日]）：同一年里还没到任命的日子就不算
   const md = s.clock && s.clock.y === y ? [s.clock.m, s.clock.d || 1] : [12, 30];
   const started = p => !(p[0] === y && p[3] && (md[0] < p[3] || (md[0] === p[3] && p[4] && md[1] < p[4])));
-  const dataPost = posts.filter(p => p[0] <= y && (p[1] ?? p[0]) >= y && started(p)).map(p => p[2]).pop() || '';
+  const dataPost = posts.filter(p => p[0] <= y && (p[1] ?? p[0]) >= y && started(p)).map(p => postOnly(p[2])).filter(Boolean).pop() || '';
   const laterData = !o.fate && posts.some(p => o.postY != null && p[0] > o.postY && p[0] <= y);   // 主角改了他的去向：史书上后来的任命不再自动生效，由天下推演定
   const post = o.post && !laterData ? o.post : dataPost;
   return { state: 'alive', died, post, dyingNow, age: f.born != null ? y - f.born + 1 : null };
@@ -4869,7 +5034,8 @@ function rulersAt(y, s, m) {
   const out = [], seen = new Set();
   const mm = m != null ? m : s && s.clock && s.clock.y === y ? s.clock.m : 12;
   const all = [];
-  for (const h of histFor(y, s)) for (const r of arr(h.rulers)) if (r.from <= y && r.to >= y && !seen.has(r.polity + r.name)) { seen.add(r.polity + r.name); all.push(r); }
+  const H = histFor(y, s), firm = H.some(h => !h.grade && arr(h.rulers).some(r => r.from <= y && r.to >= y));   // 有内置的君主年号表，就不采联网自建的（防年号写错）
+  for (const h of H) { if (firm && h.grade === 'B') continue; for (const r of arr(h.rulers)) if (r.from <= y && r.to >= y && !seen.has(r.polity + r.name)) { seen.add(r.polity + r.name); all.push(r); } }
   for (const r of all) {
     const rg0 = arr(r.reigns).slice().sort((a, b) => a[1] - b[1]);
     // 新君今年才即位、还没到即位的月份：先不算他
@@ -5893,7 +6059,12 @@ async function buildRoster(s) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '';
   const base = [], seen = new Set();
   for (const r of rulersAt(y, s)) if (!seen.has(r.name)) { seen.add(r.name); base.push({ g: r.polity || pol, name: r.name, post: r.title || r.polity, src: '内置史料' }); }
-  for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && !seen.has(f.name + ps[2])) { seen.add(f.name + ps[2]); base.push({ g: '', name: f.name, post: ps[2], since: ps[0], src: '内置史料' }); }
+  for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && postOnly(ps[2]) && !seen.has(f.name + ps[2])) { seen.add(f.name + ps[2]); base.push({ g: '', name: f.name, post: postOnly(ps[2]), since: ps[0], src: '内置史料' }); }
+  /* 任职年表、朝廷数据也进名录（Claude 自办 4，R-225/R-227）：本政权这一年在任的，按官的轻重排，大官在前 */
+  { const PRI = t => /宰相|平章|丞相|仆射|侍中|中书令|尚书令|枢密|大学士|首辅/.test(t) ? 6 : /尚书|节度使|总督|巡抚|都督|大将军|太尉|司徒|司空/.test(t) ? 5 : /侍郎|御史|学士|观察|留守|总兵|刺史|知府|太守/.test(t) ? 4 : /将军|指挥使|判官|掌书记|郎中|给事中/.test(t) ? 3 : 1;
+    const T = []; for (const t of tenureFor(s, y)) for (const f of arr(t.figures)) { if (seen.has(f.name)) continue; const st = figState(s, f, y, s.clock.m); if (st.state !== 'alive' || !st.post) continue; T.push({ g: pol, name: f.name, post: st.post, src: '任职年表', pr: PRI(st.post) }); }
+    const CD = courtDataFor(s, y); if (CD) for (const p of arr(CD.D.people)) { const x = arr(p.posts).find(z => z.polity === CD.P.name && z.from <= y && z.to >= y); if (x && !seen.has(p.name)) T.push({ g: pol, name: p.name, post: x.office, src: '朝廷数据', pr: PRI(x.office) + 1 }); }
+    T.sort((a, b) => b.pr - a.pr).slice(0, 60).forEach(x => { if (!seen.has(x.name)) { seen.add(x.name); base.push({ g: x.g, name: x.name, post: x.post, src: x.src }); } }); }
   const RA = realmsAt(y, s.clock.m), RL = rulersAt(y, s).map(r => String(r.polity || '')), big = n => RL.some(p0 => p0 && (p0.includes(n) || n.includes(p0.replace(/[（(].*$/, '')))),
     realms = [...new Set([pol].concat(RA ? RA.list.map(r => r.name).sort((a, b) => big(b) - big(a)) : []).filter(Boolean))].slice(0, 18);   // 自己那家、史料里有君主的大国先问（921 年楚、南汉、荆南排在三十几家后头漏了）
   const blocks = []; for (let i = 0; i < realms.length; i += 3) blocks.push(realms.slice(i, i + 3));
@@ -6143,7 +6314,7 @@ function titleRank(s, t) {
 function recordPost(s, who) {
   const y = s.clock.y;
   for (const g of arr(s.roster && s.roster.y === y ? s.roster.groups : [])) for (const x of arr(g.people)) if (x && x.name === who && x.post) return String(x.post);
-  for (const h of histFor(y, s)) for (const f of arr(h.figures)) if (f.name === who && !(f.died != null && f.died < y)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y)) return String(ps[2]);
+  for (const h of histFor(y, s)) for (const f of arr(h.figures)) if (f.name === who && !(f.died != null && f.died < y)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && postOnly(ps[2])) return postOnly(ps[2]);
   const d = (s.dossiers || {})[who]; if (d) { const c = arr(d.career).filter(x => x && x.post && (x.y == null || x.y <= y)).sort((a, b) => (b.y || 0) - (a.y || 0))[0]; if (c) return String(c.post); }
   return '';
 }
@@ -6380,7 +6551,7 @@ let TALENT_P = null;
 function orgFillReal(s) {
   const O = s.org; if (!O) return 0; const y = s.clock.y, L = [];
   for (const g of arr(s.roster && s.roster.y === y ? s.roster.groups : [])) for (const x of arr(g.people)) if (x && x.name && x.post) L.push({ name: x.name, post: String(x.post), src: x.source || '天下名录' });
-  for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y)) L.push({ name: f.name, post: String(ps[2]).replace(/^.*→/, ''), src: '内置史料' });
+  for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && postOnly(String(ps[2]).replace(/^.*→/, ''))) L.push({ name: f.name, post: postOnly(String(ps[2]).replace(/^.*→/, '')), src: '内置史料' });
   let n0 = 0; const held = orgHolders(s);
   for (const x of L) {
     if (held.has(x.name) || x.name === s.protagonist.name) continue;
@@ -8065,7 +8236,7 @@ function stratMap(s) {
           const du = sp.from ? wrLoc(s, sp.from) : null;
           if (du && inBox(du) && !sp.none) out.push(`<line x1="${px(x.u).toFixed(0)}" y1="${py(x.u).toFixed(0)}" x2="${px(du).toFixed(0)}" y2="${py(du).toFixed(0)}" stroke="${sp.cut ? '#c0392b' : '#8a6d1d'}" stroke-width="${sp.cut ? 1.6 : 1}" ${sp.cut ? 'stroke-dasharray="4 3"' : ''} opacity=".8" pointer-events="none"><title>${esc(f.name)}的粮道：${esc(sp.from)}运粮，路耗${Math.round(sp.loss * 100)}%${sp.cut ? '，已被截断' : ''}</title></line>`);
           out.push(`<circle class="supdot" cx="${(X - 5).toFixed(0)}" cy="${(Y - 17).toFixed(0)}" r="5" fill="${supCol(sp)}" stroke="#fff" stroke-width="1.2" pointer-events="none"><title>${esc(f.name)}补给：${sp.cut ? '粮道断了' : sp.none ? '运不到粮' : '从' + esc(sp.from) + '运粮，路耗' + Math.round(sp.loss * 100) + '%'}</title></circle>`); } }
-        out.push(`<g data-mapforce="${esc(f.name)}" style="cursor:pointer"><title>${esc(f.name)}：${esc(f.leader || '')}统，${esc(fmtN(men))}人，士气${mo}、组织${org}，${esc(f.status || '')}${C ? '，往' + esc(C.target) : ''}</title><line x1="${px(x.u).toFixed(0)}" y1="${py(x.u).toFixed(0)}" x2="${X.toFixed(0)}" y2="${(Y - 6).toFixed(0)}" stroke="#333" stroke-width="1.2"/><rect x="${X.toFixed(0)}" y="${(Y - 30).toFixed(0)}" width="${w}" height="26" rx="3" fill="${col}" stroke="${sel ? '#ffd24a' : '#fff'}" stroke-width="${sel ? 2.5 : 1}"/><text x="${(X + 4).toFixed(0)}" y="${(Y - 18).toFixed(0)}" font-size="10" font-weight="700" fill="#fff">${esc(f.name)}</text><text x="${(X + w - 4).toFixed(0)}" y="${(Y - 18).toFixed(0)}" font-size="10" fill="#fff" text-anchor="end">${esc(men >= 10000 ? (men / 10000).toFixed(1) + '万' : fmtN(men))}</text>${bar(Y - 14, 100 * Math.min(1, men / Math.max(1, N0(f.troops0) || men)), '#fff')}${bar(Y - 10, mo, mo < 35 ? '#ff6b6b' : '#7ee07e')}${bar(Y - 6.5, org, '#7ec8ff')}</g>`); }
+        out.push(`<g data-mapforce="${esc(f.name)}" style="cursor:pointer"><title>${esc(f.name)}：${esc(f.leader || '')}统，${esc(mine ? fmtN(men) + '人' : troopEst(s, f, men).txt)}，士气${mo}、组织${org}，${esc(f.status || '')}${C ? '，往' + esc(C.target) : ''}</title><line x1="${px(x.u).toFixed(0)}" y1="${py(x.u).toFixed(0)}" x2="${X.toFixed(0)}" y2="${(Y - 6).toFixed(0)}" stroke="#333" stroke-width="1.2"/><rect x="${X.toFixed(0)}" y="${(Y - 30).toFixed(0)}" width="${w}" height="26" rx="3" fill="${col}" stroke="${sel ? '#ffd24a' : '#fff'}" stroke-width="${sel ? 2.5 : 1}"/><text x="${(X + 4).toFixed(0)}" y="${(Y - 18).toFixed(0)}" font-size="10" font-weight="700" fill="#fff">${esc(f.name)}</text><text x="${(X + w - 4).toFixed(0)}" y="${(Y - 18).toFixed(0)}" font-size="10" fill="#fff" text-anchor="end">${esc(mine ? (men >= 10000 ? (men / 10000).toFixed(1) + '万' : fmtN(men)) : troopEst(s, f, men).short)}</text>${bar(Y - 14, 100 * Math.min(1, men / Math.max(1, N0(f.troops0) || men)), '#fff')}${bar(Y - 10, mo, mo < 35 ? '#ff6b6b' : '#7ee07e')}${bar(Y - 6.5, org, '#7ec8ff')}</g>`); }
       return out.length ? `<defs><marker id="marr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a63a2a"/></marker></defs>` + out.join('') : ''; })()}
     ${provLbl}
     ${(() => { const R = selRoute(s); if (!R || !R.ok) return ''; const C = { 0: '#6b4a2a', 1: '#a05a1a', 2: '#b3452f', 3: '#3d78b5' }; return `<polyline points="${R.pts.map(p => XY({ lon: p[0], lat: p[1] })).join(' ')}" fill="none" stroke="#fff" stroke-width="5.5" stroke-linejoin="round" opacity=".8" pointer-events="none"/><polyline points="${R.pts.map(p => XY({ lon: p[0], lat: p[1] })).join(' ')}" fill="none" stroke="${R.kinds['山路'] ? C[2] : R.kinds['经关'] ? C[1] : C[0]}" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 4" pointer-events="none"><title>${esc(R.who)}去${esc(MAPZ.sel)}：约${R.li}里</title></polyline>`; })()}
@@ -8090,7 +8261,7 @@ function armyCard(s, f) {
   const RK = RT ? routeRisk(s, RT, f, tgt) : [];
   const order = ([k, t]) => `<button class="link" data-write="${esc(t)}">${esc(k)}</button>`;
   return `<div class="affair acard"><b>⚑ ${esc(f.name)}</b> ${mine ? '<span class="att onpath">归你调</span>' : '<span class="att">别家的</span>'} <span class="muted">${esc(f.leader || '')}统 · ${esc(f.at ? '在' + f.at : '')} · ${esc(f.status || '')}${C ? ' · ' + (C.mode === '攻' ? '进攻' : '开赴') + esc(C.target) + (C.li ? `（已走${Math.round(C.done || 0)}/${Math.round(C.li)}里）` : '') : ''}</span>
-    <div>${st.U.length ? st.U.map(x => `${esc(x.t.name)}${esc(x.n)}${esc(x.t.unit || '营')}${x.short > 0 ? `<span class="muted">（缺额${esc(x.short)}）</span>` : ''}`).join('、') + ' · ' : ''}共 <b>${esc(fmtN(st.men || N0(f.troops) || 0, '人'))}</b>${st.days != null ? ` · 军粮够 <b>${st.days}</b> 日` : N0(f.grain) != null ? ` · 存粮${esc(fmtN(N0(f.grain), '石'))}` : ''}${f.owed ? ` · <span class="warn">欠饷${esc(fmtN(N0(f.owed)))}</span>` : ''}</div>
+    <div>${st.U.length ? st.U.map(x => `${esc(x.t.name)}${esc(x.n)}${esc(x.t.unit || '营')}${x.short > 0 ? `<span class="muted">（缺额${esc(x.short)}）</span>` : ''}`).join('、') + ' · ' : ''}共 <b>${esc(troopEst(s, f, st.men || N0(f.troops) || 0).txt)}</b>${mine && ghostHidden(s, f) ? `<button class="link" data-audit="${esc(f.name)}">点验</button>` : ''}${st.days != null ? ` · 军粮够 <b>${st.days}</b> 日` : N0(f.grain) != null ? ` · 存粮${esc(fmtN(N0(f.grain), '石'))}` : ''}${f.owed ? ` · <span class="warn">欠饷${esc(fmtN(N0(f.owed)))}</span>` : ''}</div>
     <div class="ggrid">${g('攻', st.atk)}${g('守', st.def)}${g('冲击', st.shock)}${g('机动', st.mob)}${g('士气', mo)}${g('组织', org)}${g('训练', tr)}</div>
     ${W && W.txt ? `<div class="muted" style="font-size:12px">驻地天候：${esc(W.txt)}</div>` : ''}
     ${O ? `<div class="route"><b>打${esc(tgt)}的胜算：${O.unknown ? '守军照城的等级推' : '约 ' + O.p + '%'}</b>${O.guess ? '（守军没探实，是推的）' : ''}<div class="list">${O.lines.map(l => `<div class="muted" style="font-size:12px">· ${esc(l)}</div>`).join('')}</div></div>` : mine ? '<div class="muted" style="font-size:12px">在图上点一处城池，看打那里的胜算、去那里要走几日。</div>' : ''}
@@ -8122,7 +8293,7 @@ function mapInfo(s) {
     ${u && u.lv === 2 ? cityHtml(s, n) : ''}
     ${u && admMine(s, u) ? `<details class="oadd"><summary class="muted">划分政区…</summary><div class="opost"><input class="oin" data-admto placeholder="新名字 / 等第 / 府州名"><button class="link" data-adm="rename" data-n="${esc(n)}">改名</button><button class="link" data-adm="type" data-n="${esc(n)}">改等第</button>${u.lv === 3 ? `<button class="link" data-adm="move" data-n="${esc(n)}">改隶到</button><button class="link" data-adm="split" data-n="${esc(n)}">以此县分置新州</button>` : ''}<button class="link" data-adm="capital" data-n="${esc(n)}">定都于此</button></div><div class="muted" style="font-size:11px">改名、改等第、改隶各花一点国策点，分置两点，定都三点</div></details>` : ''}
     ${t ? `<div class="muted">户${esc(fmtN(N0(t.pop)) || '正在照史料推')} · 守军${esc(fmtN(N0(t.troops)) || '正在照史料推')} · 存粮${esc(fmtN(N0(t.grain)) || '正在照史料推')}石 · 民心${esc(t.loyalty ?? '?')}</div>` : ''}
-    ${F.length ? `<div>驻军：${F.map(f => `${esc(f.name)}（${esc(f.leader || '')}，${esc(fmtN(N0(f.troops) || 0))}人，${esc(f.status || '')}）`).join('、')}</div>` : ''}
+    ${F.length ? `<div>驻军：${F.map(f => `${esc(f.name)}（${esc(f.leader || '')}，${esc(troopEst(s, f).txt)}，${esc(f.status || '')}）${myForce(s, f) ? '' : `<button class="link" data-scout="${esc(f.owner || f.name)}">派探子</button>`}`).join('、')}</div>` : ''}
     ${(() => { const R = selRoute(s); if (!R) return ''; if (!R.ok) return `<div class="warn">${esc(R.who || '你')}去这里：${esc(R.why)}</div>`;
       const ok = arr(R.opts).filter(o => o.allowed);
       return `<div class="route"><b>${esc(R.who)}从${esc(R.from)}去：</b>约${R.li}里（${Object.entries(R.kinds).map(([k, v]) => k + '×' + v).join('，')}${R.gates ? '，过关' + R.gates + '处' : ''}）${R.via.length ? `，取道${esc(R.via.join('、'))}` : ''}
@@ -9383,6 +9554,22 @@ function dipOf(s, name) {
 function dipGeo(s, P) { const a = P.seat ? placeXY(s, P.seat, s.clock.y) : null, h = hereXY(s); return a && a.lat && h ? Math.round(liOf(hav(a, h))) : null; }
 const dipTroops = P => N0(String(P.troops || '').replace(/[^\d.万千百]/g, '')) || null;
 const myTroopsAll = s => arr(s.forces).filter(f => myForce(s, f)).reduce((a, f) => a + (N0(f.troops) || 0), 0);
+/** 你也能虚张声势（任务三，R-221 御示）：多立旗帜、增灶、四出传言，三个月里别家照多五成估你的兵；每月有两成五被探子识破，识破了名声掉、敌意涨 */
+const bluffOn = s => !!(s && s.bluff && ymOf(s.clock) < s.bluff.until);
+const myTroopsSeen = s => Math.round(myTroopsAll(s) * (bluffOn(s) ? 1.5 : 1));
+function bluffAct(s) {
+  if (!arr(s.forces).some(f => myForce(s, f))) return (ORGMSG = '你手下没有兵马，谈不上虚张声势');
+  if (bluffOn(s)) return (ORGMSG = '声势已经张着了');
+  const u = String((s.money && s.money.unit) || '两'), cost = /文/.test(u) ? 20000 : 20; if ((N0(s.money && s.money.cash) || 0) < cost) return (ORGMSG = `多立旗帜、增灶传言要花${fmtN(cost, u)}，钱不够`);
+  cashAdd(s, -cost); s.bluff = { since: ymOf(s.clock), until: ymOf(s.clock) + 3 };
+  return (ORGMSG = `多立旗帜、增灶、四出传言（花了${fmtN(cost, u)}）：三个月里别家会把你的兵估多五成；被识破就丢脸`);
+}
+function bluffMonthly(s) {
+  if (!s.bluff) return []; const ym = Math.floor(ymOf(s.clock)); if (s.bluff.chk === ym) return []; s.bluff.chk = ym;
+  if (!bluffOn(s)) { s.bluff = null; return ['虚张的声势散了，别家照实估你的兵']; }
+  if (seeded(ym * 61 + 17) < 0.25) { s.bluff = null; s.renown = Math.max(0, (num(s.renown) || 0) - 10); for (const d of Object.values(s.diplo || {})) if (d && d.att < 0) d.att = Math.max(-100, d.att - 5); return ['虚张声势被别家的探子识破了：名声掉了，敌视你的人更看轻你']; }
+  return [];
+}
 /** 一年的进项（照财政底账；没推出来就是 null，纳贡、互市、礼单都定不下来） */
 const annualRev = s => { const B = s.fisc && s.fisc.base; if (!B) return null; const v = ['tianfu', 'dingyi', 'yan', 'shang', 'cha', 'za'].reduce((a, k) => a + (num(B[k]) || 0), 0); return v > 0 ? v : null; };
 const myPrefs = s => { try { return Math.max(1, (myDomain(s).places || []).length); } catch (_) { return 1; } };
@@ -9409,7 +9596,7 @@ function dipAct(s, name, act) {
 }
 /** 每月：使者回报、纳贡互市进项、态度慢慢回到常态、敌视又强的邻国可能来犯 */
 function dipMonthly(s) {
-  const out = [], ym = Math.floor(ymOf(s.clock)), PW = realmPowers(s), mine = myTroopsAll(s), rev = annualRev(s), u = (s.money || {}).unit || '';
+  const out = [], ym = Math.floor(ymOf(s.clock)), PW = realmPowers(s), mine = myTroopsSeen(s), rev = annualRev(s), u = (s.money || {}).unit || '';
   if (!s.diplo || dipRole(s) !== 'realm') return out;
   if (s.dipYM === ym) return out; s.dipYM = ym;
   for (const [name, D] of Object.entries(s.diplo)) {
@@ -9695,6 +9882,10 @@ function prisonerAct(s, name, act) {
   if (act === '处斩') { s.prisoners = s.prisoners.filter(x => x !== p); if (D) D.att = Math.max(-100, D.att - 40); for (const d of Object.values(s.diplo || {})) d.att = Math.max(-100, d.att - 5); s.dread = (num(s.dread) || 0) + 10; return lifeNote(s, '军国', `斩${name}：${p.owner || '对方'}切齿，各家畏你狠辣`); }
   return null; }
 function war2Html(s) {
+  const BL = arr(s.forces).some(f => myForce(s, f)) ? `<div class="cr"><span>声势</span><b>${bluffOn(s) ? '正虚张着（别家照多五成估你）' : '照实'}</b>${bluffOn(s) ? '' : '<button class="link" data-bluff="1">虚张声势</button>'}</div>` : '';
+  return BL + war2Body(s);
+}
+function war2Body(s) {
   const M = mpOf(s), P = arr(s.prisoners), G = Object.entries(s.gens || {}).filter(([n, g]) => g.xp > 0 || arr(s.forces).some(f => myForce(s, f) && f.leader === n)), W = arr(s.wars).filter(w => w && w.state === '交战');
   return `${M ? `<div class="cr"><span>可征丁壮</span><b>${fmtN(M.pool, '人')}</b><span class="muted" style="font-size:12px">（上限${fmtN(M.max, '人')}：治下丁壮三成；每月回${fmtN(Math.round(M.max / 24), '人')}；募兵从这里出）</span></div>` : ''}
     ${W.length ? `<div class="muted" style="font-size:12px">${W.map(w => `对${esc(w.with)}：占领加分${(w.occ || 0).toFixed(1)}，我方厌战${Math.round(w.exh || 0)}、对方厌战${Math.round(w.exhThem || 0)}`).join('；')}</div>` : ''}
@@ -11497,7 +11688,7 @@ const polKey = p => [...String(p || 'x')].map(c => c.charCodeAt(0).toString(36))
 function packNeed(s) {
   if (!s || !s.clock) return null;
   if (s.hbFail != null && s.turn - s.hbFail < 2) return null;  // 刚失败过，隔几回合再试
-  const y = s.clock.y, cov = HALL(s).filter(h => !h.sync && y >= h.range[0] && y <= h.range[1]);
+  const y = s.clock.y, cov = HALL(s).filter(h => !h.sync && !h.rulersOnly && y >= h.range[0] && y <= h.range[1]);
   const end = cov.length ? Math.max(...cov.map(h => h.range[1])) : null;
   if (end != null && end >= y + 6) return null;   // 往后至少留六年的史书（2026-11-04 玩家：「我这可能是玩五六十年的游戏」——快到头就接着往后修）
   const from = end != null ? end + 1 : y - 3;
@@ -13516,6 +13707,8 @@ function fictionSet(s) {
 /** 界面上标「虚拟」的只是确知虚构的（2026-11-02 玩家：「开局给人物的描述，把真实人物杨勇写成了虚拟……真实人物不要写虚拟」；
  *  查实：凡还没核过的名字一律当虚构，开局真人还没核完就被标了虚拟）：程序起的名字、开科招贤来的虚构人选、核过查无此人的、标了虚构的家人仆役、虚构主角；
  *  内置史料、名录、核过的真人一概不标；还没核的不标 */
+/** 玩家跟这个虚构人物打过交道没有：提拔过、见过、有情分、在你身边当差（打过交道的才照常给戏份） */
+function fictActive(s, name) { const P = (s.people || {})[name]; if (P && (P.byPlayer || P.met || (num(P.favor) || 0) !== 0 || arr(P.log).length)) return true; if (arr(s.chat).slice(-20).some(c => c && c.role === 'user' && String(c.text || '').includes(name))) return true; const q = findPost(s, name); return !!(q && q.byPlayer); }
 function fictionShow(s) {
   const R = realNameSet(s), F = new Set(), add = n => { if (n && n.length >= 2 && !R.has(n)) F.add(n); };
   for (const [k, v] of Object.entries(s.people || {})) { const c = chkOf(s, k); if ((v && (v.fic || v.real === false || /虚构|^拟/.test(String(v.src || '')))) || (c && !c.real)) add(k); }
@@ -14168,7 +14361,7 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), SM('warMonthly2', () => warMonthly2(s)), SM('logiMonthly', () => logiMonthly(s)), SM('rushiMonthly', () => rushiMonthly(s)), SM('royalMonthly', () => royalMonthly(s)), SM('idSync', () => idSync(s)), SM('mpMonthly', () => mpMonthly(s)), SM('armsMonthly', () => armsMonthly(s)), SM('levyMonthly', () => levyMonthly(s)), SM('groupTick', () => groupTick(s)), SM('partyMonthly', () => partyMonthly(s)), SM('lairMonthly', () => lairMonthly(s)), SM('liegeMonthly', () => liegeMonthly(s)), SM('jailMonthly', () => jailMonthly(s)), SM('wishMonthly', () => wishMonthly(s)), SM('baseMonthly', () => baseMonthly(s)), SM('huntMonthly', () => huntMonthly(s)), SM('offMonthly', () => offMonthly(s)), SM('hhMonthly', () => hhMonthly(s)), SM('loanMonthly', () => loanMonthly(s)), SM('routeMonthly', () => routeMonthly(s)), SM('councilMonthly', () => councilMonthly(s)), SM('contractMonthly', () => contractMonthly(s)), SM('factionMonthly', () => factionMonthly(s)), SM('innerMonthly', () => innerMonthly(s)), SM('haremMonthly', () => haremMonthly(s)), SM('farmMonthly', () => farmMonthly(s)), SM('refugeMonthly', () => refugeMonthly(s)), SM('studyMonthly', () => studyMonthly(s)), SM('strifeMonthly', () => strifeMonthly(s)), SM('repMonthly', () => { const R = repOf(s); R.guan = Math.max(0, Math.min(100, R.guan + Math.sign(50 - R.guan) * 0.5)); R.jun = Math.max(0, Math.min(100, R.jun + Math.sign(50 - R.jun) * 0.5)); }), SM('trackMonthly', () => trackMonthly(s)), SM('dipMonthly', () => dipMonthly(s))), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), SM('warMonthly2', () => warMonthly2(s)), SM('logiMonthly', () => logiMonthly(s)), SM('rushiMonthly', () => rushiMonthly(s)), SM('royalMonthly', () => royalMonthly(s)), SM('idSync', () => idSync(s)), SM('mpMonthly', () => mpMonthly(s)), SM('armsMonthly', () => armsMonthly(s)), SM('levyMonthly', () => levyMonthly(s)), SM('groupTick', () => groupTick(s)), SM('partyMonthly', () => partyMonthly(s)), SM('lairMonthly', () => lairMonthly(s)), SM('liegeMonthly', () => liegeMonthly(s)), SM('jailMonthly', () => jailMonthly(s)), SM('wishMonthly', () => wishMonthly(s)), SM('baseMonthly', () => baseMonthly(s)), SM('huntMonthly', () => huntMonthly(s)), SM('offMonthly', () => offMonthly(s)), SM('hhMonthly', () => hhMonthly(s)), SM('loanMonthly', () => loanMonthly(s)), SM('routeMonthly', () => routeMonthly(s)), SM('councilMonthly', () => councilMonthly(s)), SM('contractMonthly', () => contractMonthly(s)), SM('factionMonthly', () => factionMonthly(s)), SM('innerMonthly', () => innerMonthly(s)), SM('haremMonthly', () => haremMonthly(s)), SM('farmMonthly', () => farmMonthly(s)), SM('refugeMonthly', () => refugeMonthly(s)), SM('studyMonthly', () => studyMonthly(s)), SM('strifeMonthly', () => strifeMonthly(s)), SM('repMonthly', () => { const R = repOf(s); R.guan = Math.max(0, Math.min(100, R.guan + Math.sign(50 - R.guan) * 0.5)); R.jun = Math.max(0, Math.min(100, R.jun + Math.sign(50 - R.jun) * 0.5)); }), SM('trackMonthly', () => trackMonthly(s)), SM('bluffMonthly', () => bluffMonthly(s)), SM('dipMonthly', () => dipMonthly(s))), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
       if (!s.yearSnap) s.yearSnap = yearSnap(s);
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
@@ -14777,7 +14970,8 @@ function pane(tab) {
     const P = Object.entries(s.people).filter(([, v]) => v && !v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const OLD = Object.entries(s.people).filter(([, v]) => v && v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const fam = s.household.filter(m => !s.people[m.name]);
-    const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionShow(s), RS = realNameSet(s), FX = n => { const c = chkOf(s, n); return (FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : RS.has(n) || (c && c.real) ? '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>' : '') + (c ? `<span class="muted" style="font-size:11px">${c.real ? '已核' : '已核：查无此人'}</span>` : n === s.protagonist.name ? '' : `<button class="link" style="font-size:11px" data-pchk="${esc(n)}">核查是否真人</button>`); };
+    const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionShow(s), RS = realNameSet(s), FX = n => { const cw = (s.courtWho || {})[n]; if (cw === '虚构') return '<span class="att" style="background:#eee;color:#666">虚构</span><span class="muted" style="font-size:11px">史书未载，照该国用人惯例补</span>'; if (cw) return '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>' + (cw === '推定' ? '<span class="muted" style="font-size:11px">任职年份照履历推定</span>' : '');   /* 来路照朝廷数据（R-227） */
+      const c = chkOf(s, n); return (FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : RS.has(n) || (c && c.real) ? '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>' : '') + (c ? `<span class="muted" style="font-size:11px">${c.real ? '已核' : '已核：查无此人'}</span>` : n === s.protagonist.name ? '' : `<button class="link" style="font-size:11px" data-pchk="${esc(n)}">核查是否真人</button>`); };
     const ID = s.protagonist.ident, identH = ID ? `<div class="h" style="margin-top:6px"><span class="seal">身</span>身份</div><div class="list"><div>${[['字', ID.zi], ['号', ID.hao], ['籍贯', ID.jiguan], ['出身', ID.chushen], ['功名', ID.gongming], ['爵位', ID.jue]].filter(x => x[1]).map(([k, v]) => `<b>${k}</b> ${esc(v)}`).join('　')}</div>${arr(ID.career).length ? `<div class="muted" style="font-size:12px">履历：${ID.career.map(c => (c.y ? c.y + '年 ' : '') + esc(c.post)).join('；')}</div>` : ''}</div>` : '';
     // 身边和远处分开（2026-11-01 玩家：「朝廷的角色、远在很远地方的人根本就不是身边的人，但是可以给他们写信；身边的人是另外一群人」）：
     // 和你在一处的、家将近侍幕僚这类随身的算身边；人在别处的列「远处的人」，按钮是写信；真人主角戏里出场的虚构小角色收起来
@@ -15336,7 +15530,8 @@ async function send(said, span, note, resume) {
       }
       // 程序查一遍（一再请示、又写回禁写的题材、打仗没写伤亡）：毛病留到下面和审读、核实的意见一起，只重写一次
       preFaults = st.talk ? [] : draftFaults(S, said, st.text, span);
-      if (!st.talk) preFaults = preFaults.concat(storyRpgCheck(S, said, st.text, LIGHT));   // 写成史论/课件的打回：RPG 要戏、要对话、要停在拿主意处
+      if (!st.talk) preFaults = preFaults.concat(storyRpgCheck(S, said, st.text, LIGHT));
+      if (!st.talk) preFaults = preFaults.concat(vocabFaults(S, st.text));   // 这一年代还没有的说法：打回照当时的说法改（任务十七）   // 写成史论/课件的打回：RPG 要戏、要对话、要停在拿主意处
       if (!st.talk && ruling && ruling.battleResult && !/伤|死|阵亡|折了/.test(st.text)) preFaults.push(`这一仗写成了只有胜负：照【这一仗的结果】写出伤亡（我方约 ${ruling.battleResult.deadUs}、敌方约 ${ruling.battleResult.deadThem}）、士气、粮草和战后的事`);
       if (preFaults.length) noteErr('审稿退回', preFaults.map(f => f.slice(0, 40)).join(' / '), { said: cut(said, 60) });   // 记下来，问题报告里能看到常犯哪几条
     }
@@ -15629,6 +15824,9 @@ document.addEventListener('click', async e => {
   if (S && !BUSY && t.dataset.fig) { if (t.dataset.fig === 'visit') { const ta = $('#said'); if (ta) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + `去拜访${t.dataset.n}`; render(); return; } figRecruit(S, t.dataset.n); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.tlask) { tlAskAct(S, t.dataset.i, t.dataset.tlask === 'yes'); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.reform) { reformAct(S, t.dataset.i, t.dataset.reform); try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && t.dataset.bluff) { bluffAct(S); try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && t.dataset.audit) { auditAct(S, t.dataset.audit); try { await store.save(S); } catch (_) {} render(); return; }
+  if (S && !BUSY && t.dataset.scout) { scoutAct(S, t.dataset.scout); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && (t.dataset.camp || t.dataset.merc || t.dataset.priv)) { if (t.dataset.camp) campAct(S, t.dataset.camp, ($('#campAmt') || {}).value); else if (t.dataset.merc) mercAct(S, t.dataset.merc, ($('#mercAmt') || {}).value); else privAct(S, t.dataset.priv); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.soldier) { soldierAct(S, t.dataset.soldier); try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.entry) { entryAct(S, t.dataset.entry); try { await store.save(S); } catch (_) {} render(); return; }

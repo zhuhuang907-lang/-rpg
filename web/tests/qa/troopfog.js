@@ -1,0 +1,51 @@
+// 兵力虚实（任务三，R-221 御示）：敌人和不归你直接统的部队只给估计（传闻多半虚张、给个范围）；真点「派探子」，花盘缠，探准到上下一成；
+// 你直接统的部队照实数；地图上敌军的标签、悬停也只给估计
+const { chromium } = require('playwright');
+const path = require('path');
+(async () => {
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1280, height: 900 } });
+  const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
+  await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof troopEst === 'function');
+  const ev = f => p.evaluate(f);
+  await ev(() => { S = newSave({ name: '李世民', gender: '男', age: 30, role: '皇帝', real: true, gregorianYear: 630, month: 6, day: 1, place: '长安', polity: '唐' }); S.chat = [{ role: 'gm', text: '开场' }]; S.turn = 3;
+    S.money = { cash: 100, unit: '两' };
+    S.forces = [{ name: '左卫军', owner: '你', leader: '李靖', troops: 3000, at: '洛阳', status: '驻扎' }, { name: '突厥骑', owner: '突厥', leader: '颉利', troops: 40000, at: '洛阳', status: '驻扎', foe: true }];
+    VIEW = 'game'; TAB = 'map'; SIDE_FOLD = false; MAPZ.inited = false; render(); MAPZ.sel = '洛阳'; MAPC.k = ''; render(); });
+  let h = await ev(() => document.body.innerText);
+  if (!/左卫军（李靖，3,000人/.test(h)) errs.push('自己直接统的左卫军没照实数');
+  if (/40,000人/.test(h)) errs.push('没探过的突厥骑露了实数 40,000');
+  if (!/突厥骑（颉利，约[^）]*至[^）]*传闻/.test(h)) errs.push('没探过的敌军没给范围估计：' + (h.match(/突厥骑（[^）]*）/) || [''])[0]);
+  const tip = await ev(() => { const g = document.querySelector('[data-mapforce="突厥骑"] title'); return g ? g.textContent : ''; });
+  if (tip && /40,000人/.test(tip)) errs.push('地图悬停露了敌军实数：' + tip);
+  const btn = await p.$('[data-scout="突厥"]'); if (!btn) errs.push('驻军里没有「派探子」按钮'); else {
+    await p.click('[data-scout="突厥"]'); await p.waitForTimeout(100);
+    const r = await ev(() => ({ cash: S.money.cash, e: troopEst(S, S.forces[1]), msg: ORGMSG }));
+    if (!(r.cash < 100)) errs.push('派探子没花盘缠');
+    if (!r.e || r.e.lv !== 2 || Math.abs(r.e.mid - 40000) > 4000) errs.push('派了探子没探准：' + JSON.stringify(r.e));
+    h = await ev(() => document.body.innerText); if (!/探子新报/.test(h)) errs.push('探过以后界面没写探子新报');
+    const old = await ev(() => { S.clock.y += 1; return troopEst(S, S.forces[1]); }); if (old.lv !== 1) errs.push('一年前的探报没算旧：' + JSON.stringify(old));
+  }
+  // 敌军的军情卡也只给估计
+  await ev(() => { S.clock.y -= 1; S.scout = {}; MAPZ.from = '突厥骑'; MAPC.k = ''; render(); });
+  h = await ev(() => document.body.innerText); if (/共 40,000人/.test(h)) errs.push('敌军军情卡露了实数');
+  // 吃空饷：李靖替你统的左卫军欠饷半年，名册不变、实有变少；军情卡写名册；真点「点验」查出空额、革除
+  const g = await ev(() => { S.forces[0].owed = 500; armyMonthly(S, 6); return { t: S.forces[0].troops, gh: S.forces[0].ghost }; });
+  if (!(g.gh > 0) || g.t + g.gh !== 3000) errs.push('欠饷半年没吃出空额，或名册对不上：' + JSON.stringify(g));
+  await ev(() => { MAPZ.from = '左卫军'; MAPC.k = ''; render(); });
+  h = await ev(() => document.body.innerText); if (!/共 3,000人（名册）/.test(h)) errs.push('没点验时军情卡没写名册数');
+  const ab = await p.$('[data-audit="左卫军"]'); if (!ab) errs.push('军情卡没有「点验」按钮'); else {
+    await p.click('[data-audit="左卫军"]'); await p.waitForTimeout(100);
+    const r = await ev(() => ({ gh: S.forces[0].ghost, msg: ORGMSG, e: troopEst(S, S.forces[0]) }));
+    if (r.gh || !/空额/.test(r.msg) || !r.e.exact || r.e.mid !== g.t) errs.push('点验没查出空额、没照实数：' + JSON.stringify(r)); }
+  // 你也虚张声势：军务页真点「虚张声势」，花钱，别家照多五成估你；三个月内散掉或被识破
+  await ev(() => { S.money.cash = 100; TAB = 'army'; render(); });
+  const bb = await p.$('[data-bluff]'); if (!bb) errs.push('军务页没有「虚张声势」按钮'); else {
+    await p.click('[data-bluff]'); await p.waitForTimeout(100);
+    const r = await ev(() => ({ on: bluffOn(S), seen: myTroopsSeen(S), all: myTroopsAll(S), cash: S.money.cash }));
+    if (!r.on || r.seen !== Math.round(r.all * 1.5) || !(r.cash < 100)) errs.push('虚张声势没生效：' + JSON.stringify(r));
+    h = await ev(() => document.body.innerText); if (!/正虚张着/.test(h)) errs.push('军务页没写正虚张着');
+    const end = await ev(() => { const msgs = []; for (let i = 0; i < 5 && S.bluff; i++) { S.clock.m += 1; if (S.clock.m > 12) { S.clock.m = 1; S.clock.y++; } msgs.push(...bluffMonthly(S)); } return { left: !!S.bluff, msgs }; });
+    if (end.left || !end.msgs.some(m => /识破|散了/.test(m))) errs.push('虚张声势过了五个月还在、或散了没说：' + JSON.stringify(end)); }
+  const mine = await ev(() => { S.forces[0].auditYM = ymOf(S.clock); return troopEst(S, S.forces[0]); }); if (!mine.exact || mine.mid !== g.t) errs.push('自己的兵没照实数：' + JSON.stringify(mine));
+  console.log('ERRS', JSON.stringify(errs)); await b.close();
+})();
