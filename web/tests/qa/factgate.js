@@ -62,6 +62,12 @@ const path = require('path');
     s = mk(); s.money.cash = 300; c0 = 300; applyReply(s, gift(), '我把麦子卖了，再托媒人去柳家说亲，纳柳三娘为妾');
     if (!(s.money.cash > c0)) bad.push('自己卖货挣的钱没落账：' + s.money.cash);
     if (!arr(s.household).some(m => m.name === '柳三娘')) bad.push('自己说亲纳的妾没落账');
+    // 9 裁定说办不到的：玩家嘴上求了也不算凭据；裁定说能办的照认
+    const no = { steps: [{ what: '去吏部求补参军的缺', ok: '办不到', why: '白身无出身，吏部不收状' }] }, yes = { steps: [{ what: '去吏部求补参军的缺', ok: '有代价', why: '要使钱' }] };
+    s = mk(); if (!factClaims(s, said2, fake, no).some(x => x.kind === 'gain')) bad.push('裁定说办不到，正文写得了官，没挑出来');
+    if (factClaims(s, said2, fake, yes).some(x => x.kind === 'gain')) bad.push('裁定说能办的也被挑了');
+    s = mk(); CUR_RULING = no; try { applyReply(s, led(), said2); } finally { CUR_RULING = null; }
+    if (s.protagonist.role !== role0 || (s.career || {}).office === '河南府参军') bad.push('裁定说办不到的官进了存档：' + s.protagonist.role);
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));

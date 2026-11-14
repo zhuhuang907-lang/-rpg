@@ -6247,10 +6247,18 @@ const FACT_IF = /若|如果|倘|要是|假如|只要|等到|待到|日后|将来
 const FACT_SANC = /官|职|缺|授|擢|拜|封|升|迁|举|荐|辟|补|考|试|科|应举|赴任|上任|就任|到任|袭|爵|称王|称帝|即位|登基|自立|建号|招安|归附|投效|投奔|从军|投军|入幕|铨|选|叙|功|赏|请命|自荐|上书|上疏/;
 const FACT_DEATH = /死了|已死|身死|战死|病死|暴死|死于|卒于|病卒|薨|崩|殁|亡故|身故|病故|遇害|被杀|被斩|伏诛|自尽|自刎|自缢|赐死|毙命|殒命|授首|枭首|绞死|杖毙|处斩|斩首/;
 const FACT_HEARSAY = /未|没|不曾|若|恐|怕|险些|几乎|差点|听说|据说|传言|风闻|谣|讹|有人说|都说|说是|咒|恨不得|该死|找死|送死|怕死|不怕|想|欲|要|将|必|谁|吗|？|梦/;
+/** 裁定在写之前就定了办不办得成：全都办不到，或者跟这类事相干的几步全都办不到——玩家嘴上说了也不算凭据（任务十六第三步） */
+function rulingBars(ruling, re) {
+  const st = arr(ruling && ruling.steps).filter(x => x && x.what); if (!st.length) return false;
+  const no = x => /办不到|办不成|不能|不行|驳回/.test(String(x.ok || ''));
+  if (st.every(no)) return true;
+  const rel = re ? st.filter(x => re.test(String(x.what))) : []; return rel.length > 0 && rel.every(no);
+}
 /** 这一步有没有正文以外的凭据让主角得官：玩家自己这一步求的、行动单上在办的、临门的事、军令、打了仗 */
 function gainSanction(s, said, ruling) {
   if (ruling && ruling.battleResult) return true;
-  const t = [String(said || '')].concat(arr(s.actsNow).map(a => a && a.what), actOpen(s).map(a => a && a.what), arr(s.press).filter(z => z && z.state === '临门').map(z => `${z.title || ''}${z.who || ''}`), arr(s.armyPending).map(x => x && x.line)).filter(Boolean).join(' ');
+  const bar = rulingBars(ruling, FACT_SANC);   // 裁定说办不到的：这一步说的、这一步新开的单子都不算，只认以前在办的和找上门的
+  const t = (bar ? [] : [String(said || '')].concat(arr(s.actsNow).map(a => a && a.what))).concat(actOpen(s).filter(a => !bar || a.turn !== s.turn).map(a => a && a.what), arr(s.press).filter(z => z && z.state === '临门').map(z => `${z.title || ''}${z.who || ''}`), arr(s.armyPending).map(x => x && x.line)).filter(Boolean).join(' ');
   return FACT_SANC.test(t);
 }
 /** 正文里没凭据的大事：[{ kind:'gain'|'death', who, sent, msg }]。只挑拿得准的：带假设、许诺、传闻、否定口气的不算 */
@@ -6284,7 +6292,10 @@ const WIND_MONEY = /卖|售|出手|脱手|收|租|讨|索|要回|借|贷|当|典
 const WIND_MARRY = /娶|纳|聘|婚|亲事|成亲|说亲|议亲|提亲|嫁|收房|买妾|迎|过门|入赘|赐婚|和亲|抢亲|掳|收了|留下她|留下他/;
 function windfallGuard(s, d, said, ruling) {
   const unb = []; if (!s || !d) return unb;
-  const E = [String(said || '')].concat(arr(s.actsNow).map(a => a && a.what), actOpen(s).map(a => a && a.what), arr(s.press).filter(z => z && z.state === '临门').map(z => `${z.title || ''}${z.who || ''}`), arr(s.armyPending).map(x => x && x.line)).filter(Boolean).join(' ');
+  const barAll = rulingBars(ruling, null);
+  const E = (barAll ? [] : [String(said || '')].concat(arr(s.actsNow).map(a => a && a.what))).concat(actOpen(s).filter(a => !barAll || a.turn !== s.turn).map(a => a && a.what), arr(s.press).filter(z => z && z.state === '临门').map(z => `${z.title || ''}${z.who || ''}`), arr(s.armyPending).map(x => x && x.line)).filter(Boolean).join(' ');
+  // 裁定说这一步全都办不到：这一回新开的单子不许报「办成」
+  if (barAll) for (const r of arr(d.actResults)) if (r && /^t\d+$/.test(String(r.id || '')) && /办成/.test(String(r.state || ''))) { r.state = '受阻'; unb.push(`「${one(r.changed || r.why || r.id, 16)}」办成了`); }
   const fought = !!(ruling && ruling.battleResult);
   // 一、横财：一笔进项比手里的现钱、三个月的固定进项、这一回的花销都多，又不是玩家这一步挣的讨的抢的——不认
   const cash = N0((s.money || {}).cash);
