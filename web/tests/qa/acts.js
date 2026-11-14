@@ -11,8 +11,11 @@ const { chromium } = require('playwright');
   if (!(await send('派人去仪征打听掣验的行情'))) bad('第一回卡住');
   // 家常的一步走快路：正文先给看，记账在后头跑（CLAUDE.md「家常的一步走快路」）——等账记上再查；假 AI 约一成故意给坏账，重记一次在完整测试的重负载下要一两分钟，最多等三分钟
   await p.waitForFunction(() => arr(S.acts).some(x => /派人/.test(x.what) && x.state !== '在办') || !!(S.chat[S.chat.length - 1].extra || {}).salvaged, null, { timeout: 180000, polling: 300 }).catch(() => {});
-  { const r = await p.evaluate(() => ({ sal: !!(S.chat[S.chat.length - 1].extra || {}).salvaged, acts: arr(S.acts).map(x => [x.type, x.what, x.state]), rc: !!document.querySelector('.receipt'), rt: (document.querySelector('.receipt') || {}).innerText || '' }));
-    if (r.sal) console.log('这一回假 AI 的账没记上（故意出错的那一成），行动单留到下一回'); else if (!r.acts.some(a => /派人/.test(a[1]) && a[2] === '办成')) bad('玩家的令没开行动单、或记账报的进展没落到单子上：' + JSON.stringify(r).slice(0, 300));
+  { const r = await p.evaluate(() => ({ sal: !!(S.chat[S.chat.length - 1].extra || {}).salvaged, acts: arr(S.acts).map(x => [x.type, x.what, x.state]), rc: !!document.querySelector('.receipt'), rt: (document.querySelector('.receipt') || {}).innerText || '', un: arr(S.unbooked).map(x => x.text).slice(-3) }));
+    // 假 AI 写前裁定有三分之一随机判这一步「不能」：照任务十六「裁定办不到的不认」，单子记受阻、账上写明为什么——这是对的，查它写明了没有
+    const barred = !r.sal && r.acts.some(a => /派人/.test(a[1]) && a[2] === '受阻') && r.un.some(t => /没有做带来它的事|办不到/.test(t));
+    if (barred) console.log('这一回写前裁定判了办不到，单子照规矩记受阻、账上写明了');
+    else if (r.sal) console.log('这一回假 AI 的账没记上（故意出错的那一成），行动单留到下一回'); else if (!r.acts.some(a => /派人/.test(a[1]) && a[2] === '办成')) bad('玩家的令没开行动单、或记账报的进展没落到单子上：' + JSON.stringify(r).slice(0, 300));
     if (!r.sal && r.rc && r.acts.some(a => /派人/.test(a[1]) && a[2] === '办成') && /派人去仪征/.test(r.rt)) bad('办成了的事还在回执里唠叨（2026-10-30 玩家：幕后的不给看，回执只提没成、受阻、拖着的）：' + r.rt); }
   // 收回账房的权：正文说亲军涨到九万九，没有募兵的令，不落账
   await p.evaluate(() => { S.forces = [{ name: '亲军', leader: S.protagonist.name, troops: '3000', at: '扬州府' }]; });

@@ -8,9 +8,9 @@ const { chromium } = require('playwright'); const fs = require('fs');
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart');
   if (!(await idle()) || !(await p.$('#said'))) { bad('开局没出来'); console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(1); }
-  await p.fill('#said', '在家看看账'); await p.click('#bSend'); await p.waitForTimeout(500); await idle();
+  { const n0 = await p.evaluate(() => S.chat.length); await p.fill('#said', '在家看看账'); await p.click('#bSend'); await p.waitForFunction(n => S.chat.slice(n).some(c => c.role === 'gm'), n0, { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没回话')); await idle(); }
   await p.waitForFunction(() => arr(S.hooks).length >= 2, null, { timeout: 120000 }).catch(() => bad('没备剧情扩展'));
-  await p.fill('#said', '在家歇着'); await p.click('#bSend'); await p.waitForTimeout(500); await idle();
+  { const n0 = await p.evaluate(() => S.chat.length); await p.fill('#said', '在家歇着'); await p.click('#bSend'); await p.waitForFunction(n => S.chat.slice(n).some(c => c.role === 'gm'), n0, { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没回话')); await idle(); }
   const r = await p.evaluate(() => { const g = S.chat.filter(c => c.role === 'gm').slice(-1)[0]; return { hook: g.extra && g.extra.hook, hints: g.hints, used: arr(S.hooks).filter(h => h.used).length, now: S.hookNow, txt: document.body.innerText }; });
   const prompt = fs.existsSync('last_story_prompt.txt') ? fs.readFileSync('last_story_prompt.txt', 'utf8') : '';
   if (!r.hook) bad('平平无事的一回没添事');
