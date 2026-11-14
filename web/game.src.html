@@ -6346,7 +6346,8 @@ function windfallGuard(s, d, said, ruling) {
   const barAll = rulingBars(ruling, null);
   const E = (barAll ? [] : [String(said || '')].concat(arr(s.actsNow).map(a => a && a.what))).concat(actOpen(s).filter(a => !barAll || a.turn !== s.turn).map(a => a && a.what), arr(s.press).filter(z => z && z.state === '临门').map(z => `${z.title || ''}${z.who || ''}`), arr(s.armyPending).map(x => x && x.line)).filter(Boolean).join(' ');
   // 裁定说这一步全都办不到：这一回新开的单子不许报「办成」
-  if (barAll) for (const r of arr(d.actResults)) if (r && /^t\d+$/.test(String(r.id || '')) && /办成/.test(String(r.state || ''))) { r.state = '受阻'; unb.push(`「${one(r.changed || r.why || r.id, 16)}」办成了`); }
+  /* 写前裁定判这一步办不到，账房却报办成：改记受阻，缘由换成裁定的（原来留着账房那句「照办了」，回执成了「受阻……照办了」）；记进没认的账用这件事的名字，不用「没改」这类栏目字 */
+  if (barAll) for (const r of arr(d.actResults)) if (r && /^t\d+$/.test(String(r.id || '')) && /办成/.test(String(r.state || ''))) { const an = arr(s.actsNow).find(a => a && a.tmp === one(r.id, 8)), rs = arr(ruling && ruling.steps).find(t => t && t.why && /办不到|办不成|不能|不行|驳回/.test(String(t.ok || ''))); r.state = '受阻'; r.why = one((rs && rs.why) || '写之前看过，凭你眼下的身份和手里的东西办不到', 60); r.changed = '没改'; unb.push(`「${one((an && an.what) || r.id, 16)}」办成了`); }
   const fought = !!(ruling && ruling.battleResult);
   // 一、横财：一笔进项比手里的现钱、三个月的固定进项、这一回的花销都多，又不是玩家这一步挣的讨的抢的——不认
   const cash = N0((s.money || {}).cash);

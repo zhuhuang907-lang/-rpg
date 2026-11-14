@@ -15,7 +15,9 @@ const { chromium } = require('playwright');
     // 假 AI 写前裁定有三分之一随机判这一步「不能」：照任务十六「裁定办不到的不认」，单子记受阻、账上写明为什么——这是对的，查它写明了没有
     const barred = !r.sal && r.acts.some(a => /派人/.test(a[1]) && a[2] === '受阻') && r.un.some(t => /没有做带来它的事|办不到/.test(t));
     if (barred) console.log('这一回写前裁定判了办不到，单子照规矩记受阻、账上写明了');
-    else if (r.sal) console.log('这一回假 AI 的账没记上（故意出错的那一成），行动单留到下一回'); else if (!r.acts.some(a => /派人/.test(a[1]) && a[2] === '办成')) bad('玩家的令没开行动单、或记账报的进展没落到单子上：' + JSON.stringify(r).slice(0, 300));
+    if (barred && /受阻[^\n]*照办了/.test(r.rt)) bad('回执写「受阻……照办了」，自相矛盾（受阻的缘由要换成裁定的）：' + r.rt);
+    if (barred && r.un.some(t => /「没改」/.test(t))) bad('没认的账拿「没改」当事名：' + JSON.stringify(r.un));
+    if (barred) {} else if (r.sal) console.log('这一回假 AI 的账没记上（故意出错的那一成），行动单留到下一回'); else if (!r.acts.some(a => /派人/.test(a[1]) && a[2] === '办成')) bad('玩家的令没开行动单、或记账报的进展没落到单子上：' + JSON.stringify(r).slice(0, 300));
     if (!r.sal && r.rc && r.acts.some(a => /派人/.test(a[1]) && a[2] === '办成') && /派人去仪征/.test(r.rt)) bad('办成了的事还在回执里唠叨（2026-10-30 玩家：幕后的不给看，回执只提没成、受阻、拖着的）：' + r.rt); }
   // 收回账房的权：正文说亲军涨到九万九，没有募兵的令，不落账
   await p.evaluate(() => { S.forces = [{ name: '亲军', leader: S.protagonist.name, troops: '3000', at: '扬州府' }]; });
@@ -27,7 +29,8 @@ const { chromium } = require('playwright');
     console.log('这一回账房没报兵马（假 AI 的账截断了），再走一步');
   }
   { const r = await p.evaluate(() => ({ sal: !!(S.chat[S.chat.length - 1].extra || {}).salvaged, t: (S.forces.find(f => f.name === '亲军') || {}).troops, unb: arr(S.unbooked).map(x => x.text), rt: [...document.querySelectorAll('.receipt')].map(e => e.innerText).join('|') }));
-    if (r.sal) console.log('这一回假 AI 的账没记上（故意出错的那一成），兵数照旧 ' + r.t); else if (String(r.t) !== '3000' || !r.unb.some(t => /亲军/.test(t)) || !/其实没成/.test(r.rt)) bad('没有募兵的令，正文里多出的兵也落了账：' + JSON.stringify(r).slice(0, 300)); }
+    if (/其实没成|没认|没落账/.test(r.rt)) bad('没认的账摆给玩家看了（R-236：纠错记账在后台，玩家看不到）：' + r.rt);
+    if (r.sal) console.log('这一回假 AI 的账没记上（故意出错的那一成），兵数照旧 ' + r.t); else if (String(r.t) !== '3000' || !r.unb.some(t => /亲军/.test(t)) ) bad('没有募兵的令，正文里多出的兵也落了账：' + JSON.stringify(r).slice(0, 300)); }
   // 三回没下文：明写「没有下文」，不悄悄删
   await p.evaluate(() => { actNew(S, { type: '请', what: '测试：递上去的公文', to: '上司' }).turn = S.turn - 3; });
   if (!(await send('在家歇着'))) bad('第三回卡住');
