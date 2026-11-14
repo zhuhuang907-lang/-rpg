@@ -39,7 +39,6 @@ claude.ai 版（用 Claude 账号写剧情，不连 DeepSeek，查资料等功�
 | `court/` | 政事堂总管：在你电脑上定时叫 Claude、DeepSeek、GLM 巡检、议事、写奏章，你御批后才施行（R-219，用法见 `court/README.md`） |
 | `AGENTS.md`、`中书省/`、`政事堂/`、`docs/知识库/`、`skills/` | 多模型协作开发：编程 AI 的入口与自己找活的规程、发命令的中书省、议方向的政事堂、项目知识库、技能卡（R-216、R-217） |
 | `.github/workflows/package.yml` | 自动测试、打包安装程序与免安装版，发布到 Releases |
-| `docs/AI分工政治体系.md` | **设计总纲与核查手册**：程序、AI、史料三层怎么分工，政治体系每一层谁管什么，以及照着页面就能逐条核查的清单 |
 
 ## 约定
 
