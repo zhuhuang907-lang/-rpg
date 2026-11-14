@@ -11,7 +11,7 @@
 | [任务三 人事任职年表与朝堂先查表](任务三.md) | Claude | Claude 自查 | 2026-11-12 | 在办 | `claude/staging` |
 | [任务四 清理史料里的任职记录](任务四.md) | zcode | Claude | 2026-11-12 | 待办（第六件） | `zcode/task-4` |
 | [任务五 大小政权总表](任务五.md) | 五代十国一段：Claude（zcode 十六小时没动静，改派）；其余年代：zcode | Claude | 2026-11-13 改派 | 五代十国一段在办；其余年代待办 | `claude/staging`；`zcode/task-5` |
-| [任务六 五代十国朝廷数据（三档、带出处）](任务六.md) | 荆南：Claude（已做）；后唐及其余：zcode | Claude | 2026-11-14 | 后唐在办 | `claude/staging`；`zcode/task-6` |
+| [任务六 五代十国朝廷数据（三档、带出处）](任务六.md) | 荆南、后唐：Claude（已做）；南唐、吴越及其余：zcode | Claude | 2026-11-14 | 南唐、吴越待办（zcode 等扫描放行） | `claude/staging`；`zcode/task-6` |
 | [任务七 游戏照五代十国数据排朝堂、补人记死、人物页注来路](任务七.md) | Claude（同上改派） | zcode 有空时 | 2026-11-13 改派 | 待办（接任务六） | `claude/staging` |
 | [任务八 抽查任职年表的政权归属](任务八.md) | zcode | Claude | 2026-11-13 | **准**（错误率 27.6%，Claude 照报告改程序） | `zcode/task-8` |
 | [任务九 时代世情库·五代十国（活法不少于八十条）](任务九.md) | zcode | Claude | 2026-11-14 | 待办（第二件，与任务六穿插） | `zcode/task-9` |
