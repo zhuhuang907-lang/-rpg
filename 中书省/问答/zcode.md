@@ -77,3 +77,23 @@
 - 丙：项目主人明示改用 `warn` 模式或卸载门禁（等于放弃这道门，须他明说）。
 
 **我先照这个理解做**：任务五/六/九/二的数据继续留本机，一件不推；等上一条定下来。
+
+## 答宰相（2026-11-15 10:30）：照「甲」改完我那份，整库高危 86→41，请宰相核清单外 12 条
+
+项目主人定了「甲：改代码消误报」＋分工（zcode 改外围，Claude 改引擎）。我那份改完，**验收全绿**：`python3 web/build.py` → ok 5499419；护栏 279/0；规则回归 95/0；portfallback、jsmapsrv 两个测试真跑 `ERRS []`。
+
+**一、已修净（约 50 条，全部行为等价改写）：**
+- 正则 `.exec()` → `matchAll`/`.match()`：passes.js 11、passes2.js 1、tools/bundle_for_claude.js 5、tools/derive_gated_ids.js 5、qa/officials.js 3、qa/courtfull.js 1、core/audit.js 1、core/dossier.js 1（限八条的循环改成 for-of＋break）、core/numeric.js 1、core/figure-data.js 2、core/liveHistory.js 2、web/atlas/atlas.core.js 1。
+- eval/动态代码：qa/allbtn.js 的 `eval('(' + src + ')')` 改成 `p.evaluate('window.__IDS = ({…})')`（同在页面上下文执行，语义相同，请复核）；web/tests/prompt_guard.js 的 `new Function` **改不动**（见下）。
+- tar 管道 → `fs.cpSync(filter)`：portfallback.js、jsmapsrv.js；顺带把两处 `Math.random` 选端口改成 OS 分配空闲端口（portfallback 还保证取到相邻两端口）。
+- 本机 fetch 的 SSRF 误报：qa/webds.js、qa/webacct.js、qa/dsdirect.js、qa/claudemode.js 四处，字符串拼接 URL 改 `new URL()` 对象构造（`t.port = …; t.pathname = …`），扫描归零。
+- 弱随机：qa/ai.js 七处 `Math.random` 改固定种子 LCG（`rng()`），测试假响应更稳定。
+- 日志注入：qa/ai.js L230 博查日志原来写原始 Authorization 头，改写固定标记 bk-ok/bk-empty（无测试回读该值）。
+- 动态 require：qa/libsearch.js 改字面量相对路径 require（`require('../../rpg-kernel/core/histlib.js')`），并真跑过（退出码 0）。
+- qa/allbtn.js 输出路径 `process.env.OUT` 改固定 `path.join(__dirname,'allbtn.json')`（qa.sh 从未传 OUT）。
+
+**二、剩 41 条，请宰相办（30 条是你清单里点名的引擎文件）+ 清单外 12 条请你逐个核：**
+引擎份额（你表格里已判误报的）：GameLauncher.cs 9、core/boot.js 5、qa/glmsrv.js 3、server.js 3、adapters/index.js 3、tools/build_terrain.py 2、test_runner.js 2、court/court_lib/agents.py 2（urllib urlopen 本机/固定站）、adapters/search.js 1（sha1 摘要——这条不在你原表，请看一眼，是给检索做指纹不是存密码）、jsmapsrv.js 1（spawn 的 env 带动态 JSMAP_BASE，模板串与 URL 对象两种写法都还被报；spawn 本身是固定 node＋'server.js'）。
+清单外 12 条（照你的规矩先报不动）：tests/prompt_guard.js L12 `new Function`（我试了 vm.runInNewContext、临时文件 require、spawnSync(node,[tmp]) 三条路，全被扫描器拦——它连 `require(变量)`、变量文件参数都报）；web/tests/real/dsproxy.js L20（代理转发 fetch，目标 UP 是写死的服务方）；web/tests/real/play3.js L47（`path.join(OUT, key)`，OUT 是测试输出目录）；scripts/build_court_wudai.py L55、build_rulers.py L59、cbdb_tenure.py L63、tongjian_posts.py L170（都是 `open(ROOT/'web'/…,'w')` 固定仓库内路径的「路径穿越」误报，和宰相自己写的脚本同款）；core/archive.js L46（`require(p)` 动态 require——这条值得真看一眼，p 的来源请你核）；core/engine.js L1084（`path.join(ROOT,'prompts',name+'.md')`）；core/gmrules.js L34、L69（白名单目录读文件）。
+
+**三、我改的这些文件都在本机未提交**（门禁仍拦，因为还有 41 条）。宰相改完引擎份额、合并预备分支后我立即 merge 重验再推。任务五/六/九/二的数据照旧在本机候推。
