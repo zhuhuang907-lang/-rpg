@@ -1655,7 +1655,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261114223246';
+const BUILD = '20261114231840';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -7433,7 +7433,8 @@ function windfallGuard(s, d, said, ruling) {
   const barAll = rulingBars(ruling, null);
   const E = (barAll ? [] : [String(said || '')].concat(arr(s.actsNow).map(a => a && a.what))).concat(actOpen(s).filter(a => !barAll || a.turn !== s.turn).map(a => a && a.what), arr(s.press).filter(z => z && z.state === '临门').map(z => `${z.title || ''}${z.who || ''}`), arr(s.armyPending).map(x => x && x.line)).filter(Boolean).join(' ');
   // 裁定说这一步全都办不到：这一回新开的单子不许报「办成」
-  if (barAll) for (const r of arr(d.actResults)) if (r && /^t\d+$/.test(String(r.id || '')) && /办成/.test(String(r.state || ''))) { r.state = '受阻'; unb.push(`「${one(r.changed || r.why || r.id, 16)}」办成了`); }
+  /* 写前裁定判这一步办不到，账房却报办成：改记受阻，缘由换成裁定的（原来留着账房那句「照办了」，回执成了「受阻……照办了」）；记进没认的账用这件事的名字，不用「没改」这类栏目字 */
+  if (barAll) for (const r of arr(d.actResults)) if (r && /^t\d+$/.test(String(r.id || '')) && /办成/.test(String(r.state || ''))) { const an = arr(s.actsNow).find(a => a && a.tmp === one(r.id, 8)), rs = arr(ruling && ruling.steps).find(t => t && t.why && /办不到|办不成|不能|不行|驳回/.test(String(t.ok || ''))); r.state = '受阻'; r.why = one((rs && rs.why) || '写之前看过，凭你眼下的身份和手里的东西办不到', 60); r.changed = '没改'; unb.push(`「${one((an && an.what) || r.id, 16)}」办成了`); }
   const fought = !!(ruling && ruling.battleResult);
   // 一、横财：一笔进项比手里的现钱、三个月的固定进项、这一回的花销都多，又不是玩家这一步挣的讨的抢的——不认
   const cash = N0((s.money || {}).cash);
