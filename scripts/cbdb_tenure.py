@@ -2,7 +2,7 @@
 用法：python3 -I scripts/cbdb_tenure.py <cbdb.sqlite3> <起年> <止年> <id> <标题> <输出.json> <政权> [朝代码,逗号分隔]
 输出放 web/tenure/，游戏排朝堂、官员名册时照这张表先坐位子（任务六，R-225）
 原库不进仓库（开发时下载、只读）。手工整理的内置史料里已有的人不重复收（手工的为准）。"""
-import sqlite3, json, sys, pathlib
+import sqlite3, json, sys, pathlib, re
 from opencc import OpenCC
 db, y0, y1, hid, title, out = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6]
 pol = sys.argv[7]   # 「*」：照哈佛库每条任职的朝代码分政权（五代十国这种并立的年代）
@@ -60,6 +60,7 @@ for pid, P in by.items():
         if place and off.startswith('知州') and place.endswith('州'): off = '知' + place; place = ''   # 知某州军州事 → 知泗州
         t = place if place and (place.endswith(off) or (len(off) >= 2 and off in place)) else (place + off) if place and place not in off and len(place) <= 6 else off
         t = t.replace('州州', '州')
+        t = re.sub(r'(.{2,4})\1', r'\1', t)   # 「军节度军节度」这类重复段去重（任务八之二）
         posts.append([fy, max(fy, end), t] + ([pol_at(dy, m[5], fy)] if pol == '*' else []))
     if not posts: continue
     if died and died < y0: continue

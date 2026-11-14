@@ -31,20 +31,25 @@ def dy_pol(name, y):
         if dy in DY:
             p = DY[dy]
             if p == '唐' and y >= 907: return zheng(y)
+            if p == '辽' and y < 947: continue   # 辽（契丹）的人只认明写契丹的句子；哈佛库把仕过辽的人一概标辽（刘昫这类）
             L = DYLIFE.get(p)
             if L and not (L[0] - 3 <= y <= L[1] + 1): continue   # 这一国那时还没立或已亡（皮日休 880 年不能记吴越）
             return p
     return None
-DYLIFE = {'吴越': (907, 978), '吴': (902, 937), '前蜀': (903, 925), '南唐': (937, 975), '闽': (909, 945), '南汉': (917, 971), '楚': (907, 951), '荆南': (924, 963), '后蜀': (934, 965), '北汉': (951, 979), '辽': (916, 1125), '蜀汉': (214, 263), '吴（孙）': (194, 280)}
+DYLIFE = {'宋': (960, 1279), '吴越': (907, 978), '吴': (902, 937), '前蜀': (903, 925), '南唐': (937, 975), '闽': (909, 945), '南汉': (917, 971), '楚': (907, 951), '荆南': (924, 963), '后蜀': (934, 965), '北汉': (951, 979), '辽': (916, 1125), '蜀汉': (214, 263), '吴（孙）': (194, 280)}
 STATE1 = set('汉魏吴蜀晋赵燕秦凉夏成代宋齐梁陈周隋唐闽楚岐')
+_G = json.load(open(ROOT / 'web' / 'geo.json', encoding='utf8'))
+PLACES2 = set(re.sub(r'(县|郡|州|府|厅|国|道)$', '', r[0]) for r in _G['rows'] if r and r[0]) | set(re.sub(r'(县|郡|州|府|厅)$', '', x) for x in _G['pn'] if x)
 FIEF = STATE1 | set('越鲁卫郑韩楚荆湘襄蔡滕许邓雍豫兖徐青冀幽并益交广郡阳平原安城')
 def pick_name(x, y):
     nm = _pick_name(x, y)
     if not nm: return None
     if len(nm) == 2 and nm[0] not in SUR1 and len(x) >= 3 and x[-3] in SUR1 and x.endswith(nm): nm = x[-3:]   # 胡长仁：「长仁」不是姓长，补回姓
+    elif len(nm) == 2 and len(x) >= 3 and x.endswith(nm) and x[-3] in SUR1 and not near(nm, y) and (len(x) == 3 or x[-4] not in SUR1): nm = x[-3:]   # 王孟保、沈文昌、华温琪：二字名对不上人名表、前一字是姓，补回姓（任务八之二）
+    if len(nm) == 2 and nm[1] == '之' and not near(nm, y): return None   # 「以代郡封之为代公」的封之是动词短语
     if nm[-1] in '主王帝人公侯' and not near(nm, y): return None                         # 晋主、赵人不是人名
     if nm[0] in '王主公侯' and len(x) >= 3 and (not near(nm, y) or x[-3] in FIEF): return None   # 越王秀、蜀王秀：「王秀」是爵位加名，不是姓王
-    if len(nm) == 2 and nm[0] in STATE1 and not near(nm, y): return None                  # 晋熙这类地名
+    if len(nm) == 2 and nm in PLACES2 and not near(nm, y): return None                    # 晋熙这类地名（只拦地名库里有的，宋混、赵贵这类姓国名的真人照收）
     return nm
 def _pick_name(x, y):
     x = re.sub(r'^(?:故|前|其|又|复|并|仍|遂|乃|更|皆)', '', x)
@@ -56,6 +61,15 @@ def _pick_name(x, y):
 ZHENG = [(184, 220, '汉'), (220, 265, '魏'), (265, 317, '西晋'), (317, 420, '东晋'), (420, 479, '宋'), (479, 502, '南齐'), (502, 557, '梁'), (557, 589, '陈'), (589, 618, '隋'), (618, 907, '唐'), (907, 923, '后梁'), (923, 936, '后唐'), (936, 947, '后晋'), (947, 951, '后汉'), (951, 961, '后周')]
 def zheng(y): return next((p for a, b, p in ZHENG if a <= y < b), '')
 EXPLICIT = re.compile(r'后秦|西秦|南燕|北燕|后燕|西燕|南凉|北凉|西凉|后凉|东魏|西魏|北齐|北周|北汉|南汉|南唐|吴越|荆南|南平|契丹|秃发|沮渠|河西王|李暠')
+SUBJ = re.compile(r'(后秦|西秦|南燕|北燕|后燕|西燕|南凉|北凉|西凉|后凉|东魏|西魏|北齐|北周|汉|魏|吴|蜀|赵|燕|秦|凉|夏|成|代|齐|周|梁|陈)(?:主|天王|帝)(?![府国])[^，。；]{0,24}$')
+def subj_pol(ctx, y):
+    if not (220 <= y < 280 or 304 <= y < 440 or 534 <= y < 590): return None   # 只在并立对峙的年代用
+    ms = list(SUBJ.finditer(ctx))
+    if not ms: return None
+    t = ms[-1].group(1)
+    if len(t) == 2: return t
+    p = pol_of(t + '主', y)
+    return p if p != zheng(y) else None
 def pol_of(clause, y):
     c = clause
     def has(*ks): return any(k in c for k in ks)
@@ -113,6 +127,7 @@ def pol_of(clause, y):
         mp = {'晋': '晋' if y < 923 else '后晋', '岐': '岐', '吴': '吴' if y < 937 else '南唐', '蜀': '前蜀' if y < 926 else '后蜀', '唐': '南唐' if y >= 937 else '后唐', '汉': '南汉' if y < 947 else '后汉' if y < 951 else '北汉', '闽': '闽', '楚': '楚', '燕': '燕', '梁': '后梁', '周': '后周'}
         return mp.get(t, z)
     return z
+OFFEND = set('使史守令尉丞卿郎侍军督帅王公侯伯夫士射中尹监事官长相保傅师马将书议正掾参判记推仆骑牧尉校宰辅')
 PAT = re.compile(r'(?:以|拜)([^，。；：「」、为]{2,14}?)为([^，。；：「」（]{2,16})')
 NEXT = re.compile(r'^，([^，。；：「」、为以]{2,8}?)为([^，。；：「」（]{2,16})')   # 「以甲为某官，乙为某官」：乙配他自己的官
 DIE = re.compile(r'([^，。；：「」、]{2,4}?)(?:卒|薨|死|遇害|被杀|伏诛|自杀|赐死|弃市)')
@@ -123,6 +138,8 @@ for y, v, n, t in entries(ROOT / 'corpus'):
         for m in PAT.finditer(sent):
             xs, off = m.group(1), m.group(2)
             off = re.split(r'[、]', off)[0]
+            if re.fullmatch(r'[^，。]{1,3}州', off): off += '刺史'   # 只写州名的是刺史（到彦之「雍州」）
+            if off and off[-1] not in OFFEND and OFF.search(off[:-1]) and off[:-1][-1] in OFFEND: off = off[:-1]   # 「左仆射牂」末尾衍字
             if not OFF.search(off) or len(off) > 14: continue
             off = re.sub(r'(?:以|而|于|，).*$', '', off)
             clause = sent[:m.start()][-30:]
@@ -138,6 +155,7 @@ for y, v, n, t in entries(ROOT / 'corpus'):
                 nm = pick_name(x, y)
                 if not nm or OFF.fullmatch(nm): continue
                 strong = pol_of(clause + x, y); wide = pol_of(t[:t.find(sent)][-200:] + clause + x, y) if sent in t else strong; dp = dy_pol(nm, y)
+                subj = subj_pol(sent[:m.start()][-40:], y)
                 if strong != zheng(y) and EXPLICIT.search(clause + x): pol, how = strong, 2     # 明写复合国号的最可信
                 elif dp: pol, how = dp, 2 if dp != zheng(y) else 0                              # 其次照哈佛库的朝代
                 elif strong != zheng(y): pol, how = strong, 1                                    # 再次照句里的单字国号
