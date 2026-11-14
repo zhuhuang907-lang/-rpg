@@ -96,6 +96,19 @@ const path = require('path');
     const mc2 = '你卖了麦子，得了五千钱。'; if (mismatchCut(mc2, ['主角没有得到：进项「富商相赠」5000']) !== mc2) bad.push('没名字可认的被乱删');
     // 14 山寨的名字不硬截（真模型实测：截出「府菏泽县境内山」）
     for (const [r, want] of [['曹州府菏泽县境内山寨寨主，手下有数十名喽啰', '胡家寨'], ['黑风寨寨主', '黑风寨'], ['梁山泊头领', '梁山泊'], ['太行山上的山寨寨主', '胡家寨'], ['曹县城外二龙山寨主', '二龙山']]) { const g = bandName(r, '胡大彪'); if (g !== want) bad.push('山寨名不对：' + r + ' → ' + g); }
+    // 15 真模型实测的四处（2026-11-14）
+    // 15a 引号统一成「」：“”写的对话也算对话，不再回回误判「没有对话」
+    const dq = splitStory('你进了粮行。掌柜掂了掂麦子，抬眼看你：“今年的麦好，给你个实价，一石一贯二，卖不卖？”他把算盘往柜上一搁，等你回话。' + '门外有人挑着担子过去，喊了一声借光。'.repeat(8) + '掌柜又问了一遍：“卖不卖？”');
+    if (/“|”/.test(dq.text) || !/「今年的麦好/.test(dq.text)) bad.push('引号没统一');
+    if (storyRpgCheck(mk(), said, dq.text, false).some(x => /没有一段直接对话/.test(x))) bad.push('“”写的对话还被判成没有对话');
+    // 15b 禁写题材：玩家自己在问粮问账的不算
+    s = mk(); s.chat = [{ role: 'gm', text: '账本账簿账目，对账盘账。' }, { role: 'me', text: '看看寨里多少粮食银子' }, { role: 'gm', text: '账本账目。' }];
+    if (bannedTopics(s, '问问管粮的，寨里的粮还够吃几个月').includes('账本账目')) bad.push('玩家自己问粮账，还禁写账本账目');
+    // 15c 白身不凭空得官职：开局记账给寨主安巡抚不认；真做官的照认
+    s = mk(); s.protagonist.role = '曹州府菏泽县境内山寨寨主，手下有数十名喽啰'; applyReply(s, { reply: '开场。', mode: 'play', elapsedDays: 0, career: { office: '山东巡抚', rank: '从二品' } }, '');
+    if ((s.career || {}).office) bad.push('寨主被安了官职：' + s.career.office);
+    s = mk(); s.protagonist.role = '菏泽县知县'; applyReply(s, { reply: '开场。', mode: 'play', elapsedDays: 0, career: { office: '菏泽县知县', rank: '正七品' } }, '');
+    if ((s.career || {}).office !== '菏泽县知县') bad.push('知县的官职没立上');
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));

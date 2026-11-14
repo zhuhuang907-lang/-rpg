@@ -12460,6 +12460,7 @@ function splitStory(text) {
   // 整段是账房那种数据（正文却是空的）：不能当正文给玩家看，当作没写出来，重写
   if (/^\{\s*"/.test(t) && /"(elapsedDays|ledger|reply|meters|scene|turnSummary)"\s*:/.test(t)) t = '';
   t = t.replace(/^\s*(审读|审稿|存疑|核查|自检|修改说明|改动说明|编辑意见)[：:][^\n]*\n?/gm, '');
+  t = t.replace(/“/g, '「').replace(/”/g, '」').replace(/‘/g, '『').replace(/’/g, '』');   // 引号统一成「」『』：真模型爱用“”，对话检查只认「」，回回误判没有对话、回回重写（真模型实测）
   t = t.replace(/\n?【当前情况】[\s\S]*$/, '').replace(/^\s*【[^】\n]{4,60}·[^】\n]{1,40}】\s*\n/, '');   // 这两块由程序加，AI 自己写了就去掉，免得重复   // 模型偶尔把审稿、核查的话写进正文：整行去掉
   t = t.replace(/^```\w*\s*/, '').replace(/\n?```(?:json)?\s*\{[\s\S]*$/, '').replace(/```\s*$/, '');
   const i = t.indexOf('【幕后】');
@@ -13034,7 +13035,8 @@ const countIn = (t, re) => (String(t || '').match(re) || []).length;
 /** 最近几回写多了的题材：这一回禁写（玩家自己提到的不禁） */
 function bannedTopics(s, said) {
   const recent = arr(s.chat).filter(c => c.role === 'gm' && c.kind !== 'talk').slice(-3).map(c => c.text).join('\n');
-  return BORING.filter(([name, re]) => countIn(recent, re) >= 3 && !countIn(said, re)).map(([name]) => name);
+  const mine = arr(s.chat).filter(c => c.role === 'me').slice(-2).map(c => c.text).join('\n') + '\n' + String(said || '');   // 玩家这两三步自己在问、在办的题材不算（真模型实测：玩家问粮账，程序却打回「又写账本账目」）
+  return BORING.filter(([name, re]) => countIn(recent, re) >= 3 && !countIn(mine, re) && !(name === '账本账目' && /粮|账|钱|银|存货|盘点|清点|够吃/.test(mine))).map(([name]) => name);
 }
 /** 情理审读：写好的一回先过一遍十条（桌面版开深度思考），不够格的整段重写。把 DeepSeek 勒紧在合情合理、紧扣史实主线上 */
 async function storyCritic(s, said, text) {
@@ -14062,11 +14064,13 @@ severity：none 没毛病；minor 只有小毛病（fixes 改得了）；major �
   const A = await Promise.race([job.then(x => parseJSON(x.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }), new Promise(res => setTimeout(() => res(null), 80000 * TSCALE))]);
   if (!A) { const nf = nameFixes(s, text); let t = text; for (const x of nf.sort((a, b) => b.wrong.length - a.wrong.length)) t = t.split(x.wrong).join(x.right); return { ...empty, text: t, audit: nf, result: 'UNCHECKED' }; }
   const inText = x => !x.quote || String(text).includes(String(x.quote).trim().slice(0, 12));
-  const pick = (L, tag) => arr(L).filter(x => x && x.problem && inText(x) && !/可保留|可以保留|无妨|不必改|无伤大雅/.test(String(x.problem) + String(x.fix || ''))).slice(0, 5).map(x => `${tag}：${x.quote ? '「' + one(x.quote, 40) + '」' : ''}${one(x.problem, 80)}${x.fix ? '——应当：' + one(x.fix, 80) : ''}`);
+  const wantSpan = /过(了|上)?[一二三四五六七八九十几数半两]+(个)?(天|日|月|年|旬|季)|休养|歇(着|息|几|一)|等[一几数]|守孝|养病|闭门/.test(String(said || ''));
+  const notProb = x => /可保留|可以保留|无妨|不必改|无伤大雅|无需改|无(史实|明显)?(问题|毛病|不妥)|并无(不妥|问题|毛病)|没有?(问题|毛病)|未越界|合理执行|大体合理|尚可/.test(String(x.problem) + String(x.fix || '')) || /^\s*(保留|照留|不改|不必|无需)/.test(String(x.fix || '')) || wantSpan && /跳到|直接跳|时间跳|快进|推进到|过了.{0,6}(日|天|月)|一个月/.test(String(x.problem));   // 真模型实测：审稿把「无问题，应当保留」也列成毛病，把玩家要的「过一个月」当成毛病
+  const pick = (L, tag) => arr(L).filter(x => x && x.problem && inText(x) && !notProb(x)).slice(0, 5).map(x => `${tag}：${x.quote ? '「' + one(x.quote, 40) + '」' : ''}${one(x.problem, 80)}${x.fix ? '——应当：' + one(x.fix, 80) : ''}`);
   const probs = pick(A.historicalIssues, '史实').concat(pick(A.characterIssues, '情理'), pick(A.continuityIssues, '连贯'));
   // 旧的审校格式（major）也认
   const major = arr(A.major).filter(x => x && x.problem).slice(0, 4);
-  const sev = /major/i.test(String(A.severity)) || major.length ? 'major' : /minor/i.test(String(A.severity)) ? 'minor' : probs.length ? 'major' : 'none';
+  const sev = major.length || /major/i.test(String(A.severity)) && probs.length ? 'major' : /minor|major/i.test(String(A.severity)) ? 'minor' : probs.length ? 'major' : 'none';   // 说是大毛病却一条实在的都没有：不整段重写
   const audit = [], fx1 = applyFixes(text, A.fixes); let t = fx1.text; audit.push(...fx1.done);
   let raw = arr(A.fixes);
   const doubts = arr(A.doubts).filter(x => x && x.quote && t.includes(String(x.quote).trim())).slice(0, 6);
@@ -14518,6 +14522,8 @@ function applyReply(s, d, said) {
   }
   if (d.career && typeof d.career === 'object' && !Array.isArray(d.career)) {
     const c = Object.assign({}, s.career || {}), k = { ...d.career };
+    // 原来没有官职的：身份里得写着这个官（开局照身份立账），或者这一步有凭据（求官、在办的升迁），账房才许给他安官职（真模型实测：开局记账给山寨寨主安了个「山东巡抚」，以后回回照巡抚写他）
+    if (k.office && !c.office) { const role = String((s.protagonist || {}).role || ''), core = String(k.office).replace(/[（(].*$/, '').trim(); const officialish = (ID_LOCAL.test(role) || ID_MIL.test(role) || ID_CIVIL.test(role) || /帝|皇|王|君|可汗|单于|天子|国公|侯|伯爵/.test(role)) && !ID_BANDIT.test(role); if (!(core.length >= 2 && (role.includes(core) || role.includes(core.slice(-2)))) && !officialish && !(play && gainSanction(s, said, CUR_RULING))) { delete k.office; delete k.rank; delete k.post; delete k.duties; delete k.powers; delete k.superior; delete k.subordinates; } }
     // 官职变了，正文里得有任命的事（升、调、补、授、署，或者革、降、罢）：记账的凭空改官不算
     if (k.office && k.office !== c.office && c.office && !/擢|升|迁|调|补|授|署|除|拜|任命|简放|革|降|罢|撤|免|致仕|丁忧|告身|敕|札|部文|上谕|圣旨|旨意/.test(String(d.reply || ''))) { delete k.office; delete k.rank; }
     // 正文不作凭据（任务十六）：正文里那句得官是没凭据被挑出来的，官职照旧
