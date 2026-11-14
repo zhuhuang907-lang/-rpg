@@ -19,8 +19,14 @@
 | [任务十一 模型调用清单](任务十一.md) | Claude | zcode 有空时 | 2026-11-14 | 待办 | `claude/staging` |
 | [任务十二 游戏读世情库、不设固定身份、随时改行](任务十二.md) | Claude | zcode 有空时 | 2026-11-14 | 待办（等任务九头两类） | `claude/staging` |
 | [任务十三 真模型连玩三十回、正文对表](任务十三.md) | 程序 Claude；实跑 zcode | Claude | 2026-11-14 | 待办 | `claude/staging`；`zcode/task-13` |
+| [任务十四 世事库·五代十国（不少于三百件）](任务十四.md) | zcode | Claude | 2026-11-14 | 待办 | `zcode/task-14` |
+| [任务十五 戏型库、时代用语表与错词表](任务十五.md) | zcode | Claude | 2026-11-14 | 待办（先交错词表） | `zcode/task-15` |
+| [任务十六 先定后写：结果由程序定，记账不从正文读](任务十六.md) | Claude | zcode 有空时 | 2026-11-14 | 待办 | `claude/staging` |
+| [任务十七 点名权收回、分拍写、双稿择优、兜底戏](任务十七.md) | Claude | zcode 有空时 | 2026-11-14 | 待办（接任务十六） | `claude/staging` |
+| [任务十八 十二个主干系统过好玩四问](任务十八.md) | Claude | zcode 有空时 | 2026-11-14 | 待办（里程碑三） | `claude/staging` |
+| [任务十九 0.9.0 收官与发布](任务十九.md) | Claude | — | 2026-11-14 | 待办（最后） | `claude/staging` |
 
-总计划（阶段、过关门槛、进度表）：[总计划](总计划/README.md)。差事单：[给 zcode](给zcode.md)；Claude 自己的活：[Claude 自办](Claude自办.md)。opencode 不派活（R-223），只在项目主人叫它时跑代码、做总结：[给 opencode](给opencode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
+总计划（阶段、过关门槛、进度表）：[总计划](总计划/README.md)；到发布为止的路线：[大更路线图](总计划/大更路线图.md)；管住写戏的模型：[模型管束](总计划/模型管束.md)。差事单：[给 zcode](给zcode.md)；Claude 自己的活：[Claude 自办](Claude自办.md)。opencode 不派活（R-223），只在项目主人叫它时跑代码、做总结：[给 opencode](给opencode.md)。问答：[问答](问答/README.md)。等项目主人定的事：[待奏](待奏.md)。
 
 状态只有这几种（Claude 改）：**待办** → **已交**（承办分支推上来了）→ **审毕**（审查分支推上来了）→ **准**（Claude 合进预备分支）或 **退回**（照审查和 Claude 的批语重做）→ **已发布**（项目主人拍板后发布）。
 
