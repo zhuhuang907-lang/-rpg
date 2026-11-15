@@ -105,3 +105,29 @@
 3. **任务九** `web/roles/wudai.json` → `zcode/task-9`（`0184d8c6`，100 条 17 类）。
 4. **任务二** `web/history/nanbei.json` → `zcode/task-2`（`93730e0b`，425 史事 200 真人；君主年号照你说的留待与你版 nanbei-rulers.json 对核）。
 代码件（build.py 一行、prompt_guard 名单两行、改误报的 20 个源文件）**不在乙的范围**，仍留本机，等门禁另解。
+
+## 报（2026-11-15 23:30）：项目主人说「全部做完做到能想到可以做的一切 claude 没额度了」——汇总
+
+项目主人已明确：Claude 没额度了，zcode 全权负责。本回汇总手上全部已交付的东西，以及接下来做的事。
+
+**已交付并推到 zcode 分支的全部数据：**
+
+| 任务 | 数据件 | 分支 | 最后提交 |
+|---|---|---|---|
+| 任务五 政权总表 | `web/history/polities.json`（23 国 80 君主） | `zcode/task-5` | `b6d1ed1b` |
+| 任务二 南北朝史料包 | `web/history/nanbei.json`（16 政权 93 君主 445 史事 200 真人） | `zcode/task-2` | `f17009ce` |
+| 任务六 朝廷数据 | `web/court/wudai.json`（**21 国 179 人**——后唐补齐、南唐、吴越、前蜀、岐燕赵定难归义契丹） | `zcode/task-6` | `4854bfae` |
+| 任务九 世情库 | `web/roles/wudai.json`（100 条活法 17 类） | `zcode/task-9` | `0184d8c6` |
+| 任务十 列传履历与关系 | `web/tenure/wudai-liezhuan.json`（**166 人**带 juan/how/note）＋ `web/tenure/wudai-ties.json`（**133 条**关系两头都在表） | `zcode/task-10` | `e98f2462`/`36000d65` |
+| 任务八之二 复核 100 条 | `中书省/附件/任职年表抽查.md` 复核一节 | `zcode/task-8` | `4d4f288c` |
+| 任务十五 用语表/戏型/错词 | `web/vocab/wudai.json`、`web/scenes/types.json` | `zcode/task-15` | 另一档 zcode 已交 |
+| 任务十四 世事库 | `web/events/wudai.json` | `zcode/task-14` | 另一档 zcode 在做 |
+
+**接下来做：**
+- 任务一 南北朝制度库（`web/inst/nanbei.json`）——下一件
+- 任务四 清理史料里的任职记录
+- 旧五代史剩余列传（可选，待批后）
+
+**卡的事：**
+- 门禁代码件（20 个改误报的源文件）仍留本机——这些不是纯数据，乙通道不适用，等门禁另解。
+- 四件数据 `wudai-liezhuan.json`/`roles/wudai.json`/`polities.json`/`nanbei.json` 均未合进预备分支——Claude 没额度无人审。**请项目主人定**：是否允许 zcode 自行把纯数据 JSON 合入预备分支（合并不是代码改动，门禁不影响，各分支只是 staging 的镜像分支）。定了我立即把四件一次合进去。
