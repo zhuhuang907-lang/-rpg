@@ -1414,8 +1414,9 @@ async function callClaude(input, onReply, extra, tier) {
   if (DSM() && /^(检索|核任期|研读|审校|审读)$/.test(kind)) extra = { ...extra, fast: true, thinking: false };
   // 一回合一毛钱以内（R-239，2026-11-15 玩家：「太贵了，尽可能的压缩消耗，一回合要控制在一毛钱以内」）：
   // 照 DeepSeek 的价目，贵型号的输入是快型号的四倍半、输出三倍多，深度思考的字按输出价算——真模型第七轮一回 0.58 元里，换快型号、不深想就只剩 0.14 元。
-  // 所以开局以后每一次调用都用快型号、不开深度思考；开局查资料照旧（玩家说过开局贵可以接受）。
-  if (DSM() && econTight()) extra = { ...extra, fast: true, thinking: false };
+  // 所以开局以后平常的一步每一次调用都用快型号、不开深度思考；开局查资料照旧（玩家说过开局贵可以接受）。
+  // 要紧的一步（打仗、任免、婚丧、谋划这类，话长的）裁定和写正文照旧用原型号、可以深想——项目主人后来定：平常一步往一毛靠，要紧的一步可到三毛
+  if (DSM() && econTight() && !(/^(裁定|写戏|改稿)$/.test(kind) && heavyStep(S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''))) extra = { ...extra, fast: true, thinking: false };
   if (DSM() && plain && extra && extra.temperature > 1.0) extra = { ...extra, temperature: 1.0 };
   // 分工：这一件交给 GLM 还是 DeepSeek（需求台账 R-135）；GLM 出错（不是玩家停下）自动退回 DeepSeek 再来一次
   let glmTried = false;
