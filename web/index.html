@@ -1653,8 +1653,9 @@ function ledgerRules(s, txt) {
 }
 
 /* ========== 省 token 第二刀（R-238）：平常的一步用短记账单（过了多久、钱的进出、见了谁、吩咐的事成没成），
- *  身份变动、打仗、婚丧、任免、官司、买卖产业这类大事，或离上次全套记账满五回，才用全套。短单不给的字段程序照旧保留。 ========== */
-const LEDGER_BIG_RE = /死|崩|薨|卒|殁|病故|亡故|病逝|去世|过世|故去|阵亡|身亡|自尽|病危|婚|娶|嫁|纳妾|有孕|分娩|临盆|生下|定亲|过继|立嗣|分家|授官|任命|委任|升任|调任|罢官|革职|致仕|考中|中举|及第|落第|从军|入伍|落草|招安|称王|称帝|即位|登基|战|攻|围|兵|伏击|厮杀|迁居|搬家|移居|买下|卖掉|典当|盘下|开张|歇业|入狱|下狱|被捕|拿获|官司|告状|案|赏赐|抄家|起事|造反|结盟|投奔|入伙/;
+ *  身份变动、打仗、婚丧、任免、官司、买卖产业这类大事，或离上次全套记账满五回，才用全套。短单不给的字段程序照旧保留。
+ *  （「纳柳氏为妾」「柳氏有喜了」这类说法也算大事：原先只认「纳妾」「有孕」连写，纳了妾进不了家室——后宅测试查出） ========== */
+const LEDGER_BIG_RE = /死|崩|薨|卒|殁|病故|亡故|病逝|去世|过世|故去|阵亡|身亡|自尽|病危|婚|娶|嫁|纳妾|纳[^，。]{1,6}为妾|为妾|收房|有孕|有喜|有身孕|身怀六甲|怀上|添丁|产子|产女|生了个|出生|分娩|临盆|生下|定亲|过继|立嗣|分家|授官|任命|委任|升任|调任|罢官|革职|致仕|考中|中举|及第|落第|从军|入伍|落草|招安|称王|称帝|即位|登基|战|攻|围|兵|伏击|厮杀|迁居|搬家|移居|买下|卖掉|典当|盘下|开张|歇业|入狱|下狱|被捕|拿获|官司|告状|案|赏赐|抄家|起事|造反|结盟|投奔|入伙/;
 function ledgerLiteOk(s, said, story, ruling) {
   if (!s || !s.protagonist || (s.turn || 0) < 2) return false;
   if ((s.turn || 0) - (s.ledgerFullAt || 0) >= 5) return false;   // 隔几回总要全套核一遍，免得漏记的慢慢攒下
@@ -1697,7 +1698,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261115002350';
+const BUILD = '20261115003420';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -15547,7 +15548,7 @@ function applyReply(s, d, said) {
         // 程序结算生下的孩子先记作「未取名」：账房后来给他起了名，就改这一条，不另添一个
         const baby = /子|女/.test(h.relation || '') && (num(h.age) == null || num(h.age) <= 2) && s.household.find(x => (x.autoName || /未取名/.test(x.name)) && !x.dead && (/女/.test(h.relation) === /女/.test(x.relation)));
         if (baby) { baby.name = one(h.name, 8); baby.autoName = false; if (h.mother) baby.mother = one(h.mother, 8); }
-        else s.household.push({ relation: one(h.relation, 6), name: one(h.name, 8), age: /添丁|出生/.test(ch) ? 1 : null, mother: one(h.mother, 8), note: one(h.note || ch, 30) });
+        else s.household.push({ relation: one(h.relation, 6), name: one(h.name, 8), age: /添丁|出生/.test(ch) ? 1 : null, mother: one(h.mother, 8), note: one(h.note || ch, 30) }); try { kinFix(s); } catch (_) {}
       }
     }
     s.chronicle = s.chronicle.slice(-300);
@@ -15863,7 +15864,22 @@ function curStatus(s, d) {
   return { head: `${timeText(s.clock)}·${one(place, 16)}·${one(p.name, 12)}${num(p.age) != null ? num(p.age) + '岁' : ''}`, role: one([p.role, c.office].filter(Boolean).join('，'), 40), near, opp, goal: one(goal, 50) };
 }
 const curHtml = c => c ? `<div class="curst">【当前情况】${esc(c.head.split('·')[0])}；${esc(c.head.split('·').slice(2).join(''))}，${esc(c.role)}${c.near.length ? `；身边：${esc(c.near.join('、'))}` : ''}${c.goal ? `；眼下要办：${esc(c.goal)}` : ''}</div>` : '';
-function newSave(p) {
+/** 家里人不许叫「某」（硬规矩：真名或照制度起名）：开局、记账带进来的「韩某」「王氏某」一律起个名，
+ *  男丁随主角的姓，女眷、姓不明的照原写的姓；谁的母亲是这人的也跟着改（试玩查出：族谱里父亲叫「韩某」） */
+function kinFix(s) {
+  if (!s || !Array.isArray(s.household)) return; const P = String((s.protagonist || {}).name || '');
+  const psur = typeof SURNAMES !== 'undefined' && SURNAMES.includes(P.slice(0, 2)) && P.length > 2 ? P.slice(0, 2) : P.slice(0, 1);
+  const used = new Set(s.household.map(m => m && m.name).filter(Boolean));
+  for (const m of s.household) { if (!m) continue; const n = String(m.name || ''); if (!/某|不详|无名|佚名/.test(n) && n.length >= 2) continue;
+    const rel = String(m.relation || ''); let sur = n.replace(/(某|不详|无名|佚名|氏).*$/, '');
+    if (!sur && /父|子|兄|弟|叔|伯|祖|孙|侄|姊|妹|姐|女/.test(rel) && !/岳|舅|姨|外|妻|妾|媳|嫂/.test(rel)) sur = psur;
+    const pool = /母|女|妻|妾|婢|丫鬟|氏|姊|妹|姐|姑|嫂|媳/.test(rel) ? GIVEN_F.filter(g => g !== '氏') : /仆|丁|役|夫/.test(rel) ? GIVEN_LOW : GIVEN;
+    used.delete(n); const nn = pickName(s, sur || psur || '王', pool, used);
+    for (const o of s.household) if (o && o.mother === n) o.mother = nn;
+    m.name = nn; m.note = String(m.note || '').replace(/（史书未载名[^）]*）/, '') + '（史书未载名，照制度起名）'; }
+}
+function newSave(p) { const s = newSave0(p); try { kinFix(s); } catch (_) {} return s; }
+function newSave0(p) {
   p = p || {};
   const idm = IDM[p.identityModule] ? p.identityModule : 'commoner';
   return {
