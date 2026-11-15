@@ -232,6 +232,31 @@ for _, ppl in _S:
         if old: old['posts'] += ps
         else: PEOPLE.append({'name': n, 'tier': 1, 'clan': '', 'native': '', 'born': None, 'died': None, 'posts': ps, 'ties': [], 'fate': '', 'src': '资治通鉴'})
 out = {'range': [907, 979], 'source': '每条位子、人物都注出处；人分两档（明载、推定），没留名的位子由游戏照 recruit 补（任务七）', 'polities': [JINGNAN, HOUTANG] + _extra_pols, 'people': PEOPLE}
+# zcode 任务六补的（新国、新位子、通鉴逐句核不到的人，都带出处）：scripts/court_supplement/wudai-zcode.json 每次并进来；同人同位子以本程序核的为准
+_sup = ROOT / 'scripts' / 'court_supplement' / 'wudai-zcode.json'   # 不放 web/court：那里每个文件游戏都当一份朝廷数据读
+if _sup.exists():
+    S = json.load(open(_sup, encoding='utf8')); byp = {p['name']: p for p in out['polities']}
+    for p in S.get('polities') or []:
+        if p['name'] not in byp: out['polities'].append(p); byp[p['name']] = p
+    for pol, seats in (S.get('seats') or {}).items():
+        if pol in byp: ids = {q['id'] for q in byp[pol]['seats']}; byp[pol]['seats'] += [q for q in seats if q['id'] not in ids]
+    have = {(x['name'], p['seat']) for x in out['people'] for p in x['posts']}
+    for x in S.get('people') or []:
+        ps = [p for p in x['posts'] if (x['name'], p['seat']) not in have]
+        if not ps: continue
+        old = next((y for y in out['people'] if y['name'] == x['name']), None)
+        if old: old['posts'] += ps
+        else: out['people'].append({**x, 'posts': ps})
+    # 并进来以后位子超员的：推定的让明载的（安从进推定在任到 933，康义诚 931 明载接任侍卫都指挥使）
+    for p in out['polities']:
+        for q in p['seats']:
+            P = [(x, z) for x in out['people'] for z in x['posts'] if z['seat'] == q['id']]
+            for y in range(q['from'], q['to'] + 1):
+                on = [(x, z) for x, z in P if z['from'] <= y <= z['to']]
+                if len(on) <= q.get('quota', 1): continue
+                for x, z in sorted([o for o in on if o[1]['how'] == '推定'], key=lambda o: o[1]['from'])[:len(on) - q.get('quota', 1)]:
+                    z['to'] = y - 1
+            for x in out['people']: x['posts'] = [z for z in x['posts'] if z['to'] >= z['from']]
 (ROOT / 'web' / 'court').mkdir(exist_ok=True)
 json.dump(out, open(ROOT / 'web' / 'court' / 'wudai.json', 'w', encoding='utf8'), ensure_ascii=False, indent=1)
 print('荆南位子', len(JINGNAN['seats']), '后唐位子', len(HOUTANG['seats']), '人', len(PEOPLE), '其中推定条目', sum(1 for p in PEOPLE for x in p['posts'] if x['how'] == '推定'))

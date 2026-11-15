@@ -16,8 +16,11 @@ const path = require('path');
     const wz = r(s1, 692, 6, '武周'); if (wz.name !== '武曌') bad.push('692 年没有武曌：' + JSON.stringify(wz));
     const sui = r(s1, 590, 6, '隋'); if (sui.name !== '杨坚' || sui.era !== '开皇' || sui.n !== 10) bad.push('590 年不是杨坚开皇十年：' + JSON.stringify(sui));
     const qi = r(s1, 560, 12, '北齐'); if (qi.name !== '高演' || qi.era !== '皇建') bad.push('560 年末北齐不是高演皇建：' + JSON.stringify(qi));
-    if (hasHist(s1)) bad.push('只有君主年号表，却当成了整套内置史料（会挡住联网自建史事）');
-    if (!packNeed(s1)) bad.push('南北朝开局不再联网自建史事了');
+    // 只有君主年号表的年代（隋，581—711 只有 suitang-rulers）不当整套内置史料；南北朝 2026-11-15 起有了整套史料包（zcode 任务二 nanbei.json），算有
+    const s9 = mk('隋', 600, 6, '大兴');
+    if (hasHist(s9)) bad.push('只有君主年号表，却当成了整套内置史料（会挡住联网自建史事）');
+    if (!packNeed(s9)) bad.push('隋开局不再联网自建史事了');
+    if (!hasHist(s1)) bad.push('南北朝已有整套史料包（nanbei.json），502 年梁开局却没认');
     if (!/天监/.test(eraLabel(s1, 502) || '')) bad.push('梁 502 年的年号标签不是天监：' + eraLabel(s1, 502));
     S = mk('东魏', 545, 6, '邺'); S.chat = [{ role: 'gm', text: '开场。' }]; window.__lab = eraLabel(S, 545); if (window.__lab) S.clock.yearLabel = window.__lab;   // 开局流程照 eraLabel 写年号（同 15220 行）
     return bad;
