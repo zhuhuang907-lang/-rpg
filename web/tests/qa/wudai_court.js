@@ -80,6 +80,12 @@ const path = require('path');
       if (P.some(q => /平章事|枢密|翰林/.test(q.title))) bad.push(y + ' 年' + pol + '还没建国，却有宰相、枢密、翰林：' + P.map(q => q.title).join('、'));
       if (!P.some(q => q.title === '行军司马')) bad.push(y + ' 年' + pol + '使府没有行军司马');
       if (who && !P.flatMap(q => [q.holder].concat(arr(q.others))).includes(who)) bad.push(y + ' 年' + pol + '牙军里没有' + who); }
+    // 任职年表的政权要对（试玩查出：930 年后唐朝里出了楚的拓跋恒、李铎，吴越的钱元球，楚的马希振，吴的景通）
+    { const sx = newSave({ name: '某癸', gender: '男', age: 32, role: '监察御史', gregorianYear: 930, month: 3, day: 1, place: '洛阳', polity: '后唐' });
+      const nm = tenureFor(sx, 930).flatMap(t => arr(t.figures).map(f => f.name)), wrong = ['拓跋恒', '李铎', '钱元球', '马希振', '景通', '马希范'].filter(n => nm.includes(n));
+      if (wrong.length) bad('930 年后唐的任职年表里混进了别国的人：' + wrong.join('、'));
+      const sy = newSave({ name: '某子', gender: '男', age: 32, role: '郎官', gregorianYear: 930, month: 3, day: 1, place: '长沙', polity: '楚' });
+      const ny = tenureFor(sy, 930).flatMap(t => arr(t.figures).map(f => f.name)); if (!ny.includes('拓跋恒') || !ny.includes('李铎')) bad('930 年楚的任职年表里没有拓跋恒、李铎'); }
     // 南唐 953：冯延巳再度拜相（951 年复相，三上三下），孙晟同在相位
     { const s8 = newSave({ name: '某庚', gender: '男', age: 30, role: '郎官', gregorianYear: 953, month: 3, day: 1, place: '金陵', polity: '南唐' }); s8.chat = [{ role: 'gm', text: '开场。' }];
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s8); } finally { callClaude = oc; }
