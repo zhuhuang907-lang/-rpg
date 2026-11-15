@@ -37,8 +37,11 @@ const path = require('path');
       const xz = P3.find(q => /平章事/.test(q.title)) || {}; if (!all(xz).includes('冯道')) bad.push('930 年后唐宰相里没有冯道：' + JSON.stringify(xz));
       if (all(xz).some(n => s3.courtWho[n] === '虚构')) bad.push('宰相位子补了虚构人');
       const smz = P3.find(q => q.title === '枢密使') || {}; if (!all(smz).includes('范延光')) bad.push('930 年枢密使里没有范延光');
+      if (!all(smz).includes('安重诲') || all(smz).includes('孔循')) bad.push('930 年枢密使应是安重诲、范延光（孔循 928 年已外放忠武节度使）：' + JSON.stringify(all(smz)));
       const zs = P3.find(q => q.title === '中书舍人') || {}; if (!all(zs).length || !all(zs).every(n => s3.courtWho[n] === '虚构')) bad.push('中书舍人这类中层位子没照来路补人');
-      if (P3.length > 30) bad.push('后唐中枢位子数不对：' + P3.length); }
+      if (P3.length > 30) bad.push('后唐中枢位子数不对：' + P3.length);
+      if (P3.some(q => q.title.length < 2 || q.title === '使')) bad.push('有官名被截残（「三司使」成了「使」）：' + P3.map(q => q.title).join('、'));
+      if (!P3.some(q => q.title === '三司使')) bad.push('930 年后唐没有三司使这个位子'); }
     // 后周 955：中枢照通鉴核过的人，大官不补虚构
     const s4 = (() => { const s = newSave({ name: '某丙', gender: '男', age: 35, role: '监察御史', gregorianYear: 955, month: 6, day: 1, place: '开封', polity: '后周' }); s.chat = [{ role: 'gm', text: '开场。' }]; return s; })();
     callClaude = async () => ({ text: '{}' }); try { await buildOrg(s4); } finally { callClaude = oc; }

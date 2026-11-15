@@ -48,7 +48,7 @@ STATES = {
         ('王峻', 'smz', ['枢密使']), ('郑仁诲', 'smz', ['枢密使']), ('魏仁浦', 'smz', ['枢密使']), ('吴廷祚', 'smz', ['枢密使']),
         ('张美', 'ss', ['三司使']), ('李重进', 'sw', ['侍卫']), ('张永德', 'dq', ['殿前都点检', '殿前']), ('赵匡胤', 'dq', ['殿前都点检', '殿前都指挥使'])]),
 }
-def ENDP(nm): return re.compile(re.escape(nm) + r'[^，。]{0,6}(?:罢|免|贬|伏诛|被杀|遇害|卒|薨|赐死|自杀|出为|致仕|既死)|(?:杀|诛|斩)' + re.escape(nm) + '|' + re.escape(nm) + r'[^。；]{0,30}，[^，。]{0,4}罢(?:守本官|为)')   # 「徐光溥坐……，丁酉，罢守本官」「张业既死」
+def ENDP(nm): return re.compile(re.escape(nm) + r'[^，。]{0,6}(?:罢|免|贬|伏诛|被杀|遇害|卒|薨|赐死|自杀|出为|致仕|既死)|(?:杀|诛|斩)' + re.escape(nm) + '|' + re.escape(nm) + r'[^。；]{0,30}，[^，。]{0,4}罢(?:守本官|为)' + '|以[^，。]{0,12}' + re.escape(nm) + r'[^，。]{0,3}为[^，。]{0,12}(?:节度使|刺史|观察使|防御使)')   # 「徐光溥坐……，丁酉，罢守本官」「张业既死」
 def _pats(nm, k):
     n, kk = re.escape(nm), re.escape(k)
     return [re.compile(n + r'[^，。]{0,14}?为[^，。]{0,10}' + kk),           # （以）某（、某）为某官
@@ -68,6 +68,14 @@ def _find(nm, keys, E, after=None):
                 if m1 and not re.search('贬|罢|免', sent[:sent.find(nm)]) and not ENDP(nm).search(sent): return (y, v, sent.strip()[:70], k, '明载')
                 if (m2 or m1) and after is None: got = got or (y, v, sent.strip()[:70], k, '推定')
     return got
+def _outside(s2, nm, k):
+    """离任那句里这人已挂着外官（「横海节度使、同平章事孔循卒」）：中枢的任早结束了"""
+    i = s2.find(nm); pre = s2[max(0, i - 14):i] if i >= 0 else ''
+    return bool(re.search('节度使|刺史|观察使|防御使', pre)) and k not in pre
+def _lastk(E, nm, k, y0, y2):
+    """y0—y2 之间，最后一年还被叫作这个官（「枢密使、同平章事孔循」928）"""
+    Y = [y for y, v, t in E if y0 <= y < y2 and re.search(re.escape(k) + r'[^，。]{0,12}' + re.escape(nm), t)]
+    return max(Y) if Y else None
 def verify():
     allE = [(y, v, t) for y, v, n, t in entries(ROOT / 'corpus') if 905 <= y <= 960]
     out = {}
@@ -87,7 +95,10 @@ def verify():
                     for s2 in re.split(r'[。；]', t2):
                         if y2 == y and not passed:
                             passed = s2.strip()[:70] == sent; continue
-                        if ENDP(nm).search(s2): end = y2; break
+                        if ENDP(nm).search(s2):
+                            end = y2
+                            if _outside(s2, nm, k): end = _lastk(E, nm, k, y, y2) or y2   # 卒时已是外官：中枢到最后一次被叫这个官那年
+                            break
                     if end: break
                 last = max([yy for yy, vv, tt in E if nm in tt] or [y])
                 got_all.append({'name': {'郑玨': '郑珏', '冯延己': '冯延巳'}.get(nm, nm), 'seat': pre + '-' + seat, 'from': y, 'to': min(end or y + 4, y1), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how, 'lastSeen': last, 'seen': sorted(set(yy for yy, vv, tt in E if nm in tt))})

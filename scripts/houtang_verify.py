@@ -16,7 +16,15 @@ CAND = [
     ('李德休', 'ht-zc', ['御史中丞']), ('李琪', 'ht-yd', ['御史大夫']), ('卢质', 'ht-hl', ['翰林学士']), ('冯道', 'ht-hl', ['翰林学士']),
     ('康义诚', 'ht-shiwei', ['侍卫亲军马步都指挥使', '侍卫亲军马步军都指挥使']), ('药彦稠', 'ht-shiwei', ['侍卫都指挥使']), ('安从进', 'ht-shiwei', ['侍卫都指挥使']),
 ]
-ENDP = lambda nm: re.compile(re.escape(nm) + r'[^，。]{0,6}(?:罢|免|贬|伏诛|被杀|遇害|卒|薨|赐死|自杀|出为|致仕)|(?:杀|诛|斩)' + re.escape(nm))
+ENDP = lambda nm: re.compile(re.escape(nm) + r'[^，。]{0,6}(?:罢|免|贬|伏诛|被杀|遇害|卒|薨|赐死|自杀|出为|致仕)|(?:杀|诛|斩)' + re.escape(nm) + '|以[^，。]{0,12}' + re.escape(nm) + r'[^，。]{0,3}为[^，。]{0,12}(?:节度使|刺史|观察使|防御使)')   # 外放节度使、刺史也是离了中枢（留守多是暂代、兼任，不算：郑仁诲 953 东京留守仍是枢密使）（孔循 927「以枢密使孔循为忠武节度使」）
+def _outside(s2, nm, k):
+    """离任那句里这人已挂着外官（「横海节度使、同平章事孔循卒」）：中枢的任早结束了"""
+    i = s2.find(nm); pre = s2[max(0, i - 14):i] if i >= 0 else ''
+    return bool(re.search('节度使|刺史|观察使|防御使', pre)) and k not in pre
+def _lastk(E, nm, k, y0, y2):
+    """y0—y2 之间，最后一年还被叫作这个官（「枢密使、同平章事孔循」928）"""
+    Y = [y for y, v, t in E if y0 <= y < y2 and re.search(re.escape(k) + r'[^，。]{0,12}' + re.escape(nm), t)]
+    return max(Y) if Y else None
 def verify():
     E = [(y, v, t) for y, v, n, t in entries(ROOT / 'corpus') if 923 <= y <= 937]
     out = []
@@ -38,7 +46,10 @@ def verify():
         for y2, v2, t2 in E:
             if y2 <= y: continue
             for s2 in re.split(r'[。；]', t2):
-                if ENDP(nm).search(s2): end = y2; break
+                if ENDP(nm).search(s2):
+                    end = y2
+                    if _outside(s2, nm, k): end = _lastk(E, nm, k, y, y2) or y2   # 卒时已是外官：中枢到最后一次被叫这个官那年
+                    break
             if end: break
         last = max([yy for yy, vv, tt in E if nm in tt] or [y])
         out.append({'name': '郑珏' if nm == '郑玨' else nm, 'seat': seat, 'from': y, 'to': min(end or y + 4, 936), 'endHow': '明载' if end else '推定', 'vol': v, 'quote': sent, 'key': k, 'how': how, 'lastSeen': last, 'seen': sorted(set(yy for yy, vv, tt in E if nm in tt))})
