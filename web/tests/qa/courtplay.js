@@ -37,10 +37,35 @@ const path = require('path');
   const a1 = await p.evaluate(() => ({ open: arr(c2Of(S).cases).filter(c => !c.done).length, fav: (S.people['安重诲'] || {}).favor, msg: ORGMSG }));
   if (a1.open !== 1 || !(a1.fav <= -25) || !/下个月见分晓/.test(a1.msg)) bad.push('弹章没递上去、对方没记恨：' + JSON.stringify(a1));
   const a2 = await p.evaluate(() => { const s = S, g0 = repOf(s).guan; s.clock.m = 9; const out = court2Monthly(s); return { out, done: arr(c2Of(s).cases).every(c => c.done), g0, g1: repOf(s).guan, again: court2Monthly(s).length }; });
-  if (!a2.done || a2.out.length !== 1 || !/安重诲/.test(a2.out[0]) || a2.again) bad.push('弹章过了一个月没见分晓，或同一个月结了两遍：' + JSON.stringify(a2));
+  if (!a2.done || !a2.out.some(x => /你弹枢密使安重诲的章/.test(x)) || a2.again) bad.push('弹章过了一个月没见分晓，或同一个月结了两遍：' + JSON.stringify(a2));
   // 靠山倒了受牵连：把靠山从位子上拿掉，过一个月官声跌、靠山没了
   const a3 = await p.evaluate(() => { const s = S, q = findPost(s, '冯道'); for (const n of s.org.nodes) for (const x of n.posts) { if (x.holder === '冯道') x.holder = ''; x.others = arr(x.others).filter(h => h !== '冯道'); } const g0 = repOf(s).guan; s.clock.m = 10; const out = court2Monthly(s); return { out, g0, g1: repOf(s).guan, patron: c2Of(s).patron }; });
   if (a3.patron || !(a3.g1 < a3.g0) || !a3.out.some(x => /冯道去了位/.test(x))) bad.push('靠山去位没有牵连：' + JSON.stringify(a3));
+  // 第二步：朝中的人自己动
+  const w = await p.evaluate(async () => { const o = {}, oc = callClaude; callClaude = async () => ({ text: '{}' });
+    const mk = async () => { const s = newSave({ name: '张砺', gender: '男', age: 35, role: '监察御史', gregorianYear: 930, month: 3, day: 1, place: '洛阳', polity: '后唐' }); s.chat = [{ role: 'gm', text: '开场。' }]; s.settledAt = 0; s.career = { office: '监察御史' }; s.money.cash = 200; await buildOrg(s); c2Of(s); return s; };
+    try {
+      // 风声：931 年去位的安重诲，930 年九月朝中先有风声（四月还早）
+      let s = await mk(); s.clock.m = 4; let r = court2Monthly(s); o.early = r.some(x => /风传[^\n]*安重诲/.test(x));
+      s.clock.m = 9; r = court2Monthly(s); o.rumor = r.find(x => /风传/.test(x)) || ''; o.seen = !!c2Of(s).seenFall['安重诲'];
+      // 他真去了位：早先弹过他的算有先见
+      c2Of(s).cases.push({ target: '安重诲', done: true }); for (const n of s.org.nodes) for (const q of n.posts) { if (q.holder === '安重诲') q.holder = ''; q.others = arr(q.others).filter(h => h !== '安重诲'); }
+      const g0 = repOf(s).guan; s.clock.m = 10; r = court2Monthly(s); o.gone = r.find(x => /安重诲果然去了位/.test(x)) || ''; o.up = repOf(s).guan > g0;
+      // 上司情分坏：早晚穿小鞋，考成吃亏；情分好：给好差事
+      s = await mk(); s.people['刘赞'] = { favor: -30, role: '御史中丞' }; let kc0 = offOf(s).kc, hit = 0; for (let m = 1; m <= 12 && !hit; m++) { s.clock.m = m; s.impeach = { by: 'x' }; if (court2Monthly(s).some(x => /刘赞[^\n]*吃力不讨好/.test(x))) hit = 1; } o.shoe = hit && offOf(s).kc < kc0;
+      s = await mk(); s.people['刘赞'] = { favor: 40, role: '御史中丞' }; kc0 = offOf(s).kc; hit = 0; for (let m = 1; m <= 12 && !hit; m++) { s.clock.m = m; if (court2Monthly(s).some(x => /刘赞[^\n]*露脸的差事/.test(x))) hit = 1; } o.plum = hit && offOf(s).kc > kc0;
+      // 得罪过的人参你：接进原有的被弹劾
+      s = await mk(); s.people['范延光'] = { favor: -40, role: '枢密使' }; hit = 0; for (let yy = 0; yy < 3 && !hit; yy++) for (let m = 1; m <= 12 && !hit; m++) { s.clock.y = 930; s.clock.m = m; c2Of(s).ym = null; s.turn = yy * 12 + m; court2Monthly(s); if (s.impeach && s.impeach.by === '范延光') hit = 1; } o.foe = hit;
+      // 官声好、没有靠山：有人来拉；页面上有应下、婉拒，真点应下就有了靠山
+      s = await mk(); repOf(s).guan = 70; hit = 0; for (let t = 1; t <= 40 && !hit; t++) { s.turn = t; s.clock.m = (t % 12) + 1; c2Of(s).ym = null; court2Monthly(s); if (c2Of(s).offer) hit = 1; } o.offer = hit ? c2Of(s).offer.from : '';
+      store.save = async () => {}; S = s; VIEW = 'game'; SIDE_FOLD = false; TAB = 'court'; ORGMSG = ''; render0();
+    } finally { callClaude = oc; }
+    return o; });
+  if (w.early) bad.push('离去位还有一年多，四月就有风声了'); if (!/风传[^\n]*安重诲/.test(w.rumor) || !w.seen) bad.push('要去位的人，朝中没有风声：' + w.rumor);
+  if (!w.gone || !w.up) bad.push('弹过的人真去了位，没算你有先见：' + JSON.stringify([w.gone, w.up]));
+  if (!w.shoe) bad.push('上司恼你，一年里没穿小鞋或考成没动'); if (!w.plum) bad.push('上司看重你，一年里没给好差事或考成没动');
+  if (!w.foe) bad.push('得罪了枢密使，三年里他没参你'); if (!w.offer) bad.push('官声好、没有靠山，三年里没人来拉');
+  if (w.offer) { let tt = await txt(); if (!/遣人来递话/.test(tt)) bad.push('有人来拉，页面上没摆出来'); await p.click('[data-c2="take"]'); const pt = await p.evaluate(() => [c2Of(S).patron, c2Of(S).offer]); if (pt[0] !== w.offer || pt[1]) bad.push('点了应下没成靠山：' + JSON.stringify(pt)); }
   // 没官身的不能弹劾；看不到朝局的人没有这张卡
   const a4 = await p.evaluate(() => { const s = newSave({ name: '王二', gender: '男', age: 24, role: '洛阳城外的佃户', gregorianYear: 930, month: 6, day: 1, place: '洛阳', polity: '后唐' }); return courtGameHtml(s); });
   if (a4) bad.push('佃户也有朝局态势');

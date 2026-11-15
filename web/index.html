@@ -1700,7 +1700,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261115052718';
+const BUILD = '20261115233606';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2433,6 +2433,9 @@ function c2Note(s, t) { const C = c2Of(s); C.log = arr(C.log).concat([{ when: ti
 const C2_ACTS = { visit: '拜谒', gift: '送礼', ask: '打听', join: '投门下', accuse: '弹劾' };
 /** 走动一回。回一句话摆给玩家看；全由程序算 */
 function courtAct2(s, name, act) {
+  if (s && s.court2 && s.court2.offer && (act === 'take' || act === 'decline')) { const C = s.court2, of = C.offer; C.offer = null;
+    if (act === 'take') { const old = C.patron; C.patron = of.from; C.patronSince = Math.floor(ymOf(s.clock)); c2SetFavor(s, of.from, 12, '应了他的招揽', of.office); if (old && old !== of.from) c2SetFavor(s, old, -15, '改投了别人门下', ''); return c2Note(s, `应了${of.office}${of.from}的话，从此算他门下的人：他得势你沾光，他失势你也跑不了`); }
+    c2SetFavor(s, of.from, -6, '婉拒了他的招揽', of.office); return c2Note(s, `婉拒了${of.office}${of.from}：话说得客气，他脸上还是有些下不来`); }
   if (!s || !s.org || !C2_ACTS[act]) return '';
   const F = c2Figures(s).find(x => x.name === name); if (!F) return '朝中眼下没有这个人';
   const C = c2Of(s), ym = Math.floor(ymOf(s.clock)), gap = F.w - c2Me(s), R = repOf(s), u = (s.money || {}).unit || '';
@@ -2485,6 +2488,39 @@ function court2Monthly(s) {
   if (C.patron) { const q = findPost(s, C.patron), o = c2Outlook(s, C.patron), y = (s.clock || {}).y;
     if (!q || (o.kind === 'fall' && o.y < y)) { R.guan = Math.max(0, R.guan - 10); const nm = C.patron; C.patron = ''; out.push(c2Note(s, `${nm}去了位。你是他门下的人，朝中侧目，往日巴结你的也躲着走（官声跌了）`)); }
     else if (R.guan < 70 && ym % 3 === 0) R.guan += 1; }
+  for (const t of court2World(s, ym)) out.push(t);
+  return out;
+}
+/** 朝中的人自己动（R-240 第二步）：不等玩家出手。上司照情分给好差事或穿小鞋（动考成）；你得罪过的人找机会参你（接进原有的被弹劾：自辩、认罪、托人说情）；
+ *  位子要动的人，朝中先有风声、连谁来接都有人说（照朝廷数据）；他真去了位，你早先弹过他的算有先见、跟他走得近的受冷落；你官声好又没有靠山，会有人来拉你。一个月最多出两件 */
+function court2World(s, ym) {
+  const C = c2Of(s), R = repOf(s), F = c2Figures(s), y = (s.clock || {}).y, m = (s.clock || {}).m || 1, out = [], officer = isOfficer(s), O = offOf(s);
+  const roll = k => seeded(ym * 17 + k * 131 + (s.turn || 0) * 3);
+  C.seenFall = C.seenFall || {}; C.gone = C.gone || {};
+  // 一、去了位的：早先有过风声、或你跟他有过来往的，说一声，算后账
+  for (const n of Object.keys(C.seenFall)) { if (C.gone[n] || findPost(s, n)) continue; C.gone[n] = ym;
+    const accused = arr(C.cases).some(c => c.target === n), fv = c2Favor(s, n);
+    if (accused) { R.guan = Math.min(100, R.guan + 4); out.push(c2Note(s, `${n}果然去了位。你早先上章弹过他，朝中都说你有先见（官声涨了）`)); }
+    else if (fv >= 30 && C.patron !== n) { R.guan = Math.max(0, R.guan - 3); out.push(c2Note(s, `${n}去了位。你平日跟他走得近，如今有人拿这个说话（官声跌了）`)); }
+    else out.push(c2Note(s, `${n}去了位`)); }
+  // 二、位子要动的：这一年里朝中先有风声（照朝廷数据），连接手的人都有人说
+  if (out.length < 2 && (m === 4 || m === 9)) for (const f of F) { if (f.fict || C.seenFall[f.name]) continue; const o = c2Outlook(s, f.name); if (o.kind !== 'fall' || o.y > y + (m === 9 ? 1 : 0)) continue;
+    C.seenFall[f.name] = ym; let heir = '';
+    try { const cd = courtDataFor(s, y), me = arr(cd.D.people).find(x => x.name === f.name), cur = arr(me.posts).filter(q => q.from <= y && q.to >= y).pop(); const nx = arr(cd.D.people).find(x => x.name !== f.name && arr(x.posts).some(q => q.seat === cur.seat && q.from >= cur.to && q.from <= cur.to + 1)); if (nx) heir = nx.name; } catch (_) { heir = ''; }
+    out.push(c2Note(s, `朝中风传：有人要动${f.office}${f.name}${heir ? `，都说接他位子的是${heir}` : ''}`)); break; }
+  if (!officer) return out;
+  // 三、上司：情分好给好差事，情分坏穿小鞋——动的是考成
+  const sup = F.find(f => f.near);
+  if (sup && out.length < 2) { const fv = c2Favor(s, sup.name);
+    if (fv >= 20 && roll(1) < 0.35) { O.kc = Math.min(100, (num(O.kc) || 50) + 3); out.push(c2Note(s, `${sup.office}${sup.name}把一件露脸的差事派给了你（考成有利）`)); }
+    else if (fv <= -15 && roll(2) < 0.45) { O.kc = Math.max(0, (num(O.kc) || 50) - 5); out.push(c2Note(s, `${sup.office}${sup.name}把一件吃力不讨好的差事压到你头上，办得稍慢就当众申斥（考成吃亏）`)); } }
+  // 四、你得罪过的人：找机会参你（有靠山的少挨）——接进原有的被弹劾
+  if (!s.impeach && out.length < 2) { const foe = F.filter(f => c2Favor(s, f.name) <= -25).sort((a, b) => b.w - a.w)[0];
+    if (foe && roll(3) < (C.patron ? 0.1 : 0.28)) { s.impeach = { by: foe.name, charge: (num(O.graft) || 0) > 0 || (num(O.bad) || 0) > 0 ? '贪墨' : (num(O.kc) || 50) < 40 ? '庸懦误事' : '结党营私', ym }; out.push(c2Note(s, `${foe.office}${foe.name}使人上章参你${C.patron ? `（${C.patron}替你挡了几回，这回没挡住）` : ''}：罪名在「局面」页，要自辩、认罪还是托人说情，你拿主意`)); } }
+  // 五、官声好又没有靠山：有人来拉你
+  if (!C.patron && !C.offer && R.guan >= 55 && out.length < 2 && roll(4) < 0.22) { const who = F.filter(f => !f.fict && f.w - c2Me(s) >= 2 && c2Outlook(s, f.name).kind !== 'fall' && c2Favor(s, f.name) > -15).sort((a, b) => b.w - a.w)[Math.floor(roll(5) * 3) % 3] || null;
+    if (who) { C.offer = { from: who.name, office: who.office, ym }; out.push(c2Note(s, `${who.office}${who.name}遣门客来递话：听说你办事得力，想请你常到他府上走动（去不去在「朝局」页拿主意）`)); } }
+  if (C.offer && ym - C.offer.ym >= 3) { c2SetFavor(s, C.offer.from, -4, '递的话没有回音', C.offer.office); C.offer = null; }
   return out;
 }
 /** 给写戏的：朝中的走动（程序记的账） */
@@ -2508,6 +2544,7 @@ function courtGameHtml(s) {
   return `<div class="h" style="margin-top:6px"><span class="seal">势</span>朝局态势<span class="note">这个月还能走动 ${left} 回</span></div>
     <div class="muted" style="font-size:12px">拜谒、送礼攒情分；打听他的位子稳不稳；情分够了可以投在门下，他得势你沾光、他倒了你受牵连；有官身可以上章弹劾，下个月见分晓。</div>
     <div class="pl" style="font-size:13px">${ruler ? `<span>在位</span>${esc(ruler)}　` : ''}<span>你的官声</span>${Math.round(R.guan)}${C.patron ? `　<span>靠山</span>${esc(C.patron)}` : '　<span>靠山</span>没有'}${op ? `　<span>弹章</span>弹${esc(op.target)}，等分晓` : ''}</div>
+    ${C.offer ? `<div class="plan" style="border-left-color:#8a6d1d"><div class="ph"><b>${esc(C.offer.office)}${esc(C.offer.from)}遣人来递话</b></div><div class="muted" style="font-size:12px">想请你常到他府上走动——应下就是他门下的人了</div><div class="opost"><button class="link" data-c2="take" data-n="${esc(C.offer.from)}">应下</button><button class="link" data-c2="decline" data-n="${esc(C.offer.from)}">婉拒</button></div></div>` : ''}
     ${rows || '<div class="muted">朝中的人还没有理出来</div>'}
     ${lg.length ? `<div class="list" style="margin-top:4px">${lg.map(x => `<div class="muted">${esc(x.when || '')}　${esc(x.t)}</div>`).join('')}</div>` : ''}`;
 }
@@ -2633,7 +2670,7 @@ async function callClaude(input, onReply, extra, tier) {
   // 要紧的一步（打仗、任免、婚丧、谋划这类，话长的）裁定和写正文照旧用原型号、可以深想——项目主人后来定：平常一步往一毛靠，要紧的一步可到三毛
   // 再后来定（2026-11-15）：「不用那省钱，3毛到一毛一次交互，平均在两毛就好」——写正文、改稿一直用原型号（快型号会顺着玩家的话编出账上没有的东西），只是平常的一步不深想；裁定只在要紧的一步用原型号、深想；其余（记账、审稿、后台）都用快型号
   if (DSM() && econTight()) { const heavy = heavyStep(S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : '');
-    if (/^(写戏|改稿)$/.test(kind)) { if (!heavy) extra = { ...extra, thinking: false }; }
+    if (kind === '写戏' || (kind === '改稿' && heavy)) { if (!heavy) extra = { ...extra, thinking: false }; }   // 平常一步的改稿用快型号：真模型第九轮，初稿加改稿两次都用原型号，一回就两毛多
     else if (!(kind === '裁定' && heavy)) extra = { ...extra, fast: true, thinking: false }; }
   if (DSM() && plain && extra && extra.temperature > 1.0) extra = { ...extra, temperature: 1.0 };
   // 分工：这一件交给 GLM 还是 DeepSeek（需求台账 R-135）；GLM 出错（不是玩家停下）自动退回 DeepSeek 再来一次
