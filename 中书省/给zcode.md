@@ -56,3 +56,8 @@ git add -A && git commit -m "任务N 进展：<做了什么>" && git push -u ori
 ## 五、都做完了
 
 回一句「zcode：差事单上的活都交了」，停下。下次被叫起来，先 `git pull` 再看这张单子有没有新活。
+
+
+## 2026-11-15 新规矩
+- 朝廷数据只改 `scripts/court_supplement/wudai-zcode.json`（补充文件），不直接改 `web/court/wudai.json`（生成出来的）。改完跑 `python3 -I scripts/build_court_wudai.py`、`node web/tests/court_data.js`。
+- 新活：世情库并集，见 `中书省/问答/答复.md` 2026-11-15 10:40 那条，分支 `zcode/task-9-union`。
