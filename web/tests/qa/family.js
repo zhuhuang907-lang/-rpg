@@ -11,7 +11,7 @@ const { chromium } = require('playwright');
     await p.waitForFunction(([n, t]) => (S.turn || 0) > t || S.chat.slice(n).some(c => c.role === 'gm' && (c.extra || {}).salvaged), [n0, t0], { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没回话：' + t)); await idle(); };
   const inc0 = await p.evaluate(() => arr(S.estate.income).length);
   // 假 AI 约一成的账故意写坏（截断、包代码块），那一回的家室那栏可能整个丢了：没进家室就再说一遍，第二回还不进才算错
-  const again = async (t, ok, why) => { await turn(t); if (!(await p.evaluate(ok))) { console.log(why + '（假 AI 这回的账多半写坏了），再说一遍'); await turn(t); } };
+  const again = async (t, ok, why) => { await turn(t); if (!(await p.evaluate(ok))) { console.log(why + '（假 AI 这回的账多半写坏了），再说一遍', JSON.stringify(await p.evaluate(() => { const c = S.chat[S.chat.length - 1] || {}; return { turn: S.turn, salv: !!(c.extra || {}).salvaged, lite: S.ledgerFullAt, unb: arr(S.unbooked).slice(-3).map(x => x.text), hh: S.household.map(m => m.relation + m.name), err: arr(S.errLog || S.errs).slice(-3) }; }))); await turn(t); } };
   await again('纳柳氏为妾', () => S.household.some(m => /^柳/.test(m.name || '') && m.relation === '妾'), '妾没进家室');
   const st1 = await p.evaluate(() => ({ hh: S.household.map(m => m.relation + m.name), al: S.household.filter(m => m.alias === '柳氏').map(m => m.name), inc: S.estate.income.map(x => x.item), exp: S.estate.expense.length }));
   if (!st1.hh.some(h => /^妾柳(?!氏)/.test(h) && h !== '妾柳氏素娥' && h !== '妾柳素娥')) bad('纳的妾没进家室：' + JSON.stringify(st1.hh));
