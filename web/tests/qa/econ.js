@@ -30,9 +30,33 @@ const path = require('path');
     const s = newSave({ name: '胡大彪', gender: '男', age: 38, role: '曹州府菏泽县境内山寨寨主', gregorianYear: 1813, month: 9, day: 15, place: '菏泽', polity: '清' });
     const c1 = econCtx(s, '找二当家来商量'), c2 = econCtx(s, '写一道公文给知府'), c3 = econCtx(s, '带人下山设伏');
     if (c1.official || c1.adm || !c2.adm || !c3.mil) bad.push('话题、身份认错了：' + JSON.stringify([c1, c2, c3]));
-    // 关掉就不裁
-    SETTINGS.econ = false; try { if (econTrim(mat, s, '找二当家') !== mat) bad.push('关了还在裁'); } finally { delete SETTINGS.econ; }
-    if (econTrim(mat, s, '找二当家').length >= mat.length) bad.push('默认没开');
+    // 省钱版是唯一版本：没有开关，设置里写了 econ=false 也照样裁（2026-11-15 项目主人：「不要什么开省钱版，只要省钱版」）
+    SETTINGS.econ = false; try { if (econTrim(mat, s, '找二当家').length >= mat.length) bad.push('还留着关掉省钱的开关'); } finally { delete SETTINGS.econ; }
+    if (econTrim(mat, s, '找二当家').length >= mat.length) bad.push('默认没省');
+    if (/省钱|省 token|econ/i.test((document.body.innerText || '') + (typeof settingsHtml === 'function' ? settingsHtml() : ''))) bad.push('界面上出现了省钱开关');
+    // 第二刀：平常的一步用短记账单，大事、隔五回用全套
+    s.turn = 6; s.ledgerFullAt = 5;
+    const story = '你叫人请来二当家，两人在聚义厅坐下说话。二当家点头称是。'.repeat(20);
+    if (!ledgerLiteOk(s, '找二当家来商量以后怎么办', story, null)) bad.push('平常的一步没用短记账单');
+    const lite = ledgerInput(s, '找二当家来商量以后怎么办', story, '', 'step', null), full0 = (() => { s.turn = 6; s.ledgerFullAt = 0; return ledgerInput(s, '找二当家来商量以后怎么办', story, '', 'step', null); })();
+    if (!(lite.length < full0.length * 0.6)) bad.push('短记账单不够短：' + lite.length + ' / ' + full0.length);
+    for (const k of ['elapsedDays', 'ledger', 'presentNpcs', 'actResults', 'orders', 'turnSummary']) if (!lite.includes('"' + k + '"')) bad.push('短记账单缺了 ' + k);
+    if (/"identity"|"household"|"forces"|"estate"/.test(lite)) bad.push('短记账单还带着大事的字段');
+    if (s.ledgerFullAt !== 6) bad.push('全套记账后没记下是哪一回');
+    s.turn = 7;
+    if (ledgerLiteOk(s, '托媒人去柳家议亲', story, null)) bad.push('议亲还用短单');
+    if (ledgerLiteOk(s, '在家歇着', story + '老母亲夜里病故了。', null)) bad.push('正文里有人死了还用短单');
+    if (ledgerLiteOk(s, '走', story, { battleResult: {} })) bad.push('打了仗还用短单');
+    s.ledgerFullAt = 1; if (ledgerLiteOk(s, '在家歇着', story, null)) bad.push('隔了五回还不用全套');
+    s.ledgerFullAt = 6; s.turn = 1; if (ledgerLiteOk(s, '在家歇着', story, null)) bad.push('头一回就用短单');
+    // 第三刀：同一回的几次调用，一字不差的材料块排在最前、次序相同；不增不减
+    s.turn = 8; const A = '【此刻】' + '甲'.repeat(300), B = '【人物（以此为准）】' + '乙'.repeat(400), C = '【家业账】' + '丙'.repeat(300);
+    const r1 = cacheOrder('判断的规矩' + '规'.repeat(5000) + '\n' + A + '\n' + B + '\n【玩家这回说】找二当家', s);
+    const r2 = cacheOrder('记账的规矩' + '账'.repeat(5000) + '\n' + C + '\n' + B + '\n' + A + '\n【玩家这回说】找二当家\n【这一回的正文】' + '正'.repeat(300), s);
+    if (!r1.startsWith(A + '\n' + B) || !r2.startsWith(A + '\n' + B)) bad.push('相同的材料没排在最前、次序不一');
+    const sortc = x => x.replace(/\n/g, '').split('').sort().join('');
+    if (sortc(r2) !== sortc('记账的规矩' + '账'.repeat(5000) + '\n' + C + '\n' + B + '\n' + A + '\n【玩家这回说】找二当家\n【这一回的正文】' + '正'.repeat(300) + '\n')) bad.push('换次序时字数变了');
+    if (!/【玩家这回说】找二当家\n【这一回的正文】/.test(r2)) bad.push('玩家的话和正文被拆开了');
     // 不要紧的一步不另请审稿；要紧的照请
     if (!econSkipReview('找二当家来商量以后怎么办', null)) bad.push('不要紧的一步还请审稿');
     if (econSkipReview('带兵攻打曹县县城', null) || econSkipReview('走', { battleResult: {} }) || econSkipReview('托媒人去柳家议亲', null)) bad.push('要紧的一步没请审稿');
