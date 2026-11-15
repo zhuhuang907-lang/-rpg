@@ -1700,7 +1700,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261115113928';
+const BUILD = '20261115131856';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -16810,7 +16810,7 @@ function bgJobs(s0, d, g) {
     { id: 'pack', msg: '联网整理这几年的史料', due: () => packNeed(s0), run: () => ensureHistPack(s0) },
     { id: 'sync', msg: '按月联网同步此刻前后的史事', due: () => syncNeed(s0), run: () => ensureSync(s0) },
     { id: 'world', msg: '看天下大势的走向', due: () => d && SETTINGS.world !== false && needTick(s0, d), run: async () => { s0.fateTick = false; const r = await worldTick(s0); if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }, ex: true, needs: ['sync', 'pack'] },
-    { id: 'gaz', msg: '查这地方此时的样子（本地志）', due: () => needGaz(s0), run: () => buildGazetteer(s0), ex: true },
+    { id: 'gaz', msg: '查这地方此时的样子（本地志）', due: () => needGaz(s0), run: () => buildGazetteer(s0), free: true },
     { id: 'adm', msg: '联网查这一年的政区（政权、省、府州，本省到县）', due: () => admDue(s0), run: () => buildAdmin(s0).catch(e => { s0.admFail = s0.turn; throw e; }) },
     { id: 'realmfix', msg: '照史料立国势：国库、太仓、兵额、各州户口兵粮、各支兵马', due: () => realmFixDue(s0), run: () => buildRealm(s0).catch(e => { s0.rfFail = s0.turn; throw e; }), ex: true },
     { id: 'realmest', msg: '照史料推这一年天下各家的兵力和对你的态度', due: () => realmEstDue(s0), run: () => realmEstimate(s0).catch(e => { s0.reFail = s0.turn; throw e; }) },
@@ -16854,7 +16854,7 @@ function bgJobs(s0, d, g) {
     { id: 'ut', msg: '照本朝兵制核定兵种', due: () => utDue(s0), run: () => buildUnitTypes(s0).catch(e => { s0.utFail = s0.turn; throw e; }) },
     { id: 'facts', msg: '提前梳理这一年此地的史实和数目', due: () => factDue(s0), run: () => buildFacts(s0).catch(e => { s0.factFail = s0.turn; throw e; }) },
     { id: 'promo', msg: '联网查本朝升迁之制', due: () => promoDue(s0, ''), run: () => ensurePromo(s0).catch(e => { s0.promoFail = s0.turn; throw e; }) },
-    { id: 'geo', msg: '查历史地名库、画县级地图', due: () => needGeo(s0), run: () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties), needs: ['gaz'], ex: true },   /* 人到了新地方地图当回就换（R-239 每回只做一件后，地图被本地志占了份额、晚一回才换——完整测试查出）；只在换地方时做，不常有 */
+    { id: 'geo', msg: '查历史地名库、画县级地图', due: () => needGeo(s0), run: () => ensureGeo(s0, s0.gazetteer && s0.gazetteer.counties), needs: ['gaz'], free: true },   /* free：不占「后台每回只做一件」的份额（不是 ex：ex 是和记账写同一处、记账要等它的）。人到了新地方地图当回就换（R-239 后地图被本地志占了份额、晚一回才换——完整测试查出）；只在换地方时做，不常有 */
   ];
 }
 let BG_CTX = null, BG_AGAIN = false;
@@ -16875,8 +16875,8 @@ async function afterTurnPool(s0) {
   const blocked = (j, L) => arr(j.needs).some(n => { if (BG_RUN.has(n)) return true; const x = L.find(y => y.id === n); return !!x && !tried.has(n) && due(x); });
   // 省着用（R-239）：开局查齐以后，后台每回合只做一件（和记账写同一处的不限）；天下大势隔四回才看一次；排不上的下回再做
   const tight = s0.settledAt != null;
-  const okEcon = j => !tight || j.ex || (j.id === 'world' ? (s0.turn || 0) - (num(s0.econWorldAt) || -9) >= 4 : true);
-  const pick = () => { const L = bgJobs(s0, BG_CTX.d, BG_CTX.g); const j = L.find(j => !tried.has(j.id) && !BG_RUN.has(j.id) && due(j) && !blocked(j, L) && okEcon(j)); if (!j) return null; if (tight && !j.ex && !econQuota(s0, 'bg', 1)) return L.find(x => x.ex && !tried.has(x.id) && !BG_RUN.has(x.id) && due(x) && !blocked(x, L)) || null; if (j.id === 'world') s0.econWorldAt = s0.turn || 0; return j; };
+  const okEcon = j => !tight || j.ex || j.free || (j.id === 'world' ? (s0.turn || 0) - (num(s0.econWorldAt) || -9) >= 4 : true);
+  const pick = () => { const L = bgJobs(s0, BG_CTX.d, BG_CTX.g); const j = L.find(j => !tried.has(j.id) && !BG_RUN.has(j.id) && due(j) && !blocked(j, L) && okEcon(j)); if (!j) return null; if (tight && !j.ex && !j.free && !econQuota(s0, 'bg', 1)) return L.find(x => (x.ex || x.free) && !tried.has(x.id) && !BG_RUN.has(x.id) && due(x) && !blocked(x, L)) || null; if (j.id === 'world') s0.econWorldAt = s0.turn || 0; return j; };
 const worker = async () => {
     let lastSave = 0;
     for (;;) {
