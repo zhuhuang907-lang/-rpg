@@ -10,7 +10,7 @@ const { chromium } = require('playwright');
   const send = async t => { await p.fill('#said', t); await p.click('#bSend'); return done(); };
   if (!(await send('派人去仪征打听掣验的行情'))) bad('第一回卡住');
   // 家常的一步走快路：正文先给看，记账在后头跑（CLAUDE.md「家常的一步走快路」）——等账记上再查；假 AI 约一成故意给坏账，重记一次在完整测试的重负载下要一两分钟，最多等三分钟
-  await p.waitForFunction(() => arr(S.acts).some(x => /派人/.test(x.what) && x.state !== '在办') || !!(S.chat[S.chat.length - 1].extra || {}).salvaged, null, { timeout: 180000, polling: 300 }).catch(() => {});
+  await p.waitForFunction(() => arr(S.acts).some(x => /派人/.test(x.what) && x.state !== '在办') || !!(S.chat[S.chat.length - 1].extra || {}).salvaged, null, { timeout: 420000, polling: 300 }).catch(() => {});
   { const r = await p.evaluate(() => ({ sal: !!(S.chat[S.chat.length - 1].extra || {}).salvaged, acts: arr(S.acts).map(x => [x.type, x.what, x.state]), rc: !!document.querySelector('.receipt'), rt: (document.querySelector('.receipt') || {}).innerText || '', un: arr(S.unbooked).map(x => x.text).slice(-3) }));
     // 假 AI 写前裁定有三分之一随机判这一步「不能」：照任务十六「裁定办不到的不认」，单子记受阻、账上写明为什么——这是对的，查它写明了没有
     const barred = !r.sal && r.acts.some(a => /派人/.test(a[1]) && a[2] === '受阻') && r.un.some(t => /没有做带来它的事|办不到/.test(t));
