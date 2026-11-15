@@ -89,6 +89,16 @@ const path = require('path');
       if (wrong.length) bad('930 年后唐的任职年表里混进了别国的人：' + wrong.join('、'));
       const sy = newSave({ name: '某子', gender: '男', age: 32, role: '郎官', gregorianYear: 930, month: 3, day: 1, place: '长沙', polity: '楚' });
       const ny = tenureFor(sy, 930).flatMap(t => arr(t.figures).map(f => f.name)); if (!ny.includes('拓跋恒') || !ny.includes('李铎')) bad('930 年楚的任职年表里没有拓跋恒、李铎'); }
+    // 开局身份是官名、开局没另记官职的，照身份落位；任职年表不往核过的位子里添人、不超员（试玩查出：孔循又成了枢密使，监察御史坐五个，主角不在树上）
+    { const sx = newSave({ name: '韩熙', gender: '男', age: 32, role: '监察御史', gregorianYear: 930, month: 3, day: 1, place: '洛阳', polity: '后唐' }); sx.chat = [{ role: 'gm', text: '开场。' }]; if (sx.career) sx.career.office = '';
+      callClaude = async () => ({ text: '{}' }); try { await buildOrg(sx); } finally { callClaude = oc; }
+      courtTable(sx, 930); const P = sx.org.nodes.flatMap(n => n.posts), w = t => { const q = P.find(q => q.title === t) || {}; return [q.holder].concat(arr(q.others)).filter(Boolean); };
+      if (!(findPost(sx, '韩熙') || {}).title) bad.push('开局身份是监察御史，树上却没有主角');
+      if (w('监察御史').length > 4) bad.push('监察御史超员：' + w('监察御史').join('、'));
+      if (w('枢密使').includes('孔循') || w('枢密使').length > 2) bad.push('任职年表往核过的枢密使里添了人：' + w('枢密使').join('、'));
+      const sm = newSave({ name: '韩熙', gender: '男', age: 32, role: '扬州盐商', gregorianYear: 930, month: 3, day: 1, place: '洛阳', polity: '后唐' }); sm.chat = [{ role: 'gm', text: '开场。' }]; if (sm.career) sm.career.office = '';
+      callClaude = async () => ({ text: '{}' }); try { await buildOrg(sm); } finally { callClaude = oc; }
+      if (findPost(sm, '韩熙')) bad.push('盐商被当成官落了位子'); }
     // 南唐 953：冯延巳再度拜相（951 年复相，三上三下），孙晟同在相位
     { const s8 = newSave({ name: '某庚', gender: '男', age: 30, role: '郎官', gregorianYear: 953, month: 3, day: 1, place: '金陵', polity: '南唐' }); s8.chat = [{ role: 'gm', text: '开场。' }];
       callClaude = async () => ({ text: '{}' }); try { await buildOrg(s8); } finally { callClaude = oc; }

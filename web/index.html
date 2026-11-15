@@ -1697,7 +1697,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261115002130';
+const BUILD = '20261115002350';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -3051,7 +3051,16 @@ function courtTable(s, y) {
     /* 同时兼几个官的（侍中、吏部尚书、辅国将军），照新到旧一个个对树上的位子，对上一个就坐 */
     const cands = [...new Set(arr(f.posts).filter(p => p && p[0] <= y && (p[1] == null || p[1] >= y)).map(p => postOnly(String(p[2]).replace(/^.*→/, ''))).filter(Boolean).reverse().concat([post]))];
     let hit = null; for (const c of cands) { const h = matchPost(s, c); if (h && !h[1].byPlayer && !h[1].noGrant) { hit = h; t.post = c; break; } }
-    if (!hit) continue; const [n, q] = hit; seen.add(f.name);
+    if (!hit) continue; const [n, q] = hit;
+    /* 照朝廷数据搭的树（试玩查出：任职年表把孔循又塞进 930 年枢密使、监察御史坐了五个）：宰执这类逐句核过通鉴的位子不再往里添；
+       别的位子满了，年表上的真人顶掉一个补的虚构人，不超员 */
+    if (s.org.court && q.seat) { const cur = [q.holder].concat(arr(q.others)).filter(Boolean);
+      if (cur.includes(f.name)) { seen.add(f.name); t.seated = true; continue; }
+      if (q.noFill) continue;
+      if (cur.length >= (q.quota || 1)) { const fic = cur.find(x => (s.courtWho || {})[x] === '虚构'); if (!fic) continue;
+        if (q.holder === fic) q.holder = f.name; else q.others = arr(q.others).map(x => x === fic ? f.name : x);
+        if (s.courtWho) delete s.courtWho[fic]; seen.add(f.name); t.seated = true; continue; } }
+    seen.add(f.name);
     if (q.holder === f.name || ((q.quota || 1) > 1 && arr(q.others).includes(f.name))) { t.seated = true; if (SEAT_RANK('史书') > SEAT_RANK(q.src)) q.src = '史书'; continue; }
     if ((q.quota || 1) > 1 && q.holder && SEAT_RANK(q.src) >= SEAT_RANK('史书')) { if (cur) { cur.holder = ''; cur.src = ''; } q.others = arr(q.others).concat([f.name]).slice(-6); t.seated = true; continue; }
     if (seatPut(s, n, q, f.name, '史书', { move: true })) t.seated = true;
@@ -4007,7 +4016,9 @@ function courtChkMark(s, name, src) { s.courtChk = s.courtChk || {}; if (src && 
 function seatSelf(s) {
   const me = s.protagonist && s.protagonist.name; if (!me || !s.org || !arr(s.org.nodes).length) return null;
   if (findPost(s, me)) return null;
-  const office = String((s.career || {}).office || ''); if (!office || office.length < 2) return null;
+  /* 开局没记下官职、开局身份本身就是官名的（「监察御史」）：照身份落位（试玩查出：定制开局当监察御史，树上却没有你） */
+  const role0 = String((s.protagonist || {}).role || '').trim();
+  const office = String((s.career || {}).office || '') || (role0.length >= 2 && role0.length <= 12 && /御史|尚书|侍郎|郎中|员外郎|舍人|给事中|学士|大夫|拾遗|补阙|校书|正字|刺史|太守|知府|知州|知县|县令|主簿|县尉|参军|判官|推官|司马|长史|节度使|观察使|团练使|防御使|枢密|宰相|平章事|将军|都指挥使|指挥使/.test(role0) && !/商|民|农|匠|贩|生员|秀才|书生|士子|僧|道士|妓|仆|奴|门客|之子|之女|家人|候补|落第/.test(role0) && !POST_STATUS.test(role0) ? role0 : ''); if (!office || office.length < 2) return null;
   /* 官名古今异称：太守≈知府/知州，同知≈通判，县令≈知县——换几个叫法再找位子 */
   const tries = [office, office.replace(/太守/g, '知府'), office.replace(/太守/g, '知州'), office.replace(/同知/g, '通判'), office.replace(/县令/g, '知县')].filter((x, i, a) => x && a.indexOf(x) === i);
   for (const t of tries) { const m = matchPost(s, t);
@@ -6057,9 +6068,9 @@ function orgFromCourt(s, C) {
     const dept = st.dept || '使府'; let n = byDept[dept]; if (!n) { n = byDept[dept] = { id: 'cd' + (nodes.length), name: dept, depth: 1, parent: 'root', tier: /州|郡|县/.test(dept) ? '地方' : /军/.test(dept) ? '军事' : '中枢', posts: [], path: true, src: '史' }; nodes.push(n); }
     const who = live.filter(o => o.x.some(x => x.seat === st.id)).map(o => ({ name: o.p.name, how: o.x.find(x => x.seat === st.id).how }));
     const q = { title: st.office,   /* 官名写全：原来去掉部门名，「三司使」成了「使」、「崇政院使」成了「使」（试玩查出） */
-      rank: st.rank || '', quota: st.quota || 1, holder: '', src: '', others: [], seat: st.id };
+      rank: st.rank || '', quota: st.quota || 1, holder: '', src: '', others: [], seat: st.id, noFill: !!st.noFill };
     who.forEach((w, i) => { s.courtWho[w.name] = w.how === '推定' ? '推定' : '明载'; if (i === 0) { q.holder = w.name; q.src = '史书'; } else q.others.push(w.name);
-      s.people = s.people || {}; if (!s.people[w.name]) s.people[w.name] = { name: w.name, role: P.name + (st.office.replace(n.name, '') || st.office), seen: 0, court: true, real: true }; });
+      s.people = s.people || {}; if (!s.people[w.name]) s.people[w.name] = { name: w.name, role: P.name + st.office, seen: 0, court: true, real: true }; });
     if (st.noFill && !q.holder) q.status = '出缺';   /* 宰执、枢密这类大官史书这年没载在任者：空着，不补虚构人 */
     for (let k = (q.holder ? 1 + q.others.length : 0); !st.noFill && k < q.quota && k < 4; k++) {   // 史书没留名的：照用人来路补，种子定死
       const key = P.name + '|' + st.id + '|' + st.from + '|' + k; let F = s.courtFixed[key];
