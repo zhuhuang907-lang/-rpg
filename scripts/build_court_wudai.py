@@ -257,6 +257,13 @@ if _sup.exists():
                 for x, z in sorted([o for o in on if o[1]['how'] == '推定'], key=lambda o: o[1]['from'])[:len(on) - q.get('quota', 1)]:
                     z['to'] = y - 1
             for x in out['people']: x['posts'] = [z for z in x['posts'] if z['to'] >= z['from']]
+    # 同一人同一国两个位子重了年份：推定的前一任到后一任上任前一年（刘赞 927—930 中书舍人推定，930 起御史中丞）
+    for x in out['people']:
+        P = sorted(x['posts'], key=lambda z: z['from'])
+        for i, z in enumerate(P):
+            nx = [w for w in P[i + 1:] if w['polity'] == z['polity'] and w['seat'] != z['seat'] and w['from'] > z['from'] and w['from'] <= z['to']]
+            if nx and z['how'] == '推定': z['to'] = min(w['from'] for w in nx) - 1
+        x['posts'] = [z for z in x['posts'] if z['to'] >= z['from']]
 (ROOT / 'web' / 'court').mkdir(exist_ok=True)
 json.dump(out, open(ROOT / 'web' / 'court' / 'wudai.json', 'w', encoding='utf8'), ensure_ascii=False, indent=1)
 print('荆南位子', len(JINGNAN['seats']), '后唐位子', len(HOUTANG['seats']), '人', len(PEOPLE), '其中推定条目', sum(1 for p in PEOPLE for x in p['posts'] if x['how'] == '推定'))

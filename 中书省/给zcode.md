@@ -56,3 +56,14 @@ git add -A && git commit -m "任务N 进展：<做了什么>" && git push -u ori
 ## 五、都做完了
 
 回一句「zcode：差事单上的活都交了」，停下。下次被叫起来，先 `git pull` 再看这张单子有没有新活。
+
+
+## 2026-11-15 新规矩
+- 朝廷数据只改 `scripts/court_supplement/wudai-zcode.json`（补充文件），不直接改 `web/court/wudai.json`（生成出来的）。改完跑 `python3 -I scripts/build_court_wudai.py`、`node web/tests/court_data.js`。
+- ~~世情库并集~~（宰相已改派自办，2026-11-15 15:30 并好，不用做了）。
+
+## 2026-11-15 18:30 新排的活（照顺序做，一件一个分支，交了在问答里说一声）
+1. **任务十四续·汉末三国世事库**（分支 `zcode/task-14-sanguo`）：照 `web/events/wudai.json` 的格式，做 `web/events/sanguo.json`（168—280），三百件以上、十五类以上，每件带可核出处（正史卷次）；同时做 `web/vocab/sanguo.json` 错词表（这年代没有的说法，照 `web/vocab/wudai.json` 格式，一百五十条以上）。交前跑 `python3 -I scripts/plan_metrics.py` 看「世事库」那行够三百件、全合格。
+2. **任务十四续·两晋十六国、南北朝世事库**（分支 `zcode/task-14-jinnanbei`）：同上，`web/events/jin16.json`（290—439）、`web/events/nanbei.json`（439—581），各三百件以上，各配错词表。
+3. **任务十四续·唐末世事库**（分支 `zcode/task-14-tangmo`）：同上，`web/events/tangmo.json`（712—907），三百件以上，配错词表。
+- 规矩照旧：先 `git merge origin/claude/staging`；不碰 `web/game.src.html`；出处写书名卷次；不写「某、不详、待查」。

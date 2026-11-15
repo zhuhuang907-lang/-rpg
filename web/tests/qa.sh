@@ -39,6 +39,7 @@ FP0=$(bash "$ROOT/scripts/fingerprint.sh")   # 这一轮测的是哪一份源码
 say "提示词护栏"; node "$ROOT/web/tests/prompt_guard.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "提示词护栏"
 say "规则回归"; node "$ROOT/web/tests/rules_regress.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "规则回归"
 say "五代十国朝廷数据（任务六）"; node "$ROOT/web/tests/court_data.js" | tail -1; [ ${PIPESTATUS[0]} -eq 0 ] || bad "五代十国朝廷数据"
+say "时代世情库（任务九、十二）"; node "$ROOT/web/tests/roles_data.js" | head -5; [ ${PIPESTATUS[0]} -eq 0 ] || bad "时代世情库数据"
 say "江山时序：本机服务替玩家下到 data/cache/jiangshan、只认两个文件、不是地图数据不收、下过不再下"; JS=$(node "$ROOT/web/tests/jsmapsrv.js" 2>&1 | tail -1); echo "$JS"; echo "$JS" | grep -q "ERRS \[\]" || bad "江山时序下载"
 say "历史原文库：65 本在库、按书检索真语料带出处、非法书号安全跳过"; CS=$(cd "$ROOT" && node "$ROOT/web/tests/qa/citesrv.js" 2>&1 | tail -1); echo "$CS"; echo "$CS" | grep -q "ERRS \[\]" || bad "历史原文库"
 say "端口被占：别的程序占着往后挪、游戏已经开着不另开"; PF=$(node "$ROOT/web/tests/portfallback.js" 2>&1 | tail -1); echo "$PF"; echo "$PF" | grep -q "ERRS \[\]" || bad "端口被占"
@@ -134,6 +135,8 @@ start ai.js && {
   run "南北朝、隋唐前期君主年号：君主照正史、年号照哈佛库年号表，换君改元同年归对人；只有君主年号的表不挡联网自建史事；东魏开局年号是武定（R-226）" 120 env PLAY="$ROOT/web/play.html" node rulers2.js
   run "五代十国朝廷照数据排：荆南小国十几个位子，明载、推定的人坐原位，空位照用人来路补人、标虚构、不与真人重名、重开同一人；南平也认（任务七，R-227）" 150 env PLAY="$ROOT/web/play.html" node wudai_court.js
   run "家里人不许叫「某」：开局、记账带进来的「韩某」照制度起名，男丁随主角的姓，族谱页看不到「某」（试玩查出）" 120 env PLAY="$ROOT/web/play.html" node kinname.js
+  run "游戏读时代世情库：主角此刻沾着的活法当写戏材料（930 牙兵认出牙兵），称呼里的某换成〔姓〕，库里没有的年代、自编的行当照旧走不拦（任务十二）" 120 env PLAY="$ROOT/web/play.html" node ways.js
+  run "随时改行接得上账：930 后唐连转五次（农家子→投军→落草→招安镇将→入朝→自立），现钱、家产、债、兵、仇家兄弟照旧带着走（任务十二，R-232）" 150 env PLAY="$ROOT/web/play.html" node careerchain.js
   run "官员名录也照任职年表和朝廷数据：明 1625 年表上的户部尚书、荆南 926 年高季兴高从诲进名录，模型不给人也有；真点人物页看得到（R-225、R-227）" 150 env PLAY="$ROOT/web/play.html" node rostertable.js
   run "错词表进写戏：后唐正文写了总兵、衙役这类这时还没有的说法打回并给当时说法，两可今义词不打回，明朝的总兵不算错（任务十五、十七，R-233）" 120 env PLAY="$ROOT/web/play.html" node eravocab.js
   run "兵力虚实：敌军只给估计（传闻虚张、给范围），真点派探子探准，探报一年就旧；自己直接统的兵照实数（任务三，R-221）" 150 env PLAY="$ROOT/web/play.html" node troopfog.js

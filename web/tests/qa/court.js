@@ -58,9 +58,9 @@ const { chromium } = require('playwright');
   // 势力页：别家的兵马不算「你的兵马」
   { const fz = await p.evaluate(() => { const k = S.forces; S.forces = [{ name: '亲军', leader: S.protagonist.name, troops: '3000', at: '京师' }, { name: '准噶尔骑兵', leader: '阿睦尔撒纳', owner: '准噶尔', troops: '20000', at: '伊犁' }]; S.powers = arr(S.powers).concat([{ name: '准噶尔', leader: '阿睦尔撒纳' }]); TAB = 'power'; render(); const t = document.body.innerText; S.forces = k; S.powers = S.powers.filter(x => x.name !== '准噶尔'); TAB = 'court'; render(); return { mine: /你能调的总兵力 3,000人/.test(t), other: /别家的兵马/.test(t) }; });
     if (!fz.mine || !fz.other) bad('势力页把别家的兵马算成你的：' + JSON.stringify(fz)); }
-  // 人事树先填真人：史料里这一年在任的（杨应琚 1757 年陕甘总督）换掉虚构的
+  // 人事树先填真人：史料里这一年在任的（1757 年陕甘总督黄廷桂；杨应琚 1759 年才接，任务四照清史稿卷170、卷12 核正）换掉虚构的
   { const fr = await p.evaluate(() => { S.org.nodes.push({ id: 'T1', name: '陕甘总督衙门', tier: '地方', parent: 'root', depth: 1, posts: [{ title: '陕甘总督', holder: '王守成', src: '拟', quota: 1 }] }); orgFillReal(S); const q = S.org.nodes.find(n => n.id === 'T1').posts[0]; return { h: q.holder, src: q.src, fake: fictionSet(S).has(q.holder) }; });
-    if (fr.h !== '杨应琚' || fr.fake) bad('史料里有在任的真人，人事树上还是虚构的：' + JSON.stringify(fr)); }
+    if (fr.h !== '黄廷桂' || fr.fake) bad('史料里有在任的真人，人事树上还是虚构的：' + JSON.stringify(fr)); }
   // 人选只能是开科、招贤来的人、身边的门客幕僚、已在官的人；凭空写个名字不行；开科取的下一回才到；真人照真实处境肯不肯来（王猛不会给别人当官）
   { const tl = await p.evaluate(async () => { const n = S.org.nodes.find(x => x.id === 'A2'); const r = {}; ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: '张三丰' }); r.free = ORGMSG;
       S.examDone = []; S.talent = { y: S.clock.y, list: arr(S.talent && S.talent.list).filter(t => t.name !== '蔡以台') }; S.polPts = Math.max(S.polPts || 0, 6);
