@@ -261,6 +261,7 @@ const checks = [
   ['本地小名单只收查得实的真名，换了地方不把旧人当本地（R-170）', /nm\.length >= 2 && real/.test(src) && /v\.place = here/.test(src) && /v\.place !== geoCenter\(s\)/.test(src)],
   ['同名里只有一个写得出生的并作一人，剩下的才标生卒分两人（R-170）', /dated\.length === 1/.test(src) && /out\.splice\(i, 1\)/.test(src)],
   ['南宋金元史料与制度库（R-171）', fs.existsSync(path.join(__dirname, '..', 'history', 'song-south-yuan.json')) && fs.existsSync(path.join(__dirname, '..', 'inst', 'song-south-yuan.json'))],
+  ['南北朝制度库（439—581：北魏改制、六官、府兵、南朝舍人典签都在；任务一）', fs.existsSync(path.join(__dirname, '..', 'inst', 'nanbei.json')) && (() => { const n = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'inst', 'nanbei.json'), 'utf8')); return n.range && n.range[0] === 439 && n.range[1] === 581 && n.central.length >= 20 && n.local.length >= 10 && n.documents.length >= 20 && n.procedures.length >= 12 && n.address.length >= 20 && n.pitfalls.length >= 15 && /三长|均田/.test(JSON.stringify(n)) && /六官|府兵/.test(JSON.stringify(n)) && /通事舍人|典签/.test(JSON.stringify(n)); })()],
   ['探马先行、本局任命考课、法理凭血统（R-171）', /c\.pre = est/.test(src) && /function trackMonthly\(s\)/.test(src) && /SM\('trackMonthly'/.test(src) && /'姻亲血统'/.test(src)],
   ['历史原文库：按年代挑书、写正文前查原文、材料带出处与照抄规矩（R-172）', /function libBooksFor\(y, pol, said\)/.test(src) && /async function citeInto/.test(src) && /function citeBlock/.test(src) && /史书原文/.test(src) && /照这里抄/.test(src)],
   ['历史原文库网页路：浏览器直连云端语料按书下载、IndexedDB 缓存（R-172）', /async function wlibLoad/.test(src) && /DecompressionStream\('gzip'\)/.test(src) && /'wlib:' \+ id/.test(src)],
