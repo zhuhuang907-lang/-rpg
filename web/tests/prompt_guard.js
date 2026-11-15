@@ -317,6 +317,7 @@ const checks = [
   ['朝局待办与回音：下了令、上了疏，页面上看得到批没批、到没到任、朝局日志（R-213）', /朝局待办与回音/.test(src) && /上头准了/.test(src) && /约第\$\{esc\(x\.arrive\)\}回到任/.test(src)],
   ['你的位子没落进人事树也有卡；人事空缺不把照额员额、照例不授的算进去（R-214）', /还没排到你这个衙门/.test(src) && /const seatGap = /.test(src) && /status === '照额'\) \|\| p\.noGrant \|\| p\.histVacant/.test(src)],
   ['AI 把本朝人的生卒写错时，史料能证这名字在本朝有人就清掉日期、不误退真人（R-209 补）', (src.match(/与这一朝不合，不采信/g) || []).length >= 3],
+  ['朝堂照五代十国数据排：数据嵌入、真人优先、模型不可夺位、种子补人、人物页来路（任务七）', fs.existsSync(path.join(__dirname, '..', 'court', 'wudai.json')) && /const COURT_LIB = /.test(src) && /function wudaiCourtFor/.test(src) && /function buildOrgFromData/.test(src) && /dataLock/.test(src) && /s\.courtFill\[/.test(src) && /照该国用人惯例补/.test(src) && fs.readFileSync(path.join(__dirname, '..', 'build.py'), 'utf8').indexOf('__COURT__') >= 0],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

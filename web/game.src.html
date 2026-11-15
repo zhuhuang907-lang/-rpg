@@ -284,6 +284,7 @@ textarea{resize:vertical}
 </script>
 <script type="application/json" id="cal">__CAL__</script>
 <script type="application/json" id="hist">__HIST__</script>
+<script type="application/json" id="court">__COURT__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -1660,8 +1661,101 @@ function orgLibText(s, part) {
     return [h.military ? '军制：' + cut(typeof h.military === 'string' ? h.military : JSON.stringify(h.military), 1600) : '', h.ranks ? '品级俸禄：' + cut(typeof h.ranks === 'string' ? h.ranks : JSON.stringify(h.ranks), 500) : ''].filter(Boolean).join('\n');
   }).join('\n');
 }
+/* ========== 任务七：照五代十国朝廷数据（web/court/wudai.json，任务六整理）排朝堂 ==========
+ *  数据在，就用它建人事树：第一、二档（明载/推定）真人按 seat 任职区间坐进位子，模型不许改他们、不许抢位子（dataLock）；
+ *  没留名的制度位照该国 recruit（来路、比例、大族、籍贯）用种子补人——同一存档、换存档重开，补出来的都是同一个人，写进存档永不再变；
+ *  noFill 的位子（数据注了例证但未逐年）没有真人的年份空着标「史阙」，不硬编（议题三丙层）。
+ *  人物页写来路：推定任职「照履历推定」，补的人「虚构（史书未载，照该国用人惯例补）」。界面不露「厚薄」二字。 ========== */
+function wudaiCourtFor(s) {
+  if (!COURT_LIB || !s || !s.clock || !s.place) return null;
+  const y = s.clock.y, rg = COURT_LIB.range || [907, 979];
+  if (y < rg[0] || y > rg[1]) return null;
+  const pol = String(s.place.polity || '');
+  if (!pol) return null;
+  return (COURT_LIB.polities || []).find(p => p.name === pol || pol.includes(p.name)) || null;
+}
+function wudaiSeedHash(str) { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0; return h; }
+function wudaiFillName(s, wc, seat, taken) {
+  const WUDAI_P1 = ['承', '知', '从', '守', '延', '重', '弘', '敬', '继', '崇', '彦', '绍', '嗣', '韬', '勖', '晖', '昉', '训', '朗', '璨'];
+  const WUDAI_P2 = ['勋', '诲', '赡', '璋', '弼', '谧', '玘', '璞', '琮', '瑀', '琼', '珣', '昱', '昂', '岌', '凝', '珂'];
+  const routes = wc.recruit || [];
+  const seed = wudaiSeedHash(wc.name + '|' + (seat.id || '') + '|' + seat.office + '|' + seat.from);
+  let acc = 0, route = routes[routes.length - 1] || { families: ['李'], native: ['河北'] };
+  const pick = seeded(seed);
+  for (const r of routes) { acc += (r.share || 0); if (pick <= acc) { route = r; break; } }
+  const fams = route.families || ['李'], nats = route.native || ['河北'];
+  const fam = fams[Math.floor(seeded(seed + 7) * fams.length) % fams.length];
+  const nat = nats[Math.floor(seeded(seed + 13) * nats.length) % nats.length];
+  const off = Math.floor(seeded(seed + 29) * WUDAI_P1.length * WUDAI_P2.length);
+  for (let k = 0; k < WUDAI_P1.length * WUDAI_P2.length; k++) {
+    const nm = fam + WUDAI_P1[(off + k) % WUDAI_P1.length] + WUDAI_P2[(Math.floor((off + k) / WUDAI_P1.length)) % WUDAI_P2.length];
+    if (nm === s.protagonist.name || taken.has(nm)) continue;
+    if (personBad(s, nm)) continue;
+    if ((COURT_LIB.people || []).some(p => p.name === nm)) continue;
+    return { name: nm, native: nat };
+  }
+  return null;
+}
+function buildOrgFromData(s, wc) {
+  const y = s.clock.y, me = s.protagonist.name;
+  s.courtFill = s.courtFill || {};
+  const taken = new Set([me]);
+  const pplAll = COURT_LIB.people || [];
+  for (const p of pplAll) taken.add(p.name);
+  const ru = (rulersAt(y, s) || []).find(r => !s.place.polity || String(r.polity || '').includes(s.place.polity.slice(0, 1)) || s.place.polity.includes(String(r.polity || '').slice(0, 1)));
+  const nodes = [{ id: 'root', name: isRuler(s) ? me + '（' + one(s.protagonist.role, 12) + '）' : '朝廷', tier: '君主', parent: '', depth: 0, path: true, src: '史', posts: [{ title: isRuler(s) ? one(s.protagonist.role, 12) : (ru && ru.title ? ru.title : '君主'), rank: '', quota: 1, holder: isRuler(s) ? me : (ru ? ru.name : ''), status: '' }] }];
+  const depts = {};
+  for (const st of (wc.seats || [])) { if (y < st.from || y > st.to) continue; (depts[st.dept] = depts[st.dept] || []).push(st); }
+  let di = 0, filledN = 0;
+  try {
+  console.log('buildOrgFromData depts:', Object.keys(depts).join(','), 'seats:', Object.values(depts).map(v => v.length).join(','));
+  for (const [dept, sts] of Object.entries(depts)) {
+    di++;
+    const nid = 'W' + di;
+    nodes.push({ id: nid, name: dept, tier: /军|侍卫|都指挥/.test(dept) ? '军事' : '中枢', level: '', parent: 'root', depth: 1, duty: '', path: !isRuler(s), src: '史', posts: [] });
+    const nd = nodes[nodes.length - 1];
+    for (const st of sts) {
+      const q = { title: one(st.office, 16), rank: one(st.rank, 10), quota: Math.max(1, num(st.quota) || 1), holder: '', others: [], status: '', src: '', dataId: st.id, dataFrom: st.from, dataTo: st.to };
+      const act = pplAll.filter(p => (p.posts || []).some(x => x.seat === st.id && x.from <= y && y <= x.to));
+      let n = 0;
+      for (const p of act.slice(0, Math.max(1, q.quota))) {
+        if (p.name === me) continue;
+        const post0 = p.posts.find(x => x.seat === st.id && x.from <= y && y <= x.to) || {};
+        const how = post0.how || '明载';
+        if (n === 0) q.holder = p.name; else (q.others = q.others.concat([p.name]));
+        q.src = how === '推定' ? '推断' : '史料'; q.dataLock = true; n++;
+        s.courtFill[p.name] = { how: how === '推定' ? '推定' : '明载', pol: wc.name, seat: st.office };
+        s.people = s.people || {};
+        if (!s.people[p.name]) s.people[p.name] = { name: p.name, role: st.office, favor: 0, seen: s.turn || 0, court: true, where: geoCenter(s) };
+      }
+      if (!q.holder) {
+        const got = wudaiFillName(s, wc, st, taken);
+        if (got) { q.holder = got.name; q.src = '拟'; q.dataLock = true; taken.add(got.name);
+          s.courtFill[got.name] = { how: '虚构', pol: wc.name, native: got.native, seat: st.office };
+          s.people = s.people || {};
+          if (!s.people[got.name]) s.people[got.name] = { name: got.name, role: st.office, favor: 0, seen: s.turn || 0, fic: true, where: geoCenter(s) };
+          n++;
+        } else q.status = '史阙';
+      }
+      if (n) filledN += n;
+      nd.posts.push(q);
+      console.log('buildOrgFromData seat:', dept, q.title, 'holder=' + q.holder, 'lock=' + !!q.dataLock);
+    }
+  }
+  } catch (e2) { console.log('buildOrgFromData error:', e2.message); }
+  console.log('buildOrgFromData reached s.org, filledN=' + filledN, 'nodes=' + nodes.length);
+  s.org = { nodes, regime: wc.name + '（照五代十国朝廷数据排定）', at: s.turn, y: y, pol: s.place.polity || '', ruler: isRuler(s), grade: wc.grade, model: wc.model || '', dataCourt: true, recruit: wc.recruit || [], log: (s.org && s.org.log || []).concat([{ turn: s.turn, when: timeText(s.clock), text: '朝堂照五代十国朝廷数据排定：' + wc.name + '，在任 ' + filledN + ' 人' }]).slice(-60) };
+  s.court = { y: y, pol: s.place.polity || '', at: s.turn, dataCourt: true, filled: filledN, added: 0,
+    people: pplAll.filter(p => (p.posts || []).some(x => x.polity === wc.name && x.from <= y && y <= x.to)).slice(0, 300).map(p => { const post0 = p.posts.find(x => x.polity === wc.name && x.from <= y && y <= x.to) || {}; return { name: p.name, post: post0.office || '', organ: wc.name, rank: '', faction: '', real: true, stance: '', born: p.born ?? null, died: p.died ?? null, ties: p.ties || [], how: post0.how || '明载' }; }) };
+  s.courtChk = s.courtChk || {};
+  for (const p of pplAll.filter(p => (p.posts || []).some(x => x.polity === wc.name && x.from <= y && y <= x.to))) s.courtChk[p.name] = '朝廷数据（' + wc.name + '）';
+  s.courtFillAt = s.turn;
+}
 async function buildOrg(s) {
-  if (ORGING) return; ORGING = true; ORGMSG = '正在联网查制度，分中枢、地方、军事三路整理人事树……'; render();
+  if (ORGING) return; ORGING = true;
+  const wc0 = wudaiCourtFor(s); console.log('buildOrg top: wc0=' + (wc0 ? wc0.name : 'null') + ' pol=' + (s.place||{}).polity + ' y=' + (s.clock||{}).y);
+  if (wc0) { ORGMSG = '正在照五代十国朝廷数据排朝堂……'; render(); try { buildOrgFromData(s, wc0); SH(() => seatSelf(s), 'seatSelf'); ORGMSG = ''; } catch (e) { if (e && e.code === 'cancelled') throw e; s.orgFail = s.turn; ORGMSG = '数据排朝堂没成：' + errText(e) + '（下一回合自动再试）'; } finally { ORGING = false; render(); } return; }
+  ORGMSG = '正在联网查制度，分中枢、地方、军事三路整理人事树……'; render();
   try {
     const pol = s.place.polity || '', dy = pol + (/[代朝]$/.test(pol) ? '' : '代'), yl = s.clock.yearLabel || s.clock.y + '年', ruler = isRuler(s), p = s.protagonist, here = geoCenter(s);
     const emp = s.idm === 'emperor' || /皇帝|天子|官家/.test(String(p.role || ''));
@@ -1789,7 +1883,7 @@ ${B.map((x, i) => `${i + 1}. ${x.n.name}｜${x.q.title}${x.q.rank ? '（' + x.q.
 /** 往后几年的更替一次查好存进存档（2026-11-02 玩家：「开局可以慢……之后要正常……同时的变化提前预备、内置在系统之内」）：
  *  开局把大官和主角这一路的位子列给 DeepSeek，照史书写到五年以后每一回换人（年、月、新任、前任去向）；走到那个月份由程序照表调，不再临时查；
  *  快到表尾了后台再往后查五年。玩家任命的位子照玩家的（记「史事已改」） */
-const orgFutureDue = s => !!(s && s.org && arr(s.org.nodes).length > 1 && (!s.org.futureTo || s.clock.y >= s.org.futureTo - 1) && !(s.ofFail != null && s.turn - s.ofFail < 2));
+const orgFutureDue = s => !!(s && s.org && !s.org.dataCourt && arr(s.org.nodes).length > 1 && (!s.org.futureTo || s.clock.y >= s.org.futureTo - 1) && !(s.ofFail != null && s.turn - s.ofFail < 2));
 async function orgFutureDS(s) {
   const O = s.org, y0 = s.clock.y, m0 = s.clock.m || 1, from = O.futureTo ? Math.max(y0, O.futureTo) : y0, to = from + 5, pol = s.place.polity || '', me = s.protagonist && s.protagonist.name;
   const L = []; for (const n of O.nodes) { if (n.id === 'root' || n.status === '已裁撤') continue; n.posts.forEach(q => { if (q && !q.noGrant && (orgMajor(n, q) || (n.path && !orgStaff(n, q)))) L.push({ n, q }); }); }
@@ -1813,7 +1907,7 @@ ${B.map((x, i) => `${i + 1}. ${x.n.name}｜${x.q.title}｜现任${x.q.holder || 
 /* ========== 朝堂全表（2026-11-02 玩家：「官员整个东西都没有补齐……直接让 DS 把某个年份所有隋朝的官员把所有的关系给生成出来，比较重要的人物尽量真实，可以偶尔掺杂一些虚构，整个架构要补齐，像真正的朝堂一样」）：
  *  一回分三块并发问 DeepSeek（中枢；宗室后妃外戚勋贵内廷；地方大员和统兵大将），每块整张表：谁、什么官、几品、哪一派、跟谁什么关系、立场；
  *  并进人事树（对得上的位子填上，树上没有的衙门、官位添上），派系并进派系账，关系存进 s.court；大官照史书写真人，次要位子史书查不到的可以虚构（标虚拟）；三年再整一回 ========== */
-const courtDue = s => !!(s && s.org && arr(s.org.nodes).length > 1 && s.clock && (!s.court || s.clock.y - (s.court.y || 0) >= 1 || s.court.pol !== (s.place.polity || '')) && !(s.ctFail != null && s.turn - s.ctFail < 2));
+const courtDue = s => !!(s && s.org && !s.org.dataCourt && s.courtFillAt !== s.turn && arr(s.org.nodes).length > 1 && s.clock && (!s.court || s.clock.y - (s.court.y || 0) >= 1 || s.court.pol !== (s.place.polity || '')) && !(s.ctFail != null && s.turn - s.ctFail < 2));
 async function courtFullDS(s) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '', me = s.protagonist.name || '';
   const parts = ['中枢：宰执（照本朝叫法）、各省部寺监台的长官和副贰、谏官、翰林学士、掌兵的中枢长官', '宗室（诸王、太子、公主驸马）、后妃、外戚、开国勋贵、内廷宦官女官', '地方大员（各道各州的总管、刺史或督抚布按、留守）和各路统兵大将'];
@@ -2103,10 +2197,11 @@ function applyOrgResults(s, d) {
   if (!s.org) return [];
   const out = [];
   for (const x of arr(s.orgPending).filter(z => !z.done && z.act === 'appoint' && z.arrive != null && z.arrive <= s.turn && (z.dec || /辟用/.test(z.line)))) { const n = orgNode(s, x.node), p = n && x.pi != null ? n.posts[x.pi] : null; if (!p || p.pending !== x.who) { x.done = true; continue; }
+    if (p.dataLock) { x.done = true; out.push(n.name + p.title + '·照数据在任，不改'); continue; }
     const old = p.holder; p.holder = x.who; p.status = ''; delete p.pending; delete p.arrive; p.since = s.clock.y; onAppointed(s, n, p, old, x.who, x.special ? '特旨' : '任命'); x.done = true; out.push(`${n.name}${p.title}·${x.who}：到任`); actSet(s, z => z.id === x.aid, '办成', x.who + '到任'); s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: `${x.who}到任${n.name}${p.title}` }]).slice(-60); }
   for (const x of arr(s.orgPending).filter(z => z.res && !z.done)) {
     const n = orgNode(s, x.node), p = n && x.pi != null ? n.posts[x.pi] : null; if (!p) { x.done = true; continue; }
-    if (x.act === 'appoint') { if (x.res === '准') { const old = p.holder; p.holder = x.who; p.status = ''; delete p.pending; onAppointed(s, n, p, old, x.who, '保举'); } else { p.status = '保举被驳'; delete p.pending; } }
+    if (x.act === 'appoint') { if (p.dataLock) { x.done = true; continue; } if (x.res === '准') { const old = p.holder; p.holder = x.who; p.status = ''; delete p.pending; onAppointed(s, n, p, old, x.who, '保举'); } else { p.status = '保举被驳'; delete p.pending; } }
     else if (x.act === 'dismiss') { if (x.res === '准') { const old = p.holder; p.holder = ''; p.status = ''; onAppointed(s, n, p, old, '', '参劾'); } else { p.status = ''; const v = (s.people || {})[x.holder0]; if (v) { const f0 = num(v.favor) ?? 0; v.favor = Math.max(-100, f0 - 30); noteFavor(s, x.holder0, f0, v.favor, '知道你参劾他'); } } }
     x.done = true; out.push(`${n.name}${p.title}${x.who ? '·' + x.who : ''}：${x.res === '准' ? (x.act === 'appoint' ? '保举准了' : '参劾准了') : (x.act === 'appoint' ? '保举被驳' : '参劾被驳')}（${x.why}）`); actSet(s, z => z.id === x.aid, x.res === '准' ? '办成' : '驳回', x.why);
     s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: out[out.length - 1] }]).slice(-60);
@@ -2120,8 +2215,8 @@ function applyOrgResults(s, d) {
     else if (/增设|设立/.test(res)) { const m = s.org.nodes.find(x => off.includes(x.name)); if (m) m.status = ''; else if (n) { const q = n.posts.find(x => off.includes(x.title)); if (q) q.status = ''; } }
     else if (p) {
       if (arr(s.orgPending).some(x => x.done && x.res && x.who === who)) { /* 程序已经照定的办过了 */ }
-      else if (/到任|准奏|就任|任命|补授|署理/.test(res) && who) { const old = p.holder, mine = arr(s.orgPending).find(x => x.who === who && x.act === 'appoint'); p.holder = who; p.status = ''; delete p.pending; p.since = s.clock.y; onAppointed(s, n, p, old, who, mine ? (mine.special ? '特旨' : mine.dec ? '任命' : '辟用') : '照例'); }
-      else if (/罢免|革|撤|致仕|去职|病故|死/.test(res)) { const old = p.holder; if (!who || p.holder === who) p.holder = ''; p.status = ''; if (old && !p.holder && /罢免|革|撤/.test(res)) onAppointed(s, n, p, old, '', '罢免'); }
+      else if (/到任|准奏|就任|任命|补授|署理/.test(res) && who) { if (p.dataLock) continue; const old = p.holder, mine = arr(s.orgPending).find(x => x.who === who && x.act === 'appoint'); p.holder = who; p.status = ''; delete p.pending; p.since = s.clock.y; onAppointed(s, n, p, old, who, mine ? (mine.special ? '特旨' : mine.dec ? '任命' : '辟用') : '照例'); }
+      else if (/罢免|革|撤|致仕|去职|病故|死/.test(res)) { if (p.dataLock) continue; const old = p.holder; if (!who || p.holder === who) p.holder = ''; p.status = ''; if (old && !p.holder && /罢免|革|撤/.test(res)) onAppointed(s, n, p, old, '', '罢免'); }
       else { p.status = res || '受阻'; delete p.pending; }
     }
     out.push(`${off}${who ? '·' + who : ''}：${res}${why ? '（' + why + '）' : ''}`);
@@ -4720,6 +4815,7 @@ function yearEnd(s, y0) {
 /* ========== 内置史料：史事、君主年号、真人生卒官职由程序给出，AI 不凭记忆编 ========== */
 let HIST = [];
 try { HIST = JSON.parse(document.getElementById('hist').textContent || '[]'); } catch (_) { HIST = []; }
+const COURT_LIB = (() => { try { const a = JSON.parse(document.getElementById('court').textContent || '[]'); return (Array.isArray(a) ? a : [a])[0] || null; } catch (_) { return null; } })();
 /** 联网自建的史料包（桌面版：没有内置史料的年代，边玩边查边建，存在本机） */
 let RUNHIST = [];
 /** 自建史料只给同一政权的存档用（内置史料不分） */
@@ -9122,7 +9218,7 @@ async function postSeek(s, pick, replace) {
     if (old && old !== nm) s.org.log = arr(s.org.log).concat([{ turn: s.turn, when: timeText(s.clock), text: `核实：${x.n.name}${x.q.title}此时是${nm}（表上原写${old}）` }]).slice(-80); }
   return k;
 }
-const orgVerifyDue = s => !!(s && s.org && canSearch() && !(s.ovAt != null && s.turn - s.ovAt < 4) && arr(s.org.nodes).some(n => n.posts.some(q => q.holder && /^DS表$/.test(q.src || '') && orgMajor(n, q) && q.ver == null)));
+const orgVerifyDue = s => !!(s && s.org && !s.org.dataCourt && canSearch() && !(s.ovAt != null && s.turn - s.ovAt < 4) && arr(s.org.nodes).some(n => n.posts.some(q => q.holder && /^DS表$/.test(q.src || '') && orgMajor(n, q) && q.ver == null)));
 async function orgVerifyReal(s) {
   s.ovAt = s.turn; const y = s.clock.y, yl = s.clock.yearLabel || y + '年', L = [];
   for (const n of arr(s.org.nodes)) for (const q of n.posts) if (q.holder && /^DS表$/.test(q.src || '') && orgMajor(n, q) && q.ver == null && !q.byPlayer) L.push({ n, q });
@@ -14785,7 +14881,7 @@ function pane(tab) {
     const isNear = v => { const w = String(v.where || '').trim(); if (!w) return true; if (/身边|左右|帐下|府中|家中|宫中|随行|随侍|跟前/.test(w)) return true; if (/^(朝中|京师|京城|在朝|朝廷)$/.test(w)) return atCourt;
       if (samePlace(w, geoCenter(s)) || (s.at && samePlace(w, s.at))) return true; const u = hereP && placeXY(s, w, s.clock.y); return !!(u && u.lat && hereP.lat && Math.hypot(u.lon - hereP.lon, u.lat - hereP.lat) < 0.35); };
     const FIC = s.protagonist.real ? P.filter(([k, v]) => { const c = chkOf(s, k); return (c && !c.real) || v.fic; }) : []   /* 只收已核实查无此人、或标了虚构的；还没核的照常列着 */, P1 = P.filter(x => !FIC.includes(x)), NEAR = P1.filter(([, v]) => isNear(v)), FAR = P1.filter(([, v]) => !isNear(v));
-    const CARD = ([k, v]) => `<div class="pc"><div class="pn"><b>${esc(k)}</b>${FX(k)}${relTag(v) ? `<span class="att onpath">${relTag(v)}</span>` : ''}${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
+    const CARD = ([k, v]) => `<div class="pc"><div class="pn"><b>${esc(k)}</b>${FX(k)}${s.courtFill && s.courtFill[k] ? `<span class="muted" style="font-size:12px">来路：${s.courtFill[k].how === '推定' ? '照履历推定' : s.courtFill[k].how === '虚构' ? '虚构（史书未载，照该国用人惯例补）' : '史书明载'}</span>` : ''}${relTag(v) ? `<span class="att onpath">${relTag(v)}</span>` : ''}${v.attitude ? `<span class="att">${esc(v.attitude)}</span>` : ''}</div>
         <div class="pr">${esc(v.role)}${ageTxt(v) ? ' · ' + ageTxt(v) : ''}${v.tie && v.tie !== v.role ? ' · ' + esc(v.tie) : ''}${v.where ? ' · 在' + esc(v.where) : ''}</div>
         ${N0(v.favor) != null ? `<div class="grp"><span class="gk">好感 ${esc(v.favor)}</span><span class="bar"><i style="width:${Math.max(3, (Number(v.favor) + 100) / 2)}%" class="${v.favor < -30 ? 'bad' : v.favor < 0 ? 'warn' : v.favor >= 40 ? 'good' : ''}"></i></span>${v.favorDelta ? `<span class="${v.favorDelta > 0 ? 'up' : 'down'}">${v.favorDelta > 0 ? '▲' : '▼'}${Math.abs(v.favorDelta)}</span>` : ''}</div>` : ''}
         ${arr(v.traits).length ? `<div class="pl"><span>特质</span>${v.traits.map(t => `<span class="att">${esc(t)}</span>`).join(' ')}</div>` : ''}${v.stats ? `<div class="stchips">${statChips(v.stats, 5)}</div>${v.statSum ? `<div class="pl"><span>总评</span>${esc(v.statSum)}</div>` : ''}<details class="oadd"><summary class="muted">各项与依据（${v.statReal ? '照史料' : '照身份常情'}）</summary>${statFull(v.stats)}</details>` : `<button class="link" data-judge="${esc(k)}">请 DeepSeek 评定各项</button>`}

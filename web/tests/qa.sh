@@ -93,6 +93,7 @@ start ai.js && {
   run "学问手艺：读书涨学问涨文墨、坐馆月束脩、学徒三年出师落本事（R-184、R-188）" 120 env PLAY="$ROOT/web/play.html" node study.js
   run "舆图大修：关卡大表、古道走廊（行军变慢写循某道）、交战红圈、新占地金圈、粮道画线（R-197~202）" 240 env PLAY="$ROOT/web/play.html" node passes.js
   run "朝局核实与主角落位：原文库核人、核不上腾位、seatSelf 落位、你的位子卡、人名门禁（R-203~205）" 240 env PLAY="$ROOT/web/play.html" node orgself.js
+  run "朝堂照五代十国数据排：真人优先、模型不可夺位、虚构补人有种子、人物页来路（任务七）" 240 env PLAY="$ROOT/web/play.html" node wudai_court.js
   run "剧情像 RPG：史论总结腔打回、第二人称、对话场面、结尾停在拿主意处；家常短步只查史论（R-206~208）" 120 env PLAY="$ROOT/web/play.html" node storychk.js
   run "真人硬门槛：模型夹带的古人（李白）不收、名单外不立档、真人档案只列此刻在世且核实过的、旧档打开就清（R-209~211）" 120 env PLAY="$ROOT/web/play.html" node eragate.js
   run "朝局可玩：朝议摆上页面、玩家表态定成败、待办与回音看得到、位子没落树也有卡、空缺数不虚高（R-212~214）" 120 env PLAY="$ROOT/web/play.html" node courtissue.js
