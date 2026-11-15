@@ -6,7 +6,7 @@ const KEY = process.env.DEEPSEEK_API_KEY || '', OUT = process.env.OUT || './out'
 if (!KEY) { console.error('没有 DEEPSEEK_API_KEY'); process.exit(2); }
 fs.mkdirSync(path.join(OUT, 'calls'), { recursive: true });
 let seq = 0, PHASE = 'start';
-const kindOf = p => /综合审稿/.test(p) ? (/逐条判断/.test(p) ? '审稿·查疑' : '综合审稿') : /挑剔的历史小说编辑/.test(p) ? '审读(旧)' : /还没给玩家看/.test(p) ? (/逐条判断/.test(p) ? '审校·查疑(旧)' : '审校(旧)') : /常理审查/.test(p) ? '常理审查' : /账房兼史官/.test(p) ? (/【开局】/.test(p) ? '开局记账' : '记账') : /推演人/.test(p) ? '推演' : /方略推演|推演一件方略/.test(p) ? '方略' : /你在和玩家一起写一个人在真实历史里的一生/.test(p) ? (/【开局】/.test(p) ? '开局正文' : /【你的/.test(p) ? '改稿' : '正文') : '其他';
+const kindOf = p => /综合审稿/.test(p) ? (/逐条判断/.test(p) ? '审稿·查疑' : '综合审稿') : /挑剔的历史小说编辑/.test(p) ? '审读(旧)' : /还没给玩家看/.test(p) ? (/逐条判断/.test(p) ? '审校·查疑(旧)' : '审校(旧)') : /常理审查/.test(p) ? '常理审查' : /账房（短记账单）/.test(p) ? '记账·短单' : /账房兼史官/.test(p) ? (/【开局】/.test(p) ? '开局记账' : '记账') : /推演人/.test(p) ? '推演' : /方略推演|推演一件方略/.test(p) ? '方略' : /你在和玩家一起写一个人在真实历史里的一生/.test(p) ? (/【开局】/.test(p) ? '开局正文' : /【你的/.test(p) ? '改稿' : '正文') : '其他';
 const safeJSON = t => { try { const s = String(t || '').replace(/^```\w*\s*|```\s*$/g, ''); const a = s.indexOf('{'), b = s.lastIndexOf('}'); return a >= 0 && b > a ? (JSON.parse(s.slice(a, b + 1)), true) : false; } catch (_) { return false; } };
 http.createServer(async (req, res) => {
   if (req.url === '/__phase') { let b = ''; req.on('data', c => b += c); req.on('end', () => { PHASE = b.trim() || PHASE; res.end('ok'); }); return; }

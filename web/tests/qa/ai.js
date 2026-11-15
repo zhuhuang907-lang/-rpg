@@ -170,7 +170,7 @@ function answer(p, last, json) {
   if (p.includes('整理出确实写在资料里')) return JSON.stringify({ almanac: [{ cat: '物价', text: '米价一石一两六钱', src: '志' }] });
   if (p.includes('压成一段四百字以内')) return '较早的经过：查账、置产、结亲。';
   if (p.includes('账房兼史官') && p.includes('【开局】')) return opening();
-  if (p.includes('账房兼史官')) return ledger(p);
+  if (/账房兼史官|账房（短记账单）/.test(p)) return ledger(p);
   if (p.includes('【开局】')) { fs.writeFileSync('open_prompt.txt', p); } if (p.includes('【开局】')) return '乾隆二十二年三月初六，扬州。\n你叫汪景和，四十一岁，祖籍徽州歙县，在扬州行盐已是第三代。家里住在东关街北边的老宅，三进院子，前头是账房，后头住着老母亲和独子承裕。\n这一年的扬州还没从去年皇上南巡的热闹里缓过来。天宁寺的行宫刚拆了彩棚，瘦西湖边那几座为接驾赶修的亭子还新得发亮。盐商们为这趟南巡捐了不少银子，如今运司衙门正逐家催还垫款。\n早饭刚撤下去，账房程立德就抱着账本进来了。';
   if (p.includes('照规则写正文')) { fs.appendFileSync('dir.log', JSON.stringify({ seed: /这一回的历史主线/.test(p), ban: /不许再写的题材/.test(p), redo: p.includes('上一稿的毛病') }) + '\n'); if (!p.includes('上一稿的毛病') && !p.includes('戏外：') && Math.random() < 0.6) return PAS[pi++ % PAS.length] + '\n程立德躬身请示：「此事如何是好，还请老爷示下。」账房又来请示，问怎么办才好，盘账盘到半夜。'; }
   return story(/戏外|多少|几天/.test(last) && chance(0.7));
@@ -231,7 +231,7 @@ http.createServer((req, res) => {
     if (req.url.includes('/models')) { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ data: [{ id: 'deepseek-v4-pro' }, { id: 'deepseek-v4-flash' }] })); }
     const body = JSON.parse(b || '{}'); const msgs = body.messages || []; if (!msgs.length) { res.writeHead(404); return res.end("{}"); }
     const p = msgs.map(m => m.content).join('\n'); n++; if (p.includes('照规则写正文')) fs.writeFileSync('last_story_prompt.txt', p);
-    const kind = p.includes('综合审稿') ? 'review' : p.includes('挑剔的历史小说编辑') ? 'critic' : p.includes('还没给玩家看') ? 'verify' : p.includes('「本地志」') ? 'gaz' : p.includes('整理一段史料') ? 'histbuild' : p.includes('推演人') ? 'ruling' : p.includes('账房兼史官') ? 'ledger' : p.includes('深明因果') ? 'world' : p.includes('职官') ? 'inst' : p.includes('资料里') ? 'digest' : p.includes('四百字') ? 'memory' : 'story';
+    const kind = p.includes('综合审稿') ? 'review' : p.includes('挑剔的历史小说编辑') ? 'critic' : p.includes('还没给玩家看') ? 'verify' : p.includes('「本地志」') ? 'gaz' : p.includes('整理一段史料') ? 'histbuild' : p.includes('推演人') ? 'ruling' : /账房兼史官|账房（短记账单）/.test(p) ? 'ledger' : p.includes('深明因果') ? 'world' : p.includes('职官') ? 'inst' : p.includes('资料里') ? 'digest' : p.includes('四百字') ? 'memory' : 'story';
     if (process.env.PLEN_LOG) fs.appendFileSync(process.env.PLEN_LOG, kind + ' ' + p.length + '\n');   // 量一量每类调用的材料有多长（太长了 AI 又慢又糊涂）
     fs.appendFileSync(LOG, `${n}\t${kind}\t${p.length}\t${msgs.length}\t${(msgs[0]||{}).role}	${req.url}\t${body.temperature}\t${JSON.stringify(body.thinking||null)}\t${body.model}\n`);
     // LAT=1：照真实 DeepSeek 的慢（按十分之一缩短：写正文带思考约 9 秒，其他 3–6 秒），测一回要等多久

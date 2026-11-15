@@ -53,7 +53,7 @@ function answer(p, last, json) {
   if (p.includes('整理出确实写在资料里')) return JSON.stringify({ almanac: [{ cat: '物价', text: '米价一石一两六钱', src: '志' }] });
   if (p.includes('压成一段四百字以内')) return '较早的经过：查账、置产、结亲。';
   if (p.includes('账房兼史官') && p.includes('【开局】')) return opening();
-  if (p.includes('账房兼史官')) return ledger(p);
+  if (/账房兼史官|账房（短记账单）/.test(p)) return ledger(p);
   if (p.includes('【开局】')) return '你叫汪景和，乾隆二十二年三月初六，扬州府江都县人，盐商。\n账房程立德抱着账本进来：「东家，掣验少了二百引。」';
   return story(/戏外|多少|几天/.test(((last.split('【玩家这回说】')[1]) || '').split('\n')[1] || '') && chance(0.7));
 }
@@ -85,7 +85,7 @@ http.createServer((req, res) => {
     if (req.url.includes('/models')) { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ data: [{ id: 'deepseek-v4-pro' }] })); }
     const body = JSON.parse(b || '{}'); const msgs = body.messages || []; if (!msgs.length) { res.writeHead(404); return res.end('{}'); }
     const p = msgs.map(m => m.content).join('\n'); n++;
-    const kind = p.includes('还没给玩家看') ? 'verify' : p.includes('「本地志」') ? 'gaz' : p.includes('整理一段史料') ? 'histbuild' : p.includes('推演人') ? 'ruling' : p.includes('账房兼史官') ? 'ledger' : p.includes('深明因果') ? 'world' : p.includes('职官') ? 'inst' : p.includes('资料里') ? 'digest' : p.includes('四百字') ? 'memory' : 'story';
+    const kind = p.includes('还没给玩家看') ? 'verify' : p.includes('「本地志」') ? 'gaz' : p.includes('整理一段史料') ? 'histbuild' : p.includes('推演人') ? 'ruling' : /账房兼史官|账房（短记账单）/.test(p) ? 'ledger' : p.includes('深明因果') ? 'world' : p.includes('职官') ? 'inst' : p.includes('资料里') ? 'digest' : p.includes('四百字') ? 'memory' : 'story';
     fs.appendFileSync(LOG, `${n}\t${kind}\t${p.length}\t${msgs.length}\t${(msgs[0]||{}).role}\t${body.temperature}\n`);
     if ((body.max_tokens || 9999) < 100) { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ choices: [{ message: { content: '正常' }, finish_reason: 'stop' }] })); }
     if (chance(0.04)) { res.writeHead(R([500, 503, 429])); return res.end('{"error":{"message":"busy"}}'); }
