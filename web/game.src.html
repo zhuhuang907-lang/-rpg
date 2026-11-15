@@ -287,6 +287,7 @@ textarea{resize:vertical}
 <script type="application/json" id="tenure">__TENURE__</script>
 <script type="application/json" id="courtdata">__COURT__</script>
 <script type="application/json" id="eravocab">__ERAVOCAB__</script>
+<script type="application/json" id="roleslib">__ROLESLIB__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -5031,6 +5032,28 @@ function orgFromCourt(s, C) {
 }
 /* 错词表（任务十五、十七，R-233）：这一年代还没有的说法（总兵、师爷、衙役……），正文写了就打回重写，并告诉模型当时怎么说；
  *  标了「今义」「可通融」「语境」的两可词只提醒、不打回 */
+/* ========== 时代世情库（任务十二，R-231、R-232）：主角此刻沾着哪几种活法（可兼几样），把那几条的平日、称呼、可能碰上的事交给裁定和写戏当材料。
+ *  不是白名单：认不出就不给，玩家做什么都不拦，能不能成照旧只看钱、人、权、名分 ========== */
+let ROLESLIB = []; try { ROLESLIB = JSON.parse((document.getElementById('roleslib') || {}).textContent || '[]'); if (!Array.isArray(ROLESLIB)) ROLESLIB = []; } catch (_) { ROLESLIB = []; }
+const WAY_KIND = { 官: /官府|幕府|中枢|台谏|宫廷|宗室/, 兵: /军/, 商: /工商|商/, 匪: /江湖|草莽/, 农: /乡里|农/ };
+function waysNow(s) {
+  const y = s && s.clock && s.clock.y; if (y == null) return []; const B = ROLESLIB.filter(R => R && R.range && y >= R.range[0] && y <= R.range[1]); if (!B.length) return [];
+  const p = s.protagonist || {}, c = s.career || {}; let tags = []; try { tags = identityOf(s).tags || []; } catch (_) {}
+  const txt = [p.role, c.office, ...arr(s.forces).filter(f => { try { return myForce(s, f); } catch (_) { return false; } }).map(f => f.name + '兵'), ...arr(s.business).map(b => (b.kind || '') + (b.name || '')), s.jail && s.jail.in ? '狱囚' : ''].filter(Boolean).join(' ');
+  const seen = new Set(), out = [];
+  for (const R of B) for (const w of arr(R.ways)) { if (!w || !w.name || seen.has(w.name)) continue;
+    let sc = 0; if (txt.includes(w.name)) sc = 5; else if (String(w.names && w.names.self || '').split(/[、，,]/).some(n => n.length >= 2 && txt.includes(n))) sc = 4;
+    else if (w.name.length >= 2 && txt && [...new Set(Array.from({ length: w.name.length - 1 }, (_, i) => w.name.slice(i, i + 2)))].some(b => txt.includes(b) && !/^(之|的|人|者)/.test(b))) sc = 2;
+    if (sc && tags.some(t => WAY_KIND[t] && WAY_KIND[t].test(w.kind || ''))) sc += 1;
+    if (sc >= 2) { seen.add(w.name); out.push({ w, sc }); } }
+  return out.sort((a, b) => b.sc - a.sc).slice(0, 3).map(o => o.w);
+}
+function waysBlock(s) {
+  const W = waysNow(s); if (!W.length) return ''; const k = (s.turn || 0);
+  return '【这一年代这类人的活法（材料，不是白名单：玩家做什么都不拦，能不能成照钱、人、权、名分；主角可兼几样、随时改行）】\n' + W.map(w => {
+    const H = arr(w.happens), hp = H.length ? [0, 1, 2].map(i => H[(k + i) % H.length]).filter((x, i, a) => a.indexOf(x) === i) : [], nm = Object.fromEntries(Object.entries(w.names || {}).map(([a, b]) => [a, String(b || '').replace(/某/g, '〔姓〕')]));   // 「某姓子弟」「某后」：某＝姓，不让模型照抄「某」
+    return `· ${w.name}（${w.kind || ''}${w.applies ? '；' + one(w.applies, 30) : ''}）：${one(w.what || '', 60)}${arr(w.doing).length ? '；平日：' + w.doing.join('、') : ''}${hp.length ? '；可能碰上：' + hp.join('、') : ''}${nm.self || nm.byUp ? '；称呼：' + [nm.self ? '自称' + nm.self : '', nm.byUp ? '上头称' + nm.byUp : '', nm.byDown ? '下头称' + nm.byDown : ''].filter(Boolean).join('，') : ''}${arr(w.absent).length ? '；这年代没有：' + w.absent.join('；') : ''}`; }).join('\n');
+}
 let ERAVOCAB = []; try { ERAVOCAB = JSON.parse((document.getElementById('eravocab') || {}).textContent || '[]'); if (!Array.isArray(ERAVOCAB)) ERAVOCAB = []; } catch (_) { ERAVOCAB = []; }
 function vocabFaults(s, text) {
   const y = s && s.clock ? s.clock.y : 0, t = String(text || ''), out = [];
@@ -12557,6 +12580,7 @@ function blocks(s, forStory) {
   L.push(`【主角】${p.name}，${p.gender || ''}，${p.age != null ? p.age + '岁' : '年岁还在照经历推'}，${p.role}${p.nativePlace ? '，' + p.nativePlace + '人' : ''}${p.real ? '，史载真人' : '，虚构人物'}。${st ? '名位功名等：' + st + '。' : ''}${s.at ? `【主角此刻人在${s.at}（出门在外；家在${s.place.full}）——场面在这里，身边是这里的人；家里的事只能靠书信、来人知道】` : ''}`);
   L.push(cardBlock(s)); { const mb = memoryBlock(s); if (mb) L.push(mb); }
   { const ob = orgBlock(s); if (ob) L.push(ob); }
+  { let wb = ''; try { wb = waysBlock(s); } catch (_) {} if (wb) L.push(wb); }   // 任务十二：此刻沾着的活法当材料
   if (false && s.face && typeof FACE !== 'undefined') { const ft = faceText(s.face); if (ft) L.push('【主角的相貌（玩家捏的；写到主角的样子照这个，不另编）】' + ft); }
   const hh = arr(s.household);
   const fb = familyBlock(s), pb = policiesBlock(s); if (fb) L.push(fb); if (pb) L.push(pb.trim());
