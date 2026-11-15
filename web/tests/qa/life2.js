@@ -11,6 +11,9 @@ const path = require('path');
   const next = (n = 1) => p.evaluate(n => { for (let i = 0; i < n; i++) { S.clock.m = S.clock.m % 12 + 1; if (S.clock.m === 1) S.clock.y++; S.turn = (S.turn || 0) + 1; campMonthly(S); mercMonthly(S); privMonthly(S); } render0(); }, n);
   // 1 军阶照朝代
   const lad = await p.evaluate(() => [1758, 1600, 1450, 1300, 1100, 700, 150].map(y => ARMY_LADDER(y).sys + ':' + ARMY_LADDER(y).L.slice(-2).join('/')));
+  { const mid = await p.evaluate(() => [800, 930].map(y => ARMY_LADDER(y).sys + ':' + ARMY_LADDER(y).L.join('/')));
+    if (!/藩镇牙军/.test(mid[0]) || /折冲|府兵/.test(mid[0])) bad.push('800 年唐后期府兵早废，军阶该照方镇（兵马使、都虞候）：' + mid[0]);
+    if (!/侍卫亲军/.test(mid[1]) || !/都头/.test(mid[1]) || /折冲|府兵/.test(mid[1])) bad.push('930 年五代军阶该照侍卫亲军（都头、指挥使）：' + mid[1]); }
   if (!/绿营:总兵\/提督/.test(lad[0]) || !/营兵/.test(lad[1]) || !/卫所/.test(lad[2]) || !/万户/.test(lad[3]) || !/禁军/.test(lad[4]) || !/府兵/.test(lad[5]) || !/部曲/.test(lad[6])) bad.push('军阶没照朝代：' + lad);
   // 2 清绿营把总：营中页、饷、保题、吃空饷
   await mk('徐州镇标右营把总', 1758, 3, '徐州', '清', '韩成');
