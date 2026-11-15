@@ -1667,7 +1667,7 @@ function ledgerLiteOk(s, said, story, ruling) {
   return true;
 }
 function ledgerLiteRules() {
-  return `你是这局历史模拟游戏的账房。主持人刚写好这一回的正文（下面给出）。这一回是平常的一步，只记下面这几样；别的字段不给，程序照旧保留。只记正文里发生了的事，不改剧情、不添情节。
+  return `你是这局历史模拟游戏的账房（短记账单）。主持人刚写好这一回的正文（下面给出）。这一回是平常的一步，只记下面这几样；别的字段不给，程序照旧保留。只记正文里发生了的事，不改剧情、不添情节。
 1. elapsedDays：正文里过了多少整天；elapsedHours：不满一天的又过了几个钟头（一场谈话报 2–4，进城办一件事报 4–8）。时间每一回都往前走。yearLabel：过完后的年号纪年。nowAt：这一回结束时主角人在哪里（当时的地名）。
 2. ledger：正文里每一笔钱的进出，收入为正、支出为负，折成【家业账】的本位单位，与正文的数对得上；正文没写数但确实花了钱的，照常理估一个数。现钱由程序结算，你不报现钱；每月固定进出不在这里重复。
 3. presentNpcs：这一回出场或有变化的人（全名；好感 -100 到 100，随来往增减，写为什么变）。lifeEvents：身边人的小变化。
@@ -1699,7 +1699,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261115042101';
+const BUILD = '20261115042555';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2482,7 +2482,7 @@ function econSafe(raw, out) {
   return true;
 }
 async function callClaude(input, onReply, extra, tier) {
-  if (!(extra && extra.detached) && /^(|记账|推演|改稿|审校|审读|裁定)$/.test((extra && extra.kind) || '') && typeof S !== 'undefined' && S) { try { const raw = input; input = econTrim(input, S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''); if (typeof input === 'string' && !(extra && extra.system)) input = cacheOrder(input, S); if (!econSafe(raw, input)) input = raw; } catch (_) { /* 裁不成就照原样发 */ } }
+  if (!(extra && extra.detached) && /^(|记账|推演|改稿|审校|审读|裁定)$/.test((extra && extra.kind) || '') && typeof S !== 'undefined' && S) { try { const raw = input; input = econTrim(input, S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''); if (typeof input === 'string' && !(extra && extra.system)) input = cacheOrder(input, S); else if (Array.isArray(input) && input.length > 1 && input[0] && input[0].role === 'user' && typeof input[0].content === 'string') input = [{ ...input[0], content: cacheOrder(input[0].content, S) }].concat(input.slice(1));   /* 写正文：头一条（账册材料）也照「早见过、没变的排最前」排，跨回合吃缓存价 */ if (!econSafe(raw, input)) input = raw; } catch (_) { /* 裁不成就照原样发 */ } }
   if (DSM() && !KEY.has && !glmUsable()) throw { code: 'no_key', message: GLM.has ? '网页版连不上 GLM（智谱只许它自己的网站直连），请再填一个 DeepSeek 的 Key，或用桌面版' : '还没填 DeepSeek 或 GLM 的 Key：在首页把 Key 粘贴进去点「保存」' };
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
   const det = extra && extra.detached;

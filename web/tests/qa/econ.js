@@ -61,6 +61,12 @@ const path = require('path');
     s.turn = 9; const A9 = '【此刻】' + '丁'.repeat(300);
     const r3 = cacheOrder('记账的规矩' + '账'.repeat(5000) + '\n' + A9 + '\n' + B + '\n【玩家这回说】歇着', s);
     if (!r3.startsWith(B + '\n' + A9)) bad.push('跨回合没把没变的材料排在最前');
+    if (!lite.includes('（短记账单）')) bad.push('短记账单开头没有可辨的字样');
+    // 写正文：对话数组的头一条（账册材料）也照同样先后排，后面的对话一字不动
+    s.turn = 11; const H = '写戏的规矩' + '写'.repeat(4000) + '\n' + A9 + '\n' + B + '\n【此刻】' + '戊'.repeat(300) + '\n\n下面是我们这一局最近的对话。';
+    const conv = [{ role: 'user', content: H }, { role: 'assistant', content: '上一回的正文' }, { role: 'user', content: '【玩家这回说】歇着' }];
+    const oc = cacheOrder(conv[0].content, s);
+    if (!oc.startsWith(B + '\n' + A9) || !oc.endsWith('下面是我们这一局最近的对话。')) bad.push('写正文的头一条没照先后排，或结尾被动了');
     // 山寨、市井的平常话里带「兵」「守」「官」单字，照样用短单（真模型实测：六回短单一次没起作用）
     s.turn = 10; s.ledgerFullAt = 9;
     const daily = '你在寨门口看喽啰们操弄兵器，守寨的弟兄说官兵最近没动静，又提起山下的税。'.repeat(8);
