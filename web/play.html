@@ -1655,7 +1655,7 @@ function ledgerRules(s, txt) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261114234418';
+const BUILD = '20261115000845';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2350,7 +2350,61 @@ function within(p, ms, dflt = null) {
   p.catch(() => { /* 到点以后才出错的不管 */ });
   return Promise.race([p, cap]).finally(() => clearTimeout(t));
 }
+/* ========== 省 token（R-238，2026-11-15 玩家：「是不是有一点太贵了，我可以接受开局贵，但后面那么贵，有点吃不消……必须大幅度砍掉后面的 token 消耗」）：
+ *  真模型实测一回十万 token，同一大包材料发四五遍，里面一大半这一步用不上（寨主找二当家商量劫道，材料里带着本朝官制、仕途、朝中派系、军制编制）。
+ *  办法：发出去之前照这一步的话题和主角的身份裁——用不上的整块不带，长的各有上限（新的留着、旧的从略）。不改账、不改规矩，只少带材料。设置里可关。 ========== */
+const ECON_ON = () => !(SETTINGS && SETTINGS.econ === false);
+const ECON_ADM = /衙|官|公文|奏|疏|审|案|税|赋|朝|任命|委任|升|调任|考|吏|差事|公事|科举|应试|应举|铨|保举|弹劾|诏|旨|敕|封|爵|上司|属官|同僚/;
+const ECON_MIL = /兵|军|战|攻|守|围|募|练|营|寨|伏|剿|征|讨|巡|防|哨|刀|炮|甲|马|粮道|探|敌/;
+const ECON_ECO = /钱|银|两|贯|粮|米|价|买|卖|账|进项|开销|铺|店|货|租|债|借|贷|税|赋|饷|工钱|生意|本钱|田|地/;
+// [块名, 什么时候带（不写就一直带）, 最多多少字, 留头还是留尾]
+const ECON_RULES = [
+  [/^(本朝官制|主角仕途|朝中派系|派系消长|制度框架|本朝升迁|升迁之制|官场门道|朝局待办|人事树|国策)/, c => c.official || c.adm, 1500, 'head'],
+  [/^(本朝军制|军制编制)/, c => c.mil, 1200, 'head'],
+  [/^(经济与生意|本地行情|岁入岁出)/, c => c.eco, 900, 'head'],
+  [/^不在眼前的人/, null, 500, 'head'],
+  [/^时间在走/, null, 900, 'head'],
+  [/^前情提要/, null, 1600, 'tail'],
+  [/^定本/, null, 1500, 'tail'],
+  [/^前几章/, null, 800, 'tail'],
+  [/^年谱/, null, 500, 'tail'],
+  [/^学问手艺/, null, 400, 'head'],
+  [/^人物各项/, null, 600, 'head'],
+  [/^史线/, null, 700, 'head'],
+  [/^嗣子/, null, 300, 'head'],
+  [/^临门的事/, null, 1300, 'head'],
+  [/^人物（/, null, 2600, 'head'],
+  [/^(县级地理|地理册|本地志)/, c => c.geo || true, 900, 'head'],
+  [/^(联网查到的资料|这一回联网查到的资料|翻到的资料)/, null, 1500, 'head'],
+];
+/** 省 token：不是要紧的一步（没有打仗、任免、婚嫁、诉讼、谋划这类字眼，话也不长），程序的硬伤检查过了就不另请一位审稿——审稿一次一万多 token，还常常为小毛病引出一次重写 */
+const econSkipReview = (said, ruling) => ECON_ON() && !(ruling && ruling.battleResult) && String(said || '').length <= 60 && !HEAVY_RE.test(String(said || ''));
+function econCap(seg, n, keep) {
+  if (seg.length <= n) return seg;
+  const lines = seg.split('\n'), head = lines[0], rest = lines.slice(1);
+  if (head.length >= n) return head.slice(0, n);
+  const out = []; let used = head.length;
+  const src = keep === 'tail' ? rest.slice().reverse() : rest;
+  for (const ln of src) { if (used + ln.length + 1 > n) { if (!out.length && ln.length) out.push(keep === 'tail' ? ln.slice(-(n - used - 1)) : ln.slice(0, n - used - 1)); break; } out.push(ln); used += ln.length + 1; }
+  return [head].concat(keep === 'tail' ? out.reverse() : out).join('\n');
+}
+function econTrimText(text, ctx) {
+  const t = String(text || ''); if (t.length < 6000) return t;
+  const parts = t.split(/\n(?=【[^】\n]{2,60}】)/);
+  return parts.map(seg => { const m = /^【([^】\n]{2,60})】/.exec(seg); if (!m) return seg;
+    for (const [re, when, cap, keep] of ECON_RULES) if (re.test(m[1])) { if (when && !when(ctx)) return null; return econCap(seg, cap, keep); }
+    return seg; }).filter(x => x != null).join('\n');
+}
+function econCtx(s, said) { const x = String(said || ''); let official = false; try { official = identityOf(s).tags.includes('官'); } catch (_) {} return { official, adm: ECON_ADM.test(x), mil: ECON_MIL.test(x) || arr(s && s.campaigns).some(c => /待发|行军|交战/.test(c.state || '')), eco: ECON_ECO.test(x), geo: true }; }
+function econTrim(input, s, said) {
+  if (!ECON_ON() || !s || !s.protagonist) return input;
+  const ctx = econCtx(s, said);
+  if (typeof input === 'string') return econTrimText(input, ctx);
+  if (Array.isArray(input)) return input.map(m => m && typeof m.content === 'string' && m.role === 'user' ? { ...m, content: econTrimText(m.content, ctx) } : m);
+  return input;
+}
 async function callClaude(input, onReply, extra, tier) {
+  if (!(extra && extra.detached) && /^(|记账|推演|改稿|审校)$/.test((extra && extra.kind) || '') && typeof S !== 'undefined' && S) { try { input = econTrim(input, S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''); } catch (_) { /* 裁不成就照原样发 */ } }
   if (DSM() && !KEY.has && !glmUsable()) throw { code: 'no_key', message: GLM.has ? '网页版连不上 GLM（智谱只许它自己的网站直连），请再填一个 DeepSeek 的 Key，或用桌面版' : '还没填 DeepSeek 或 GLM 的 Key：在首页把 Key 粘贴进去点「保存」' };
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
   const det = extra && extra.detached;
@@ -16810,7 +16864,7 @@ async function send(said, span, note, resume) {
       // 综合审稿：史实、情理与人物、常理与连贯一次审完（原来三道各调一次）；写成功了的账（程序算的）以账为准
       // 家常的一步只过程序的硬伤检查（改错字、时代错位、替主角说话……），不另起一回审稿；要紧的一步照旧综合审稿
       if (LIGHT && !st.talk && !preFaults.length) { LIGHT_REVIEW = reviewAll(S, said, st.text).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }); LIGHT_REVIEW.catch(() => {}); }   // 家常的一步：审稿和记账一起跑，玩家先读着
-      const vr = st.talk ? { text: st.text, audit: [], probs: [], logicFixes: [], rawFixes: [], severity: 'none' } : LIGHT && !preFaults.length ? (t => ({ text: t.text, audit: t.audit, probs: [], logicFixes: [], rawFixes: [], severity: 'none' }))((() => { const nf = nameFixes(S, st.text).sort((a, b) => b.wrong.length - a.wrong.length); let t = st.text; for (const x of nf) t = t.split(x.wrong).join(x.right); return { text: t, audit: nf }; })()) : await reviewAll(S, said, st.text);
+      const vr = st.talk ? { text: st.text, audit: [], probs: [], logicFixes: [], rawFixes: [], severity: 'none' } : (LIGHT || econSkipReview(said, ruling)) && !preFaults.length ? (t => ({ text: t.text, audit: t.audit, probs: [], logicFixes: [], rawFixes: [], severity: 'none' }))((() => { const nf = nameFixes(S, st.text).sort((a, b) => b.wrong.length - a.wrong.length); let t = st.text; for (const x of nf) t = t.split(x.wrong).join(x.right); return { text: t, audit: nf }; })()) : await reviewAll(S, said, st.text);
       LOGIC_FIX = arr(vr.logicFixes);
       const probs = st.talk ? [] : preFaults.concat(arr(vr.probs));
       let next = { ...st, text: vr.text, audit: arr(vr.audit).concat(early ? [{ wrong: '（整段改写）', right: '程序查出的毛病', why: '审读' }] : []), verified: true, rewrote: false };
