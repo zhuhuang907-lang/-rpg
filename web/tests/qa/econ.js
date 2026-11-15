@@ -6,7 +6,19 @@ const path = require('path');
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage();
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
   await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof econTrimText === 'function' && typeof newSave === 'function');
-  const out = await p.evaluate(() => {
+  // 一回合一毛钱（R-239）：开局查齐以后，每次调用都用快型号、不开深度思考；开局照旧；后台、充当搜索各有份额
+  const tight = await p.evaluate(async () => { const bad = []; const om = MODE, ok = KEY, os = SAMPLE, oS = S; let cap = [];
+    try { MODE = 'web'; KEY = { has: true, model: 'deepseek-v4-pro' }; SAMPLE = async (i, o) => { cap.push(o); return { text: '{"ok":1}', truncated: false }; };
+      S = newSave({ name: '胡大彪', gender: '男', age: 38, role: '山寨寨主', gregorianYear: 1813, month: 9, day: 15, place: '菏泽', polity: '清' }); S.chat = [{ role: 'gm', text: '开场' }];
+      if (econTight()) bad.push('开局还没查齐就算平常回合了');
+      await callClaude('裁定这一步', null, { kind: '裁定' }); const o0 = cap[cap.length - 1] || {}; if (o0.fast) bad.push('开局的调用也被换成快型号');
+      S.settledAt = 0; S.turn = 3; if (!econTight()) bad.push('开局查齐以后没算平常回合');
+      for (const k of ['裁定', '推演', '记账', '改稿', '']) { cap = []; await callClaude('写这一回', null, k ? { kind: k, thinking: true } : { json: false, thinking: true }); const o = cap[cap.length - 1] || {}; if (!o.fast || o.thinking) bad.push(`平常回合的「${k || '写正文'}」没用快型号或还开着深想：` + JSON.stringify({ fast: o.fast, thinking: o.thinking })); }
+      ECON_Q = { turn: -1, bg: 0, ds: 0 }; if (!econQuota(S, 'bg', 1) || econQuota(S, 'bg', 1)) bad.push('后台一回一件的份额不对'); if (!econQuota(S, 'ds', 1) || econQuota(S, 'ds', 1)) bad.push('充当搜索一回一批的份额不对');
+      S.turn = 4; if (!econQuota(S, 'bg', 1)) bad.push('换了一回份额没恢复');
+    } catch (e) { bad.push('出错：' + (e && (e.message || e.code) || e)); } finally { MODE = om; KEY = ok; SAMPLE = os; S = oS; }
+    return bad; });
+  const out0 = await p.evaluate(() => {
     const bad = [], long = (t, n) => Array.from({ length: n }, (_, i) => `· 第${i + 1}条 ${t}`).join('\n');
     const mat = ['写戏的规矩……' + '规矩'.repeat(400), '【主角】胡大彪，山寨寨主', '【本朝官制（已按本局年代核过，以此为准）】\n' + long('巡抚从二品', 80), '【主角仕途（以此为准）】\n' + long('履历', 40),
       '【本朝军制编制（兵马数目照此）】\n' + long('绿营', 60), '【不在眼前的人（外地的、断了来往的）】\n' + long('某人在外地', 120), '【定本（本局已经确立）】\n' + long('旧事', 200) + '\n· 最新的一条：寨里并无火炮',
@@ -94,6 +106,7 @@ const path = require('path');
       if (!econSafe(src, o2)) bad.push('保险误报'); if (econSafe(src, o2.replace('只输出一个 JSON 对象', ''))) bad.push('保险没认出输出格式丢了'); if (econSafe(src, o2 + '多了一句')) bad.push('保险没认出结尾变了'); }
     return bad;
   });
+  const out = [...tight, ...out0];
   console.log('ERRS', JSON.stringify([...errs, ...out]));
   await b.close(); process.exit(errs.length || out.length ? 1 : 0);
 })();
