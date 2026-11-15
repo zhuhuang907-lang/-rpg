@@ -120,6 +120,9 @@ const path = require('path');
     if (bandName('曹州府菏泽县境山寨寨主，领数十人据险自守', '胡大彪') !== '胡家寨') bad.push('山寨名：' + bandName('曹州府菏泽县境山寨寨主，领数十人据险自守', '胡大彪'));
     if (!STRUCT_FAULT.test('没接住玩家这一步：玩家说……') || STRUCT_FAULT.test('史实：「寨主老爷」称谓不合') || STRUCT_FAULT.test('结尾收死了（落尾是……）')) bad.push('该整段重写的和只改几处的没分对');
     const pi = patchInput('你进了粮行。', ['史实：「一石三两五钱」米价超出量级——应当：改为一两七钱']); if (!/别处一个字不动/.test(pi) || !/一两七钱/.test(pi) || pi.length > 400) bad.push('只改几处的话不对或带了多余材料');
+    // 17 正文里夹的内部按语不给玩家看（真模型第八轮）；正经的括注不动
+    { const t = splitStory('郑兴把册子摊开：「如今在寨的，六十六人（账中喽啰改66）。能上阵的五十出头。」他又翻了一页（那页已经发黄）。').text;
+      if (/账中/.test(t) || !t.includes('六十六人。') || !t.includes('（那页已经发黄）')) bad.push('内部按语没去干净或误删了正经括注：' + t); }
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));
