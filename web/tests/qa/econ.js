@@ -79,6 +79,13 @@ const path = require('path');
     // 山寨寨主不是官
     { const s2 = newSave({ name: '胡大彪', gender: '男', age: 38, role: '曹州府菏泽县境内山寨寨主', gregorianYear: 1813, month: 9, day: 15, place: '菏泽', polity: '清' }); s2.career = { office: '山寨寨主' };
       if (identityOf(s2).tags.includes('官')) bad.push('山寨寨主被当成官'); }
+    // 真模型实测第六轮：输出格式紧跟在最后一块材料后面、中间没有空行——最后一段一个字不动、不挪；保险认得出弄丢了
+    { const tailRules = '一条，tmp 写 t1、t2。\nlookup：写这一回要查的几样。\n只输出一个 JSON 对象：{"lookup":[],"acts":[],"steps":[]}';
+      const src = ['规矩开头' + '。'.repeat(300), '【主角】胡大彪', '【派系消长与人事恩怨】\n' + Array.from({ length: 200 }, (_, i) => `· 第${i + 1}条 派系`).join('\n'), '【身边的人（各有盘算）】\n' + Array.from({ length: 400 }, (_, i) => `· 第${i + 1}个人 有他的盘算`).join('\n'), '【玩家这回说】看看寨子', '【制度框架】只是框架\n' + Array.from({ length: 100 }, (_, i) => `· 第${i + 1}条 制度`).join('\n') + '\n' + tailRules].join('\n');
+      const o = econTrimText(src, { official: false, adm: false, mil: false, eco: false, geo: true });
+      if (!o.endsWith(tailRules)) bad.push('最后一段后面的输出格式被丢了'); if (/派系消长/.test(o)) bad.push('中间用不上的块没丢');
+      CACHE_SEQ = { segs: [], seen: new Map(), n: 0 }; const o2 = cacheOrder(o, { turn: 1, clock: { y: 1813 } }); if (!o2.endsWith(tailRules)) bad.push('排序把最后一段挪走了');
+      if (!econSafe(src, o2)) bad.push('保险误报'); if (econSafe(src, o2.replace('只输出一个 JSON 对象', ''))) bad.push('保险没认出输出格式丢了'); if (econSafe(src, o2 + '多了一句')) bad.push('保险没认出结尾变了'); }
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));
