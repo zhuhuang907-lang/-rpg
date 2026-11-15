@@ -98,6 +98,7 @@ start ai.js && {
   run "真人硬门槛：模型夹带的古人（李白）不收、名单外不立档、真人档案只列此刻在世且核实过的、旧档打开就清（R-209~211）" 120 env PLAY="$ROOT/web/play.html" node eragate.js
   run "正文不作凭据：凭空写主角得官、写在世真人死了——挑得出、重写还在就删句、存档不认；玩家自己求的照认；许诺传闻丢官不误伤（任务十六第一步，R-233）" 120 env PLAY="$ROOT/web/play.html" node factgate.js
   run "省 token：材料照这一步的话题和身份裁，用不上的不带、长的有上限、玩家的话和正文不动；不要紧的一步不另请审稿（R-238）" 120 env PLAY="$ROOT/web/play.html" node econ.js
+  run "朝局能玩：朝局态势（在位、当权、待你怎样）、拜谒送礼打听投门下弹劾真点得动、一月两回、情分官声靠山弹章都有后果、进写戏材料、页面没有内部字样（R-240）" 180 env PLAY="$ROOT/web/play.html" node courtplay.js
   run "朝局可玩：朝议摆上页面、玩家表态定成败、待办与回音看得到、位子没落树也有卡、空缺数不虚高（R-212~214）" 120 env PLAY="$ROOT/web/play.html" node courtissue.js
   run "原文库检索：照朝代政权挑书、整词比对、同段多词排前、在命中处摘句、真语料查得到（R-189）" 300 env PLAY="$ROOT/web/play.html" node libsearch.js
   run "三方分工：整理归 DeepSeek、写故事想事情归 GLM、互为后备、材料过长删中间；原文佐证进推演（R-189）" 150 env PLAY="$ROOT/web/play.html" node r189.js
