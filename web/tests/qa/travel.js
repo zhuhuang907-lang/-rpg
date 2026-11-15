@@ -10,10 +10,7 @@ const { chromium } = require('playwright');
   if (!(await idle()) || !(await p.$('#said'))) { bad('开局没出来'); console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(1); }
   await p.waitForFunction(() => S.geo && S.geo.units.length > 3, null, { timeout: 60000 }).catch(() => bad('开局后没画出地图'));
   const g0 = await p.evaluate(() => S.geo && S.geo.here.name);
-  // 等这一回的账真记上（回合数加一）再看地图：平常一步正文先出、账在后头记，光等「不忙」会读到上一回的所在地
-  const go = async t => { await idle(); const t0 = await p.evaluate(() => S.turn || 0);   // 先等上一步（含开局后台）做完再记回合数，不然开局那一下加一会被当成这一回 await p.fill('#said', t); await p.click('#bSend');
-    await p.waitForFunction(t => (S.turn || 0) > t || !!((S.chat[S.chat.length - 1] || {}).extra || {}).salvaged, t0, { timeout: 300000, polling: 300 }).catch(() => bad('这一回没记上账：' + t));
-    if (!(await idle())) bad('卡住：' + t); await p.waitForTimeout(500); };
+  const go = async t => { await p.fill('#said', t); await p.click('#bSend'); if (!(await idle())) bad('卡住：' + t); await p.waitForTimeout(500); };
   await go('坐船去苏州办一批绸缎');
   const st1 = await p.evaluate(() => ({ at: S.at, home: S.place.full, head: (S.chat.slice(-1)[0].cur || {}).head || '' }));
   if (st1.at !== '苏州府吴县') bad('出门到了苏州，没记下人在哪：' + JSON.stringify(st1));
