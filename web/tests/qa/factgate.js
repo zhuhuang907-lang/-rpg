@@ -109,6 +109,17 @@ const path = require('path');
     if ((s.career || {}).office) bad.push('寨主被安了官职：' + s.career.office);
     s = mk(); s.protagonist.role = '菏泽县知县'; applyReply(s, { reply: '开场。', mode: 'play', elapsedDays: 0, career: { office: '菏泽县知县', rank: '正七品' } }, '');
     if ((s.career || {}).office !== '菏泽县知县') bad.push('知县的官职没立上');
+    // 16 第二轮真模型实测：凭据词不被「官兵」「官道」带过去；开局不谈凭据；小毛病只改那几处
+    s = mk(); s.press = [{ state: '临门', title: '官兵沿官道设卡盘查', who: '' }];
+    if (gainSanction(s, '我回家歇着', null)) bad.push('「官兵」「官道」被当成求官的凭据');
+    if (gainSanction(s, '', null)) bad.push('没人说话也谈凭据');
+    if (!gainSanction(s, '我去吏部投状求官', null)) bad.push('真求官的不算凭据了');
+    s = mk(); s.protagonist.role = '曹州府菏泽县境山寨寨主，领数十人据险自守'; s.press = [{ state: '临门', title: '官兵设卡', who: '' }];
+    applyReply(s, { reply: '开场。', mode: 'play', elapsedDays: 0, career: { post: '山寨寨主', office: '山东巡抚（驻济南府）', rank: '无品级（非官）' } }, '');
+    if ((s.career || {}).office) bad.push('寨主又被安了官职：' + s.career.office);
+    if (bandName('曹州府菏泽县境山寨寨主，领数十人据险自守', '胡大彪') !== '胡家寨') bad.push('山寨名：' + bandName('曹州府菏泽县境山寨寨主，领数十人据险自守', '胡大彪'));
+    if (!STRUCT_FAULT.test('没接住玩家这一步：玩家说……') || STRUCT_FAULT.test('史实：「寨主老爷」称谓不合') || STRUCT_FAULT.test('结尾收死了（落尾是……）')) bad.push('该整段重写的和只改几处的没分对');
+    const pi = patchInput('你进了粮行。', ['史实：「一石三两五钱」米价超出量级——应当：改为一两七钱']); if (!/别处一个字不动/.test(pi) || !/一两七钱/.test(pi) || pi.length > 400) bad.push('只改几处的话不对或带了多余材料');
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));
