@@ -57,6 +57,14 @@ const path = require('path');
     const sortc = x => x.replace(/\n/g, '').split('').sort().join('');
     if (sortc(r2) !== sortc('记账的规矩' + '账'.repeat(5000) + '\n' + C + '\n' + B + '\n' + A + '\n【玩家这回说】找二当家\n【这一回的正文】' + '正'.repeat(300) + '\n')) bad.push('换次序时字数变了');
     if (!/【玩家这回说】找二当家\n【这一回的正文】/.test(r2)) bad.push('玩家的话和正文被拆开了');
+    // 跨回合：上一回见过、这一回一字没变的块排在这一回才变的块前面
+    s.turn = 9; const A9 = '【此刻】' + '丁'.repeat(300);
+    const r3 = cacheOrder('记账的规矩' + '账'.repeat(5000) + '\n' + A9 + '\n' + B + '\n【玩家这回说】歇着', s);
+    if (!r3.startsWith(B + '\n' + A9)) bad.push('跨回合没把没变的材料排在最前');
+    // 山寨、市井的平常话里带「兵」「守」「官」单字，照样用短单（真模型实测：六回短单一次没起作用）
+    s.turn = 10; s.ledgerFullAt = 9;
+    const daily = '你在寨门口看喽啰们操弄兵器，守寨的弟兄说官兵最近没动静，又提起山下的税。'.repeat(8);
+    if (!ledgerLiteOk(s, '去寨门口转转，问问守寨的弟兄官兵最近有没有动静', daily, null)) bad.push('平常话里带兵、守、官单字就不用短单');
     // 不要紧的一步不另请审稿；要紧的照请
     if (!econSkipReview('找二当家来商量以后怎么办', null)) bad.push('不要紧的一步还请审稿');
     if (econSkipReview('带兵攻打曹县县城', null) || econSkipReview('走', { battleResult: {} }) || econSkipReview('托媒人去柳家议亲', null)) bad.push('要紧的一步没请审稿');
@@ -65,7 +73,7 @@ const path = require('path');
       const mk2 = (title) => ['规矩开头' + '。'.repeat(300), '【主角】胡大彪', `【${title}】\n` + Array.from({ length: 200 }, (_, i) => `· 第${i + 1}条 材料材料材料`).join('\n') + '\n\n' + rules, '【玩家这回说】看看寨子'].join('\n') + '填'.repeat(4000);
       for (const title of ['时间在走', '本朝官制（已核）', '定本']) { const o = econTrimText(mk2(title), { official: false, adm: false, mil: false, eco: false, geo: true });
         if (!o.includes(rules)) bad.push(`【${title}】后面的规矩和输出格式被裁掉了`); if (o.length >= mk2(title).length) bad.push(`【${title}】没裁`); }
-      CACHE_SEQ = { turn: '', segs: [] }; const src = mk2('时间在走'), o2 = cacheOrder(src, { turn: 1, clock: { y: 930 } });
+      CACHE_SEQ = { segs: [], seen: new Map(), n: 0 }; const src = mk2('时间在走'), o2 = cacheOrder(src, { turn: 1, clock: { y: 930 } });
       if (!o2.includes(rules)) bad.push('排序把规矩弄丢了');
       if (!(o2.indexOf('【时间在走】') < o2.indexOf('规矩开头') && o2.indexOf('规矩开头') < o2.indexOf('你是这局游戏的推演人') && o2.indexOf('你是这局游戏的推演人') < o2.indexOf('【玩家这回说】'))) bad.push('排序后：材料没在最前，或规矩、输出格式、玩家的话的先后乱了'); }
     // 山寨寨主不是官

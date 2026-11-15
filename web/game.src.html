@@ -556,13 +556,15 @@ function ledgerRules(s, txt) {
 
 /* ========== 省 token 第二刀（R-238）：平常的一步用短记账单（过了多久、钱的进出、见了谁、吩咐的事成没成），
  *  身份变动、打仗、婚丧、任免、官司、买卖产业这类大事，或离上次全套记账满五回，才用全套。短单不给的字段程序照旧保留。 ========== */
-const LEDGER_BIG_RE = /死|崩|薨|卒|殁|病故|亡故|病逝|去世|过世|故去|阵亡|身亡|自尽|病危|婚|娶|嫁|纳妾|有孕|分娩|临盆|生下|定亲|过继|立嗣|分家|授官|任命|委任|升任|调任|罢官|革职|致仕|考中|中举|及第|落第|从军|入伍|落草|招安|称王|称帝|即位|登基|战|攻|围|兵|伏击|厮杀|迁居|搬家|移居|买下|卖掉|典当|盘下|开张|歇业|入狱|下狱|被捕|拿获|官司|告状|案|赏赐|抄家|起事|造反|结盟|投奔|入伙/;
+// 大事只认成词（单字「兵」「守」「官」「案」在山寨、市井的平常话里到处都是——真模型实测六回短单一次没起作用）
+const LEDGER_BIG_RE = /死了|身死|崩|薨|病故|亡故|病逝|去世|过世|故去|阵亡|身亡|自尽|病危|被杀|杀了|成婚|成亲|娶亲|娶了|出嫁|嫁给|纳妾|有孕|有喜|分娩|临盆|生下|产下|定亲|过继|立嗣|分家|授官|授了|任命|委任|升任|调任|罢官|罢免|革职|致仕|考中|中举|及第|落第|从军|入伍|落草|招安|称王|称帝|即位|登基|开战|交战|攻城|攻打|围城|攻下|失守|厮杀|伏击|迁居|搬家|移居|买下|卖掉|典当|盘下|开张|歇业|入狱|下狱|被捕|拿获|打官司|告状|升堂|赏赐|抄家|起事|造反|结盟|投奔|入伙/;
+const LEDGER_SAID_BIG = /谋划|争夺|打仗|开战|攻打|攻城|守城|围城|出兵|发兵|招兵|募兵|升官|求官|捐官|告状|审案|官司|成婚|成亲|娶亲|出嫁|纳妾|议亲|提亲|下聘|买下|置办|盘下|放贷|借贷|造反|起事|上奏|奏疏|上疏|诏|旨|杀了|刺杀|逃走|投奔|结盟|离间|构陷|拉拢|科举|应试|会试|乡试|殿试|赈济|赴任|弹劾|分家|立嗣|继承/;
 function ledgerLiteOk(s, said, story, ruling) {
   if (!s || !s.protagonist || (s.turn || 0) < 2) return false;
   if ((s.turn || 0) - (s.ledgerFullAt || 0) >= 5) return false;   // 隔几回总要全套核一遍，免得漏记的慢慢攒下
   if (ruling && ruling.battleResult) return false;
   const x = String(said || ''), y = String(story || '');
-  if (x.length > 60 || HEAVY_RE.test(x) || LEDGER_BIG_RE.test(x + y)) return false;
+  if (x.length > 150 || LEDGER_SAID_BIG.test(x) || LEDGER_BIG_RE.test(x + y)) return false;
   if (s.jail || arr(s.campaigns).some(c => /待发|行军|交战/.test(c.state || ''))) return false;
   return true;
 }
@@ -1351,24 +1353,24 @@ function econTrim(input, s, said) {
   return input;
 }
 /* 省 token 第三刀（R-238）：同一回里几次调用（裁定、记账、审稿、改稿）带的材料大半相同，但各自把不同的规矩放在最前面，DeepSeek 的缓存价一次吃不上。
- *  这一回头一次发出去的材料块记下次序；后面的调用把和它一字不差的块照同样次序排在最前，各自的规矩放在后面——开头相同的部分按缓存价算。只换次序，一个字不增不减。 */
-let CACHE_SEQ = { turn: null, segs: [] };
+ *  记住每块材料头一次出现的先后（跨回合记）；每次调用把材料块照这个先后排在最前（越早见过、一直没变的越靠前），各自的规矩放在后面——开头相同的部分按缓存价算。只换次序，一个字不增不减。 */
+let CACHE_SEQ = { segs: [], seen: new Map(), n: 0 };
 function cacheOrder(text, s) {
   const t = String(text || ''); if (t.length < 4000) return t;
   const parts = t.split(/\n(?=【[^】\n]{2,60}】)/);
   const head = /^【[^】\n]{2,60}】/.test(parts[0]) ? '' : parts.shift();
   if (parts.length < 2) return t;
-  const turn = s ? (s.turn || 0) + '|' + ((s.clock && s.clock.y) || '') : '';
-  if (CACHE_SEQ.turn !== turn) CACHE_SEQ = { turn, segs: [] };
-  // 材料块（玩家这回说的话、正文、上一稿、审读意见这类每次不同的除外）一律排在最前，次序照这一回头一次见到的先后；各自的规矩和其余的接在后面
+  // 跨回合记住：一字不差、早就见过的材料块（本朝制度、地理、没变的人物……）排最前，这一回才变的排后面——同一回的几次调用、下一回的同一种调用，开头都对得上，按缓存价算
+  const now = s ? (s.turn || 0) : 0;
   // 一块材料到头一个空行为止；后面跟着的规矩、输出格式不跟着挪（真模型实测：整段挪到前面，裁定的规矩和输出格式被拆散）
   const pieces = []; if (head) pieces.push({ t: head, mat: false });
   for (const seg of parts) { const cutAt = seg.indexOf('\n\n'), blk = cutAt < 0 ? seg : seg.slice(0, cutAt), tail = cutAt < 0 ? '' : seg.slice(cutAt).replace(/^\n+/, '');
     pieces.push({ t: blk, mat: blk.length >= 200 && !/^【(玩家这回说|这一回的正文|你的上一稿|编辑的审读意见|正文|上一回停在|上一回的结尾|字数)/.test(blk) }); if (tail) pieces.push({ t: tail, mat: false }); }
   const front = pieces.filter(x => x.mat).map(x => x.t), rest = pieces.filter(x => !x.mat).map(x => x.t);
   if (!front.length) return t;
-  for (const seg of front) if (!CACHE_SEQ.segs.includes(seg)) CACHE_SEQ.segs.push(seg);
-  front.sort((x, y) => CACHE_SEQ.segs.indexOf(x) - CACHE_SEQ.segs.indexOf(y));
+  for (const seg of front) { const o = CACHE_SEQ.seen.get(seg); if (o) o.last = now; else CACHE_SEQ.seen.set(seg, { at: CACHE_SEQ.n++, last: now }); }
+  if (CACHE_SEQ.seen.size > 600) for (const [k, v] of CACHE_SEQ.seen) if (now - v.last > 3) CACHE_SEQ.seen.delete(k);   // 三回没再用的忘掉
+  front.sort((x, y) => CACHE_SEQ.seen.get(x).at - CACHE_SEQ.seen.get(y).at);
   return front.join('\n') + '\n\n' + rest.join('\n');
 }
 async function callClaude(input, onReply, extra, tier) {
