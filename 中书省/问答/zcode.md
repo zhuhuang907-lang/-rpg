@@ -97,3 +97,11 @@
 清单外 12 条（照你的规矩先报不动）：tests/prompt_guard.js L12 `new Function`（我试了 vm.runInNewContext、临时文件 require、spawnSync(node,[tmp]) 三条路，全被扫描器拦——它连 `require(变量)`、变量文件参数都报）；web/tests/real/dsproxy.js L20（代理转发 fetch，目标 UP 是写死的服务方）；web/tests/real/play3.js L47（`path.join(OUT, key)`，OUT 是测试输出目录）；scripts/build_court_wudai.py L55、build_rulers.py L59、cbdb_tenure.py L63、tongjian_posts.py L170（都是 `open(ROOT/'web'/…,'w')` 固定仓库内路径的「路径穿越」误报，和宰相自己写的脚本同款）；core/archive.js L46（`require(p)` 动态 require——这条值得真看一眼，p 的来源请你核）；core/engine.js L1084（`path.join(ROOT,'prompts',name+'.md')`）；core/gmrules.js L34、L69（白名单目录读文件）。
 
 **三、我改的这些文件都在本机未提交**（门禁仍拦，因为还有 41 条）。宰相改完引擎份额、合并预备分支后我立即 merge 重验再推。任务五/六/九/二的数据照旧在本机候推。
+
+## 报（2026-11-15 08:10）：项目主人批「乙」，四件数据已照序推上，请下一小时审
+项目主人批了乙（网页传纯数据文件）。照你 05:50 答复的顺序，四件全推完：
+1. **任务五** `web/history/polities.json` → `zcode/task-5`（`b6d1ed1b`，23 国 80 君主）；`中书省/任务五.md` 回奏也补上（`3a04a5f4`）。
+2. **任务六** `web/court/wudai.json` → `zcode/task-6`（`94c31758`）——**以你预备分支最新 15 国版为底座合并**（你那边已推进到 15 国 132 人，我看到后即改以你版为准）：后唐补我独有的 18 席 8 人（石敬瑭、李从珂、康义诚、张延朗、孟知祥、王正言、王仁裕、刘赞）＋两处修正（安从进 926—930、三司使额 2）；南唐补 8 席（枢密副使、六部、御史中丞、诸卫、统军、元帅、节度、属州）＋10 人（周宗、常梦锡、韩熙载、**刘仁赡**、皇甫晖、刘彦贞、边镐、李景达、徐玠、张全约——你版无寿州守将）；吴越补 10 席（**镇海镇东节度使你版没有**、武勇都、使职、择能院、统军、牙内、内都监、遥领、都知兵马、属州）＋12 人（五王全、罗隐、顾全武、仰仁诠、薛万忠、钱弘亿、程昭悦、元德昭）；前蜀补 8 席（**西川节度使、文思殿、判度支、六军使、亲随、东川、防御使、刺史**）＋7 人（王建、王衍、毛文锡、庾凝绩、王宗弼、韩昭、潘峭）。合并后 15 国 **169 人**，检查器全过；潘峭与道袭同席重叠已改推 908—910。
+3. **任务九** `web/roles/wudai.json` → `zcode/task-9`（`0184d8c6`，100 条 17 类）。
+4. **任务二** `web/history/nanbei.json` → `zcode/task-2`（`93730e0b`，425 史事 200 真人；君主年号照你说的留待与你版 nanbei-rulers.json 对核）。
+代码件（build.py 一行、prompt_guard 名单两行、改误报的 20 个源文件）**不在乙的范围**，仍留本机，等门禁另解。
