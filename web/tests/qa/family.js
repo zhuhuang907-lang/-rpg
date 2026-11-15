@@ -10,11 +10,13 @@ const { chromium } = require('playwright');
   const turn = async (t, span) => { const [n0, t0] = await p.evaluate(() => [S.chat.length, S.turn || 0]); await p.fill('#said', t); if (span) await p.selectOption('#span', span); await p.click('#bSend');
     await p.waitForFunction(([n, t]) => (S.turn || 0) > t || S.chat.slice(n).some(c => c.role === 'gm' && (c.extra || {}).salvaged), [n0, t0], { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没回话：' + t)); await idle(); };
   const inc0 = await p.evaluate(() => arr(S.estate.income).length);
-  await turn('纳柳氏为妾');
+  // 假 AI 约一成的账故意写坏（截断、包代码块），那一回的家室那栏可能整个丢了：没进家室就再说一遍，第二回还不进才算错
+  const again = async (t, ok, why) => { await turn(t); if (!(await p.evaluate(ok))) { console.log(why + '（假 AI 这回的账多半写坏了），再说一遍'); await turn(t); } };
+  await again('纳柳氏为妾', () => S.household.some(m => /^柳/.test(m.name || '') && m.relation === '妾'), '妾没进家室');
   const st1 = await p.evaluate(() => ({ hh: S.household.map(m => m.relation + m.name), al: S.household.filter(m => m.alias === '柳氏').map(m => m.name), inc: S.estate.income.map(x => x.item), exp: S.estate.expense.length }));
   if (!st1.hh.some(h => /^妾柳(?!氏)/.test(h) && h !== '妾柳氏素娥' && h !== '妾柳素娥')) bad('纳的妾没进家室：' + JSON.stringify(st1.hh));
   if (st1.inc.length < inc0 + 1 || !st1.inc.includes('典铺利钱')) bad('账房只报了一项进项，别的进项丢了：' + JSON.stringify(st1.inc));
-  await turn('柳氏有喜了');
+  await again('柳氏有喜了', () => S.household.some(x => x.alias === '柳氏' && x.pregnant) || S.household.some(x => /^柳/.test(x.name || '') && x.pregnant), '有孕没记上');
   const preg = await p.evaluate(() => { const m = S.household.find(x => x.alias === '柳氏' && x.relation === '妾' && x.name !== '柳素娥'); return m && m.pregnant; });
   if (!preg) bad('有孕没记上');
   if (!(await p.evaluate(() => arr(S.policies).some(x => x.name === '盐引加课')))) bad('政令没记上');
