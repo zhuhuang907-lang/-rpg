@@ -1335,8 +1335,11 @@ function econCap(seg, n, keep) {
 function econTrimText(text, ctx) {
   const t = String(text || ''); if (t.length < 6000) return t;
   const parts = t.split(/\n(?=【[^】\n]{2,60}】)/);
+  // 一块材料到头一个空行为止；空行后面跟着的（各自的规矩、输出格式）不算这一块，原样留着——
+  // 真模型实测（2026-11-15）：裁定的提示词里，输出格式那一大段紧跟在一块材料后面，被上限一刀切掉，模型不知道要输出什么，回回写成正文、回回重试四次
   return parts.map(seg => { const m = /^【([^】\n]{2,60})】/.exec(seg); if (!m) return seg;
-    for (const [re, when, cap, keep] of ECON_RULES) if (re.test(m[1])) { if (when && !when(ctx)) return null; return econCap(seg, cap, keep); }
+    const cutAt = seg.indexOf('\n\n'), blk = cutAt < 0 ? seg : seg.slice(0, cutAt), tail = cutAt < 0 ? '' : seg.slice(cutAt);
+    for (const [re, when, cap, keep] of ECON_RULES) if (re.test(m[1])) { if (when && !when(ctx)) return tail ? tail.replace(/^\n+/, '') : null; return econCap(blk, cap, keep) + tail; }
     return seg; }).filter(x => x != null).join('\n');
 }
 function econCtx(s, said) { const x = String(said || ''); let official = false; try { official = identityOf(s).tags.includes('官'); } catch (_) {} return { official, adm: ECON_ADM.test(x), mil: ECON_MIL.test(x) || arr(s && s.campaigns).some(c => /待发|行军|交战/.test(c.state || '')), eco: ECON_ECO.test(x), geo: true }; }
@@ -1358,12 +1361,15 @@ function cacheOrder(text, s) {
   const turn = s ? (s.turn || 0) + '|' + ((s.clock && s.clock.y) || '') : '';
   if (CACHE_SEQ.turn !== turn) CACHE_SEQ = { turn, segs: [] };
   // 材料块（玩家这回说的话、正文、上一稿、审读意见这类每次不同的除外）一律排在最前，次序照这一回头一次见到的先后；各自的规矩和其余的接在后面
-  const mat = seg => seg.length >= 200 && !/^【(玩家这回说|这一回的正文|你的上一稿|编辑的审读意见)/.test(seg);
-  const front = parts.filter(mat), rest = parts.filter(seg => !mat(seg));
+  // 一块材料到头一个空行为止；后面跟着的规矩、输出格式不跟着挪（真模型实测：整段挪到前面，裁定的规矩和输出格式被拆散）
+  const pieces = []; if (head) pieces.push({ t: head, mat: false });
+  for (const seg of parts) { const cutAt = seg.indexOf('\n\n'), blk = cutAt < 0 ? seg : seg.slice(0, cutAt), tail = cutAt < 0 ? '' : seg.slice(cutAt).replace(/^\n+/, '');
+    pieces.push({ t: blk, mat: blk.length >= 200 && !/^【(玩家这回说|这一回的正文|你的上一稿|编辑的审读意见|正文|上一回停在|上一回的结尾|字数)/.test(blk) }); if (tail) pieces.push({ t: tail, mat: false }); }
+  const front = pieces.filter(x => x.mat).map(x => x.t), rest = pieces.filter(x => !x.mat).map(x => x.t);
+  if (!front.length) return t;
   for (const seg of front) if (!CACHE_SEQ.segs.includes(seg)) CACHE_SEQ.segs.push(seg);
   front.sort((x, y) => CACHE_SEQ.segs.indexOf(x) - CACHE_SEQ.segs.indexOf(y));
-  if (!front.length) return t;
-  return front.join('\n') + '\n\n' + (head ? head + '\n\n' : '') + rest.join('\n');
+  return front.join('\n') + '\n\n' + rest.join('\n');
 }
 async function callClaude(input, onReply, extra, tier) {
   if (!(extra && extra.detached) && /^(|记账|推演|改稿|审校|审读|裁定)$/.test((extra && extra.kind) || '') && typeof S !== 'undefined' && S) { try { input = econTrim(input, S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''); if (typeof input === 'string' && !(extra && extra.system)) input = cacheOrder(input, S); } catch (_) { /* 裁不成就照原样发 */ } }
@@ -2584,7 +2590,7 @@ function identityOf(s) {
   if (ID_MEMO && ID_MEMO.s === s && ID_MEMO.key === key) return ID_MEMO.v;
   // 身份那句话里「知县之子」「总兵的幕友」「前任知府」说的是别人的官，不算自己的
   const roleOwn = ID_REL.test(role) ? '' : role;
-  const officeHeld = office0 && !ID_IDLE.test(office0) ? office0 : '';
+  const officeHeld = office0 && !ID_IDLE.test(office0) && !ID_BANDIT.test(office0) ? office0 : '';   // 「山寨寨主」不是朝廷的官（真模型实测：被当成朝廷命官）
   const offTxt = officeHeld || (ID_LOCAL.test(roleOwn) || ID_MIL.test(roleOwn) || (ID_CIVIL.test(roleOwn) && !/江湖郎中|郎中先生|行医|大夫|商|贾/.test(roleOwn)) ? roleOwn : '');
   const civil = !!offTxt && (ID_LOCAL.test(offTxt) || (ID_CIVIL.test(offTxt) && !ID_MIL.test(offTxt))), milOff = !!offTxt && ID_MIL.test(offTxt);
   const localOff = !!offTxt && ID_LOCAL.test(offTxt);
@@ -14663,6 +14669,7 @@ function applyReply(s, d, said) {
   if (d.career && typeof d.career === 'object' && !Array.isArray(d.career)) {
     const c = Object.assign({}, s.career || {}), k = { ...d.career };
     // 原来没有官职的：身份里得写着这个官（开局照身份立账），或者这一步有凭据（求官、在办的升迁），账房才许给他安官职（真模型实测：开局记账给山寨寨主安了个「山东巡抚」，以后回回照巡抚写他）
+    if (k.office && ID_BANDIT.test(String(k.office))) { delete k.office; delete k.rank; }   // 寨主、大当家不是官职
     if (k.office && !c.office) { const role = String((s.protagonist || {}).role || ''), core = String(k.office).replace(/[（(].*$/, '').trim(); const officialish = (ID_LOCAL.test(role) || ID_MIL.test(role) || ID_CIVIL.test(role) || /帝|皇|王|君|可汗|单于|天子|国公|侯|伯爵/.test(role)) && !ID_BANDIT.test(role); if (!(core.length >= 2 && (role.includes(core) || role.includes(core.slice(-2)))) && !officialish && !(play && gainSanction(s, said, CUR_RULING))) { delete k.office; delete k.rank; delete k.post; delete k.duties; delete k.powers; delete k.superior; delete k.subordinates; } }
     // 官职变了，正文里得有任命的事（升、调、补、授、署，或者革、降、罢）：记账的凭空改官不算
     if (k.office && k.office !== c.office && c.office && !/擢|升|迁|调|补|授|署|除|拜|任命|简放|革|降|罢|撤|免|致仕|丁忧|告身|敕|札|部文|上谕|圣旨|旨意/.test(String(d.reply || ''))) { delete k.office; delete k.rank; }

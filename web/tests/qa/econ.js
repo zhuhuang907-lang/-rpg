@@ -60,6 +60,17 @@ const path = require('path');
     // 不要紧的一步不另请审稿；要紧的照请
     if (!econSkipReview('找二当家来商量以后怎么办', null)) bad.push('不要紧的一步还请审稿');
     if (econSkipReview('带兵攻打曹县县城', null) || econSkipReview('走', { battleResult: {} }) || econSkipReview('托媒人去柳家议亲', null)) bad.push('要紧的一步没请审稿');
+    // 真模型实测（2026-11-15）：一块材料后面紧跟着的规矩、输出格式，不许被上限切掉、不许被整块丢掉、不许被挪散
+    { const rules = '你是这局游戏的推演人。玩家有完全的自由。\n只输出一个 JSON 对象：{"acts":[],"steps":[]}';
+      const mk2 = (title) => ['规矩开头' + '。'.repeat(300), '【主角】胡大彪', `【${title}】\n` + Array.from({ length: 200 }, (_, i) => `· 第${i + 1}条 材料材料材料`).join('\n') + '\n\n' + rules, '【玩家这回说】看看寨子'].join('\n') + '填'.repeat(4000);
+      for (const title of ['时间在走', '本朝官制（已核）', '定本']) { const o = econTrimText(mk2(title), { official: false, adm: false, mil: false, eco: false, geo: true });
+        if (!o.includes(rules)) bad.push(`【${title}】后面的规矩和输出格式被裁掉了`); if (o.length >= mk2(title).length) bad.push(`【${title}】没裁`); }
+      CACHE_SEQ = { turn: '', segs: [] }; const src = mk2('时间在走'), o2 = cacheOrder(src, { turn: 1, clock: { y: 930 } });
+      if (!o2.includes(rules)) bad.push('排序把规矩弄丢了');
+      if (!(o2.indexOf('【时间在走】') < o2.indexOf('规矩开头') && o2.indexOf('规矩开头') < o2.indexOf('你是这局游戏的推演人') && o2.indexOf('你是这局游戏的推演人') < o2.indexOf('【玩家这回说】'))) bad.push('排序后：材料没在最前，或规矩、输出格式、玩家的话的先后乱了'); }
+    // 山寨寨主不是官
+    { const s2 = newSave({ name: '胡大彪', gender: '男', age: 38, role: '曹州府菏泽县境内山寨寨主', gregorianYear: 1813, month: 9, day: 15, place: '菏泽', polity: '清' }); s2.career = { office: '山寨寨主' };
+      if (identityOf(s2).tags.includes('官')) bad.push('山寨寨主被当成官'); }
     return bad;
   });
   console.log('ERRS', JSON.stringify([...errs, ...out]));
