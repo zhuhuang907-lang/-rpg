@@ -38,7 +38,7 @@ const path = require('path');
       if (all(xz).some(n => s3.courtWho[n] === '虚构')) bad.push('宰相位子补了虚构人');
       const smz = P3.find(q => q.title === '枢密使') || {}; if (!all(smz).includes('范延光')) bad.push('930 年枢密使里没有范延光');
       if (!all(smz).includes('安重诲') || all(smz).includes('孔循')) bad.push('930 年枢密使应是安重诲、范延光（孔循 928 年已外放忠武节度使）：' + JSON.stringify(all(smz)));
-      const zs = P3.find(q => q.title === '中书舍人') || {}; if (!all(zs).length || !all(zs).every(n => s3.courtWho[n] === '虚构')) bad.push('中书舍人这类中层位子没照来路补人');
+      const zs = P3.find(q => q.title === '中书舍人') || {}; if (!all(zs).length || !all(zs).some(n => s3.courtWho[n] === '虚构') && all(zs).length < 2) bad.push('中书舍人这类中层位子没照来路补人（史书有名的真人坐、空的照来路补）：' + JSON.stringify(all(zs)));
       if (P3.length > 30) bad.push('后唐中枢位子数不对：' + P3.length);
       if (P3.some(q => q.title.length < 2 || q.title === '使')) bad.push('有官名被截残（「三司使」成了「使」）：' + P3.map(q => q.title).join('、'));
       if (!P3.some(q => q.title === '三司使')) bad.push('930 年后唐没有三司使这个位子'); }

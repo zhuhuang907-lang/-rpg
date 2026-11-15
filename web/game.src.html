@@ -570,7 +570,7 @@ function ledgerLiteOk(s, said, story, ruling) {
   return true;
 }
 function ledgerLiteRules() {
-  return `你是这局历史模拟游戏的账房。主持人刚写好这一回的正文（下面给出）。这一回是平常的一步，只记下面这几样；别的字段不给，程序照旧保留。只记正文里发生了的事，不改剧情、不添情节。
+  return `你是这局历史模拟游戏的账房（短记账单）。主持人刚写好这一回的正文（下面给出）。这一回是平常的一步，只记下面这几样；别的字段不给，程序照旧保留。只记正文里发生了的事，不改剧情、不添情节。
 1. elapsedDays：正文里过了多少整天；elapsedHours：不满一天的又过了几个钟头（一场谈话报 2–4，进城办一件事报 4–8）。时间每一回都往前走。yearLabel：过完后的年号纪年。nowAt：这一回结束时主角人在哪里（当时的地名）。
 2. ledger：正文里每一笔钱的进出，收入为正、支出为负，折成【家业账】的本位单位，与正文的数对得上；正文没写数但确实花了钱的，照常理估一个数。现钱由程序结算，你不报现钱；每月固定进出不在这里重复。
 3. presentNpcs：这一回出场或有变化的人（全名；好感 -100 到 100，随来往增减，写为什么变）。lifeEvents：身边人的小变化。
@@ -1340,7 +1340,8 @@ function econTrimText(text, ctx) {
   const parts = t.split(/\n(?=【[^】\n]{2,60}】)/);
   // 一块材料到头一个空行为止；空行后面跟着的（各自的规矩、输出格式）不算这一块，原样留着——
   // 真模型实测（2026-11-15）：裁定的提示词里，输出格式那一大段紧跟在一块材料后面，被上限一刀切掉，模型不知道要输出什么，回回写成正文、回回重试四次
-  return parts.map(seg => { const m = /^【([^】\n]{2,60})】/.exec(seg); if (!m) return seg;
+  // 最后一段一个字不动：各家提示词的规矩和输出格式常常就接在最后一块材料后面，中间连空行都没有（真模型实测第六轮：裁定的输出格式又被丢了）
+  return parts.map((seg, i) => { const m = /^【([^】\n]{2,60})】/.exec(seg); if (!m || i === parts.length - 1) return seg;
     const cutAt = seg.indexOf('\n\n'), blk = cutAt < 0 ? seg : seg.slice(0, cutAt), tail = cutAt < 0 ? '' : seg.slice(cutAt);
     for (const [re, when, cap, keep] of ECON_RULES) if (re.test(m[1])) { if (when && !when(ctx)) return tail ? tail.replace(/^\n+/, '') : null; return econCap(blk, cap, keep) + tail; }
     return seg; }).filter(x => x != null).join('\n');
@@ -1365,7 +1366,8 @@ function cacheOrder(text, s) {
   const now = s ? (s.turn || 0) : 0;
   // 一块材料到头一个空行为止；后面跟着的规矩、输出格式不跟着挪（真模型实测：整段挪到前面，裁定的规矩和输出格式被拆散）
   const pieces = []; if (head) pieces.push({ t: head, mat: false });
-  for (const seg of parts) { const cutAt = seg.indexOf('\n\n'), blk = cutAt < 0 ? seg : seg.slice(0, cutAt), tail = cutAt < 0 ? '' : seg.slice(cutAt).replace(/^\n+/, '');
+  for (let i = 0; i < parts.length; i++) { const seg = parts[i]; if (i === parts.length - 1) { pieces.push({ t: seg, mat: false }); continue; }   // 最后一段连同后面的规矩、输出格式留在最后
+    const cutAt = seg.indexOf('\n\n'), blk = cutAt < 0 ? seg : seg.slice(0, cutAt), tail = cutAt < 0 ? '' : seg.slice(cutAt).replace(/^\n+/, '');
     pieces.push({ t: blk, mat: blk.length >= 200 && !/^【(玩家这回说|这一回的正文|你的上一稿|编辑的审读意见|正文|上一回停在|上一回的结尾|字数)/.test(blk) }); if (tail) pieces.push({ t: tail, mat: false }); }
   const front = pieces.filter(x => x.mat).map(x => x.t), rest = pieces.filter(x => !x.mat).map(x => x.t);
   if (!front.length) return t;
@@ -1374,8 +1376,16 @@ function cacheOrder(text, s) {
   front.sort((x, y) => CACHE_SEQ.seen.get(x).at - CACHE_SEQ.seen.get(y).at);
   return front.join('\n') + '\n\n' + rest.join('\n');
 }
+/** 保险：裁过、排过的提示词，结尾二百字要和原来一模一样（规矩、输出格式都在结尾），「只输出」「JSON」这类字眼一处不少；不然就照原样发 */
+function econSafe(raw, out) {
+  const txt = x => typeof x === 'string' ? x : Array.isArray(x) ? x.map(m => (m && typeof m.content === 'string') ? m.content : '').join('\n') : '';
+  const a = txt(raw), b = txt(out); if (!a || !b) return a === b;
+  if (a.slice(-200) !== b.slice(-200)) return false;
+  for (const k of ['只输出', 'JSON', 'json']) if ((a.split(k).length) !== (b.split(k).length)) return false;
+  return true;
+}
 async function callClaude(input, onReply, extra, tier) {
-  if (!(extra && extra.detached) && /^(|记账|推演|改稿|审校|审读|裁定)$/.test((extra && extra.kind) || '') && typeof S !== 'undefined' && S) { try { input = econTrim(input, S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''); if (typeof input === 'string' && !(extra && extra.system)) input = cacheOrder(input, S); } catch (_) { /* 裁不成就照原样发 */ } }
+  if (!(extra && extra.detached) && /^(|记账|推演|改稿|审校|审读|裁定)$/.test((extra && extra.kind) || '') && typeof S !== 'undefined' && S) { try { const raw = input; input = econTrim(input, S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''); if (typeof input === 'string' && !(extra && extra.system)) input = cacheOrder(input, S); else if (Array.isArray(input) && input.length > 1 && input[0] && input[0].role === 'user' && typeof input[0].content === 'string') input = [{ ...input[0], content: cacheOrder(input[0].content, S) }].concat(input.slice(1));   /* 写正文：头一条（账册材料）也照「早见过、没变的排最前」排，跨回合吃缓存价 */ if (!econSafe(raw, input)) input = raw; } catch (_) { /* 裁不成就照原样发 */ } }
   if (DSM() && !KEY.has && !glmUsable()) throw { code: 'no_key', message: GLM.has ? '网页版连不上 GLM（智谱只许它自己的网站直连），请再填一个 DeepSeek 的 Key，或用桌面版' : '还没填 DeepSeek 或 GLM 的 Key：在首页把 Key 粘贴进去点「保存」' };
   if (!SAMPLE) throw { code: 'no_sample', message: '这个页面要在 claude.ai 里打开，或者在桌面版游戏里打开' };
   const det = extra && extra.detached;
@@ -5284,7 +5294,8 @@ const needRuling = said => { const x = String(said || '').trim(); return x.lengt
 const HEAVY_RE = /谋|争|战|兵|攻|守|围|官|升|迁|告状|审|案|婚|娶|嫁|聘|纳妾|买下|置办|盘下|放贷|借贷|造反|起事|奏|诏|旨|杀|刺|逃|投奔|结盟|离间|构陷|拉拢|科举|应试|会试|乡试|殿试|赈|税|饷|赴任|弹劾|上疏|议亲|分家|立嗣|继承/;
 /** 家常的一步（跟在场的人说句话、问一句、逛一逛）：不深想、少等查证、不另起一回审稿，像平常聊天一样快；要紧的事照旧走全套 */
 const lightTurn = (s, said, span) => { const x = String(said || '').trim(); return !!x && x.length <= 40 && !heavyStep(s, x) && !stratWant(x) && !(SPANS[span]) && !/过(了)?[一二三四五六七八九十几数半]+[天日月年旬]|歇|等[一几]|闭门|养病|守孝|推行|颁行|改革|新政|变法|清丈|兴修|开垦|兴办|整顿|裁撤|设立/.test(x) && !arr(s.campaigns).some(c => /待发|行军/.test(c.state || '')); };
-const heavyStep = (s, said) => { const x = String(said || ''); return x.length > 40 || HEAVY_RE.test(x) || isRuler(s) && x.length > 12 || arr(s.press).some(z => z.state === '临门' && (x.includes(z.who || '\u0000') || x.includes(String(z.title).slice(0, 4)))); };
+// 一方之主话稍长就算要紧的一步——这一条去掉了（R-238，真模型第七轮）：寨主、藩帅回回都被当成要紧的一步，裁定和正文回回开深想，一回多等一分多钟、多花五六千思考 token；要紧不要紧只看话里有没有要紧的事、话长不长
+const heavyStep = (s, said) => { const x = String(said || ''); return x.length > 40 || HEAVY_RE.test(x) || arr(s.press).some(z => z.state === '临门' && (x.includes(z.who || '\u0000') || x.includes(String(z.title).slice(0, 4)))); };
 /** 人物分远近：家里人、最近三回见过的、和主角同在一地的算眼前；其余是外地的或断了来往的，没有来由不出场 */
 function splitPeople(s, P) {
   // 「眼前」照主角此刻人在哪算：出门在外时，家里人和老家的人都在远处
