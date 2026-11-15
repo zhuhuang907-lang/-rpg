@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
   const idle = () => p.waitForFunction(() => !BUSY && !BG, null, { timeout: 120000, polling: 300 }).catch(() => bad('卡住了'));
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart'); await p.waitForSelector('#said', { timeout: 300000 }); await idle();
   // 发出去以后要等到这一回的账真记上（回合数加一）再看：机器忙时 0.5 秒内还没开工；家常的一步正文先出、账在后头记，光等回话也会提前读到旧状态
-  const turn = async (t, span) => { const [n0, t0] = await p.evaluate(() => [S.chat.length, S.turn || 0]); await p.fill('#said', t); if (span) await p.selectOption('#span', span); await p.click('#bSend');
+  const turn = async (t, span) => { await idle(); const [n0, t0] = await p.evaluate(() => [S.chat.length, S.turn || 0]); await p.fill('#said', t); if (span) await p.selectOption('#span', span); await p.click('#bSend');
     await p.waitForFunction(([n, t]) => (S.turn || 0) > t || S.chat.slice(n).some(c => c.role === 'gm' && (c.extra || {}).salvaged), [n0, t0], { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没回话：' + t)); await idle(); };
   const inc0 = await p.evaluate(() => arr(S.estate.income).length);
   // 假 AI 约一成的账故意写坏（截断、包代码块），那一回的家室那栏可能整个丢了：没进家室就再说一遍，第二回还不进才算错

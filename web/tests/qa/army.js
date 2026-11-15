@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
   const idle = () => p.waitForFunction(() => !BUSY && !BG, null, { timeout: 120000, polling: 300 }).catch(() => bad('卡住了'));
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart'); await p.waitForSelector('#said', { timeout: 300000 }); await idle();
-  const turn = async t => { const [n0, t0] = await p.evaluate(() => [S.chat.length, S.turn || 0]); await p.fill('#said', t); await p.click('#bSend'); await p.waitForFunction(([n, t]) => (S.turn || 0) > t || S.chat.slice(n).some(c => c.role === 'gm' && (c.extra || {}).salvaged), [n0, t0], { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没记上账')); await idle(); };   // 等这一回真回了话（机器忙时 0.5 秒内还没开工）
+  const turn = async t => { await idle(); const [n0, t0] = await p.evaluate(() => [S.chat.length, S.turn || 0]); await p.fill('#said', t); await p.click('#bSend'); await p.waitForFunction(([n, t]) => (S.turn || 0) > t || S.chat.slice(n).some(c => c.role === 'gm' && (c.extra || {}).salvaged), [n0, t0], { timeout: 300000, polling: 300 }).catch(() => bad('发出去这一回没记上账')); await idle(); };   // 等这一回真回了话（机器忙时 0.5 秒内还没开工）
   const lastExtra = () => p.evaluate(() => { const g = [...S.chat].reverse().find(c => c.role === 'gm'); return { army: g.extra && g.extra.army, battle: g.extra && g.extra.battle, html: [...document.querySelectorAll('.msg.gm')].pop().innerText }; });
   await turn('在江都募四百乡勇');
   let x = await lastExtra();
