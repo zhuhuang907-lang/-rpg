@@ -6,7 +6,7 @@ import glob, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 P = lambda *a: os.path.join(ROOT, *a)
-PERIODS = [('wudai', '五代十国'), ('sanguo', '汉末三国'), ('jin16', '两晋十六国'), ('nanbei', '南北朝'), ('tangmo', '唐末')]
+PERIODS = [('wudai', '五代十国'), ('sanguo', '汉末三国'), ('jin16', '两晋十六国'), ('nanbei', '南北朝'), ('suitang', '隋唐前期'), ('tangmo', '唐末'), ('song', '宋辽夏金')]   # 2026-11-16 加隋唐前期、宋（R-241，任务二十二、二十八）
 WUDAI = ['后梁', '后唐', '后晋', '后汉', '后周', '吴', '南唐', '吴越', '前蜀', '后蜀', '楚', '闽', '南汉', '荆南', '北汉',
          '岐', '燕', '赵', '定难军', '归义军', '契丹']
 THICK = ['后梁', '后唐', '后晋', '后汉', '后周', '南唐', '吴越', '前蜀', '后蜀']
