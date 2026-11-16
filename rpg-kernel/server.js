@@ -158,6 +158,11 @@ function withSaveLock(id, fn) {
   return run;
 }
 // 最近一次连 AI 的结果：首页据此显示「已接通」还是「连不上」（以前只要存了 Key 就显示已接通）
+/* 联网查证的本机缓存（R-243）：查过的条目存档复用，最多五千条，旧的先丢 */
+const LOOKUP_CACHE_FILE = path.join(ROOT, 'data', 'cache', 'lookup.json'); let LOOKUP_CACHE = null, LOOKUP_SAVE_T = null;
+function lookupCache() { if (!LOOKUP_CACHE) { LOOKUP_CACHE = new Map(); try { for (const [k, v] of JSON.parse(fs.readFileSync(LOOKUP_CACHE_FILE, 'utf8'))) LOOKUP_CACHE.set(k, v); } catch (_) {} } return LOOKUP_CACHE; }
+function lookupCacheSet(k, v) { const m = lookupCache(); m.delete(k); m.set(k, v); while (m.size > 5000) m.delete(m.keys().next().value);
+  clearTimeout(LOOKUP_SAVE_T); LOOKUP_SAVE_T = setTimeout(() => { try { fs.mkdirSync(path.dirname(LOOKUP_CACHE_FILE), { recursive: true }); fs.writeFileSync(LOOKUP_CACHE_FILE, JSON.stringify([...m])); } catch (_) {} }, 1500); }
 const STATUS_FILE = path.join(__dirname, 'data', 'status.json');
 function readStatus() { try { return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')); } catch (_) { return {}; } }
 function setStatus(patch) { try { fs.writeFileSync(STATUS_FILE, JSON.stringify({ ...readStatus(), ...patch }), 'utf8'); } catch (_) { /* 忽略 */ } }
@@ -541,7 +546,10 @@ const routes = {
       return { query: q, results: [], error: w.error || b.error, provider: 'wikipedia' };
     };
     // 没搜到（不是出错）：把查询改短再搜，维基这类搜索框只认简单的词（「扬州府 乾隆二十二年 知府」→「扬州府 知府」→「扬州府」）
-    const one = async q => {
+    // 查过的存下来（R-243）：史事、人物、地名不会变，同一条下回不再花博查、DeepSeek 的钱；只存查到了的，存在本机 data/cache/lookup.json
+    const one = async q => { const ck = (WORLD.has(q) ? 'W:' : 'L:') + q, hit = lookupCache().get(ck); if (hit) return { ...hit, cached: true };
+      const r = await one0(q); if ((r.results || []).length && !r.error) lookupCacheSet(ck, { query: q, results: r.results.slice(0, 6), provider: r.provider }); return r; };
+    const one0 = async q => {
       let r = await once(q);
       const toks = q.split(/\s+/).filter(Boolean);
       const tries = toks.length > 2 ? [toks[0] + ' ' + toks[toks.length - 1], toks[0]] : toks.length === 2 ? [toks[0]] : [];
