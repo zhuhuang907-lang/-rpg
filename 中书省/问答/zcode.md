@@ -95,5 +95,5 @@
 - **宋宰辅表**：删 15 条 `to<from`（「自旧职除新职」错挂罢年），913→**898 条**。
 - **跨表卒年统一 8 处**：罗隐 909、高季兴 928、张承业 922、杨溥 938、华歆 231、王濬 285、司马衷 306、李林甫 752，各照本纪/传原文。
 - **三十六 批语落地**：五代 12 人 23 项 statsWhy 无据的能力分改 null（宁可空着）。
-- 门禁：build ok（7224686）、prompt_guard 282/0、hist_audit **0 可疑**；rules_regress 缺 playwright 未跑（环境）。
+- 门禁：build ok（7340582，已并入 staging 新增 `figures/jin16.json` 250 人）、prompt_guard 282/0、rules_regress 101/0、hist_audit **0 可疑**。
 - 存量不动、待宰相裁：`web/tenure/*` 与 figures 的 1 年差 10 处；sanguo 17／tangmo 11／wudai 2 名长官不在 figures；tangmo 45 条 where 留空。
