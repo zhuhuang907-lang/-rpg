@@ -5587,7 +5587,10 @@ async function getRuling(s, said) {
     }
     if (sc) { const t = s.turn + 1; s.shapes = arr(s.shapes).filter(x => x.turn !== t).concat([{ turn: t, type: sc.type, where: one(sc.where, 30), cast: sc.cast.map(x => x.name).join('、') || '无', end: one(sc.end, 40) }]).slice(-6); }
     const bt = d.battle && typeof d.battle === 'object' && /是|有|真/.test(String(d.battle.fight || '')) ? { enemy: one(d.battle.enemy, 20), enemyTroops: N0(d.battle.enemyTroops), enemyQuality: one(d.battle.enemyQuality, 2), enemySupply: one(d.battle.enemySupply, 2), place: one(d.battle.place, 16), terrain: one(d.battle.terrain, 6), attacker: /敌/.test(d.battle.attacker || '') ? '敌' : '我', surprise: /有|是/.test(d.battle.surprise || ''), ourForces: arr(d.battle.ourForces).map(x => one(x, 20)).filter(Boolean), ourTroops: N0(d.battle.ourTroops), ourSide: one(d.battle.ourSide, 20), ourQuality: one(d.battle.ourQuality, 2), basis: one(d.battle.basis, 60) } : null;
-    const acts = arr(d.acts).filter(x => x && x.what).slice(0, 6).map((x, i) => { const t = /问/.test(x.type || '') ? '问' : /计|谋|盘算/.test(x.type || '') ? '计' : /请|申/.test(x.type || '') ? '请' : /试|越|冒/.test(x.type || '') || /越权/.test(x.ok || '') ? '试' : '令'; return { tmp: one(x.tmp, 4) || 't' + (i + 1), type: t, what: one(x.what, 80), who: one(x.who, 16), to: one(x.to, 16), perm: one(x.perm, 40), ok: one(x.ok, 8) }; });
+    const acts = arr(d.acts).filter(x => x && x.what).slice(0, 6).map((x, i) => { const t = /问/.test(x.type || '') ? '问' : /计|谋|盘算/.test(x.type || '') ? '计' : /请|申/.test(x.type || '') ? '请' : /试|越|冒/.test(x.type || '') || /越权/.test(x.ok || '') ? '试' : '令'; const o = { tmp: one(x.tmp, 4) || 't' + (i + 1), type: t, what: one(x.what, 80), who: one(x.who, 16), to: one(x.to, 16), perm: one(x.perm, 40), ok: one(x.ok, 8) };
+      /* 越权不再一律办不成（R-242「不要有太多限制」）：写之前由程序掷一回——名望、手里有兵、一方之主、乱世都让越权更容易成；成了照办成记，事后多半有人参你擅权；不成照走漏风声、被底下人顶回去写 */
+      if (/越权/.test(o.ok)) o.over = overRoll(s, o.what, i);
+      return o; });
     const lookup = arr(d.lookup).map(x => one(x, 24)).filter(Boolean).slice(0, 16);
     return { lookup, lookTxt: ledgerLookup(s, lookup, said), acts, battle: bt, realPeople: arr(d.realPeople).map(x => one(x, 12)).filter(x => x.length >= 2).slice(0, 4), scene: sc && (sc.beats.length || sc.cast.length) ? sc : null, places: arr(d.places).map(x => one(x, 10)).filter(x => x.length >= 2).slice(0, 4), brief: ['institutions', 'people', 'terms', 'interests', 'details'].map(k => [k, cut(bf[k], 260)]).filter(([, v]) => v), search: arr(d.search).map(x => one(x, 40)).filter(x => x.length >= 2).slice(0, 6), steps: d.steps.filter(x => x && x.what).slice(0, 4).map(x => ({ what: one(x.what, 50), who: one(x.who, 20), cost: one(x.cost, 50), time: one(x.time, 20), ok: /不能|办不到/.test(x.ok || '') ? '办不到' : /难|代价/.test(x.ok || '') ? '有代价' : '能', why: one(x.why, 90) })), risks: arr(d.risks).map(x => one(x, 60)).filter(Boolean).slice(0, 3), alt: one(d.alt, 80) };
   } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
@@ -6595,11 +6598,18 @@ function actNew(s, a) {
 const actOpen = s => arr(s.acts).filter(x => ACT_OPEN.test(x.state));
 function actSet(s, pred, state, why) { for (const x of arr(s.acts)) if (ACT_OPEN.test(x.state) && pred(x)) { x.state = state; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state, why: one(why, 60) }]).slice(-8); x.touched = s.turn; } }
 /** 推演、写正文、记账都看得到的行动单 */
+/** 越权掷一回（R-242）：名望、手里有兵、一方之主、乱世都让越权更容易成，最高八成 */
+function overRoll(s, what, i) { let pw = 0.3 + Math.min(0.25, (num(s.renown) || 0) / 200); try { if (myTroops(s) > 0) pw += 0.1; if (isRuler(s)) pw += 0.2; if (bandLoose(s.clock.y)) pw += 0.1; } catch (_) {} return seeded((s.turn || 0) * 17 + String(what || '').length * 31 + (i || 0)) < Math.min(0.8, pw) ? 'ok' : 'no'; }
+/** 越权办成了：事后多半有人参你擅权（乱世少些）——下个月起临门（R-242） */
+function overPress(s, an) {
+  const ym = Math.floor(ymOf(s.clock)), r = seeded((s.turn || 0) * 29 + String(an.what).length * 7); let loose = false; try { loose = bandLoose(s.clock.y); } catch (_) {}
+  if (r < (loose ? 0.3 : 0.6) && !arr(s.press).some(p => /擅权/.test(p.title) && p.state === '临门')) s.press = arr(s.press).concat([{ id: 'pr' + Date.now().toString(36) + 'o', kind: '出手', who: isRuler(s) ? '朝中言官' : '上司、言官', title: '擅权被人参了一本', demand: `你越过分际办了「${one(an.what, 24)}」，有人揪住不放，上了弹章；是辩白、托人说情、认罪请罚，还是不理`, hidden: '', tell: 100, ignore: '弹章越积越多', state: '临门', at: ym + 1 }]);
+}
 function actBlock(s) {
   const L = actOpen(s).slice(-12), now = arr(s.actsNow), stale = arr(s.acts).filter(x => x.state === '没有下文' && s.turn - (x.touched || x.turn) <= 1);
   if (!L.length && !now.length && !stale.length) return '';
   return '【行动单（主角要办的事；正文照各自的进展写，记账在 actResults 里照 id 报：办成、部分办成、受阻、驳回、拖着、搁下；不在单子上的事不许当成主角办成了）】'
-    + (now.length ? '\n这一回新开的：' + now.map(x => `${x.tmp}「${ACT_T[x.type]}」${x.what}${x.who ? '（' + x.who + '去办）' : ''}${x.to ? '（向' + x.to + '请）' : ''}${x.ok === '越权' ? '（越权，照风险写）' : ''}`).join('；') : '')
+    + (now.length ? '\n这一回新开的：' + now.map(x => `${x.tmp}「${ACT_T[x.type]}」${x.what}${x.who ? '（' + x.who + '去办）' : ''}${x.to ? '（向' + x.to + '请）' : ''}${x.ok === '越权' ? (x.over === 'ok' ? '（越权：这回办得成，照办成写，只是越了分际、事后难免有人说话）' : '（越权：这回走漏风声或被底下人顶回去，没办成，照此写）') : ''}`).join('；') : '')
     + (L.length ? '\n还在办的：' + L.map(x => `${x.id}「${ACT_T[x.type]}」${x.what}（${x.state}，第${x.turn}回开的${x.who ? '，' + x.who + '经手' : ''}）`).join('；') : '')
     + (L.some(x => s.turn - (x.touched || x.turn) >= 2) ? '\n拖了两回的（这一回正文必须写出结果——办成了，或者卡在哪、谁压着，记账照报；不许再写「还在办」）：' + L.filter(x => s.turn - (x.touched || x.turn) >= 2).map(x => x.id + x.what).join('；') : '')
     + (stale.length ? '\n三回没有下文的（正文交代一句：为什么搁下、谁压着）：' + stale.map(x => x.what).join('；') : '');
@@ -6614,7 +6624,7 @@ function applyActs(s, d) {
     if (!r || !r.id) continue; const x = arr(s.acts).find(z => z.id === idOf(one(r.id, 8))); if (!x) continue;
     let st = /办成|成了|完成/.test(r.state || '') && !/部分/.test(r.state || '') ? '办成' : /部分/.test(r.state || '') ? '部分办成' : /驳/.test(r.state || '') ? '驳回' : /受阻|失败|没成|办砸/.test(r.state || '') ? '受阻' : /搁/.test(r.state || '') ? '搁下' : '拖着';
     // 裁定在写之前定的成败压过正文（任务十六第四步）：这一回新开的单子，裁定说办不到、越权的，记账报「办成」也只记受阻
-    { const an = arr(s.actsNow).find(z => z.realId === x.id); if (an && /办成/.test(st)) { const rs = arr(CUR_RULING && CUR_RULING.steps).find(t => t && simText(t.what || '', x.what) >= 0.3); if (rs && /办不到|办不成/.test(String(rs.ok || '')) || /越权/.test(String(an.ok || ''))) { st = '受阻'; r.why = one((rs && rs.why) || '越了权限，办不下去', 60); r.changed = '没改'; s.unbooked = arr(s.unbooked).concat([{ turn: s.turn, text: `正文写「${one(x.what, 20)}」办成了，可照你的身份和手里的东西这一步办不到，账上记受阻` }]).slice(-30); } } }
+    { const an = arr(s.actsNow).find(z => z.realId === x.id); if (an && /办成/.test(st)) { const rs = arr(CUR_RULING && CUR_RULING.steps).find(t => t && simText(t.what || '', x.what) >= 0.3); if (an.over === 'ok' && /越权/.test(String(an.ok || '')) && !(rs && /办不到|办不成/.test(String(rs.ok || '')))) { overPress(s, an); } else if (rs && /办不到|办不成/.test(String(rs.ok || '')) || /越权/.test(String(an.ok || ''))) { st = '受阻'; r.why = one((rs && rs.why) || '越了权限，办不下去', 60); r.changed = '没改'; s.unbooked = arr(s.unbooked).concat([{ turn: s.turn, text: `正文写「${one(x.what, 20)}」办成了，可照你的身份和手里的东西这一步办不到，账上记受阻` }]).slice(-30); } } }
     x.state = st; x.touched = s.turn; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state: st, why: one(r.why, 60), changed: one(r.changed, 60) }]).slice(-8);
     out.push({ id: x.id, type: x.type, what: x.what, state: st, why: one(r.why, 60), changed: one(r.changed, 60) });
   }
@@ -6693,7 +6703,7 @@ function ledgerMismatch(s, d, said, ruling) {
   if (idGainBarred(s, idc, said, ruling)) out.push(`主角没有成为「${one(idc.role, 24)}」（这一步没有求官应举，也没有在办的升迁）`);
   for (const r of arr(d.actResults)) { if (!r || !/办成/.test(String(r.state || ''))) continue; const an = arr(s.actsNow).find(a => a && a.tmp === one(r.id, 8)); if (!an) continue;
     const rs = arr(ruling && ruling.steps).find(t => t && simText(t.what || '', an.what || '') >= 0.3);
-    if (rs && /办不到|办不成/.test(String(rs.ok || '')) || /越权/.test(String(an.ok || ''))) out.push(`「${one(an.what, 24)}」没有办成${rs && rs.why ? '（' + one(rs.why, 40) + '）' : '（越了主角的权限）'}`); }
+    if (rs && /办不到|办不成/.test(String(rs.ok || '')) || (/越权/.test(String(an.ok || '')) && an.over !== 'ok')) out.push(`「${one(an.what, 24)}」没有办成${rs && rs.why ? '（' + one(rs.why, 40) + '）' : '（越了主角的权限）'}`); }
   return [...new Set(out)].slice(0, 8);
 }
 /** 对不上的事里点了名的（凭空来的妻妾、新立的兵马、新得的地方、凭空的官职）：正文里还带着这些名字的句子删掉；删多了（剩不到一半）不删 */
