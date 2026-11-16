@@ -14043,7 +14043,7 @@ function recapTail(s, said, span) {
   if (prevG) L.push(`【上一回停在】${String(prevG.text).replace(/\s+/g, '').slice(-160)}`);
   const sd = String(said || '').trim();
   L.push(sd ? `【玩家这回说的原话，正文就写这件事】${sd}\n——从这件事写起，写它的经过和结果；他一句里几件事就都写到；跟这件事无关的材料一概不用，不铺垫、不绕远、不讲大道理，人物说的每句话都要有用。` : '【玩家这回没说话】照上面的规矩写，不替主角做决定。');
-  if (!SPANS[span]) L.push(`【字数】正文${LEN[SETTINGS.len] || LEN.normal}，不超出；写完这件事就停。`);
+  if (!SPANS[span]) L.push(`【字数】正文${LEN[SETTINGS.len] || LEN.normal}，不超出；写完这件事就停（要交账的，正文停了再交账）。`);
   return L.join('\n');
 }
 function storyInput(s, said, span, note, sys, ruling, fix) {
@@ -14067,8 +14067,8 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const unbNote = lastUnb.length ? `\n【上一回其实没有发生的事（别当它发生过；人物也不提它）】${lastUnb.join('；')}` : '';
   const lookNote = EXTRA_LOOK ? `\n【你要查的账（照这个写，不要再写「查账」）】\n${EXTRA_LOOK}` : '\n【缺数先查账】材料里找不到你这一回要用的确数（兵马、军务、家宅、钱粮、国势、行动单、势力、某个人、某个地方）时，不要估、不要编：整篇只回一行「【查账：要查的几样，用顿号隔开；人写「人物:姓名」，地方写「地图:地名」】」，程序把账给你再写。材料够就直接写。';
   const noGain = !gainSanction(s, said, ruling) ? '\n【这一回账上不会有的】玩家这一步没有求官应举，行动单上也没有在办的升迁：不写主角得官、封爵、登科、得称号（写了程序会删，也不记账）；史书上此时在世的人，主角没碰他就不写他死。' : '';
-  const acctNote = acctLiteOk(s, said, span, ruling) ? '\n' + acctRules(s) : '';
-  return pushUser(turns, IRON_HEAD + what + noGain + unbNote + lookNote + acctNote + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文。');
+  const acctNote = acctLiteOk(s, said, span, ruling) && !fix ? '\n' + acctRules(s) : '';
+  return pushUser(turns, IRON_HEAD + what + noGain + unbNote + lookNote + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文' + (acctNote ? '；正文和【幕后】写完后，最后一定另起一行写【账】交账（照下面的格式，这几行玩家看不到）。' + acctNote : '。'));   // 交账的要求放最末：放在中间真模型会漏（2026-11-16 实测六回一回都没交）
 }
 /* ========== 写戏顺手交账、程序自己记（R-243 第二步）：平常的一步不再另请模型记账——写正文的那一次在末尾交几行固定格式的事实，
  *  程序照格式落账（钱的进出、过了多久、人在哪、见了谁、行动单进展、摘要）；格式不对、缺要紧的行，照旧请模型全套记账。大事、长跨度照旧全套 ========== */

@@ -14,7 +14,8 @@ const path = require('path');
     const miss = parseAcct(S, '过：1天0时\n要：只有摘要');   // 新开的 t1 没报
     const nosum = parseAcct({ ...S, actsNow: [] }, '过：1天0时\n钱：买米｜-2');
     const rules = acctRules(S);
-    return { text: st.text, hidden: st.hidden, d, miss, nosum, rules, show: showText(raw + '\n【账'), lite: acctLiteOk(S, '派人下山打探', '', null) };
+    let tail = ''; try { const T = storyInput(S, '派人下山打探', null, '', false, null); const last = T[T.length - 1]; tail = String(last.content || '').slice(-500); } catch (e) { tail = 'ERR ' + e.message; }
+    return { tail, text: st.text, hidden: st.hidden, d, miss, nosum, rules, show: showText(raw + '\n【账'), lite: acctLiteOk(S, '派人下山打探', '', null) };
   });
   if (/【账】|过：|钱：/.test(r.text)) errs.push('账露在正文里：' + r.text);
   if (!/捕快/.test(r.hidden) || /过：/.test(r.hidden)) errs.push('幕后与账没分开：' + r.hidden);
@@ -33,5 +34,6 @@ const path = require('path');
   if (/\d/.test(r.rules.replace(/t\d+/g, ''))) errs.push('交账格式里放了示例数：' + r.rules);
   if (/【账|过：/.test(r.show)) errs.push('流式时半截的账标记露出来');
   if (!r.lite) errs.push('平常的一步没让写戏交账');
+  if (!/【账】[\s\S]*下：[^\n]*$/.test(r.tail)) errs.push('交账要求不在写戏请求的最末（真模型会漏）：' + r.tail.slice(-200));
   console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(errs.length ? 1 : 0);
 })();
