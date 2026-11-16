@@ -10045,7 +10045,15 @@ async function talentDS(s) {
 每人写：生卒年（公元，拿不准写 null）、籍贯；${a}年时的处境（还没出生写「未生」，少年、在野躬耕、游学、为某官……照史书）；性子（热中功名、重义、隐逸清高……）和此刻肯不肯出仕（肯、难、不肯）；
 照史书的仕途：按年写，每条：y 公元年、m 月（不知道写 null）、post 官职或去向（带衙门、州县，如「隆中出山，为刘备军师」「中进士二甲，授翰林院编修」「拜参知政事」）、how 怎么来的（征辟、举孝廉、进士、门荫、入幕、投靠、升、贬、罢、致仕、卒）、patron 靠谁（引荐、辟召、提拔他的人，没有写空）。只写史书确知的，不编；主角${me}不列。
 只输出一个 JSON 对象：{"people":[{"name":"","born":null,"died":null,"native":"","now":"","temper":"","will":"肯","path":[{"y":null,"m":null,"post":"","how":"","patron":""}],"source":""}]}`, null, { maxTokens: 8000, temperature: 0.1, kind: '研读', detached: true, thinking: false }).then(r => parseJSON(r.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; });
-  const res = await Promise.all(B.map(ask)); let n = 0; s.dossiers = s.dossiers || {};
+  // R-244：名臣预制包盖得住的十年块直接照包排，不请模型（真模型实测五代开局人才年表三次调用、一万九千字输出）
+  const covered = ([a, z]) => FIGLIB.some(R => R && R.range && a >= R.range[0] && z <= R.range[1] + 5 && arr(R.people).length >= 30);
+  const fromPack = ([a, z]) => { const people = []; for (const R of FIGLIB.filter(R => R && R.range && a >= R.range[0] && a <= R.range[1])) for (const f of arr(R.people)) {
+      const last = f.d != null ? f.d : Math.max(-9999, ...arr(f.po).map(x => x[2] ?? -9999), ...arr(f.w).map(x => x[1] ?? -9999)); if (last < a || (f.b != null && f.b > z)) continue;
+      const path = arr(f.po).filter(x => x[1] != null && x[1] <= z + 5).map(x => ({ y: x[1], m: null, post: x[0], how: '', patron: '' }));
+      if (!path.length && f.t > 2) continue;
+      people.push({ name: f.n, born: f.b, died: f.d, native: '', now: f.br || '', temper: arr(f.tr).join('、'), will: arr(f.tr).some(t => /谦退|安分/.test(t)) ? '难' : '肯', path, source: f.src || '名臣预制包' }); }
+    return { people }; };
+  const res = await Promise.all(B.map(b => covered(b) ? Promise.resolve(fromPack(b)) : ask(b))); let n = 0; s.dossiers = s.dossiers || {};
   for (const d of res) for (const x of arr(d && d.people)) {
     const name = one(x && x.name, 8); if (!name || name.length < 2 || name === me || /某|不详/.test(name) || !one(x.source, 60)) continue;
     // R-209：年表只收这一朝的人；生卒在这年之外的（古人、未生）不收
