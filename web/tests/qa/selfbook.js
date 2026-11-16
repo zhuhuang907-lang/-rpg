@@ -9,15 +9,15 @@ const path = require('path');
   const r = await p.evaluate(() => {
     S = newSave({ name: '胡大彪', gender: '男', age: 35, role: '山寨寨主', gregorianYear: 1813, month: 5, day: 1, place: '曹州府', polity: '清' }); S.turn = 4;
     S.people = { 王二: { favor: 10 } }; S.actsNow = [{ tmp: 't1', type: '令', what: '派人下山打探' }];
-    const raw = '寨门外雨还没停。王二掀帘进来，抖着蓑衣上的水。\n\n【幕后】知县已暗中派了捕快。\n【账】\n过：0天4时\n在：曹州府梁山泊\n钱：赏下山探子｜-3\n钱：卖马得银｜12\n人：王二｜5｜办事得力受赏\n单：t1｜办成｜王二带回消息\n要：胡大彪派王二下山打探，得知官府在城里募乡勇。\n下：加固寨门\n下：派人去城里结交窝主\n下：分赃稳住人心';
+    const raw = '寨门外雨还没停。王二掀帘进来，抖着蓑衣上的水。\n\n【幕后】知县已暗中派了捕快。\n【本回事实】\n过：0天4时\n在：曹州府梁山泊\n钱：赏下山探子｜-3\n钱：卖马得银｜12\n人：王二｜5｜办事得力受赏\n单：t1｜办成｜王二带回消息\n要：胡大彪派王二下山打探，得知官府在城里募乡勇。\n下：加固寨门\n下：派人去城里结交窝主\n下：分赃稳住人心';
     const st = splitStory(raw), d = parseAcct(S, st.acct);
     const miss = parseAcct(S, '过：1天0时\n要：只有摘要');   // 新开的 t1 没报
     const nosum = parseAcct({ ...S, actsNow: [] }, '过：1天0时\n钱：买米｜-2');
     const rules = acctRules(S);
     let tail = ''; try { const T = storyInput(S, '派人下山打探', null, '', false, null); const last = T[T.length - 1]; tail = String(last.content || '').slice(-500); } catch (e) { tail = 'ERR ' + e.message; }
-    return { tail, text: st.text, hidden: st.hidden, d, miss, nosum, rules, show: showText(raw + '\n【账'), lite: acctLiteOk(S, '派人下山打探', '', null) };
+    return { tail, text: st.text, hidden: st.hidden, d, miss, nosum, rules, show: showText(raw + '\n【本回'), lite: acctLiteOk(S, '派人下山打探', '', null) };
   });
-  if (/【账】|过：|钱：/.test(r.text)) errs.push('账露在正文里：' + r.text);
+  if (/【本回事实】|过：|钱：/.test(r.text)) errs.push('账露在正文里：' + r.text);
   if (!/捕快/.test(r.hidden) || /过：/.test(r.hidden)) errs.push('幕后与账没分开：' + r.hidden);
   const d = r.d || {};
   if (!r.d) errs.push('合格的账没认');
@@ -32,8 +32,8 @@ const path = require('path');
   if (r.miss) errs.push('新开行动单漏报也认了');
   if (r.nosum) errs.push('缺摘要也认了');
   if (/\d/.test(r.rules.replace(/t\d+/g, ''))) errs.push('交账格式里放了示例数：' + r.rules);
-  if (/【账|过：/.test(r.show)) errs.push('流式时半截的账标记露出来');
+  if (/【本回|过：/.test(r.show)) errs.push('流式时半截的账标记露出来');
   if (!r.lite) errs.push('平常的一步没让写戏交账');
-  if (!/【账】[\s\S]*下：[^\n]*$/.test(r.tail)) errs.push('交账要求不在写戏请求的最末（真模型会漏）：' + r.tail.slice(-200));
+  if (!/【本回事实】[\s\S]*下：[^\n]*$/.test(r.tail)) errs.push('交账要求不在写戏请求的最末（真模型会漏）：' + r.tail.slice(-200));
   console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(errs.length ? 1 : 0);
 })();
