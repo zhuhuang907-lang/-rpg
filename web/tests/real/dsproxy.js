@@ -2,6 +2,8 @@
 // 每次调用记一行：哪类调用、型号、思考、JSON 模式、输入字数、实际 token 用量、耗时、成没成、空输出、JSON 能不能解析；原始输入输出另存
 // 用法：DEEPSEEK_API_KEY=... OUT=目录 PORT=4711 NODE_USE_ENV_PROXY=1 node dsproxy.js
 const http = require('http'), fs = require('fs'), path = require('path');
+process.on('uncaughtException', e => { console.error('转发出错（没崩）：', e && e.message); });
+process.on('unhandledRejection', e => { console.error('转发出错（没崩）：', e && e.message); });
 const KEY = process.env.DEEPSEEK_API_KEY || '', OUT = process.env.OUT || './out', PORT = +(process.env.DS_PORT || process.env.PORT || 4711), UP = process.env.DS_UPSTREAM || 'https://api.deepseek.com';
 if (!KEY) { console.error('没有 DEEPSEEK_API_KEY'); process.exit(2); }
 fs.mkdirSync(path.join(OUT, 'calls'), { recursive: true });
@@ -21,7 +23,8 @@ http.createServer(async (req, res) => {
   catch (e) { rec.err = 'fetch ' + (e.cause && e.cause.code || e.message); rec.ms = Date.now() - t0; fs.appendFileSync(path.join(OUT, 'calls.jsonl'), JSON.stringify(rec) + '\n'); res.writeHead(502); res.end(JSON.stringify({ error: { message: rec.err } })); return; }
   rec.status = up.status; res.writeHead(up.status, { 'content-type': up.headers.get('content-type') || 'application/json' });
   let raw = ''; const rd = up.body.getReader(), dec = new TextDecoder();
-  for (;;) { const { done, value } = await rd.read(); if (done) break; const s = dec.decode(value, { stream: true }); raw += s; res.write(s); }
+  try { for (;;) { const { done, value } = await rd.read(); if (done) break; const s = dec.decode(value, { stream: true }); raw += s; res.write(s); } }
+  catch (e) { rec.err = 'stream ' + (e.cause && e.cause.code || e.message); }   // 上游半路断了：记下来、照常结束这一次，不让整个转发进程崩掉（真模型实测 2026-11-16 崩过一回，之后的调用全没记上）
   res.end();
   let content = '', reasoning = '', usage = null, finish = null;
   if (stream) { for (const line of raw.split('\n')) { const m = line.match(/^data:\s*(\{.*\})\s*$/); if (!m) continue; try { const c = JSON.parse(m[1]); const d = c.choices && c.choices[0]; if (d && d.delta) { content += d.delta.content || ''; reasoning += d.delta.reasoning_content || ''; } if (d && d.finish_reason) finish = d.finish_reason; if (c.usage) usage = c.usage; } catch (_) { /* 半截 */ } } }
