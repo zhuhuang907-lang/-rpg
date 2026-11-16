@@ -18,6 +18,10 @@ const path = require('path');
       if (TIESLIB.length < 100) bad.push('人物关系没嵌进游戏：' + TIESLIB.length);
       const t = blocks(s, true); if (!/【史书里这些人之间的关系[\s\S]*李克用与李嗣昭/.test(t)) bad.push('李克用、李嗣昭的关系没进写戏材料');
       if (tiesNow(s).some(x => x.year > 905)) bad.push('给了开局年份以后才发生的关系'); }
+    // 通鉴任职表十六国、南北朝两段四成有错，这两段不用（R-241）；三国、唐末照用
+    for (const [y, pol] of [[360, '前秦'], [400, '东晋'], [545, '东魏']]) { const T = tenureFor(mk('郎官', pol, y, '长安'), y).find(t => t.id === 'tongjian-184-960');
+      const known = new Set(HIST.filter(h => h.range && y >= h.range[0] && y <= h.range[1] && !h.rulersOnly).flatMap(h => arr(h.figures).map(f => f.name)));
+      if (T && T.figures.some(f => !known.has(f.name))) bad.push(`${y} 年${pol}用了通鉴表里没核过的人：` + T.figures.filter(f => !known.has(f.name)).slice(0, 5).map(f => f.name).join('、')); }
     const q = mk('扬州盐商', '清', 1757, '扬州'); if (/【这年代这类人可能碰上的事/.test(blocks(q, true))) bad.push('清代没有世事库却出了这块');
     return bad; });
   errs.push(...bad); console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(errs.length ? 1 : 0);
