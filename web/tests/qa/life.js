@@ -26,7 +26,8 @@ const path = require('path');
   await p.fill('#bandWho', '张家庄'); await p.click('button[data-band="protect"]'); if (!(await p.evaluate(() => arr(S.band.protect).includes('张家庄')))) bad.push('收孝敬没记上村子');
   await p.click('button[data-band="rules"]'); if (!(await p.evaluate(() => S.band.rules && S.band.fame > 0))) bad.push('立寨规没添义名');
   const mo = await p.evaluate(() => { const c = S.money.cash; S.clock.m += 1; const o = bandMonthly(S, 1); return { d: S.money.cash - c, o }; }); if (!(mo.d >= 20)) bad.push('月底孝敬没进账：' + JSON.stringify(mo));
-  const sg = await p.evaluate(() => { S.band.heat = 25; S.clock.m += 1; bandMonthly(S, 1); const w = { siege: S.band.siege, press: arr(S.press).some(x => /围剿/.test(x.title)) }; S.clock.m += 1; const o = bandMonthly(S, 1); return { w, o, battles: arr(S.battles).length }; });
+  const sg = await p.evaluate(() => { const y0 = S.clock.y; S.clock.y = 1600; let w = {};   /* 治世风头高了几个月里会来剿（R-242：不是风头满了必剿，看时局；乱世松） */
+    for (let i = 0; i < 8 && !S.band.siege; i++) { S.band.heat = 30; S.turn += 1; S.clock.m = S.clock.m % 12 + 1; bandMonthly(S, 1); } w = { siege: S.band.siege, press: arr(S.press).some(x => /围剿/.test(x.title)) }; S.clock.m = S.clock.m % 12 + 1; S.turn += 1; const o = bandMonthly(S, 1); S.clock.y = y0; return { w, o, battles: arr(S.battles).length }; });
   if (!sg.w.siege || !sg.w.press) bad.push('风头高了官府没来围剿：' + JSON.stringify(sg.w)); if (!sg.battles || !sg.o.some(x => /官军/.test(x))) bad.push('围剿到了月份没打：' + JSON.stringify(sg.o));
   const am = await p.evaluate(() => { S.band.fame = 60; S.band.siege = null; const f = S.forces[0]; f.troops = 400; f.units = []; ORGMSG = ''; bandAct(S, 'amnesty'); S.clock.m += 1; bandMonthly(S, 1); for (let i = 0; i < 5 && !S.band.offer; i++) { S.turn += 1; bandAct(S, 'amnesty'); S.clock.m += 1; bandMonthly(S, 1); } return !!S.band.offer; });
   if (!am) bad.push('名声够了求招安一直没回音');
