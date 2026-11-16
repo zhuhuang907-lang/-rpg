@@ -25,5 +25,11 @@ const path = require('path');
   if (!/甲臣[^\n]*天雄军节度使/.test(r.b1)) errs.push('官职没照任职表写');
   if (!/够得着[\s\S]*甲臣/.test(r.b2)) errs.push('930 年甲臣到了洛阳，在洛阳的主角够不着：' + r.b2);
   if (r.rr !== '可致书') errs.push('外任的魏州刺史对京里的名臣应是「只能写信托人」：' + r.rr);
+  // 真数据（五代十国预制第一稿）：930 年洛阳够得着冯道、安重诲；960 年不再有已死的安重诲；卒年不详的郭威 980 年不出
+  const real = await p.evaluate(() => { const mk = (y, pl) => newSave({ name: '张三', gender: '男', age: 30, role: '商人', gregorianYear: y, month: 3, day: 1, place: pl, polity: y < 937 ? '后唐' : '北宋' });
+    const a = figBlock(mk(930, '洛阳')), b = figuresNow(mk(960, '开封')).map(x => x.f.n), c = figuresNow(mk(979, '开封')).map(x => x.f.n); return { a, b, c, n: FIGLIB.reduce((k, R) => k + arr(R.people).length, 0) }; });
+  if (!(real.n >= 300)) errs.push('五代十国预制包没嵌进游戏：' + real.n);
+  if (!/够得着[\s\S]*冯道/.test(real.a) || !/够得着[\s\S]*安重诲/.test(real.a)) errs.push('930 年洛阳够不着冯道、安重诲：' + real.a.slice(0, 300));
+  if (real.b.includes('安重诲')) errs.push('931 年死的安重诲 960 年还在');
   console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(errs.length ? 1 : 0);
 })();
