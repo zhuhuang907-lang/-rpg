@@ -14,6 +14,9 @@ const path = require('path');
     if (!f1.some(x => /衙役/.test(x))) bad.push('衙役没打回');
     if (vocabFaults(s1, '此人是个清官。').length) bad.push('两可的今义词也打回了');
     if (vocabFaults(mk('明', 1625), '他去见总兵。').length) bad.push('明朝的总兵也被当错词');
+    for (const [pol, y, ok] of [['魏', 210, '丞相召太守、刺史、都督、尚书令、校尉、中郎将、孝廉、茂才议事。'], ['东晋', 380, '中书令、尚书仆射、刺史、都督、参军、中正、举秀才、孝廉、部曲、坞主都来了。'], ['北魏', 500, '尚书令、侍中、刺史、三长、均田、府兵、典签、中书舍人、镇将都来了。']]) {
+      const s = mk(pol, y); if (vocabFaults(s, ok).length) bad.push(`${y} 年这年代有的说法被当错词：` + vocabFaults(s, ok).join('；'));
+      if (vocabFaults(s, '他去见知府、节度使，又找了掌柜。').length < 2) bad.push(`${y} 年写了知府、节度使、掌柜没打回`); }   // 三国两晋南北朝错词表（zcode 任务十四、二十七）
     { const f8 = vocabFaults(mk('唐', 800), '他去府里见知府，又托捕快打听。'); if (!f8.length) bad.push('唐末（800 年）写了知府、捕快没打回（唐末错词表没嵌进游戏）'); }
     if (vocabFaults(mk('唐', 800), '他去见节度使，又找了兵马使。').length) bad.push('唐末的节度使、兵马使被当错词');
     if (vocabFaults(s1, '他去见都指挥使，商量粮饷。').length) bad.push('当时的说法也被打回');
