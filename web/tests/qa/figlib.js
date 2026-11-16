@@ -27,9 +27,11 @@ const path = require('path');
   if (r.rr !== '可致书') errs.push('外任的魏州刺史对京里的名臣应是「只能写信托人」：' + r.rr);
   // 真数据（五代十国预制第一稿）：930 年洛阳够得着冯道、安重诲；960 年不再有已死的安重诲；卒年不详的郭威 980 年不出
   const real = await p.evaluate(() => { const mk = (y, pl) => newSave({ name: '张三', gender: '男', age: 30, role: '商人', gregorianYear: y, month: 3, day: 1, place: pl, polity: y < 937 ? '后唐' : '北宋' });
-    const a = figBlock(mk(930, '洛阳')), b = figuresNow(mk(960, '开封')).map(x => x.f.n), c = figuresNow(mk(979, '开封')).map(x => x.f.n); return { a, b, c, n: FIGLIB.reduce((k, R) => k + arr(R.people).length, 0) }; });
+    const k = figBlock(mk(930, '杭州')), a = figBlock(mk(930, '洛阳')), b = figuresNow(mk(960, '开封')).map(x => x.f.n), c = figuresNow(mk(979, '开封')).map(x => x.f.n); return { k, a, b, c, n: FIGLIB.reduce((k, R) => k + arr(R.people).length, 0) }; });
   if (!(real.n >= 300)) errs.push('五代十国预制包没嵌进游戏：' + real.n);
   if (!/够得着[\s\S]*冯道/.test(real.a) || !/够得着[\s\S]*安重诲/.test(real.a)) errs.push('930 年洛阳够不着冯道、安重诲：' + real.a.slice(0, 300));
+  if (!/够得着[\s\S]*钱镠/.test(real.k)) errs.push('930 年杭州够不着吴越王钱镠（君主没单列进名臣包）：' + real.k.slice(0, 200));
+  if (!/李嗣源/.test(real.a)) errs.push('930 年洛阳没有在位的后唐明宗李嗣源');
   if (real.b.includes('安重诲')) errs.push('931 年死的安重诲 960 年还在');
   console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(errs.length ? 1 : 0);
 })();

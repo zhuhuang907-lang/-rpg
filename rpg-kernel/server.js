@@ -158,6 +158,11 @@ function withSaveLock(id, fn) {
   return run;
 }
 // 最近一次连 AI 的结果：首页据此显示「已接通」还是「连不上」（以前只要存了 Key 就显示已接通）
+/* 后台整理的本机缓存（R-243）：同样的问题（同一年、同一处的政区、户口、人才年表……）存答案，最多八百条，旧的先丢 */
+const LLM_CACHE_FILE = path.join(ROOT, 'data', 'cache', 'llm.json'); let LLM_CACHE = null, LLM_SAVE_T = null;
+function llmCache() { if (!LLM_CACHE) { LLM_CACHE = new Map(); try { for (const [k, v] of JSON.parse(fs.readFileSync(LLM_CACHE_FILE, 'utf8'))) LLM_CACHE.set(k, v); } catch (_) {} } return LLM_CACHE; }
+function llmCacheSet(k, v) { const m = llmCache(); m.delete(k); m.set(k, v); while (m.size > 800) m.delete(m.keys().next().value);
+  clearTimeout(LLM_SAVE_T); LLM_SAVE_T = setTimeout(() => { try { fs.mkdirSync(path.dirname(LLM_CACHE_FILE), { recursive: true }); fs.writeFileSync(LLM_CACHE_FILE, JSON.stringify([...m])); } catch (_) {} }, 1500); }
 /* 联网查证的本机缓存（R-243）：查过的条目存档复用，最多五千条，旧的先丢 */
 const LOOKUP_CACHE_FILE = path.join(ROOT, 'data', 'cache', 'lookup.json'); let LOOKUP_CACHE = null, LOOKUP_SAVE_T = null;
 function lookupCache() { if (!LOOKUP_CACHE) { LOOKUP_CACHE = new Map(); try { for (const [k, v] of JSON.parse(fs.readFileSync(LOOKUP_CACHE_FILE, 'utf8'))) LOOKUP_CACHE.set(k, v); } catch (_) {} } return LOOKUP_CACHE; }
@@ -498,8 +503,11 @@ const routes = {
     const id = 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const job = { status: 'running', text: '', error: null, at: Date.now() };
     LLM_JOBS.set(id, job);
+    // 后台整理（查史料、推政区户口）同样的问题：本机存过答案就直接给，不再请模型（R-243）
+    const ck = b.cache ? require('crypto').createHash('md5').update(JSON.stringify([msgs, String(b.system || ''), b.json !== false, !!b.fast, !!b.thinking, b.maxTokens || 0])).digest('hex') : '';
+    if (ck) { const hit = llmCache().get(ck); if (hit) { job.status = 'done'; job.text = hit; job.cached = true; return { ok: true, job: id, cached: true }; } }
     engine.chatCall({ messages: msgs, system: String(b.system || '').slice(0, 60000), maxTokens: Math.min(16000, Number(b.maxTokens) || 8000), json: b.json !== false, temperature: Number.isFinite(Number(b.temperature)) ? Number(b.temperature) : 0.8, thinking: b.thinking === true, fast: b.fast === true, provider: b.provider === 'glm' ? 'glm' : '', onDelta: t => { if (job.status === 'cancelled') { const e = new Error('玩家停下了'); e.stopStream = true; throw e; } if (job.status === 'running') job.text = String(t || ''); } })
-      .then(r => { if (job.status === 'running') { job.status = 'done'; job.text = r.text; job.truncated = r.truncated; recordTest(true); } })
+      .then(r => { if (job.status === 'running') { job.status = 'done'; job.text = r.text; job.truncated = r.truncated; recordTest(true); if (ck && r.text && !r.truncated) llmCacheSet(ck, r.text); } })
       .catch(e => { if (job.status === 'running') { job.status = 'error'; job.error = String(e && e.message || e).slice(0, 400); recordTest(false, job.error); logErr('[llm]', job.error); } });
     for (const [k, j] of LLM_JOBS) if (Date.now() - j.at > 3600e3) LLM_JOBS.delete(k);
     return { ok: true, job: id };

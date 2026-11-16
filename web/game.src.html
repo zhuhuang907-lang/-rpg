@@ -869,7 +869,7 @@ function localSample(input, opts = {}) {
     if (opts.signal) { if (opts.signal.aborted) return onAbort(); opts.signal.addEventListener('abort', onAbort, { once: true }); }
     try {
       if (!job) {
-        const r = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast, provider: opts.provider || '' });
+        const r = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast, provider: opts.provider || '', cache: opts.kind === '研读' && !!opts.detached && opts.json !== false && (opts.temperature ?? 1) <= 0.3 });   // 查史料、推政区户口这类后台整理：同样的问题本机存答案，下回不再花钱（R-243）
         if (!r.ok) return reject({ code: 'local', message: r.why || '没发出去' });
         job = r.job;
         if (stopped) { api('/api/llm-stop', { job }).catch(() => {}); return; }
@@ -3199,8 +3199,19 @@ const stG = x => x ? x.g || statWord(x.v) : '';
 const statWord = v => v >= 95 ? '冠绝一代' : v >= 85 ? '一代之选' : v >= 70 ? '出众' : v >= 55 ? '中上' : v >= 40 ? '平常' : v >= 25 ? '稍逊' : '不行';
 const statsDue = s => s && s.people && Object.entries(s.people).some(([k, v]) => v && !v.faded && !v.stats && k !== s.protagonist.name && (s.turn - (v.seen || 0)) <= 3) && !(s.statFail != null && s.turn - s.statFail < 2);
 /** 评定一批人（每次至多六个）：真人先联网查生平、所长，连同真人档案、核查结果、名册里的身份一起交给 DeepSeek */
+/** 名臣预制包里评过分的（照史书评语给的理政、统兵、理财、操守……），直接照包记，不请模型（R-244）；忠诚是对主角的，包里不管，照常人起 */
+function figStats(s, n) {
+  const f = FIGLIB.flatMap(R => arr(R.people)).find(x => x.n === n); if (!f || !f.st) return false;
+  const st = {}; for (const k of PSTATS) { if (k === '忠诚') continue; const v = num(f.st[k]); if (v != null) st[k] = { v: Math.max(0, Math.min(100, Math.round(v))), g: statWord(v), why: '史书评语（名臣预制）' }; }
+  if (Object.keys(st).length < 3) return false; st['忠诚'] = { v: 45, g: statWord(45), why: '推：和主角素无往来' };
+  s.people = s.people || {}; const tgt = s.people[n] || (s.people[n] = { role: (findPost(s, n) || {}).title || f.tag || '', seen: s.turn });
+  tgt.stats = st; tgt.statSum = one(f.br || '', 60); tgt.statAt = s.turn; tgt.statReal = true; if (arr(f.tr).length) tgt.traits = f.tr.filter(t => NTRAITS.includes(t)).slice(0, 3);
+  const po = findPost(s, n); if (po) po.attr = { faction: (po.attr || {}).faction || f.f || '', zheng: (st['理政'] || {}).v, jun: (st['统兵'] || {}).v, cai: (st['理财'] || {}).v, zhong: 45, lian: (st['操守'] || {}).v, basis: tgt.statSum, fake: false };
+  return true;
+}
 async function judgePeople(s, names) {
-  const L = [...new Set(arr(names).filter(n => n && n.length >= 2 && n !== s.protagonist.name))].slice(0, 6); if (!L.length) return [];
+  const L0 = [...new Set(arr(names).filter(n => n && n.length >= 2 && n !== s.protagonist.name))], packed = L0.filter(n => figStats(s, n));
+  const L = L0.filter(n => !packed.includes(n)).slice(0, 6); if (!L.length) return packed;
   const R = realNameSet(s), real = L.filter(n => R.has(n));
   const found = real.length && canSearch() ? await searchFirst(s, real.slice(0, 3).flatMap(n => [`${n} 生平`, `${n} 善 擅长 评价`])) : '';
   const info = n => { const v = (s.people || {})[n] || {}, d = (s.dossiers || {})[n] || {}, c = chkOf(s, n), m = arr(s.household).find(x => x.name === n), po = findPost(s, n), tl = talentOf(s, n);
@@ -3225,7 +3236,7 @@ ${L.map(info).join('\n')}
     const po = findPost(s, n); if (po) po.attr = { faction: (po.attr || {}).faction || '', zheng: (st['理政'] || {}).v, jun: (st['统兵'] || {}).v, cai: (st['理财'] || {}).v, zhong: (st['忠诚'] || {}).v, lian: (st['操守'] || {}).v, basis: tgt.statSum, fake: !R.has(n) };
     out.push(n); }
   if (out.length) feedAdd([{ t: `评定人物各项：${out.join('、')}`, site: 'DeepSeek' }]);
-  return out;
+  return packed.concat(out);
 }
 /** 后台：这几回出场、还没评定的人，每回最多六个 */
 async function judgeDue(s) { const L = Object.entries(s.people || {}).filter(([k, v]) => v && !v.faded && !v.stats && k !== s.protagonist.name && (s.turn - (v.seen || 0)) <= 3).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).map(([k]) => k); return judgePeople(s, L); }
@@ -8929,7 +8940,9 @@ function popOf(s, n) { const t = arr(s.territory).find(x => geoStem(x.place) ===
 const popTxt = v => v ? `${v.hh ? fmtN(v.hh) + '户' : ''}${v.hh && v.pop ? '、' : ''}${v.pop ? fmtN(v.pop) + (v.mine ? '' : '口') : ''}` : '';
 function popTodo(s) { const h = hereXY(s); let L = []; try { L = mapUnits(s).L2.filter(u => u.lat); } catch (_) { return []; } const P = s.popEst && s.popEst.k === popKey(s) ? s.popEst.m || {} : {};
   const mine = (() => { try { return myDomain(s).places.filter(n => n && !(n in P)).map(n => ({ n, p: '' })); } catch (_) { return []; } })();   // 自己治下的县、山寨排最前（县不在州府单子里也推）
-  return mine.concat(L.filter(u => !(u.n in P) && !mine.some(m => m.n === u.n)).sort((a, b) => (h ? Math.hypot(a.lon - h.lon, a.lat - h.lat) - Math.hypot(b.lon - h.lon, b.lat - h.lat) : 0))).slice(0, 60); }
+  // 只推主角身边最近的六十个府州（R-243 省钱：真模型实测五代开局把天下四百个府州挨批推了六回，岭南的劳州、普宁州都推了）；主角走到别处，新的近处再推
+  const near = L.sort((a, b) => (h ? Math.hypot(a.lon - h.lon, a.lat - h.lat) - Math.hypot(b.lon - h.lon, b.lat - h.lat) : 0)).slice(0, 60);
+  return mine.concat(near.filter(u => !(u.n in P) && !mine.some(m => m.n === u.n))).slice(0, 60); }
 const popDue = s => s && s.clock && s.protagonist && !(s.popFail != null && s.turn - s.popFail < 2) && popTodo(s).length > 0 && (!s.popEst || s.popEst.k !== popKey(s) || Object.keys(s.popEst.m || {}).length < 400);
 async function popInfer(s) {
   const L = popTodo(s); if (!L.length) return 0; const y = s.clock.y;
@@ -10045,7 +10058,15 @@ async function talentDS(s) {
 每人写：生卒年（公元，拿不准写 null）、籍贯；${a}年时的处境（还没出生写「未生」，少年、在野躬耕、游学、为某官……照史书）；性子（热中功名、重义、隐逸清高……）和此刻肯不肯出仕（肯、难、不肯）；
 照史书的仕途：按年写，每条：y 公元年、m 月（不知道写 null）、post 官职或去向（带衙门、州县，如「隆中出山，为刘备军师」「中进士二甲，授翰林院编修」「拜参知政事」）、how 怎么来的（征辟、举孝廉、进士、门荫、入幕、投靠、升、贬、罢、致仕、卒）、patron 靠谁（引荐、辟召、提拔他的人，没有写空）。只写史书确知的，不编；主角${me}不列。
 只输出一个 JSON 对象：{"people":[{"name":"","born":null,"died":null,"native":"","now":"","temper":"","will":"肯","path":[{"y":null,"m":null,"post":"","how":"","patron":""}],"source":""}]}`, null, { maxTokens: 8000, temperature: 0.1, kind: '研读', detached: true, thinking: false }).then(r => parseJSON(r.text)).catch(e => { if (e && e.code === 'cancelled') throw e; return null; });
-  const res = await Promise.all(B.map(ask)); let n = 0; s.dossiers = s.dossiers || {};
+  // R-244：名臣预制包盖得住的十年块直接照包排，不请模型（真模型实测五代开局人才年表三次调用、一万九千字输出）
+  const covered = ([a, z]) => FIGLIB.some(R => R && R.range && a >= R.range[0] && z <= R.range[1] + 5 && arr(R.people).length >= 30);
+  const fromPack = ([a, z]) => { const people = []; for (const R of FIGLIB.filter(R => R && R.range && a >= R.range[0] && a <= R.range[1])) for (const f of arr(R.people)) {
+      const last = f.d != null ? f.d : Math.max(-9999, ...arr(f.po).map(x => x[2] ?? -9999), ...arr(f.w).map(x => x[1] ?? -9999)); if (last < a || (f.b != null && f.b > z)) continue;
+      const path = arr(f.po).filter(x => x[1] != null && x[1] <= z + 5).map(x => ({ y: x[1], m: null, post: x[0], how: '', patron: '' }));
+      if (!path.length && f.t > 2) continue;
+      people.push({ name: f.n, born: f.b, died: f.d, native: '', now: f.br || '', temper: arr(f.tr).join('、'), will: arr(f.tr).some(t => /谦退|安分/.test(t)) ? '难' : '肯', path, source: f.src || '名臣预制包' }); }
+    return { people }; };
+  const res = await Promise.all(B.map(b => covered(b) ? Promise.resolve(fromPack(b)) : ask(b))); let n = 0; s.dossiers = s.dossiers || {};
   for (const d of res) for (const x of arr(d && d.people)) {
     const name = one(x && x.name, 8); if (!name || name.length < 2 || name === me || /某|不详/.test(name) || !one(x.source, 60)) continue;
     // R-209：年表只收这一朝的人；生卒在这年之外的（古人、未生）不收
