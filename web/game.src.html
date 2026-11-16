@@ -13018,14 +13018,15 @@ function splitStory(text) {
   t = t.replace(/“/g, '「').replace(/”/g, '」').replace(/‘/g, '『').replace(/’/g, '』');   // 引号统一成「」『』：真模型爱用“”，对话检查只认「」，回回误判没有对话、回回重写（真模型实测）
   t = t.replace(/\n?【当前情况】[\s\S]*$/, '').replace(/^\s*【[^】\n]{4,60}·[^】\n]{1,40}】\s*\n/, '');   // 这两块由程序加，AI 自己写了就去掉，免得重复   // 模型偶尔把审稿、核查的话写进正文：整行去掉
   t = t.replace(/^```\w*\s*/, '').replace(/\n?```(?:json)?\s*\{[\s\S]*$/, '').replace(/```\s*$/, '');
+  let acct = ''; { const a = t.indexOf('【账】'); if (a >= 0) { const rest = t.slice(a + 3), b = rest.indexOf('【幕后】'); acct = (b >= 0 ? rest.slice(0, b) : rest).trim(); t = t.slice(0, a) + (b >= 0 ? '\n' + rest.slice(b) : ''); } }   // 写戏顺手交的账（R-243），程序记，玩家看不到
   const i = t.indexOf('【幕后】');
   const hidden = i >= 0 ? t.slice(i + 4).trim() : '';
   if (i >= 0) t = t.slice(0, i);
-  t = t.replace(/^\s*（第\d+回合[^）\n]*）\s*/gm, '').replace(/【幕?$/, '').replace(/[（(](?:按|注|编者按|作者按)[：:][^）)]*[）)]/g, '')
+  t = t.replace(/^\s*（第\d+回合[^）\n]*）\s*/gm, '').replace(/【[幕账]?$/, '').replace(/[（(](?:按|注|编者按|作者按)[：:][^）)]*[）)]/g, '')
     // AI 爱用的排版记号：粗体、标题、列表符、分隔线，正文里都不要
     .replace(/\*\*([^*\n]+)\*\*/g, '$1').replace(/^#{1,6}\s*/gm, '').replace(/^\s*[-*•]\s+/gm, '').replace(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
   const talk = /^【戏外】/.test(t);
-  return { text: t.replace(/^【戏外】\s*/, '').trim(), hidden, talk };
+  return { text: t.replace(/^【戏外】\s*/, '').trim(), hidden, talk, acct };
 }
 const showText = raw => splitStory(raw).text;
 /** 正文按段落排：一段一个 <p>，段与段之间留白 */
@@ -14037,7 +14038,38 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const unbNote = lastUnb.length ? `\n【上一回其实没有发生的事（别当它发生过；人物也不提它）】${lastUnb.join('；')}` : '';
   const lookNote = EXTRA_LOOK ? `\n【你要查的账（照这个写，不要再写「查账」）】\n${EXTRA_LOOK}` : '\n【缺数先查账】材料里找不到你这一回要用的确数（兵马、军务、家宅、钱粮、国势、行动单、势力、某个人、某个地方）时，不要估、不要编：整篇只回一行「【查账：要查的几样，用顿号隔开；人写「人物:姓名」，地方写「地图:地名」】」，程序把账给你再写。材料够就直接写。';
   const noGain = !gainSanction(s, said, ruling) ? '\n【这一回账上不会有的】玩家这一步没有求官应举，行动单上也没有在办的升迁：不写主角得官、封爵、登科、得称号（写了程序会删，也不记账）；史书上此时在世的人，主角没碰他就不写他死。' : '';
-  return pushUser(turns, IRON_HEAD + what + noGain + unbNote + lookNote + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文。');
+  const acctNote = acctLiteOk(s, said, span, ruling) ? '\n' + acctRules(s) : '';
+  return pushUser(turns, IRON_HEAD + what + noGain + unbNote + lookNote + acctNote + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文。');
+}
+/* ========== 写戏顺手交账、程序自己记（R-243 第二步）：平常的一步不再另请模型记账——写正文的那一次在末尾交几行固定格式的事实，
+ *  程序照格式落账（钱的进出、过了多久、人在哪、见了谁、行动单进展、摘要）；格式不对、缺要紧的行，照旧请模型全套记账。大事、长跨度照旧全套 ========== */
+function acctLiteOk(s, said, span, ruling) { return !!s && !/^(month|season|year)$/.test(String(span || '')) && ledgerLiteOk(s, said, '', ruling); }
+function acctRules(s) {
+  const ids = arr(s.actsNow).map(x => x.tmp).concat(actOpen(s).slice(-12).map(x => x.id)).filter(Boolean);
+  return `【写完交账（玩家看不到，程序照这几行记账；不另找人记账）】正文和【幕后】都写完后，另起一行写「【账】」，下面每行一项，照实写正文里发生的事，没有的行不写：
+过：正文里过了几天几个钟头，写成「N天N时」
+在：这一回结束时主角所在的地名（当时的叫法）
+钱：这一笔是什么｜数（折成【家业账】的本位单位，进为正、出为负，只写阿拉伯数字；正文写了数的照正文，没写数但确实花了的照常理估）——一笔一行
+人：出场或有变化的人的全名｜好感变了多少（正负整数，没变写零）｜为什么——一人一行
+${ids.length ? `单：行动单的 id（${ids.join('、')}）｜办成、部分办成、受阻、驳回、拖着、搁下 之一｜一句缘由——这一回新开的每一张都要写` : ''}
+要：这一回的事实摘要，一百字内
+下：主角此刻能做的下一步，一行一条，写三条`;
+}
+function parseAcct(s, acct) {
+  const L = String(acct || '').split('\n').map(x => x.trim()).filter(Boolean), get = k => L.filter(x => x.startsWith(k + '：') || x.startsWith(k + ':')).map(x => x.slice(k.length + 1).trim());
+  const sum = get('要')[0]; if (!sum) return null;
+  const d = { turnSummary: one(sum, 160), ledger: [], presentNpcs: [], actResults: [], hints: get('下').map(x => one(x, 40)).filter(Boolean).slice(0, 4), selfBooked: true };
+  const g = get('过')[0] || ''; d.elapsedDays = Math.max(0, Math.min(60, +((/(\d+)\s*[天日]/.exec(g) || [])[1] || 0))); d.elapsedHours = Math.max(0, Math.min(23, +((/(\d+)\s*(?:时|个?钟头|小时)/.exec(g) || [])[1] || 0)));
+  if (!d.elapsedDays && !d.elapsedHours) d.elapsedHours = 2;   // 时间每一回都往前走
+  const at = get('在')[0]; if (at) d.nowAt = one(at.replace(/[（(].*$/, ''), 16);
+  for (const x of get('钱')) { const [it, n] = x.split(/[｜|]/).map(z => z.trim()); const v = Number(String(n || '').replace(/[,，\s]/g, '').replace(/[^\d.+-].*$/, '')); if (it && isFinite(v) && v) d.ledger.push({ item: one(it, 30), amount: v, note: '' }); }
+  for (const x of get('人')) { const [nm, dv, why] = x.split(/[｜|]/).map(z => z.trim()); if (!nm || nm.length > 8) continue; const cur = num(((s.people || {})[nm] || {}).favor) || 0, dd = Math.max(-30, Math.min(30, Math.round(Number(dv) || 0)));
+    d.presentNpcs.push({ name: nm, favor: Math.max(-100, Math.min(100, cur + dd)), favorWhy: one(why || '', 40) }); }
+  const ST = /^(办成|部分办成|受阻|驳回|拖着|搁下)$/;
+  for (const x of get('单')) { const [id, st, why] = x.split(/[｜|]/).map(z => z.trim()); if (id && ST.test(st || '')) d.actResults.push({ id, state: st, why: one(why || '', 60), changed: '' }); }
+  // 新开的行动单一张都不能漏：漏了的交回模型全套记
+  const need = arr(s.actsNow).map(x => x.tmp).filter(Boolean); if (need.some(id => !d.actResults.some(r => r.id === id))) return null;
+  return d;
 }
 /** 记账：账册 + 玩家的话 + 刚写好的正文 → JSON */
 function ledgerInput(s, said, story, hidden, span, ruling) {
@@ -16262,15 +16294,16 @@ async function send(said, span, note, resume) {
     }
     // 给玩家看之前：核实史实、情理审读、记账，桌面版三件一起做（网页版一次只发一个请求，依次做）；
     // 有毛病的，把程序、审读、核实挑出的毛病合在一起，整段重写一次（只一次）；重写了，账照新稿重记
-    const ledgerFor = async (txt, hid) => {
+    const ledgerFor = async (txt, hid, acct) => {
       let d0 = null;
+      if (acct && acctLiteOk(S, said, span, ruling) && ledgerLiteOk(S, said, txt, ruling)) { d0 = parseAcct(S, acct); if (d0) { S.selfBooked = (num(S.selfBooked) || 0) + 1; return d0; } noteErr('自记账没成', '格式不全，改请模型记账', { said: cut(said, 60) }); }
       for (let k = 0; k < 3 && !d0; k++) {
         try { const { text: lt } = await callClaude(ledgerInput(S, said, txt, hid, span, ruling) + (k ? '\n\n（上一次的回答不是合法的 JSON 或被截断了。这次只输出那一个 JSON 对象，括号配对，没变的字段不要给，写短些。）' : ''), null, { maxTokens: 8000, temperature: 0.3, kind: '记账' }); d0 = parseJSON(lt); } catch (e) { if (e && e.code === 'cancelled') throw e; }
       }
       return d0;
     };
     let ledgerP = null;
-    const startLedger = () => { ledgerP = ledgerFor(st.text, st.hidden); ledgerP.catch(() => { /* 下面 await 时再处理 */ }); };
+    const startLedger = () => { ledgerP = ledgerFor(st.text, st.hidden, st.rewrote ? '' : st.acct); ledgerP.catch(() => { /* 下面 await 时再处理 */ }); };
     // 程序挑出的毛病（改了命令、改了原话、人名地名、升迁越级……）当场就知道：不等审读、核实，马上照改一稿；改好的再去核实、审读、记账
     let early = false;
     // 程序挑出的毛病不再先单改一稿：和核实、审读挑出的合在一起，只改一次稿（以前常常改两遍，每回多等一两分钟）
