@@ -291,6 +291,7 @@ textarea{resize:vertical}
 <script type="application/json" id="pollist">__POLLIST__</script>
 <script type="application/json" id="evlib">__EVLIB__</script>
 <script type="application/json" id="figlib">__FIGLIB__</script>
+<script type="application/json" id="offlib">__OFFLIB__</script>
 <script type="application/json" id="tieslib">__TIES__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
@@ -5269,6 +5270,22 @@ function figBlock(s) {
   return (near.length ? '【这一带够得着的名臣（史书真人，出场照这里写的官职、所在和为人；「可求见」的要主角派人去请、对方肯不肯来照身份定；在京里的只能写信托人）】\n' + near.map(x => '· ' + line(x) + (x.r.lv === '可求见' ? '〔可求见〕' : x.r.lv === '可致书' ? '〔人在京里，只能写信、托人〕' : '')).join('\n') : '')
     + (far.length ? (near.length ? '\n' : '') + '【远处的名臣（只是听说，主角见不着，除非赶去或托人；不许让他们凭空出现在主角身边）】\n' + far.map(x => '· ' + line(x)).join('\n') : '');
 }
+/* ========== 地图联上后台知识（2026-11-17 项目主人：「能不能和地图和后台知识联立上」）：点图上一处，看这一年谁在这里做长官、
+ *  哪些名臣此刻在这里（够不够得着、一键去拜访）、这一年这里出过什么史事——都照内置史料、名臣包、长官表，不请模型 ========== */
+let OFFLIB = []; try { OFFLIB = JSON.parse((document.getElementById('offlib') || {}).textContent || '[]'); if (!Array.isArray(OFFLIB)) OFFLIB = []; } catch (_) { OFFLIB = []; }
+function officialsAt(s, n, y) { const out = []; for (const R of OFFLIB) { if (!R || !R.range || y < R.range[0] || y > R.range[1]) continue;
+  for (const x of arr(R.seats)) { if (!samePlace(x.p, n)) continue; const h = arr(x.h).find(z => (z[1] == null || y >= z[1]) && (z[2] == null || y <= z[2])); if (h) out.push({ office: x.o, name: h[0], how: h[3] }); } } return out; }
+function placeLore(s, n) {
+  const y = s && s.clock && s.clock.y; if (y == null || !n) return '';
+  const off = officialsAt(s, n, y), me = (s.protagonist || {}).name;
+  const figs = figuresNow(s).filter(({ f }) => { const a = figAt(f, y); return a && String(a.place).split(/[、，,\/]/).some(pl => samePlace(pl, n)); }).sort((a, b) => a.f.t - b.f.t).slice(0, 10);
+  const ev = HALL(s).filter(h => h && h.range && y >= h.range[0] && y <= h.range[1]).flatMap(h => arr(h.events)).filter(e => e && e.y >= y - 1 && e.y <= y && e.where && String(e.where).split(/[、，,\/]/).some(pl => samePlace(pl, n))).slice(-4);
+  if (!off.length && !figs.length && !ev.length) return '';
+  return `<div class="ccard" style="margin-top:6px"><div class="ct">此地人物与史事（${y}年）</div>
+    ${off.length ? `<div>长官：${off.map(o => `${esc(o.office)} <b>${esc(o.name)}</b>${o.how === '推定' ? '<span class="muted">（推定）</span>' : ''}`).join('；')}</div>` : ''}
+    ${figs.length ? `<div>名臣在此：${figs.map(({ f, r }) => `<b>${esc(f.n)}</b><span class="muted">（${esc(f.tag || '')}${figPost(f, y) ? '·' + esc(figPost(f, y)) : ''}）</span>${f.n !== me && r.lv === '同地' ? ` <button class="link" data-fig="visit" data-n="${esc(f.n)}">去拜访</button>` : ''}`).join('、')}</div>` : ''}
+    ${ev.length ? `<div class="muted" style="font-size:12px">${ev.map(e => `${esc(e.y)}年${e.m ? esc(e.m) + '月' : ''}：${esc(one(e.text, 60))}`).join('<br>')}</div>` : ''}</div>`;
+}
 /* ========== 人物关系（任务十，R-241）：朝中、身边这些人之间史书载明的关系（养父子、荐举、仇杀、婚姻……），到这一年已发生的，交给写戏 ========== */
 let TIESLIB = []; try { TIESLIB = JSON.parse((document.getElementById('tieslib') || {}).textContent || '[]'); if (!Array.isArray(TIESLIB)) TIESLIB = []; } catch (_) { TIESLIB = []; }
 function tiesNow(s, n = 6) {
@@ -8872,6 +8889,7 @@ function mapInfo(s) {
     ${L.length ? `<div>通往：${L.map(l => { const x = l.a.n === n ? l.b : l.a; return `${esc(x.n)}（约${liOf(hav(l.a, l.b) * (l.k === 'mtn' ? 1.6 : 1.25))}里，${LINK_TXT[l.k]}${l.via ? '，经' + esc(l.via) : ''}）`; }).join('；')}</div>` : ''}
     ${(() => { const v = popOf(s, n); if (u && u.lv === 2 && v && (v.hh || v.pop)) return ''; return v && (v.hh || v.pop) ? `<div>户口：<b>${esc(popTxt(v))}</b> <span class="muted" style="font-size:11px">${esc(v.why || '')}</span></div>` : `<div class="muted" style="font-size:12px">户口：后台正照地理志推，下一回就有</div>`; })()}
     ${u && u.lv === 2 ? cityHtml(s, n) : ''}
+    ${SH(() => placeLore(s, n), 'placeLore')}
     ${u && admMine(s, u) ? `<details class="oadd"><summary class="muted">划分政区…</summary><div class="opost"><input class="oin" data-admto placeholder="新名字 / 等第 / 府州名"><button class="link" data-adm="rename" data-n="${esc(n)}">改名</button><button class="link" data-adm="type" data-n="${esc(n)}">改等第</button>${u.lv === 3 ? `<button class="link" data-adm="move" data-n="${esc(n)}">改隶到</button><button class="link" data-adm="split" data-n="${esc(n)}">以此县分置新州</button>` : ''}<button class="link" data-adm="capital" data-n="${esc(n)}">定都于此</button></div><div class="muted" style="font-size:11px">改名、改等第、改隶各花一点国策点，分置两点，定都三点</div></details>` : ''}
     ${t ? `<div class="muted">户${esc(fmtN(N0(t.pop)) || '正在照史料推')} · 守军${esc(fmtN(N0(t.troops)) || '正在照史料推')} · 存粮${esc(fmtN(N0(t.grain)) || '正在照史料推')}石 · 民心${esc(t.loyalty ?? '?')}</div>` : ''}
     ${F.length ? `<div>驻军：${F.map(f => `${esc(f.name)}（${esc(f.leader || '')}，${esc(troopEst(s, f).txt)}，${esc(f.status || '')}）${myForce(s, f) ? '' : `<button class="link" data-scout="${esc(f.owner || f.name)}">派探子</button>`}`).join('、')}</div>` : ''}

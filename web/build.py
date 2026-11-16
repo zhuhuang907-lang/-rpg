@@ -80,6 +80,13 @@ for f in sorted((here / 'figures').glob('*.json')) if (here / 'figures').exists(
             'po': [[x.get('office') or '', x.get('from'), x.get('to'), x.get('polity') or ''] for x in p.get('posts') or []][:12],
             'st': p.get('stats') or {}, 'tr': (p.get('traits') or [])[:3], 'f': p.get('faction') or '', 'br': p.get('brief') or '', 'src': p.get('src') or ''} for p in h.get('people') or [] if p.get('name')]})
     except Exception as e: print('skip figures', f.name, e)
+offlib = []   # 地方长官表 web/figures/officials-*.json（任务四十一、四十七）：地图上点一处看这年谁在任
+for f in sorted((here / 'figures').glob('officials-*.json')) if (here / 'figures').exists() else []:
+    try:
+        h = json.load(open(f, encoding='utf8'))
+        offlib.append({'era': h.get('era') or f.stem, 'range': h.get('range'), 'seats': [{'p': x.get('place') or '', 'o': x.get('office') or '', 'h': [[y.get('name'), y.get('from'), y.get('to'), y.get('how') or ''] for y in x.get('holders') or [] if y.get('name')]} for x in h.get('seats') or []]})
+    except Exception as e: print('skip officials', f.name, e)
+offlib_js = json.dumps(offlib, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 figlib_js = json.dumps(figlib, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 # 人物关系：web/tenure/*-ties.json（任务十；史书里两人之间的关系，写戏时朝中、身边的人照此相待，R-241 接进游戏）
 ties = []
@@ -118,7 +125,7 @@ atlas_js = atlas_rd('atlas.core.js', '')
 atlas_core, atlas_e1820, atlas_e1911, atlas_coast = atlas_rd('core.json'), atlas_rd('era1820.json'), atlas_rd('era1911.json'), atlas_rd('coast1820.json')
 import hashlib, re, datetime
 face_js = (here / 'face.js').read_text(encoding='utf8') if (here / 'face.js').exists() else ''
-src_all = (here / 'game.src.html').read_text(encoding='utf8') + face_js + hist_js + tenure_js + court_js + eravocab_js + roles_js + pollist_js + evlib_js + figlib_js + ties_js + inst_js + arcs_js + geo_js + terr_js + atlas_js + atlas_core + atlas_e1820 + atlas_e1911 + atlas_coast + vocab
+src_all = (here / 'game.src.html').read_text(encoding='utf8') + face_js + hist_js + tenure_js + court_js + eravocab_js + roles_js + pollist_js + evlib_js + figlib_js + offlib_js + ties_js + inst_js + arcs_js + geo_js + terr_js + atlas_js + atlas_core + atlas_e1820 + atlas_e1911 + atlas_coast + vocab
 digest = hashlib.sha1(src_all.encode('utf8')).hexdigest()[:12]
 api = int(re.search(r'const API_VER = (\d+)', (here.parent / 'rpg-kernel/server.js').read_text(encoding='utf8')).group(1))
 vfile = here.parent / 'rpg-kernel/public/version.json'
@@ -127,7 +134,7 @@ except Exception: old = {}
 build = old.get('build') if old.get('hash') == digest else datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')
 gver = (re.search(r"const VERSIONS = \{ game: '([^']+)'", (here / 'game.src.html').read_text(encoding='utf8')) or [None, ''])[1]   # 三个版本显示同一个版本号
 vfile.write_text(json.dumps({'build': build, 'hash': digest, 'api': api, 'game': gver}), encoding='utf8', newline='\n')
-body = (here / 'game.src.html').read_text(encoding='utf8').replace('__BUILD__', build).replace('__CAL__', compact).replace('__HIST__', hist_js).replace('__TENURE__', tenure_js).replace('__COURT__', court_js).replace('__ERAVOCAB__', eravocab_js).replace('__ROLESLIB__', roles_js).replace('__POLLIST__', pollist_js).replace('__EVLIB__', evlib_js).replace('__FIGLIB__', figlib_js).replace('__TIES__', ties_js).replace('__VOCAB__', vocab.replace('</', '<\\/')).replace('__INSTLIB__', inst_js).replace('__ARCS__', arcs_js).replace('__GEO__', geo_js).replace('__TERRAIN__', terr_js).replace('__ATLAS_CORE__', atlas_core).replace('__ATLAS_E1820__', atlas_e1820).replace('__ATLAS_E1911__', atlas_e1911).replace('__ATLAS_COAST__', atlas_coast).replace('__ATLAS_JS__', atlas_js).replace('/*__FACE__*/', face_js)
+body = (here / 'game.src.html').read_text(encoding='utf8').replace('__BUILD__', build).replace('__CAL__', compact).replace('__HIST__', hist_js).replace('__TENURE__', tenure_js).replace('__COURT__', court_js).replace('__ERAVOCAB__', eravocab_js).replace('__ROLESLIB__', roles_js).replace('__POLLIST__', pollist_js).replace('__EVLIB__', evlib_js).replace('__FIGLIB__', figlib_js).replace('__OFFLIB__', offlib_js).replace('__TIES__', ties_js).replace('__VOCAB__', vocab.replace('</', '<\\/')).replace('__INSTLIB__', inst_js).replace('__ARCS__', arcs_js).replace('__GEO__', geo_js).replace('__TERRAIN__', terr_js).replace('__ATLAS_CORE__', atlas_core).replace('__ATLAS_E1820__', atlas_e1820).replace('__ATLAS_E1911__', atlas_e1911).replace('__ATLAS_COAST__', atlas_coast).replace('__ATLAS_JS__', atlas_js).replace('/*__FACE__*/', face_js)
 (here / 'index.html').write_text(body, encoding='utf8', newline='\n')
 # 桌面版由本机服务直接发出，需要自己的文档外壳
 page = ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="renderer" content="webkit"><meta name="force-rendering" content="webkit">'
