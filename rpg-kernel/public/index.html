@@ -1705,7 +1705,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261116181938';
+const BUILD = '20261116193009';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4297,8 +4297,19 @@ const stG = x => x ? x.g || statWord(x.v) : '';
 const statWord = v => v >= 95 ? '冠绝一代' : v >= 85 ? '一代之选' : v >= 70 ? '出众' : v >= 55 ? '中上' : v >= 40 ? '平常' : v >= 25 ? '稍逊' : '不行';
 const statsDue = s => s && s.people && Object.entries(s.people).some(([k, v]) => v && !v.faded && !v.stats && k !== s.protagonist.name && (s.turn - (v.seen || 0)) <= 3) && !(s.statFail != null && s.turn - s.statFail < 2);
 /** 评定一批人（每次至多六个）：真人先联网查生平、所长，连同真人档案、核查结果、名册里的身份一起交给 DeepSeek */
+/** 名臣预制包里评过分的（照史书评语给的理政、统兵、理财、操守……），直接照包记，不请模型（R-244）；忠诚是对主角的，包里不管，照常人起 */
+function figStats(s, n) {
+  const f = FIGLIB.flatMap(R => arr(R.people)).find(x => x.n === n); if (!f || !f.st) return false;
+  const st = {}; for (const k of PSTATS) { if (k === '忠诚') continue; const v = num(f.st[k]); if (v != null) st[k] = { v: Math.max(0, Math.min(100, Math.round(v))), g: statWord(v), why: '史书评语（名臣预制）' }; }
+  if (Object.keys(st).length < 3) return false; st['忠诚'] = { v: 45, g: statWord(45), why: '推：和主角素无往来' };
+  s.people = s.people || {}; const tgt = s.people[n] || (s.people[n] = { role: (findPost(s, n) || {}).title || f.tag || '', seen: s.turn });
+  tgt.stats = st; tgt.statSum = one(f.br || '', 60); tgt.statAt = s.turn; tgt.statReal = true; if (arr(f.tr).length) tgt.traits = f.tr.filter(t => NTRAITS.includes(t)).slice(0, 3);
+  const po = findPost(s, n); if (po) po.attr = { faction: (po.attr || {}).faction || f.f || '', zheng: (st['理政'] || {}).v, jun: (st['统兵'] || {}).v, cai: (st['理财'] || {}).v, zhong: 45, lian: (st['操守'] || {}).v, basis: tgt.statSum, fake: false };
+  return true;
+}
 async function judgePeople(s, names) {
-  const L = [...new Set(arr(names).filter(n => n && n.length >= 2 && n !== s.protagonist.name))].slice(0, 6); if (!L.length) return [];
+  const L0 = [...new Set(arr(names).filter(n => n && n.length >= 2 && n !== s.protagonist.name))], packed = L0.filter(n => figStats(s, n));
+  const L = L0.filter(n => !packed.includes(n)).slice(0, 6); if (!L.length) return packed;
   const R = realNameSet(s), real = L.filter(n => R.has(n));
   const found = real.length && canSearch() ? await searchFirst(s, real.slice(0, 3).flatMap(n => [`${n} 生平`, `${n} 善 擅长 评价`])) : '';
   const info = n => { const v = (s.people || {})[n] || {}, d = (s.dossiers || {})[n] || {}, c = chkOf(s, n), m = arr(s.household).find(x => x.name === n), po = findPost(s, n), tl = talentOf(s, n);
@@ -4323,7 +4334,7 @@ ${L.map(info).join('\n')}
     const po = findPost(s, n); if (po) po.attr = { faction: (po.attr || {}).faction || '', zheng: (st['理政'] || {}).v, jun: (st['统兵'] || {}).v, cai: (st['理财'] || {}).v, zhong: (st['忠诚'] || {}).v, lian: (st['操守'] || {}).v, basis: tgt.statSum, fake: !R.has(n) };
     out.push(n); }
   if (out.length) feedAdd([{ t: `评定人物各项：${out.join('、')}`, site: 'DeepSeek' }]);
-  return out;
+  return packed.concat(out);
 }
 /** 后台：这几回出场、还没评定的人，每回最多六个 */
 async function judgeDue(s) { const L = Object.entries(s.people || {}).filter(([k, v]) => v && !v.faded && !v.stats && k !== s.protagonist.name && (s.turn - (v.seen || 0)) <= 3).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).map(([k]) => k); return judgePeople(s, L); }

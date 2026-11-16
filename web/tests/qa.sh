@@ -148,7 +148,7 @@ start ai.js && {
   run "联网查证存档复用：同一条查询第二次从本机缓存出，不再花博查、维基（R-243）" 60 node lookcache.js
   run "名臣预制：照出没地点年表判断够不够得着（同地可见、远处听说、都城一方之主可召、外任只能写信）；没出生、已死的不出（R-244）" 60 env PLAY="$ROOT/web/play.html" node figlib.js
   run "价目单位：照文填了却记贯（真模型实测 930 年洛阳一家一月吃穿一千八百贯）程序折回，旧存档第一次用时折回；正常价目不动" 60 env PLAY="$ROOT/web/play.html" node econunit.js
-  run "人才年表读名臣预制包：五代十国盖得住的十年块不请模型，盖不住的照旧问；包里的人和仕途进人物档案（R-244）" 60 env PLAY="$ROOT/web/play.html" node talentpack.js
+  run "人才年表、人物评定读名臣预制包：五代十国盖得住的十年块不请模型，盖不住的照旧问；包里评过分的人不再请模型评（R-244）" 60 env PLAY="$ROOT/web/play.html" node talentpack.js
   run "户口只推主角身边六十个府州，推完不再挨批推天下；走到远处再推那边（R-243）" 60 env PLAY="$ROOT/web/play.html" node popnear.js
   run "后台整理的本机缓存：同样的问题第二次从本机出、不再请模型；没让缓存的照旧问（R-243）" 60 node llmcache.js
   run "官员名录也照任职年表和朝廷数据：明 1625 年表上的户部尚书、荆南 926 年高季兴高从诲进名录，模型不给人也有；真点人物页看得到（R-225、R-227）" 150 env PLAY="$ROOT/web/play.html" node rostertable.js
