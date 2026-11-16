@@ -15,7 +15,7 @@ const path = require('path');
     // 2 一张表核真假
     const oc = callClaude; callClaude = async pr => { if (/是不是史书上真有其人/.test(pr)) { const rows = []; pr.split('\n').forEach(l => { const m = /^(\d+)\. (.+?)（/.exec(l); if (m) rows.push({ i: +m[1], real: m[2] === '杨勇' ? '真' : m[2] === '王小二' ? '假' : '不详', who: m[2] === '杨勇' ? '隋皇太子' : '' }); }); return { text: JSON.stringify({ rows }) }; } return { text: '{}' }; };
     try { await pplChkDS(S); } finally { callClaude = oc; }
-    if (S.people.杨勇.real !== true) bad.push('DS 表说是真人的没记成真人'); if (!S.people.王小二.fic) bad.push('DS 表说是编的没记成虚构'); if (fictionShow(S).has('杨勇')) bad.push('核成真人以后还标虚拟');
+    if (S.people.杨勇.real !== true && !realNameSet(S).has('杨勇')) bad.push('DS 表说是真人的没记成真人（隋唐前期有了史料包以后，杨勇由史料包认作真人，也算）'); if (!S.people.王小二.fic) bad.push('DS 表说是编的没记成虚构'); if (fictionShow(S).has('杨勇')) bad.push('核成真人以后还标虚拟');
     // 3 朝堂全表并进人事树（这一段只测模型的表怎么并进树；照任职年表先坐位子另有测试，这里把年表挪开，免得史料上 600 年已罢官的高颎被年表改掉）
     const T0 = TENURE; TENURE = [];
     S.org = { nodes: [{ id: 'root', name: '朝廷', depth: 0, posts: [{ title: '皇帝', holder: '杨坚' }] }, { id: 'A1', name: '尚书省', depth: 1, parent: 'root', posts: [{ title: '尚书令', rank: '正二品', holder: '', noGrant: '隋尚书令照例不授', status: '照例不授' }, { title: '左仆射', rank: '从二品', holder: '' }, { title: '右仆射', rank: '从二品', holder: '王虚拟', src: '拟' }] }, { id: 'A2', name: '吏部', depth: 2, parent: 'A1', posts: [{ title: '吏部尚书', rank: '正三品', holder: '' }] }], log: [] };
