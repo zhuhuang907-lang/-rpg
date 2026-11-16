@@ -143,7 +143,7 @@ start ai.js && {
   run "统治者筹钱的路：加派预征卖官度牒借商括户减俸和籴，真点；到库打折扣看吏治威望；不能连办；后果按月到期（逃户民变、括户长赋、预征扣秋粮）（R-242）" 120 env PLAY="$ROOT/web/play.html" node fund.js
   run "越权不再一律办不成：掷一回，皇帝有兵名望高的多成、白身少成；成了多半被参擅权（乱世少些）；行动单照结果写（R-242）" 90 env PLAY="$ROOT/web/play.html" node overreach.js
   run "政令有阻力要时间：真点赋税按钮，朝中各派照主张表态、反对的记怨；新令一两个月后才落地；吏治坏减赋好处落不到百姓；筹钱也有表态（R-242）" 90 env PLAY="$ROOT/web/play.html" node polstance.js
-  run "少限制：国丧里宴乐、女扮男装应考、无名分纵兵劫掠都做得成，真点按钮；后果看身份时局（有官身多半被参、搜检可能看破、治世多半被告）（R-242）" 90 env PLAY="$ROOT/web/play.html" node lessban.js
+  run "少限制：国丧里宴乐、女扮男装应考、无名分纵兵劫掠、不许掌兵的亲王私蓄甲士都做得成，真点按钮；后果看身份时局（有官身多半被参、搜检可能看破、治世多半被告）（R-242）" 90 env PLAY="$ROOT/web/play.html" node lessban.js
   run "官员名录也照任职年表和朝廷数据：明 1625 年表上的户部尚书、荆南 926 年高季兴高从诲进名录，模型不给人也有；真点人物页看得到（R-225、R-227）" 150 env PLAY="$ROOT/web/play.html" node rostertable.js
   run "错词表进写戏：后唐正文写了总兵、衙役这类这时还没有的说法打回并给当时说法，两可今义词不打回，明朝的总兵不算错（任务十五、十七，R-233）" 120 env PLAY="$ROOT/web/play.html" node eravocab.js
   run "兵力虚实：敌军只给估计（传闻虚张、给范围），真点派探子探准，探报一年就旧；自己直接统的兵照实数（任务三，R-221）" 150 env PLAY="$ROOT/web/play.html" node troopfog.js

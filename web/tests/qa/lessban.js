@@ -25,5 +25,9 @@ const path = require('path');
   // 3 纵兵劫掠：riskPress 治世七成、乱世三成
   const rp = await p.evaluate(() => { const go = y => { S = newSave({ name: '张三', gender: '男', age: 30, role: '游击将军', gregorianYear: y, month: 5, day: 1, place: '开封', polity: y < 1127 ? '北宋' : '南宋' }); let n = 0; for (let t = 1; t <= 120; t++) { S.turn = t; S.press = []; if (riskPress(S, '纵兵劫掠被人参了', '言官', 'x', bandLoose(y) ? 0.3 : 0.7, 3)) n++; } return n / 120; }; return { peace: go(1040), loose: go(1127) }; });
   if (!(rp.peace > rp.loose)) errs.push('乱世纵兵劫掠被参不比治世少：' + JSON.stringify(rp));
+  // 4 唐亲王（不许掌兵）私蓄甲士：真点，做得成、猜忌涨
+  const ro = await p.evaluate(() => { S = newSave({ name: '李琚', gender: '男', age: 25, role: '光王', real: false, gregorianYear: 730, month: 3, day: 1, place: '长安', polity: '唐' }); S.chat = [{ role: 'gm', text: '开场' }]; S.turn = 2; S.protagonist.ident = { chushen: '宗室' }; S.household = []; S.econ = { unit: '贯', wage: 0.1, rice: 1 }; S.money = { cash: 5000, unit: '贯' }; VIEW = 'game'; TAB = 'board'; SIDE_FOLD = false; render(); const b = document.querySelector('[data-royal="sishi"]'); return { has: !!b, tabs: [...document.querySelectorAll('[data-tab]')].map(x => x.dataset.tab) }; });
+  if (ro.has) { const s0 = await p.evaluate(() => (S.royal || {}).suspect || 0); await p.click('[data-royal="sishi"]'); const r = await p.evaluate(() => ({ g: S.royal.guard, s: S.royal.suspect })); if (!(r.g >= 300 && r.s > s0)) errs.push('私蓄甲士没成或没招猜忌：' + JSON.stringify(r)); }
+  else errs.push('唐亲王页上没有「私蓄甲士」：' + JSON.stringify(ro.tabs));
   console.log('LESSBAN', JSON.stringify({ rate, ex: { caught: ex.caught, through: ex.through }, rp })); console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(errs.length ? 1 : 0);
 })();
