@@ -97,3 +97,15 @@
 - **三十六 批语落地**：五代 12 人 23 项 statsWhy 无据的能力分改 null（宁可空着）。
 - 门禁：build ok（7340582，已并入 staging 新增 `figures/jin16.json` 250 人）、prompt_guard 282/0、rules_regress 101/0、hist_audit **0 可疑**。
 - 存量不动、待宰相裁：`web/tenure/*` 与 figures 的 1 年差 10 处；sanguo 17／tangmo 11／wudai 2 名长官不在 figures；tangmo 45 条 where 留空。
+
+## 报（2026-11-17，外部文库 cn-history-220-979 已并入 corpus/）
+
+项目主人让 opencode 上传了公元 220—979 中古史全文库（50 部、2,504 卷、约 2,523 万字），我按「只加不缺、不覆盖旧库」并进了本仓库：
+
+- **新增 30 部**，书目 **65 → 95 部**，总字数约 9,051 万：唐六典、唐律疏议、贞观政要、通典外诸政书，世说新语、颜氏家训、洛阳伽蓝记、酉阳杂俎、唐语林、唐摭言、北梦琐言、因话录、开元天宝遗事，十国春秋、建康实录、江南野史、吴越备史、蜀梼杌、五国故事、五代史补、南唐近事、三楚新录、钓矶立谈、江表志、江南别录、华阳国志、齐民要术、入唐求法巡礼行记、顺宗实录、大唐创业起居注、奉天录。
+- 同步 `corpus/meta.json`、`corpus/books.tsv`，桌面版与网页版「原文库」可按书 id 直接检索取原文；`node rpg-kernel/core/histlib` 实测书目 95 部。
+- 正文统一转简体、去 Wikisource 的 `-{…}-` 标记、按段切分（世说新语 1,134 段、十国春秋 5,755 段、齐民要术 1,611 段）。
+- 许可证与出处：`docs/知识库/外部文库-cn-history-NOTICE.md`；使用说明与拉取脚本：`docs/知识库/外部文库-cn-history.md`、`scripts/fetch_history_corpus.py`。
+- 门禁：build ok（7579993）、prompt_guard 282/0、rules_regress 101/0、hist_audit 0 可疑。
+- 其余 20 部与本库重复且不多卷，未覆盖；新库的 SQLite 全文索引要用的，跑 `scripts/fetch_history_corpus.py` 即可现拉。
+- **另请宰相知**：`zcode/task-40`（我做的南北朝 175 人版）已被 staging 上 252 人版取代，**请勿合并该分支，可直接删**。
