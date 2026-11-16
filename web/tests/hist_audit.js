@@ -33,7 +33,7 @@ for (const { f, d } of packs) {
 for (const t of fs.readdirSync(path.join(W, 'tenure')).filter(f => f.endsWith('.json') && !/^ming/.test(f))) {
   const d = J('tenure/' + t); for (const p of d.figures || []) if (N(p.died) != null && p.name) (died[p.name] = died[p.name] || []).push({ died: p.died, range: [Math.min(...(p.posts || [[p.died]]).map(q => q[0])), p.died], src: t }); }
 for (const [n, L] of Object.entries(died)) for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
-  const a = L[i], b = L[j]; const near = Math.abs(a.died - b.died) <= 30;   // 隔得太远多半是同名两人
+  const a = L[i], b = L[j]; const near = Math.abs(a.died - b.died) <= 30 && !(a.range && b.range && (a.range[1] < b.range[0] || b.range[1] < a.range[0]));   // 隔得太远、任职年份全不重叠的，多半是同名两人（李怀忠：后周 953 卒、宋 978 卒）
   if (near && Math.abs(a.died - b.died) > 1 && a.src !== b.src && !(out['同一人各表卒年不一'] || []).includes(`${n}：${a.src} 记卒 ${a.died}，${b.src} 记卒 ${b.died}`)) add('同一人各表卒年不一', `${n}：${a.src} 记卒 ${a.died}，${b.src} 记卒 ${b.died}`); }
 // 朝廷数据：任职在卒年以后、任职在政权存续年外
 const C = J('court/wudai.json'); const pols = J('history/polities.json'); const life = Object.fromEntries(pols.map(p => [p.name, [p.from, p.to]]));
