@@ -290,6 +290,7 @@ textarea{resize:vertical}
 <script type="application/json" id="roleslib">__ROLESLIB__</script>
 <script type="application/json" id="pollist">__POLLIST__</script>
 <script type="application/json" id="evlib">__EVLIB__</script>
+<script type="application/json" id="figlib">__FIGLIB__</script>
 <script type="application/json" id="tieslib">__TIES__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
@@ -5229,6 +5230,33 @@ function eventsNow(s, n = 2) {
 function eventsBlock(s) {
   const L = eventsNow(s); if (!L.length) return '';
   return '【这年代这类人可能碰上的事（材料，不是白名单：合景就用、不合就不用，不必硬写；玩家怎么应对照旧由他定）】\n' + L.map(e => `· ${e.t}（${e.k}${e.where ? '；' + e.where : ''}）：几条路——${arr(e.p).map(([a, b]) => a + (b ? '（代价：' + b + '）' : '')).join('；')}`).join('\n');
+}
+/* ========== 名臣预制（R-244）：重要真人提前做好（标签、出没地点年表、能力、生平），游戏照年表判断主角此刻够不够得着；
+ *  够得着的交给写戏当可以出场的真人，够不着的只当「听说过」——不再请模型现场推这些人在哪、做什么官。次要人物照旧现场虚构 ========== */
+let FIGLIB = []; try { FIGLIB = JSON.parse((document.getElementById('figlib') || {}).textContent || '[]'); if (!Array.isArray(FIGLIB)) FIGLIB = []; } catch (_) { FIGLIB = []; }
+function figAt(f, y) { const w = arr(f.w).find(x => (x[0] == null || y >= x[0]) && (x[1] == null || y <= x[1])); return w ? { place: w[2], why: w[3] } : null; }
+function figPost(f, y) { const p = arr(f.po).filter(x => (x[1] == null || y >= x[1]) && (x[2] == null || y <= x[2])); return p.length ? p[p.length - 1][0] : ''; }
+/** 主角够不够得着：同地可见；对方在都城，主角是一方之主可遣使相召，外任的官只能写信托人；其余只是听说 */
+function figReach(s, f, y) {
+  const at = figAt(f, y); if (!at) return { lv: '不知下落' }; const here = geoCenter(s) || (s.place || {}).full || '';
+  if (samePlace(at.place, here) || (s.place && samePlace(at.place, s.place.full || ''))) return { lv: '同地', at };
+  const cap = s.realm && s.realm.capital; let ruler = false, ofc = false; try { ruler = isRuler(s); ofc = !!(s.office && s.office.held); } catch (_) {}
+  if (cap && samePlace(at.place, cap) && ruler) return { lv: '可求见', at };   // 一方之主可遣使相召、请来相见
+  if (cap && samePlace(at.place, cap) && ofc) return { lv: '可致书', at };   // 外任的官够不着京里的人，只能写信、托人
+  return { lv: '远', at };
+}
+function figuresNow(s) {
+  const y = s && s.clock && s.clock.y; if (y == null || !FIGLIB.length) return [];
+  const me = (s.protagonist || {}).name;
+  return FIGLIB.filter(R => R && R.range && y >= R.range[0] - 5 && y <= R.range[1] + 5).flatMap(R => arr(R.people))
+    .filter(f => f.n !== me && (f.b == null || y >= f.b + 12) && (f.d == null || y <= f.d)).map(f => ({ f, r: figReach(s, f, y) }));
+}
+function figBlock(s) {
+  const L = figuresNow(s); if (!L.length) return ''; const y = s.clock.y;
+  const line = ({ f, r }) => `${f.n}（${f.tag || '名人'}${figPost(f, y) ? '，' + figPost(f, y) : ''}${r.at ? '，此刻在' + r.at.place + (r.at.why ? '（' + r.at.why + '）' : '') : ''}${f.tr && f.tr.length ? '；' + f.tr.join('、') : ''}${f.br ? '；' + one(f.br, 40) : ''}）`;
+  const near = L.filter(x => /同地|可求见|可致书/.test(x.r.lv)).sort((a, b) => a.f.t - b.f.t).slice(0, 8), far = L.filter(x => x.r.lv === '远' && x.f.t === 1).slice(0, 6);
+  return (near.length ? '【这一带够得着的名臣（史书真人，出场照这里写的官职、所在和为人；「可求见」的要主角派人去请、对方肯不肯来照身份定；在京里的只能写信托人）】\n' + near.map(x => '· ' + line(x) + (x.r.lv === '可求见' ? '〔可求见〕' : x.r.lv === '可致书' ? '〔人在京里，只能写信、托人〕' : '')).join('\n') : '')
+    + (far.length ? (near.length ? '\n' : '') + '【远处的名臣（只是听说，主角见不着，除非赶去或托人；不许让他们凭空出现在主角身边）】\n' + far.map(x => '· ' + line(x)).join('\n') : '');
 }
 /* ========== 人物关系（任务十，R-241）：朝中、身边这些人之间史书载明的关系（养父子、荐举、仇杀、婚姻……），到这一年已发生的，交给写戏 ========== */
 let TIESLIB = []; try { TIESLIB = JSON.parse((document.getElementById('tieslib') || {}).textContent || '[]'); if (!Array.isArray(TIESLIB)) TIESLIB = []; } catch (_) { TIESLIB = []; }
@@ -12926,7 +12954,8 @@ function blocks(s, forStory) {
   L.push(cardBlock(s)); { const mb = memoryBlock(s); if (mb) L.push(mb); }
   { const ob = orgBlock(s); if (ob) L.push(ob); }
   { let wb = ''; try { wb = waysBlock(s); } catch (_) {} if (wb) L.push(wb); }   // 任务十二：此刻沾着的活法当材料
-  { let eb = ''; try { eb = eventsBlock(s); } catch (_) {} if (eb) L.push(eb); }   // R-241：世事库当材料
+  { let eb = ''; try { eb = eventsBlock(s); } catch (_) {} if (eb) L.push(eb); }
+  { let fb = ''; try { fb = figBlock(s); } catch (_) {} if (fb) L.push(fb); }   // R-244：名臣预制，够得着的才能出场   // R-241：世事库当材料
   { let tb = ''; try { tb = tiesBlock(s); } catch (_) {} if (tb) L.push(tb); }   // R-241：人物关系当材料
   if (false && s.face && typeof FACE !== 'undefined') { const ft = faceText(s.face); if (ft) L.push('【主角的相貌（玩家捏的；写到主角的样子照这个，不另编）】' + ft); }
   const hh = arr(s.household);
