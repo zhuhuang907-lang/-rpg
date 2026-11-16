@@ -11830,8 +11830,9 @@ function fiscTreasury(s) { if (myDomain(s).kind === 'realm') { s.realm = s.realm
   s.gov = s.gov || { stats: {} }; s.gov.stats = s.gov.stats || {}; return { get: () => N0(s.gov.stats['库银']) || 0, add: v => { s.gov.stats['库银'] = Math.round((N0(s.gov.stats['库银']) || 0) + v); } }; }
 function fiscalMonthly(s) {
   const F = s.fisc; if (!F || F.kind !== myDomain(s).kind) return []; const ym = Math.floor(ymOf(s.clock)), m = s.clock.m || 1; if (F.ym === ym) return []; F.ym = ym;
-  const G = (s.gov && s.gov.stats) || {}, B = F.base, P = F.pol, out = [], R = {}, X = {}, why = {};
+  const G = (s.gov && s.gov.stats) || {}, B = F.base, P = polNow(F, ym), out = [], R = {}, X = {}, why = {};
   fundAfter(s, F, ym, out);
+  for (const [k, x] of Object.entries(F.polPend || {})) if (x && x.at <= ym) { delete F.polPend[k]; out.push(`${{ tax: '赋税', yan: '盐法', coin: '铸钱', cp: '常平仓', yao: '徭役' }[k]}新令各地已照行`); }
   const popK = F.pop0 && fiscPop(s) ? fiscPop(s) / F.pop0 : 1, nong = fiscAvg(s, 'nong', 50), shang = fiscAvg(s, 'shang', 50), zai = G['灾情'] ?? 20, fu = G['腐败'] ?? 30, an = G['治安'] ?? 60;
   const taxK = P.tax === '轻' ? 0.7 : P.tax === '重' ? 1.3 : 1, leak = 1 - Math.min(0.4, fu / 200), farm = Math.sqrt(nong / 50) * (1 - Math.min(0.6, zai / 150));
   const season = m === 6 ? 0.4 : m === 10 ? 0.6 : 0;
@@ -11860,7 +11861,7 @@ function fiscalMonthly(s) {
   const net = rev - Object.values(X).reduce((a, b) => a + b, 0); fiscTreasury(s).add(net);
   // 物价与民心
   F.price = Math.round(Math.max(60, Math.min(300, F.price + (zai - 25) / 10 + (P.coin === '减重' ? 2.5 : 0) - (P.cp ? (F.price - 100) * 0.2 : (F.price - 100) * 0.05))));
-  const mood = (P.tax === '重' ? -1 : P.tax === '轻' ? 0.5 : 0) + (P.yao === '重' ? -0.8 : P.yao === '轻' ? 0.3 : 0) + (P.yan === '官卖' ? -0.3 : 0) + (P.coin === '减重' ? -0.5 : 0) + (F.price > 130 ? -1 : 0);
+  const relief = 1 - Math.min(0.8, fu / 100), mood = (P.tax === '重' ? -1 : P.tax === '轻' ? 0.5 * relief : 0) + (P.yao === '重' ? -0.8 : P.yao === '轻' ? 0.3 * relief : 0) + (P.yan === '官卖' ? -0.3 : 0) + (P.coin === '减重' ? -0.5 : 0) + (F.price > 130 ? -1 : 0);
   if (G['民心'] != null && mood) G['民心'] = Math.max(0, Math.min(100, Math.round((G['民心'] + mood) * 10) / 10)); if (G['治安'] != null && F.price > 150) G['治安'] = Math.max(0, G['治安'] - 1);
   if (F.kind === 'realm' && s.realm) { s.realm.revenue = Math.round(revSum * 12 / (season ? 1 : 1)); }
   F.last = { ym, R, X, why, net, price: F.price }; F.log = arr(F.log).concat([{ ym, net }]).slice(-24);
@@ -11884,12 +11885,42 @@ function fiscWorkDone(s, w) {
   if (w.kind === '河工' && G['灾情'] != null) G['灾情'] = Math.max(0, G['灾情'] - 12); if (w.kind === '学校') s.renown = (num(s.renown) || 0) + 5;
   const t = `${w.name}完工`; s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: s.protagonist.name, what: t }]); return t;
 }
+/* 政令有阻力、要时间（R-242 第二步）：朝中各派照自己的主张表态（拥护、反对、观望），反对的记怨（怨满了照旧有派系逼宫那一套）；
+ *  改了的政令要一两个月才落到各地（反对的多、威望低还要再拖），没落地前账上照旧；全由程序定，不加模型调用 */
+const POL_LEAN = [   // [这道令的特征, 拥护它的派系主张, 反对它的]
+  [/^(tax|yao):重$|^加派$|^预征$|^借商$|^和籴$/, /理财|兴利|新法|变法|聚敛|富国|强兵|边功|开边|军/, /清流|清议|宽|民|儒|旧法|守成|东林|士|言官|保守/],
+  [/^(tax|yao):轻$/, /清流|清议|宽|民|儒|守成|东林|士|言官/, /理财|兴利|新法|变法|聚敛|富国|强兵|边功|开边|军/],
+  [/^yan:官卖$/, /理财|兴利|新法|变法|富国/, /商|豪|清流|旧法|守成|宽/],
+  [/^yan:通商$/, /商|宽|清流|旧法/, /理财|兴利|新法|富国/],
+  [/^coin:减重$/, /理财|兴利|聚敛/, /清流|清议|儒|旧法|守成|民|言官|商/],
+  [/^cp:/, /新法|变法|理财|民|宽|富国/, /豪|勋|外戚|宦/],
+  [/^括户$/, /新法|变法|理财|富国/, /豪|勋|外戚|宦|旧法|守成/],
+  [/^卖官$|^度牒$/, /宦|外戚|佞|聚敛/, /清流|清议|儒|士|言官|东林|吏治/],
+  [/^减俸$/, /理财|节用|新法/, /勋|外戚|宦|士|言官/]
+];
+function polStance(s, key, label) {
+  const facs = arr(s.factions).filter(f => f && f.name && f.leader !== (s.protagonist || {}).name), rows = [];
+  const L = POL_LEAN.find(([re]) => re.test(key));
+  for (const f of facs.slice(0, 8)) { const t = `${f.name}${f.aim || ''}${f.stance || ''}`, r = seeded(String(f.name).length * 37 + key.length * 11 + Math.floor(ymOf(s.clock)));
+    const up = L && L[1].test(t), dn = L && L[2].test(t); let v = up && dn ? '观望' : up ? '拥护' : dn ? '反对' : r < 0.15 ? '反对' : r > 0.85 ? '拥护' : '观望';   // 两头都沾的派里意见不一，观望
+    if (v === '反对') f.grudge = Math.min(20, (num(f.grudge) || 0) + 2); if (v === '拥护' && f.grudge) f.grudge = Math.max(0, num(f.grudge) - 1);
+    rows.push({ fac: f.name, leader: f.leader || '', v }); }
+  s.facLog = arr(s.facLog).concat(rows.filter(x => x.v !== '观望').map(x => ({ turn: s.turn, when: timeText(s.clock), text: `${label}：${x.fac}${x.leader ? '（' + x.leader + '）' : ''}${x.v}` }))).slice(-40);
+  return rows;
+}
+const stanceText = rows => rows.length ? '朝中：' + rows.map(x => `${x.fac}${x.v}`).join('，') : '';
+/** 此刻各地实际照行的政令（没落地的照旧） */
+function polNow(F, ym) { const P = { ...F.pol }; for (const [k, x] of Object.entries(F.polPend || {})) if (x && x.at > ym) P[k] = x.old; return P; }
 function fiscPolicy(s, k, v) {
   const F = s.fisc, D = myDomain(s); if (!F) { ORGMSG = '财政底账正在照史料推'; return null; } if (D.kind !== 'realm' && k !== 'tax') { ORGMSG = '盐法、铸钱、常平仓、徭役是朝廷的事，地方官只能定本辖区赋税轻重'; return null; }
   const ym = Math.floor(ymOf(s.clock)); F.polYM = F.polYM || {}; if (F.polYM[k] === ym) { ORGMSG = '这个月刚改过'; return null; } F.polYM[k] = ym;
   const old = F.pol[k]; F.pol[k] = k === 'cp' ? !F.pol.cp : v; if (k === 'tax') for (const p of D.places) { const C = (s.cities = s.cities || {})[p] = (s.cities || {})[p] || {}; C.tax = v; }
-  const name = { tax: '赋税', yan: '盐法', coin: '铸钱', cp: '常平仓', yao: '徭役' }[k];
-  return lifeNote(s, '民生', k === 'cp' ? (F.pol.cp ? '设常平仓：秋后籴粮，灾年平粜' : '罢常平仓') : `${name}由「${old}」改为「${v}」`);
+  const name = { tax: '赋税', yan: '盐法', coin: '铸钱', cp: '常平仓', yao: '徭役' }[k], G = (s.gov && s.gov.stats) || {};
+  const rows = D.kind === 'realm' ? polStance(s, k + ':' + (k === 'cp' ? (F.pol.cp ? '设' : '罢') : v), name + (k === 'cp' ? '' : '改「' + v + '」')) : [], con = rows.filter(x => x.v === '反对').length, pro = rows.filter(x => x.v === '拥护').length;
+  const lag = (D.kind === 'realm' ? 1 + (D.places.length > 30 ? 1 : 0) : 0) + (con > pro && (G['威望'] ?? 50) < 55 ? 1 : 0) + ((G['腐败'] ?? 30) >= 60 ? 1 : 0);
+  F.polPend = F.polPend || {}; const prevOld = F.polPend[k] && F.polPend[k].at > ym ? F.polPend[k].old : old; if (lag) F.polPend[k] = { old: prevOld, at: ym + lag }; else delete F.polPend[k];
+  const tail = (lag ? `；文书下到各地、层层转行，约${lag}个月后才见效${con > pro ? '（朝中反对的多，底下观望）' : ''}` : '') + (rows.length ? '。' + stanceText(rows) : '');
+  return lifeNote(s, '民生', (k === 'cp' ? (F.pol.cp ? '设常平仓：秋后籴粮，灾年平粜' : '罢常平仓') : `${name}由「${old}」改为「${v}」`) + tail);
 }
 /* ========== 筹钱的路（R-242 第二步，统治者政经再升级）：国库亏空时的几条路，各有当时史实里的后果；钱落不落得下来看吏治（腐败截留）和威望（诏令落不落地）。
  *  全由程序结算，不加模型调用；后果有的当时见、有的过几个月见（记在 F.after）。不靠天谴：加派到民心见底就有民变，那是账上的事 ========== */
@@ -11921,7 +11952,8 @@ function fundRaise(s, k) {
   if (k === '减俸') { F.fengCut = Math.min(0.4, (F.fengCut || 0) + 0.15); st('腐败', +3); st('威望', -2); line = '裁汰冗员、减俸一成半，每月官俸开销少了；只是俸薄了，下面的人更要另想门路'; }
   if (k === '和籴') { const pr = ricePrice(s) || 1, buy = Math.round(rev * 0.05); if (s.realm && N0(s.realm.granary) != null) s.realm.granary = N0(s.realm.granary) + Math.round(buy / pr * leak); st('民心', -3); got = -Math.round(buy * 0.6); line = `照官价和籴，实多强配，仓里多了约${fmtN(Math.round(buy / pr * leak), '石')}，库里只付了六成价（${fmtN(-got, u)}）；百姓吃亏`; }
   if (got) fiscTreasury(s).add(got); F.fundYM[k] = ym; F.fundLog = arr(F.fundLog).concat([{ ym, k, got }]).slice(-20);
-  return lifeNote(s, '民生', `${W.name}：${line}（前例：${W.eg}）`);
+  const rows = D.kind === 'realm' ? polStance(s, k, W.name) : [];
+  return lifeNote(s, '民生', `${W.name}：${line}（前例：${W.eg}）${rows.length ? '。' + stanceText(rows) : ''}`);
 }
 /** 筹钱的后果按月到期（fiscalMonthly 里调） */
 function fundAfter(s, F, ym, out) {
@@ -11936,7 +11968,8 @@ function fiscHtml(s) {
   const D = myDomain(s); if (!['realm', 'local'].includes(D.kind)) return ''; const F = s.fisc; if (!F) return `<div class="h"><span class="seal">计</span>国计民生</div><div class="muted" style="font-size:12px">正在照史料推这一朝、这一方的财政底账</div>`;
   const L = F.last, u = F.unit, tr = fiscTreasury(s).get(), P = F.pol, realm = D.kind === 'realm';
   const row = (o, sign) => Object.entries(o || {}).map(([k, v]) => `<div class="cr"><span>${esc(k)}${L.why[k] ? `<small class="muted">（${esc(L.why[k])}）</small>` : ''}</span><b>${sign}${esc(fmtN(v, u))}</b></div>`).join('');
-  const sel = (k, opts) => `<span class="muted">${{ tax: '赋税', yan: '盐法', coin: '铸钱', yao: '徭役' }[k]}</span> ${opts.map(o => `<button class="link${P[k] === o ? ' on' : ''}" data-fisc="${k}" data-v="${esc(o)}"${P[k] === o ? ' disabled' : ''}>${esc(o)}</button>`).join('')}`;
+  const pend = k => { const x = (F.polPend || {})[k], ym = Math.floor(ymOf(s.clock)); return x && x.at > ym ? ` <small class="muted">（新令在推行，约${x.at - ym}个月后各地照行）</small>` : ''; };
+  const sel = (k, opts) => `<span class="muted">${{ tax: '赋税', yan: '盐法', coin: '铸钱', yao: '徭役' }[k]}</span> ${opts.map(o => `<button class="link${P[k] === o ? ' on' : ''}" data-fisc="${k}" data-v="${esc(o)}"${P[k] === o ? ' disabled' : ''}>${esc(o)}</button>`).join('')}${pend(k)}`;
   return `<div class="h"><span class="seal">计</span>${realm ? '国计民生' : '钱粮民生'}<span class="note">${realm ? '国库' : '衙门库'} ${esc(fmtN(tr, u))} · 物价${F.price > 115 ? '腾贵' : F.price < 90 ? '平贱' : '平稳'}${P.cp ? ` · 常平仓存${esc(fmtN(F.granary || 0, u))}` : ''}${F.kind === 'local' && F.kc.due ? ` · 起运完${Math.round(F.kc.paid / Math.max(1, F.kc.due) * 100)}%` : ''}</span></div>
     ${L ? `<div class="ccard"><div class="ct">上月收支（净${L.net >= 0 ? '余' : '亏'}${esc(fmtN(Math.abs(L.net), u))}）</div>${row(L.R, '+')}${row(L.X, '−')}</div>` : '<div class="muted" style="font-size:12px">下个月起每月结一回收支</div>'}
     <div class="opost">${sel('tax', ['轻', '常', '重'])}</div>${realm ? `<div class="opost">${sel('yan', ['官卖', '照旧', '通商'])}</div><div class="opost">${sel('coin', ['足值', '减重'])}</div><div class="opost">${sel('yao', ['轻', '常', '重'])}</div><div class="opost"><button class="link" data-fisc="cp">${P.cp ? '罢常平仓' : '设常平仓'}</button></div>` : ''}
