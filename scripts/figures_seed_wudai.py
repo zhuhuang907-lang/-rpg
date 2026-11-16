@@ -61,6 +61,21 @@ for f in J('web/tenure/wudai-liezhuan.json')['figures']:
     for a, b, o in f.get('posts') or []:
         if not any(q['from'] == a and q['office'].split('（')[0] == o.split('（')[0] for q in x['posts']):
             x['posts'].append({'polity': pol, 'office': o, 'from': a, 'to': b, 'how': hw.get((a, b), '推定'), 'src': f.get('src') or f.get('juan') or '', '_r': 1})
+# 君主单列（政权总表 web/history/polities.json：五代十国各国君主在位年、都城、出处）：都城即出没地点；已在名单里的并进去、标君主
+RUL = {}
+for pol in J('web/history/polities.json') if isinstance(J('web/history/polities.json'), list) else J('web/history/polities.json').get('polities', []):
+    if not (pol.get('from', 9999) <= 979 and pol.get('to', 0) >= 907): continue
+    caps = pol.get('capital') or []
+    for r in pol.get('rulers') or []:
+        a, b = max(r.get('from') or 907, 907), min(r.get('to') or 979, 979)
+        if a > b: continue
+        n = re.sub(r'[（(].*$', '', r.get('name') or '').strip()
+        if not n: continue
+        cs = [c for c in caps if (c.get('from') or 0) <= b and (c.get('to') or 9999) >= a] or caps[:1]
+        w = [{'from': max(a, c.get('from') or a), 'to': min(b, c.get('to') or b), 'place': c['name'], 'why': (r.get('title') or '') + '在位', 'how': '明载', 'src': '政权总表都城；' + (r.get('src') or '')} for c in cs if c.get('name')]
+        RUL.setdefault(n, {'posts': [], 'where': [], 'title': r.get('title') or '', 'src': r.get('src') or ''})
+        RUL[n]['posts'].append({'polity': pol['name'], 'office': (r.get('title') or pol['name'] + '君主'), 'from': a, 'to': b, 'how': '明载', 'src': r.get('src') or ''})
+        RUL[n]['where'] += w
 out = []
 for x in P.values():
     x['posts'].sort(key=lambda q: (q['from'] or 0))
@@ -74,6 +89,22 @@ for x in P.values():
     out.append({'name': x['name'], 'tag': tag_of(offs, x['tier']), 'tier': x['tier'], 'born': x['born'], 'died': x['died'], 'clan': x['clan'], 'native': x['native'],
                 'posts': [{**{k: v for k, v in q.items() if k != '_r'}, 'place': (place_of(q['office'], q['polity'], q['from'] or 0)[0] or '')} for q in x['posts']], 'where': where,
                 'stats': {}, 'statsWhy': {}, 'traits': [], 'ties': x['ties'], 'fate': x['fate'], 'brief': (x['note'] or x['fate'])[:120], 'src': x['src']})
+# 生卒补齐：史料包 figures 里有的照它（tang-late、song-north 都含五代人物）
+LIFE = {}
+for hp in ('web/history/tang-late.json', 'web/history/song-north.json'):
+    for f in J(hp).get('figures') or []:
+        if f.get('name'): LIFE.setdefault(f['name'], (f.get('born') or None, f.get('died') or None))
+by = {p['name']: p for p in out}
+for n, r in RUL.items():
+    if n in by:
+        p = by[n]; p['tag'] = '君主'; p['tier'] = 1; p['where'] = r['where'] + p['where']; p['posts'] += r['posts']
+    else:
+        out.append({'name': n, 'tag': '君主', 'tier': 1, 'born': None, 'died': None, 'clan': '', 'native': '', 'posts': r['posts'], 'where': r['where'],
+                    'stats': {}, 'statsWhy': {}, 'traits': [], 'ties': [], 'fate': '', 'brief': r['title'], 'src': r['src']})
+for p in out:
+    b, d0 = LIFE.get(p['name'], (None, None))
+    if p['born'] is None and b: p['born'] = b
+    if p['died'] is None and d0: p['died'] = d0
 out.sort(key=lambda p: (p['tier'], p['name']))
 doc = {'era': 'wudai', 'range': [907, 979], 'source': '新五代史、旧五代史、资治通鉴（经 web/court/wudai.json、web/tenure/wudai-liezhuan.json）', 'seed': True,
        'note': '第一稿：宰相照现有朝廷数据、列传机械合成；出没地点照官职治所、都城推定；能力分、性格、空年待任务三十六照史书补', 'people': out}
