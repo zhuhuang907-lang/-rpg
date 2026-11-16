@@ -1704,7 +1704,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261116042346';
+const BUILD = '20261116052043';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4885,7 +4885,9 @@ function armyAct(s, act, a) {
     { const cx = a.mode === '攻' ? tacBookGet(s, a.tactic) : null; if (cx && cx.cost) { const paid = milPay(s, Math.round(cx.cost)); if (paid == null) return null; } }
     const line = `${f.name}${a.mode === '攻' ? '进攻' : a.mode === '守' ? '移驻防守' : a.mode === '掠' ? '下山劫掠' : a.mode === '伏' ? '往要道设伏：' : '开赴'}${one(a.target, 20)}${a.mode === '攻' && (TACTICS[a.tactic] || tacBookGet(s, a.tactic)) ? '（战法：' + a.tactic + '）' : ''}${a.li ? `，约${a.li}里` : ''}${arr(a.via).length ? '，取道' + a.via.slice(0, 5).join('、') : ''}${a.paceName ? `，${a.paceName}约${a.days}日可到` : ''}`;
     const ax = actNew(s, { type: '令', what: line, who: f.leader || '', src: '军务', perm: '统兵', ok: '能' });
-    if (a.mode === '掠' && !myDomain(s).raid) { ORGMSG = '你这个身份不能去劫掠'; return null; }
+    if (a.mode === '掠' && !myDomain(s).raid) { let loose = false; try { loose = bandLoose(s.clock.y); } catch (_) {} s.renown = (num(s.renown) || 0) - 3;   // 纵兵劫掠：做得成；治世多半被参，乱世常事
+      const hit = riskPress(s, '纵兵劫掠被人参了', isRuler(s) ? '被掠地方的士绅、邻国' : '监军、言官、地方官', `${f.name}在${one(a.target, 16)}一带抢掠，地方告到上头；是认罪赔补、推给部下、托人压下，还是不理`, loose ? 0.3 : 0.7, 3);
+      ORGMSG = `纵兵劫掠${loose ? '，乱世里各镇都这么干' : '，军纪坏了名声，地方上不会白吃这个亏'}${hit ? '（已有人告上去了）' : ''}`; }
     s.campaigns = arr(s.campaigns).filter(c => !(c.force === f.name && /待发|行军|待探报|围城/.test(c.state))).concat([{ force: f.name, mode: a.mode === '攻' ? '攻' : a.mode === '守' ? '守' : a.mode === '掠' ? '掠' : a.mode === '伏' ? '伏' : '行', target: one(a.target, 20), from: f.at || geoCenter(s), li: num(a.li) || null, paceTxt: a.pace || '', turn: s.turn, state: '待发', aid: ax.id, tactic: TACTICS[a.tactic] || tacBookGet(s, a.tactic) ? a.tactic : '' }]);
     s.armyPending = arr(s.armyPending).concat([{ act, line: '下令：' + line + '。', turn: s.turn, force: f.name, aid: ax.id, done: true }]).slice(-12);
     ORGMSG = '军令已下：下一回开拔，程序照日子行军，到了就照那里的守军打'; return '下令：' + line + '。'; }
@@ -5698,7 +5700,9 @@ function examNext(s) {   // 下一场能考的：照现有功名找下一级，�
   return null;
 }
 function examApply(s) {
-  if (isFem(s)) { ORGMSG = '这个年代女子不能应科举'; return null; }
+  if (isFem(s)) {   // 女子不得应举；女扮男装去考做得到（前蜀黄崇嘏之类），每一场都可能被识破，识破了是欺罔之罪
+    const again = s.examDisguise === 'out'; if (s.examDisguise !== true) { s.examDisguise = true; lifeNote(s, '私下', again ? '换了个名字、再扮男装去考；上回露过相，这回更险' : '女扮男装、冒了个男名去应考；往后每进一场都怕被人看破'); }
+    if (seeded((s.turn || 0) * 53 + Math.floor(ymOf(s.clock)) * 7) < (again ? 0.5 : 0.25)) { s.examDisguise = 'out'; riskPress(s, '女扮男装应考被识破', '考官、同场士子', '你女扮男装应考，被搜检的看出破绽，报了上去；欺罔之罪可大可小，是托人求情、认罪，还是连夜走脱', 1, 9); ORGMSG = '进场搜检时被看破了女儿身，赶了出来，这事还没完'; return null; } }
   if (examBar(s)) { ORGMSG = examBar(s); return null; }
   const E = examOf(s), nx = examNext(s), u = (s.money || {}).unit || '';
   if (!nx) { ORGMSG = examPlan(s.clock.y).steps.length ? '眼下没有你能考的那一场' : '这个年代没有科举，要走察举（名声够了求举孝廉、茂才）'; return null; }
@@ -5788,7 +5792,7 @@ function zzHtml(s) { const y = s.clock.y; if (!(y >= 220 && y <= 588) || isFem(s
     <div class="opost"><button class="link" data-zz="ping">${E.xp ? '请中正清定' : '请中正品评'}</button><button class="link" data-zz="bribe" title="有一成多会被告发">托人打点中正</button>${E.xp && !C.office ? `<button class="link" data-zz="start">照乡品起家（${esc(XP_OFF[E.xp][0])}）</button>` : ''}</div>`; }
 function examHtml(s) {
   { const bar = examBar(s); if (bar && !isFem(s)) return identityOf(s).ruler ? '' : `<div class="h" style="margin-top:6px"><span class="seal">科</span>功名与科举</div><div class="muted">${esc(bar)}</div>`; }
-  if (isFem(s)) return `<div class="h" style="margin-top:6px"><span class="seal">科</span>功名与科举</div><div class="muted">这个年代女子不能应科举、做官；女子的出路在家里（主中馈、教子、经营体己）、在宫中（位分晋升），或者走江湖。</div>`;
+  if (isFem(s) && s.examDisguise !== true) return `<div class="h" style="margin-top:6px"><span class="seal">科</span>功名与科举</div><div class="muted">这个年代女子不得应科举、做官（真要考，只能女扮男装冒名进场，每场都可能被搜检看破，那是欺罔之罪）；女子的出路在家里（主中馈、教子、经营体己）、在宫中（位分晋升），或者走江湖。</div>${examBar({ ...s, examDisguise: true }) && !/女子/.test(examBar({ ...s, examDisguise: true })) ? '' : '<div class="opost"><button class="link" id="bExam">女扮男装去应考</button></div>'}`;
   const E = examOf(s), P = examPlan(s.clock.y), nx = examNext(s), now = Math.floor(ymOf(s.clock)), wm = num(((s.skills || {})['文墨'] || {}).lv);
   return `<div class="h"><span class="seal">试</span>功名与科举<span class="note">${esc(P.sys === '察举' ? '这个年代没有科举，走察举' : P.sys + '的科举：' + P.steps.map(x => x.name).join(' → '))}</span></div>
     <div class="pl" style="font-size:13px"><span>功名</span><b>${esc(E.lv)}</b>${wm != null ? `<span class="muted">　文墨 ${wm}</span>` : ''}${E.studyFrom != null ? `<span class="muted">　闭门读书 ${Math.max(0, now - E.studyFrom)} 个月</span>` : ''}</div>
@@ -7696,6 +7700,12 @@ function actNew(s, a) {
 const actOpen = s => arr(s.acts).filter(x => ACT_OPEN.test(x.state));
 function actSet(s, pred, state, why) { for (const x of arr(s.acts)) if (ACT_OPEN.test(x.state) && pred(x)) { x.state = state; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state, why: one(why, 60) }]).slice(-8); x.touched = s.turn; } }
 /** 推演、写正文、记账都看得到的行动单 */
+/** 犯禁的事做得成，后果看人看时局（R-242「少限制」）：pr 的可能被人揪住，下个月起临门；同一桩没了结前不重复 */
+function riskPress(s, title, who, demand, pr, seedK) {
+  const r = seeded((s.turn || 0) * 41 + String(title).length * 13 + (seedK || 0) + Math.floor(ymOf(s.clock)));
+  if (r >= pr || arr(s.press).some(p => p.title === title && p.state === '临门')) return false;
+  s.press = arr(s.press).concat([{ id: 'pr' + Date.now().toString(36) + 'r', kind: '出手', who, title, demand, hidden: '', tell: 100, ignore: '事情越闹越大', state: '临门', at: Math.floor(ymOf(s.clock)) + 1 }]); return true;
+}
 /** 越权掷一回（R-242）：名望、手里有兵、一方之主、乱世都让越权更容易成，最高八成 */
 function overRoll(s, what, i) { let pw = 0.3 + Math.min(0.25, (num(s.renown) || 0) / 200); try { if (myTroops(s) > 0) pw += 0.1; if (isRuler(s)) pw += 0.2; if (bandLoose(s.clock.y)) pw += 0.1; } catch (_) {} return seeded((s.turn || 0) * 17 + String(what || '').length * 31 + (i || 0)) < Math.min(0.8, pw) ? 'ok' : 'no'; }
 /** 越权办成了：事后多半有人参你擅权（乱世少些）——下个月起临门（R-242） */
@@ -10694,7 +10704,7 @@ function soldierHtml(s) {
  *  别的门路照朝代：门荫（任子、恩荫、荫生，看父祖官品）、投军、入幕辟署、胥吏出职（流外入流）、捐纳（进纳、赀选）、上书自荐、征辟、中正品第 ========== */
 const ROYAL_RE = /宗室|亲王|郡王|皇子|王子|世子|贝勒|贝子|公主|郡主|驸马|镇国将军|辅国将军|奉国将军|宗女/;
 function examBar(s) {
-  if (isFem(s)) return '这个年代女子不能应科举';
+  if (isFem(s) && s.examDisguise !== true) return '这个年代女子不得应科举（女扮男装去考，每场都可能被识破）';
   const d = identityOf(s); if (d.ruler) return d.rebel ? '你是起义首领，不应朝廷的科举' : '君主不应科举（开科取士是你下诏的事）';
   if (d.rebel) return '你在义军中，不能应朝廷的科举';
   const role = String(s.protagonist.role || ''), y = s.clock.y;
@@ -10855,12 +10865,14 @@ function privCost(s, k) { const E = econOf(s); if (!E) return null; const ruler 
 function privAct(s, k) {
   const T = Object.fromEntries(privActs(s)); if (!T[k]) { ORGMSG = '你这个身份不做这个'; return null; } const u = (s.money || {}).unit || '', ym = lifeYM(s); s.priv = s.priv || {}; if (s.priv[k] === ym) { ORGMSG = '这个月已经' + T[k] + '过了'; return null; }
   const c = privCost(s, k); if (c == null) return needEcon(); if ((N0(s.money && s.money.cash) || 0) < c) { ORGMSG = `${T[k]}要${fmtN(c, u)}，现钱不够`; return null; }
-  if (inMourn(s) && /^(feast|show|gamble)$/.test(k)) { ORGMSG = `国丧期间（${s.mourn.why}），百日之内禁宴乐，${T[k]}办不了`; return null; }
+  let mournNote = ''; if (inMourn(s) && /^(feast|show|gamble)$/.test(k)) { const ofc = !!(s.office && s.office.held) || isRuler(s);   // 国丧禁宴乐：照样能办，有官身的多半被参（康熙二十八年国恤演《长生殿》，赴宴诸人革职）
+    const hit = isRuler(s) ? false : riskPress(s, '国丧宴乐被人告发', ofc ? '言官' : '邻里、里正', `国丧期间（${s.mourn.why}）你${T[k]}，被人看在眼里告了上去；是辩白、托人说情、认罚，还是不理`, ofc ? 0.6 : 0.15, 5);
+    mournNote = isRuler(s) ? '（国丧里宴乐，朝野私下议论）' : hit ? '（国丧里犯禁，已有人告上去了）' : '（国丧里犯禁，这回没人声张）'; if (isRuler(s)) { const G = (s.gov && s.gov.stats) || {}; if (G['威望'] != null) G['威望'] = Math.max(0, G['威望'] - 3); } }
   s.priv[k] = ym; if (c) cashAdd(s, -c); s.body = s.body || { strain: 0 }; const B = s.body, cost = c ? `（花了${fmtN(c, u)}）` : '';
   const near = Object.entries(s.people || {}).filter(([n, v]) => v && !v.dead && n !== s.protagonist.name && (!v.where || samePlace(String(v.where), geoCenter(s)) || /身边|府中|家中|宫中|帐下|随行/.test(String(v.where)))).slice(0, 3);
   if (k === 'feast') { for (const [, v] of near) v.favor = Math.min(100, (num(v.favor) || 0) + 2); s.renown = (num(s.renown) || 0) + 1; bodyStrain(s, -1); applySkills(s, { skillUse: [{ skill: '交际', xp: 8 }] });
-    return lifeNote(s, '私下', `${T[k]}${cost}${near.length ? '，' + near.map(x => x[0]).join('、') + '都来了，席间说得投机' : ''}`); }
-  if (k === 'show') { bodyStrain(s, -2); return lifeNote(s, '私下', `${T[k]}${cost}，散了心`); }
+    return lifeNote(s, '私下', `${T[k]}${cost}${mournNote}${near.length ? '，' + near.map(x => x[0]).join('、') + '都来了，席间说得投机' : ''}`); }
+  if (k === 'show') { bodyStrain(s, -2); return lifeNote(s, '私下', `${T[k]}${cost}${mournNote}，散了心`); }
   if (k === 'temple') { bodyStrain(s, -1); s.renown = (num(s.renown) || 0) + 1; return lifeNote(s, '私下', `${T[k]}${cost}，添了香油，${/修行/.test(T[k]) ? '心境渐定' : '求个平安'}`); }
   if (k === 'ancestor' || k === 'fest' || k === 'home') { const big = k === 'fest' || /^(3|7|11|12)$/.test(String(s.clock.m)); if (s.home && s.home.harmony != null) s.home.harmony = Math.min(100, s.home.harmony + (big ? 4 : 2)); for (const h of arr(s.household).slice(0, 6)) { const v = (s.people || {})[h.name]; if (v) v.favor = Math.min(100, (num(v.favor) || 0) + (big ? 2 : 1)); } bodyStrain(s, -2);
     return lifeNote(s, '私下', `${T[k]}${cost}${k === 'fest' ? '，照' + festNow(s) + '的旧俗办了' : ''}，家里和睦些`); }
@@ -10868,7 +10880,7 @@ function privAct(s, k) {
   if (k === 'martial') { if (B.sick && B.sick.lv === '重') { s.priv[k] = null; ORGMSG = '病着，动不了'; return null; } const g = applySkills(s, { skillUse: [{ skill: T[k] === '校猎' || T[k] === '习射' ? '骑射' : '武艺', xp: 12 }] }); bodyStrain(s, 1); return lifeNote(s, '私下', `${T[k]}${cost}${g.length ? '，' + g.join('、') : ''}`); }
   if (k === 'doctor') { if (B.sick) { const sk = B.sick; B.sick = sk.lv === '重' ? { ...sk, lv: '轻', treated: ym } : null; bodyStrain(s, -2); return lifeNote(s, '私下', `${T[k]}看${sk.name}${cost}，${sk.lv === '重' ? '吃了几帖药，见轻了' : '吃了药，好了'}`); }
     if (s.wound) { s.wound = null; return lifeNote(s, '私下', `${T[k]}治伤${cost}，伤口收了`); } bodyStrain(s, -3); return lifeNote(s, '私下', `${T[k]}调养${cost}，开了补养的方子`); }
-  if (k === 'gamble') { const r = lifeRoll(s, 'pg'), d = r < 0.55 ? -c * 2 : r < 0.9 ? c : c * 4; cashAdd(s, d + c); return lifeNote(s, '私下', `${T[k]}，${d > 0 ? '赢了' + fmtN(d, u) : '输了' + fmtN(-d, u)}`); }
+  if (k === 'gamble') { const r = lifeRoll(s, 'pg'), d = r < 0.55 ? -c * 2 : r < 0.9 ? c : c * 4; cashAdd(s, d + c); return lifeNote(s, '私下', `${T[k]}，${d > 0 ? '赢了' + fmtN(d, u) : '输了' + fmtN(-d, u)}${mournNote}`); }
   return null;
 }
 function privMonthly(s) {

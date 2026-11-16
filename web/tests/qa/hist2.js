@@ -1,5 +1,6 @@
 // 自己不进自己的家谱、史书往后一直接着修（存进存档、不靠博查）、天下消息照身份传到、国丧禁宴乐、各州府长官一表补齐（CLAUDE.md「人物」自己不进家谱、「剧情」史书一直往后走、「人事与职权」各州府长官表）
 const { chromium } = require('playwright');
+const arr0 = a => (a || []).join('、');
 const path = require('path');
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1280, height: 1400 } });
@@ -18,12 +19,12 @@ const path = require('path');
     try { const n1 = packNeed(S); await ensureHistPack(S); const has = hasHist(S), saved = arr(S.hsPacks).length, end1 = Math.max(...S.hsPacks.map(h => h.range[1]));
       S.clock.y = end1 - 4; const n2 = packNeed(S); RUNHIST = []; const keep = hasHist(S); return { n1, has, saved, n2, keep, dense: /一百条/.test(pr) }; } finally { callClaude = oc; } });
   if (!hp.n1 || !hp.has || !hp.saved || !hp.n2 || !hp.keep || !hp.dense) bad.push('史书没往后接着修、或没存进存档：' + JSON.stringify(hp));
-  // 3 天下消息照身份传到；本朝皇帝驾崩国丧百日禁宴乐
+  // 3 天下消息照身份传到；本朝皇帝驾崩国丧百日禁宴乐——犯禁照样办得成，只是记着国丧、可能被告（R-242 少限制）
   const nw = await p.evaluate(() => { S = newSave({ name: '汪景和', gender: '男', age: 40, role: '扬州盐商', gregorianYear: 1620, month: 7, day: 1, place: '扬州', polity: '明' }); S.chat = [{ role: 'gm', text: '开场' }];
     S.hsPacks = [{ id: 'tst', title: 't', range: [1620, 1620], polity: '明', grade: 'B', rulers: [], figures: [], events: [{ y: 1620, m: 7, text: '神宗皇帝驾崩，光宗即位', where: '京师', who: ['朱翊钧'], scope: '天下', tag: '政局' }, { y: 1620, m: 7, text: '翰林院修撰升转', where: '京师', who: ['某'], scope: '地方', tag: '人事' }] }];
     S.econ = { v: 2, y: 1620, pl: geoCenter(S), unit: '两', feast: 3, opera: 0.5, incense: 0.3, doctor: 0.8, wage: 0.05, pay: 1.5, payOff: 5 }; S.money = { cash: 500, unit: '两' }; S.newsYM = Math.floor(ymOf(S.clock)) - 1;
-    const o = newsTick(S); const m = inMourn(S); const r = privAct(S, 'feast'); TAB = 'board'; VIEW = 'game'; render0(); return { o, m, r, msg: ORGMSG, how: (S.news[0] || {}).how, n: S.news.length, html: /天下消息/.test(document.body.innerText) }; });
-  if (!nw.o.length || nw.how !== '风闻' || nw.n !== 1 || !nw.m || nw.r || !/国丧/.test(nw.msg) || !nw.html) bad.push('天下消息、国丧不对：' + JSON.stringify(nw));
+    const o = newsTick(S); const m = inMourn(S); const r = privAct(S, 'feast'); TAB = 'board'; VIEW = 'game'; render0(); return { o, m, r, press: arr(S.press).map(x => x.title), msg: ORGMSG, how: (S.news[0] || {}).how, n: S.news.length, html: /天下消息/.test(document.body.innerText) }; });
+  if (!nw.o.length || nw.how !== '风闻' || nw.n !== 1 || !nw.m || !nw.r || !/国丧/.test(JSON.stringify(nw.r) + arr0(nw.press)) || !nw.html) bad.push('天下消息、国丧不对：' + JSON.stringify(nw));
   // 4 各州府长官一表补齐：表上的填上（真人、史书无载的标虚拟）、待查不收；城池卡、名册照表
   const po = await p.evaluate(async () => { S = newSave({ name: '汪景和', gender: '男', age: 40, role: '扬州盐商', gregorianYear: 1757, month: 3, day: 1, place: '扬州府江都县', polity: '清' }); S.chat = [{ role: 'gm', text: '开场' }];
     const oc = callClaude; let n = 0; callClaude = async x => { n++; const L = [...x.matchAll(/^(\d+)\. (.+)$/gm)]; return { text: JSON.stringify({ rows: L.map(([, i, nm], j) => ({ i: +i, title: '知府', name: j === 0 ? '待查' : j % 2 ? '高晋' + j : '周允' + j, real: j % 2 === 1, basis: 'x' })) }) }; };
