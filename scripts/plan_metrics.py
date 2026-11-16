@@ -7,6 +7,7 @@ import glob, json, os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 P = lambda *a: os.path.join(ROOT, *a)
 PERIODS = [('wudai', '五代十国'), ('sanguo', '汉末三国'), ('jin16', '两晋十六国'), ('nanbei', '南北朝'), ('tangmo', '唐末')]
+ROLES_PERIODS = PERIODS + [('han', '汉朝'), ('song', '宋辽夏金'), ('qing', '清朝')]
 WUDAI = ['后梁', '后唐', '后晋', '后汉', '后周', '吴', '南唐', '吴越', '前蜀', '后蜀', '楚', '闽', '南汉', '荆南', '北汉',
          '岐', '燕', '赵', '定难军', '归义军', '契丹']
 THICK = ['后梁', '后唐', '后晋', '后汉', '后周', '南唐', '吴越', '前蜀', '后蜀']
@@ -61,7 +62,7 @@ def court():
 def roles():
     """时代世情库（R-232）：只数条数和有没有出处，不设固定的几条线。"""
     out = {}
-    for key, name in PERIODS:
+    for key, name in ROLES_PERIODS:
         d = load(P('web', 'roles', key + '.json')) or {}
         ways = d.get('ways', [])
         good = [w for w in ways if w.get('name') and w.get('what') and w.get('src') and len(w.get('happens') or []) >= 8
