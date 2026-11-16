@@ -16,7 +16,7 @@ const path = require('path');
     const wz = r(s1, 692, 6, '武周'); if (wz.name !== '武曌') bad.push('692 年没有武曌：' + JSON.stringify(wz));
     const sui = r(s1, 590, 6, '隋'); if (sui.name !== '杨坚' || sui.era !== '开皇' || sui.n !== 10) bad.push('590 年不是杨坚开皇十年：' + JSON.stringify(sui));
     const qi = r(s1, 560, 12, '北齐'); if (qi.name !== '高演' || qi.era !== '皇建') bad.push('560 年末北齐不是高演皇建：' + JSON.stringify(qi));
-    // 只有君主年号表的年代（隋，581—711 只有 suitang-rulers）不当整套内置史料；南北朝 2026-11-15 起有了整套史料包（zcode 任务二 nanbei.json），算有
+    // 只有君主年号表的年代不当整套内置史料；南北朝 2026-11-15 起有了整套史料包（zcode 任务二 nanbei.json），算有
     // 大小政权总表接进游戏（R-241）：内置史料没有的国照总表补君主年号；别称认得
     { const L = rulersAt(930, s1, 6).map(x => x.polity + ':' + x.name + ':' + (x.era || '') + (x.n || ''));
       if (!L.includes('吴越:钱镠:宝正5')) bad.push('930 年吴越没照政权总表出钱镠宝正五年：' + JSON.stringify(L));
@@ -25,8 +25,10 @@ const path = require('path');
       if (L.filter(x => x.startsWith('后唐:')).length !== 1) bad.push('后唐君主出了重复');
       if (!arr(POL_ALIAS['荆南']).includes('南平')) bad.push('政权总表的别称没并进来'); }
     const s9 = mk('隋', 600, 6, '大兴');
-    if (hasHist(s9)) bad.push('只有君主年号表，却当成了整套内置史料（会挡住联网自建史事）');
-    if (!packNeed(s9)) bad.push('隋开局不再联网自建史事了');
+    // 2026-11-16 起隋唐前期有了整套史料包（zcode 任务二十二 suitang.json，97 事 63 人），算有；只有君主年号表的段照旧不算（用 rulersOnly 的包验）
+    if (!hasHist(s9)) bad.push('隋唐前期已有史料包（suitang.json），600 年隋开局却没认');
+    { const keep = HIST; HIST = HIST.filter(h => !(h.range && h.range[0] <= 600 && h.range[1] >= 600) || h.rulersOnly); const ro = hasHist(s9), need = packNeed(s9); HIST = keep;
+      if (ro) bad.push('只有君主年号表，却当成了整套内置史料（会挡住联网自建史事）'); if (!need) bad.push('只有君主年号表的年代开局不联网自建史事了'); }
     if (!hasHist(s1)) bad.push('南北朝已有整套史料包（nanbei.json），502 年梁开局却没认');
     if (!/天监/.test(eraLabel(s1, 502) || '')) bad.push('梁 502 年的年号标签不是天监：' + eraLabel(s1, 502));
     S = mk('东魏', 545, 6, '邺'); S.chat = [{ role: 'gm', text: '开场。' }]; window.__lab = eraLabel(S, 545); if (window.__lab) S.clock.yearLabel = window.__lab;   // 开局流程照 eraLabel 写年号（同 15220 行）
