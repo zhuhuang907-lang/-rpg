@@ -151,6 +151,7 @@ start ai.js && {
   run "人才年表、人物评定读名臣预制包：五代十国盖得住的十年块不请模型，盖不住的照旧问；包里评过分的人不再请模型评（R-244）" 60 env PLAY="$ROOT/web/play.html" node talentpack.js
   run "户口只推主角身边六十个府州，推完不再挨批推天下；走到远处再推那边（R-243）" 60 env PLAY="$ROOT/web/play.html" node popnear.js
   run "后台整理的本机缓存：同样的问题第二次从本机出、不再请模型；没让缓存的照旧问（R-243）" 60 node llmcache.js
+  run "唐后期、两宋宰执逐年接进游戏：官制树照旧，到年份真人坐上宰相位子（1070 王安石、870 刘瞻、1140 秦桧在朝）（R-244）" 60 env PLAY="$ROOT/web/play.html" node zaifu.js
   run "官员名录也照任职年表和朝廷数据：明 1625 年表上的户部尚书、荆南 926 年高季兴高从诲进名录，模型不给人也有；真点人物页看得到（R-225、R-227）" 150 env PLAY="$ROOT/web/play.html" node rostertable.js
   run "错词表进写戏：后唐正文写了总兵、衙役这类这时还没有的说法打回并给当时说法，两可今义词不打回，明朝的总兵不算错（任务十五、十七，R-233）" 120 env PLAY="$ROOT/web/play.html" node eravocab.js
   run "兵力虚实：敌军只给估计（传闻虚张、给范围），真点派探子探准，探报一年就旧；自己直接统的兵照实数（任务三，R-221）" 150 env PLAY="$ROOT/web/play.html" node troopfog.js
