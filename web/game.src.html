@@ -8929,7 +8929,9 @@ function popOf(s, n) { const t = arr(s.territory).find(x => geoStem(x.place) ===
 const popTxt = v => v ? `${v.hh ? fmtN(v.hh) + '户' : ''}${v.hh && v.pop ? '、' : ''}${v.pop ? fmtN(v.pop) + (v.mine ? '' : '口') : ''}` : '';
 function popTodo(s) { const h = hereXY(s); let L = []; try { L = mapUnits(s).L2.filter(u => u.lat); } catch (_) { return []; } const P = s.popEst && s.popEst.k === popKey(s) ? s.popEst.m || {} : {};
   const mine = (() => { try { return myDomain(s).places.filter(n => n && !(n in P)).map(n => ({ n, p: '' })); } catch (_) { return []; } })();   // 自己治下的县、山寨排最前（县不在州府单子里也推）
-  return mine.concat(L.filter(u => !(u.n in P) && !mine.some(m => m.n === u.n)).sort((a, b) => (h ? Math.hypot(a.lon - h.lon, a.lat - h.lat) - Math.hypot(b.lon - h.lon, b.lat - h.lat) : 0))).slice(0, 60); }
+  // 只推主角身边最近的六十个府州（R-243 省钱：真模型实测五代开局把天下四百个府州挨批推了六回，岭南的劳州、普宁州都推了）；主角走到别处，新的近处再推
+  const near = L.sort((a, b) => (h ? Math.hypot(a.lon - h.lon, a.lat - h.lat) - Math.hypot(b.lon - h.lon, b.lat - h.lat) : 0)).slice(0, 60);
+  return mine.concat(near.filter(u => !(u.n in P) && !mine.some(m => m.n === u.n))).slice(0, 60); }
 const popDue = s => s && s.clock && s.protagonist && !(s.popFail != null && s.turn - s.popFail < 2) && popTodo(s).length > 0 && (!s.popEst || s.popEst.k !== popKey(s) || Object.keys(s.popEst.m || {}).length < 400);
 async function popInfer(s) {
   const L = popTodo(s); if (!L.length) return 0; const y = s.clock.y;

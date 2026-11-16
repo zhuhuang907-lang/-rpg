@@ -1705,7 +1705,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261116162122';
+const BUILD = '20261116171929';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -10027,7 +10027,9 @@ function popOf(s, n) { const t = arr(s.territory).find(x => geoStem(x.place) ===
 const popTxt = v => v ? `${v.hh ? fmtN(v.hh) + '户' : ''}${v.hh && v.pop ? '、' : ''}${v.pop ? fmtN(v.pop) + (v.mine ? '' : '口') : ''}` : '';
 function popTodo(s) { const h = hereXY(s); let L = []; try { L = mapUnits(s).L2.filter(u => u.lat); } catch (_) { return []; } const P = s.popEst && s.popEst.k === popKey(s) ? s.popEst.m || {} : {};
   const mine = (() => { try { return myDomain(s).places.filter(n => n && !(n in P)).map(n => ({ n, p: '' })); } catch (_) { return []; } })();   // 自己治下的县、山寨排最前（县不在州府单子里也推）
-  return mine.concat(L.filter(u => !(u.n in P) && !mine.some(m => m.n === u.n)).sort((a, b) => (h ? Math.hypot(a.lon - h.lon, a.lat - h.lat) - Math.hypot(b.lon - h.lon, b.lat - h.lat) : 0))).slice(0, 60); }
+  // 只推主角身边最近的六十个府州（R-243 省钱：真模型实测五代开局把天下四百个府州挨批推了六回，岭南的劳州、普宁州都推了）；主角走到别处，新的近处再推
+  const near = L.sort((a, b) => (h ? Math.hypot(a.lon - h.lon, a.lat - h.lat) - Math.hypot(b.lon - h.lon, b.lat - h.lat) : 0)).slice(0, 60);
+  return mine.concat(near.filter(u => !(u.n in P) && !mine.some(m => m.n === u.n))).slice(0, 60); }
 const popDue = s => s && s.clock && s.protagonist && !(s.popFail != null && s.turn - s.popFail < 2) && popTodo(s).length > 0 && (!s.popEst || s.popEst.k !== popKey(s) || Object.keys(s.popEst.m || {}).length < 400);
 async function popInfer(s) {
   const L = popTodo(s); if (!L.length) return 0; const y = s.clock.y;
