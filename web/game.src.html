@@ -292,6 +292,7 @@ textarea{resize:vertical}
 <script type="application/json" id="evlib">__EVLIB__</script>
 <script type="application/json" id="figlib">__FIGLIB__</script>
 <script type="application/json" id="offlib">__OFFLIB__</script>
+<script type="application/json" id="presetlib">__PRESETLIB__</script>
 <script type="application/json" id="tieslib">__TIES__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
@@ -5275,11 +5276,16 @@ function figBlock(s) {
 let OFFLIB = []; try { OFFLIB = JSON.parse((document.getElementById('offlib') || {}).textContent || '[]'); if (!Array.isArray(OFFLIB)) OFFLIB = []; } catch (_) { OFFLIB = []; }
 function officialsAt(s, n, y) { const out = []; for (const R of OFFLIB) { if (!R || !R.range || y < R.range[0] || y > R.range[1]) continue;
   for (const x of arr(R.seats)) { if (!samePlace(x.p, n)) continue; const h = arr(x.h).find(z => (z[1] == null || y >= z[1]) && (z[2] == null || y <= z[2])); if (h) out.push({ office: x.o, name: h[0], how: h[3] }); } } return out; }
-function placeLore(s, n) {
-  const y = s && s.clock && s.clock.y; if (y == null || !n) return '';
-  const off = officialsAt(s, n, y), me = (s.protagonist || {}).name;
-  const figs = figuresNow(s).filter(({ f }) => { const a = figAt(f, y); return a && String(a.place).split(/[、，,\/]/).some(pl => samePlace(pl, n)); }).sort((a, b) => a.f.t - b.f.t).slice(0, 10);
-  const ev = HALL(s).filter(h => h && h.range && y >= h.range[0] && y <= h.range[1]).flatMap(h => arr(h.events)).filter(e => e && e.y >= y - 1 && e.y <= y && e.where && String(e.where).split(/[、，,\/]/).some(pl => samePlace(pl, n))).slice(-4);
+/** 府名和治所、旧称对得上（地图上是「河南府」，名臣包、史料写「洛阳」） */
+const PLACE_AKA = { 河南府: ['洛阳', '洛州', '东都', '西京'], 京兆府: ['长安', '雍州', '西京', '大兴'], 开封府: ['汴州', '开封', '东京', '汴梁'], 大名府: ['魏州', '邺都', '兴唐府'], 太原府: ['太原', '并州', '北京', '晋阳'],
+  江宁府: ['金陵', '建康', '昇州', '江宁', '西都'], 临安府: ['杭州', '临安', '钱塘'], 成都府: ['成都', '益州', '蜀'], 江陵府: ['江陵', '荆州'], 凤翔府: ['凤翔', '岐州'], 河中府: ['河中', '蒲州'], 兴元府: ['兴元', '梁州'],
+  应天府: ['宋州', '睢阳', '南京'], 真定府: ['镇州', '恒州', '真定'], 幽都府: ['幽州', '燕京'], 析津府: ['幽州', '燕京', '南京'], 扬州: ['广陵', '江都'], 广州: ['番禺', '兴王府'], 福州: ['长乐府'], 潭州: ['长沙'] };
+const placeAka = (n, extra) => { const L = [n, extra].filter(Boolean); for (const [k, v] of Object.entries(PLACE_AKA)) { if (samePlace(k, n)) L.push(...v); if (v.some(x => samePlace(x, n))) L.push(k, ...v); } return [...new Set(L)]; };
+function placeLore(s, n, seat) {
+  const y = s && s.clock && s.clock.y; if (y == null || !n) return ''; const NM = placeAka(n, seat), at = x => String(x || '').split(/[、，,\/]/).some(pl => NM.some(k => samePlace(pl, k)));
+  const off = NM.flatMap(k => officialsAt(s, k, y)).filter((o, i, A) => A.findIndex(z => z.name === o.name && z.office === o.office) === i), me = (s.protagonist || {}).name;
+  const figs = figuresNow(s).filter(({ f }) => { const a = figAt(f, y); return a && at(a.place); }).sort((a, b) => a.f.t - b.f.t).slice(0, 10);
+  const ev = HALL(s).filter(h => h && h.range && y >= h.range[0] && y <= h.range[1]).flatMap(h => arr(h.events)).filter(e => e && e.y >= y - 1 && e.y <= y && e.where && at(e.where)).slice(-4);
   if (!off.length && !figs.length && !ev.length) return '';
   return `<div class="ccard" style="margin-top:6px"><div class="ct">此地人物与史事（${y}年）</div>
     ${off.length ? `<div>长官：${off.map(o => `${esc(o.office)} <b>${esc(o.name)}</b>${o.how === '推定' ? '<span class="muted">（推定）</span>' : ''}`).join('；')}</div>` : ''}
@@ -8889,7 +8895,7 @@ function mapInfo(s) {
     ${L.length ? `<div>通往：${L.map(l => { const x = l.a.n === n ? l.b : l.a; return `${esc(x.n)}（约${liOf(hav(l.a, l.b) * (l.k === 'mtn' ? 1.6 : 1.25))}里，${LINK_TXT[l.k]}${l.via ? '，经' + esc(l.via) : ''}）`; }).join('；')}</div>` : ''}
     ${(() => { const v = popOf(s, n); if (u && u.lv === 2 && v && (v.hh || v.pop)) return ''; return v && (v.hh || v.pop) ? `<div>户口：<b>${esc(popTxt(v))}</b> <span class="muted" style="font-size:11px">${esc(v.why || '')}</span></div>` : `<div class="muted" style="font-size:12px">户口：后台正照地理志推，下一回就有</div>`; })()}
     ${u && u.lv === 2 ? cityHtml(s, n) : ''}
-    ${SH(() => placeLore(s, n), 'placeLore')}
+    ${SH(() => placeLore(s, n, u && u.seatC), 'placeLore')}
     ${u && admMine(s, u) ? `<details class="oadd"><summary class="muted">划分政区…</summary><div class="opost"><input class="oin" data-admto placeholder="新名字 / 等第 / 府州名"><button class="link" data-adm="rename" data-n="${esc(n)}">改名</button><button class="link" data-adm="type" data-n="${esc(n)}">改等第</button>${u.lv === 3 ? `<button class="link" data-adm="move" data-n="${esc(n)}">改隶到</button><button class="link" data-adm="split" data-n="${esc(n)}">以此县分置新州</button>` : ''}<button class="link" data-adm="capital" data-n="${esc(n)}">定都于此</button></div><div class="muted" style="font-size:11px">改名、改等第、改隶各花一点国策点，分置两点，定都三点</div></details>` : ''}
     ${t ? `<div class="muted">户${esc(fmtN(N0(t.pop)) || '正在照史料推')} · 守军${esc(fmtN(N0(t.troops)) || '正在照史料推')} · 存粮${esc(fmtN(N0(t.grain)) || '正在照史料推')}石 · 民心${esc(t.loyalty ?? '?')}</div>` : ''}
     ${F.length ? `<div>驻军：${F.map(f => `${esc(f.name)}（${esc(f.leader || '')}，${esc(troopEst(s, f).txt)}，${esc(f.status || '')}）${myForce(s, f) ? '' : `<button class="link" data-scout="${esc(f.owner || f.name)}">派探子</button>`}`).join('、')}</div>` : ''}
@@ -8963,7 +8969,10 @@ function popTodo(s) { const h = hereXY(s); let L = []; try { L = mapUnits(s).L2.
   return mine.concat(near.filter(u => !(u.n in P) && !mine.some(m => m.n === u.n))).slice(0, 60); }
 const popDue = s => s && s.clock && s.protagonist && !(s.popFail != null && s.turn - s.popFail < 2) && popTodo(s).length > 0 && (!s.popEst || s.popEst.k !== popKey(s) || Object.keys(s.popEst.m || {}).length < 400);
 async function popInfer(s) {
-  const L = popTodo(s); if (!L.length) return 0; const y = s.clock.y;
+  let L = popTodo(s); if (!L.length) return 0; const y = s.clock.y;
+  { const H = presetPop(s, L.map(u => u.n)), ks = Object.keys(H); if (ks.length) { if (!s.popEst || s.popEst.k !== popKey(s)) s.popEst = { k: popKey(s), m: {} };   // 史料有户口记载的直接填（开局底账）
+      for (const n of ks) { const x = H[n]; s.popEst.m[n] = { hh: N0(x.households) || null, pop: N0(x.mouths) || null, nong: null, shang: null, cheng: null, why: one(`${x.year}年著录（${x.src || ''}）`, 50), y }; }
+      L = L.filter(u => !(u.n in H)); MAPC.k = ''; if (!L.length) return ks.length; } }
   const { text } = await callClaude(`你是人口史学者，替一局历史游戏推公元${y}年（${s.clock.yearLabel || ''}）下面这些府州郡的户数、口数。照正史《地理志》《郡国志》《州郡志》的户口（离${y}年最近的那次著录）和人口史研究（如《中国人口史》）推；正史没有的，照同朝同类州府的量级和这一年的战乱、灾荒合理推出一个确切的数（不要凑整、不要写「约」，每处都要给数）；同时照地力、水利、商路、城防给 nong（农业开发）、shang（商业）、cheng（城防）三项 0–100 的数。why 写依据（书名、哪一年的著录，或怎么推的），一句。
 ${L.map(u => `- ${u.n}${u.p ? '（' + u.p + '）' : ''}`).join('\n')}
 只输出 JSON：{"list":[{"name":"","hh":null,"pop":null,"nong":null,"shang":null,"cheng":null,"why":""}]}`, null, { maxTokens: 5000, temperature: 0.1, kind: '研读', detached: true, thinking: false });
@@ -9194,9 +9203,21 @@ function econUnitFix(E) {
   for (const o of [E, E.base]) if (o) for (const k of ECON_MONEY) if (num(o[k]) != null) o[k] = Math.round(o[k] / 1000 * 1000) / 1000;
   E.basis = one(String(E.basis || '') + `（价目原照文给，程序已折成${E.unit}）`, 200); return true;
 }
+/* ========== 开局底账（任务四十二，R-244）：史料里记下的米价、绢价、州郡户口。户口有记载的直接填、不请模型；价目交给推行情的当锚 ========== */
+let PRESETLIB = []; try { PRESETLIB = JSON.parse((document.getElementById('presetlib') || {}).textContent || '[]'); if (!Array.isArray(PRESETLIB)) PRESETLIB = []; } catch (_) { PRESETLIB = []; }
+const PRESET_REG = { 淮南: '江淮', 山东: '河北' };   // 地图的大区名 → 底账的大区名
+function presetPrices(s) { const y = s.clock.y; let reg = ''; try { const h = hereXY(s); reg = bigRegOf(h); } catch (_) {} reg = PRESET_REG[reg] || reg;
+  const L = PRESETLIB.filter(R => R.range && y >= R.range[0] - 10 && y <= R.range[1] + 10).flatMap(R => arr(R.prices));
+  const near = L.filter(x => x.from != null && Math.abs(((x.from + (x.to ?? x.from)) / 2) - y) <= 30).sort((a, b) => (a.region === reg ? 0 : 1) - (b.region === reg ? 0 : 1) || Math.abs(a.from - y) - Math.abs(b.from - y));
+  return near.slice(0, 6); }
+function presetPop(s, names) { const y = s.clock.y, out = {};
+  const L = PRESETLIB.filter(R => R.range && y >= R.range[0] - 30 && y <= R.range[1] + 30).flatMap(R => arr(R.pop)).filter(x => x.year != null && Math.abs(x.year - y) <= 60);
+  for (const n of names) { const NM = placeAka(n); const hit = L.filter(x => NM.some(k => samePlace(x.place, k))).sort((a, b) => Math.abs(a.year - y) - Math.abs(b.year - y))[0]; if (hit) out[n] = hit; }
+  return out; }
 async function econDS(s) {
   const u = (s.money || {}).unit || '文', pol = s.place.polity || '', pl = geoCenter(s), p = s.protagonist || {};
-  const { text } = await callClaude(`你是精通历代物价、田制、赋役、民间生计的经济史家。替一局历史游戏给${timeText(s.clock)}${pl}（${pol}）列一张本地行情表，钱一律折成「${u}」。照史料和经济史研究写；拿不准的照同朝同地相近年份推一个确切的数，写依据。
+  const PP = presetPrices(s), ppTxt = PP.length ? `\n【史料里记下的价目（以此为准折算；单位是文，折成「${u}」时照本朝钱法）】\n` + PP.map(x => `· ${x.from}—${x.to}年${x.region}：${x.rice != null ? '米一石' + x.rice + '文' : ''}${x.cloth != null ? '，绢一匹' + x.cloth + '文' : ''}${x.landPrice != null ? '，田一亩' + x.landPrice + '文' : ''}（${x.src || ''}）`).join('\n') : '';
+  const { text } = await callClaude(`你是精通历代物价、田制、赋役、民间生计的经济史家。替一局历史游戏给${timeText(s.clock)}${pl}（${pol}）列一张本地行情表，钱一律折成「${u}」。照史料和经济史研究写；拿不准的照同朝同地相近年份推一个确切的数，写依据。${ppTxt}
 - rice 一石米价；wage 一个壮丁打短工一日的工钱；landPrice 一亩中等田的价钱；yield 一亩中田一年收谷几石；rentRate 佃户交租几成（写零到一之间的小数）；
 - caravan 一队过路客商一趟随身的财货大约值多少；ransom 本地一个殷实富户能出的赎金；protect 一个村子一个月被山寨勒交的「孝敬」；
 - cloth 一个妇人一个月纺织刺绣能挣多少；interest 民间借贷的月息（写零到一之间的小数）；

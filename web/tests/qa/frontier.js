@@ -36,7 +36,8 @@ const path = require('path');
     const L = popTodo(s); const oc = callClaude; let prompt = ''; callClaude = async pr => { prompt = pr; return { text: JSON.stringify({ list: L.slice(0, 3).map((u, i) => ({ name: u.n, hh: 10000 * (i + 1), pop: 50000 * (i + 1), about: false, why: '《新唐书·地理志》天宝户口' })) }) }; };
     try { await popInfer(s); } finally { callClaude = oc; }
     if (!/地理志/.test(prompt)) bad.push('推户口没照地理志');
-    const v = popOf(s, L[0].n); if (!v || v.hh !== 10000 || !/地理志/.test(v.why)) bad.push('户口没记下：' + JSON.stringify(v));
+    const asked = L.slice(0, 3).filter(u => prompt.includes('- ' + u.n)), i0 = L.indexOf(asked[0]), v = asked[0] && popOf(s, asked[0].n); if (!v || v.hh !== 10000 * (i0 + 1) || !/地理志/.test(v.why)) bad.push('户口没记下：' + JSON.stringify(v));
+    { const jz = popOf(s, '京兆府'); if (!jz || jz.hh !== 362921) bad.push('京兆府没照新唐书地理志天宝户口（开局底账）：' + JSON.stringify(jz)); }
     MAPZ.sel = L[0].n; const info = mapInfo(s); if (!/户口/.test(info) || !/城池/.test(info)) bad.push('点开州府看不到户口、城池');
     s.territory = [{ place: L[1].n, pop: 123456 }]; if ((popOf(s, L[1].n) || {}).pop !== 123456) bad.push('自己地盘的户口没照账');
     if (!/户口/.test(lookPlace(s, L[0].n))) bad.push('查账的地图里没有户口');
