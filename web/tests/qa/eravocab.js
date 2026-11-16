@@ -14,6 +14,8 @@ const path = require('path');
     if (!f1.some(x => /衙役/.test(x))) bad.push('衙役没打回');
     if (vocabFaults(s1, '此人是个清官。').length) bad.push('两可的今义词也打回了');
     if (vocabFaults(mk('明', 1625), '他去见总兵。').length) bad.push('明朝的总兵也被当错词');
+    { const f8 = vocabFaults(mk('唐', 800), '他去府里见知府，又托捕快打听。'); if (!f8.length) bad.push('唐末（800 年）写了知府、捕快没打回（唐末错词表没嵌进游戏）'); }
+    if (vocabFaults(mk('唐', 800), '他去见节度使，又找了兵马使。').length) bad.push('唐末的节度使、兵马使被当错词');
     if (vocabFaults(s1, '他去见都指挥使，商量粮饷。').length) bad.push('当时的说法也被打回');
     return bad;
   });
