@@ -1705,7 +1705,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261116102107';
+const BUILD = '20261116113452';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -10253,6 +10253,14 @@ function battleHtml(s) {
  *  一张本地行情表（DeepSeek 照史料推，钱折成这一局的钱）是这些营生的底子；没推出来之前，要用到行情的事写明「正在照史料推」，不拿默认数凑 ========== */
 const econDue = s => !!(s && s.clock && s.money && (!s.econ || Math.abs((s.econ.y || 0) - s.clock.y) >= 10 || s.econ.pl !== geoCenter(s) || s.econ.unit !== ((s.money || {}).unit || '文') || (s.econ.v || 1) < 2) && !(s.ecFail != null && s.turn - s.ecFail < 2));
 const ECON_K = ['rice', 'wage', 'landPrice', 'yield', 'rentRate', 'caravan', 'ransom', 'protect', 'cloth', 'interest', 'myLand', 'juan', 'pay', 'payOff', 'feast', 'opera', 'incense', 'doctor'];
+/** 价目照「文」填了、单位却是贯或两（真模型实测 930 年洛阳：米一石填 300、短工日钱 20，单位记贯——一家六口一月吃穿要一千八百贯，开局就挨饿）：
+ *  程序认出来、折回本位单位。短工一天挣五贯（两）以上、米一石六十贯（两）以上，哪朝都不可能 */
+const ECON_MONEY = ['rice', 'wage', 'landPrice', 'caravan', 'ransom', 'protect', 'cloth', 'juan', 'pay', 'payOff', 'feast', 'opera', 'incense', 'doctor'];
+function econUnitFix(E) {
+  if (!E || !/^(贯|两|缗)$/.test(E.unit || '') || !((num(E.wage) || 0) >= 5 || (num(E.rice) || 0) >= 60)) return false;
+  for (const o of [E, E.base]) if (o) for (const k of ECON_MONEY) if (num(o[k]) != null) o[k] = Math.round(o[k] / 1000 * 1000) / 1000;
+  E.basis = one(String(E.basis || '') + `（价目原照文给，程序已折成${E.unit}）`, 200); return true;
+}
 async function econDS(s) {
   const u = (s.money || {}).unit || '文', pol = s.place.polity || '', pl = geoCenter(s), p = s.protagonist || {};
   const { text } = await callClaude(`你是精通历代物价、田制、赋役、民间生计的经济史家。替一局历史游戏给${timeText(s.clock)}${pl}（${pol}）列一张本地行情表，钱一律折成「${u}」。照史料和经济史研究写；拿不准的照同朝同地相近年份推一个确切的数，写依据。
@@ -10267,11 +10275,12 @@ async function econDS(s) {
   const d = parseJSON(text); if (!d) { s.ecFail = s.turn; throw { code: 'bad_json' }; }
   const E = { v: 2, y: s.clock.y, pl, unit: u, basis: one(d.basis, 160) }; for (const k of ECON_K) { const v = num(d[k]); if (v != null && v >= 0) E[k] = v; }
   if (E.rentRate > 1) E.rentRate = E.rentRate / 10; if (E.interest > 1) E.interest = E.interest / 100;
+  econUnitFix(E);
   s.econ = E; if (s.ms) msApply(s);   /* 十年一换的底价换了，这几季累下的涨落照旧乘上去（R-168） */
   if (E.myLand != null && !s.land && (/地主|乡绅|绅|田主|庄主|员外/.test(String(p.role || '')) || E.myLand > 0)) s.land = { mu: Math.round(E.myLand), rent: E.rentRate || 0.5, loans: [], basis: '照身份推' };
   return E;
 }
-const econOf = s => s && s.econ && s.econ.unit === ((s.money || {}).unit || '文') ? s.econ : null;
+const econOf = s => { if (!(s && s.econ && s.econ.unit === ((s.money || {}).unit || '文'))) return null; if (!s.econ.unitChk) { s.econ.unitChk = 1; econUnitFix(s.econ); } return s.econ; };   // 旧存档里照文填错的价目，第一次用时折回来
 const lifeNote = (s, src, t) => { s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: s.protagonist.name, what: one(t, 120) }]); actNew(s, { type: '令', what: one(t, 80), who: '自己', src, perm: '自己', ok: '能', state: '办成', log: [{ turn: s.turn, when: timeText(s.clock), state: '办成', why: '照办了' }] }); ORGMSG = t; return t; };
 const cashAdd = (s, v) => { s.money = s.money || { cash: 0, unit: '文' }; s.money.cash = Math.round(((N0(s.money.cash) || 0) + v) * 100) / 100; };
 /** 资料还没推好挡住的按钮：点了就当场催后台去推（不再只说「稍等」），推好了提示一声（2026-11-07 玩家：「很多系统根本没有任何效果，只是像一个按钮一样」） */

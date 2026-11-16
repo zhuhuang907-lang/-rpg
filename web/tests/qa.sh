@@ -147,6 +147,7 @@ start ai.js && {
   run "写戏顺手交账、程序自己记：【账】拆出来玩家看不到；照格式落账（过时、地点、钱、好感、行动单、摘要）；漏报新单、缺摘要的交回模型全套记；格式里不放示例数（R-243）" 60 env PLAY="$ROOT/web/play.html" node selfbook.js
   run "联网查证存档复用：同一条查询第二次从本机缓存出，不再花博查、维基（R-243）" 60 node lookcache.js
   run "名臣预制：照出没地点年表判断够不够得着（同地可见、远处听说、都城一方之主可召、外任只能写信）；没出生、已死的不出（R-244）" 60 env PLAY="$ROOT/web/play.html" node figlib.js
+  run "价目单位：照文填了却记贯（真模型实测 930 年洛阳一家一月吃穿一千八百贯）程序折回，旧存档第一次用时折回；正常价目不动" 60 env PLAY="$ROOT/web/play.html" node econunit.js
   run "官员名录也照任职年表和朝廷数据：明 1625 年表上的户部尚书、荆南 926 年高季兴高从诲进名录，模型不给人也有；真点人物页看得到（R-225、R-227）" 150 env PLAY="$ROOT/web/play.html" node rostertable.js
   run "错词表进写戏：后唐正文写了总兵、衙役这类这时还没有的说法打回并给当时说法，两可今义词不打回，明朝的总兵不算错（任务十五、十七，R-233）" 120 env PLAY="$ROOT/web/play.html" node eravocab.js
   run "兵力虚实：敌军只给估计（传闻虚张、给范围），真点派探子探准，探报一年就旧；自己直接统的兵照实数（任务三，R-221）" 150 env PLAY="$ROOT/web/play.html" node troopfog.js
