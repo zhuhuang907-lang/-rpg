@@ -288,6 +288,7 @@ textarea{resize:vertical}
 <script type="application/json" id="courtdata">__COURT__</script>
 <script type="application/json" id="eravocab">__ERAVOCAB__</script>
 <script type="application/json" id="roleslib">__ROLESLIB__</script>
+<script type="application/json" id="pollist">__POLLIST__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -5151,6 +5152,9 @@ let TENURE = []; try { TENURE = JSON.parse((document.getElementById('tenure') ||
 const POL_ALIAS = { 蜀汉: ['蜀', '汉', '季汉'], 吴: ['孙吴', '东吴', '杨吴', '淮南'], 魏: ['曹魏'], 西晋: ['晋'], 东晋: ['晋'], 汉: ['东汉', '后汉'], 宋: ['刘宋'], 南齐: ['齐', '萧齐'], 梁: ['萧梁', '南梁'], 北魏: ['魏', '元魏', '拓跋魏'], 东魏: ['魏'], 西魏: ['魏'], 北齐: ['齐', '高齐'], 北周: ['周', '宇文周'],
   前秦: ['秦', '苻秦'], 后秦: ['秦', '姚秦'], 西秦: ['秦'], 前燕: ['燕'], 后燕: ['燕'], 北燕: ['燕'], 南燕: ['燕'], 前赵: ['汉', '赵', '汉赵'], 后赵: ['赵'], 成汉: ['成', '汉'], 前凉: ['凉'], 后凉: ['凉'], 北凉: ['凉'], 西凉: ['凉'], 南凉: ['凉'],
   晋: ['河东'], 后梁: ['梁', '朱梁'], 后唐: ['唐'], 后晋: ['晋'], 后汉: ['汉'], 后周: ['周'], 南唐: ['唐'], 前蜀: ['蜀'], 后蜀: ['蜀'], 北汉: ['汉'], 南汉: ['汉'], 楚: ['马楚'], 荆南: ['南平'], 辽: ['契丹'], 明: ['大明'] };
+/* 大小政权总表（任务五，62 国，R-241）：别称并进 POL_ALIAS；内置史料没有君主年号的国，rulersAt 照总表补 */
+let POLLIST = []; try { POLLIST = JSON.parse((document.getElementById('pollist') || {}).textContent || '[]'); if (!Array.isArray(POLLIST)) POLLIST = []; } catch (_) { POLLIST = []; }
+for (const P of POLLIST) { if (!P || !P.name) continue; const k = String(P.name).replace(/（.*$/, ''); const al = arr(P.alias).map(String).filter(x => x && x !== k); if (!al.length) continue; POL_ALIAS[k] = [...new Set(arr(POL_ALIAS[k]).concat(al))]; }
 const polNorm = x => String(x || '').trim().replace(/^大(?=..)/, '').replace(/(?<=.)[国朝]$/, '');
 /** 这一年这个政权该用的任职表：整份标了政权的照政权；按人分政权的（通鉴、五代十国），先照本名对，对不上再照别称对，别称同时对上两国（东西魏都叫魏）就不认 */
 /* ========== 五代十国朝廷数据（任务七，R-227）：开在有朝廷数据的政权，人事树照数据搭（位子照该国官制、小国照小国的规模）；
@@ -5391,6 +5395,15 @@ function rulersAt(y, s, m) {
   const all = [];
   const H = histFor(y, s), firm = H.some(h => !h.grade && arr(h.rulers).some(r => r.from <= y && r.to >= y));   // 有内置的君主年号表，就不采联网自建的（防年号写错）
   for (const h of H) { if (firm && h.grade === 'B') continue; for (const r of arr(h.rulers)) if (r.from <= y && r.to >= y && !seen.has(r.polity + r.name)) { seen.add(r.polity + r.name); all.push(r); } }
+  /* 内置史料里没有这一国君主的，照政权总表补（吴越、闽、楚、南汉、荆南、岐、燕、定难、归义……；R-241） */
+  { const has = new Set(all.map(r => String(r.polity).replace(/（.*$/, '')));
+    for (const P of POLLIST) { const k = String(P.name || '').replace(/（.*$/, ''); if (!k || has.has(k) || !(P.from <= y && P.to >= y)) continue;
+      { let R = arr(P.rulers).filter(r => r.from <= y && r.to >= y);
+        if (R.length > 1) { R.sort((a, b) => a.from - b.from); R = [mm < 7 ? R[0] : R[R.length - 1]]; }   // 总表不记月份：这一年换君的，上半年算旧君、下半年算新君（马殷 930 年冬卒）
+        for (const r of R) if (!seen.has(k + r.name)) { seen.add(k + r.name); all.push({ polity: k, name: String(r.name).replace(/（.*$/, ''), title: r.title || '', from: r.from, to: r.to, reigns: arr(r.eras).map(e => [e.name, e.from]), src: r.src, fromList: true }); } } } }
+  /* 同一国这一年两位君主、都没有年号可分月份的（马殷 930 冬卒、马希声嗣位）：上半年算旧君、下半年算新君 */
+  { const byP = {}; for (const r of all) (byP[r.polity] = byP[r.polity] || []).push(r);
+    for (const L of Object.values(byP)) { if (L.length < 2 || L.some(r => arr(r.reigns).length)) continue; L.sort((a, b) => a.from - b.from); const keep = mm < 7 ? L[0] : L[L.length - 1]; for (const r of L) if (r !== keep) all.splice(all.indexOf(r), 1); } }
   for (const r of all) {
     const rg0 = arr(r.reigns).slice().sort((a, b) => a[1] - b[1]);
     // 新君今年才即位、还没到即位的月份：先不算他

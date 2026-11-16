@@ -17,6 +17,13 @@ const path = require('path');
     const sui = r(s1, 590, 6, '隋'); if (sui.name !== '杨坚' || sui.era !== '开皇' || sui.n !== 10) bad.push('590 年不是杨坚开皇十年：' + JSON.stringify(sui));
     const qi = r(s1, 560, 12, '北齐'); if (qi.name !== '高演' || qi.era !== '皇建') bad.push('560 年末北齐不是高演皇建：' + JSON.stringify(qi));
     // 只有君主年号表的年代（隋，581—711 只有 suitang-rulers）不当整套内置史料；南北朝 2026-11-15 起有了整套史料包（zcode 任务二 nanbei.json），算有
+    // 大小政权总表接进游戏（R-241）：内置史料没有的国照总表补君主年号；别称认得
+    { const L = rulersAt(930, s1, 6).map(x => x.polity + ':' + x.name + ':' + (x.era || '') + (x.n || ''));
+      if (!L.includes('吴越:钱镠:宝正5')) bad.push('930 年吴越没照政权总表出钱镠宝正五年：' + JSON.stringify(L));
+      if (!L.some(x => /^荆南[^:]*:高从诲/.test(x))) bad.push('930 年荆南没有高从诲');
+      if (L.filter(x => x.startsWith('楚:')).length !== 1 || !L.includes('楚:马殷:')) bad.push('930 年夏楚国该只有马殷：' + JSON.stringify(L.filter(x => x.startsWith('楚'))));
+      if (L.filter(x => x.startsWith('后唐:')).length !== 1) bad.push('后唐君主出了重复');
+      if (!arr(POL_ALIAS['荆南']).includes('南平')) bad.push('政权总表的别称没并进来'); }
     const s9 = mk('隋', 600, 6, '大兴');
     if (hasHist(s9)) bad.push('只有君主年号表，却当成了整套内置史料（会挡住联网自建史事）');
     if (!packNeed(s9)) bad.push('隋开局不再联网自建史事了');
