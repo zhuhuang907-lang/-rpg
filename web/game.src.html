@@ -289,6 +289,8 @@ textarea{resize:vertical}
 <script type="application/json" id="eravocab">__ERAVOCAB__</script>
 <script type="application/json" id="roleslib">__ROLESLIB__</script>
 <script type="application/json" id="pollist">__POLLIST__</script>
+<script type="application/json" id="evlib">__EVLIB__</script>
+<script type="application/json" id="tieslib">__TIES__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -5208,6 +5210,30 @@ function waysNow(s) {
     if (sc >= 2) { seen.add(w.name); out.push({ w, sc }); } }
   return out.sort((a, b) => b.sc - a.sc).slice(0, 3).map(o => o.w);
 }
+/* ========== 世事库（任务十四，R-241）：这年代、这类人可能碰上的事，照主角此刻的身份挑两件当写戏材料，每回轮换；不拦玩家 ========== */
+let EVLIB = []; try { EVLIB = JSON.parse((document.getElementById('evlib') || {}).textContent || '[]'); if (!Array.isArray(EVLIB)) EVLIB = []; } catch (_) { EVLIB = []; }
+const EV_WHO = { 官: ['官', '县令', '朝臣'], 兵: ['兵', '将', '小校'], 商: ['商', '商贾', '行旅'], 士: ['士', '读书人'], 匠: ['匠', '工匠'], 僧: ['僧', '道', '僧道'], 医: ['医', '医工'], 乐: ['乐', '优伶'], 贵: ['宦', '中官', '女', '朝臣'], 匪: ['兵', '行旅', '囚'] };
+function eventsNow(s, n = 2) {
+  const y = s && s.clock && s.clock.y; if (y == null) return []; const B = EVLIB.filter(R => R && R.range && y >= R.range[0] && y <= R.range[1]); if (!B.length) return [];
+  let tags = []; try { tags = identityOf(s).tags || []; } catch (_) {}
+  if (!tags.length) { const r = String((s.protagonist || {}).role || '') + String((s.career || {}).office || '');   // 身份标签认不出的（「牙兵」）照身份字面认
+    for (const [tg, re] of [['兵', /兵|军|卒|校|将|都头/], ['官', /御史|县令|刺史|太守|丞|尉|郎|尚书|侍郎|学士|参军|判官|推官|司马|长史/], ['商', /商|贾|贩/], ['士', /士子|书生|儒|生员|举子/], ['匠', /匠/], ['僧', /僧|道士|尼|女冠/], ['医', /医/], ['乐', /伶|乐|妓/]]) if (re.test(r)) tags = tags.concat(tg); }
+  const want = new Set(tags.flatMap(t => EV_WHO[t] || [])); if (!want.size) ['农', '民户', '农夫'].forEach(x => want.add(x));
+  const L = B.flatMap(R => arr(R.events)).filter(e => arr(e.who).some(w => want.has(w))); if (!L.length) return [];
+  const k = ((s.turn || 0) * 7) % L.length; return [...new Set(Array.from({ length: Math.min(n, L.length) }, (_, i) => L[(k + i * 13) % L.length]))];
+}
+function eventsBlock(s) {
+  const L = eventsNow(s); if (!L.length) return '';
+  return '【这年代这类人可能碰上的事（材料，不是白名单：合景就用、不合就不用，不必硬写；玩家怎么应对照旧由他定）】\n' + L.map(e => `· ${e.t}（${e.k}${e.where ? '；' + e.where : ''}）：几条路——${arr(e.p).map(([a, b]) => a + (b ? '（代价：' + b + '）' : '')).join('；')}`).join('\n');
+}
+/* ========== 人物关系（任务十，R-241）：朝中、身边这些人之间史书载明的关系（养父子、荐举、仇杀、婚姻……），到这一年已发生的，交给写戏 ========== */
+let TIESLIB = []; try { TIESLIB = JSON.parse((document.getElementById('tieslib') || {}).textContent || '[]'); if (!Array.isArray(TIESLIB)) TIESLIB = []; } catch (_) { TIESLIB = []; }
+function tiesNow(s, n = 6) {
+  const y = s && s.clock && s.clock.y; if (y == null || !TIESLIB.length) return [];
+  const names = new Set(Object.keys(s.people || {})); try { for (const nd of arr(s.org && s.org.nodes)) for (const q of arr(nd.posts)) for (const h of [q.holder].concat(arr(q.others))) if (h) names.add(h); } catch (_) {}
+  return TIESLIB.filter(x => (x.year == null || x.year <= y) && (names.has(x.a) || names.has(x.b)) && (names.has(x.a) && names.has(x.b) || Math.abs((x.year || y) - y) <= 30)).sort((a, b) => (names.has(b.a) && names.has(b.b)) - (names.has(a.a) && names.has(a.b)) || (b.year || 0) - (a.year || 0)).slice(0, n);
+}
+function tiesBlock(s) { const L = tiesNow(s); if (!L.length) return ''; return '【史书里这些人之间的关系（写到他们照此相待，不另编）】\n' + L.map(x => `· ${x.a}与${x.b}：${x.rel}${x.year ? '（' + x.year + '年）' : ''}`).join('\n'); }
 function waysBlock(s) {
   const W = waysNow(s); if (!W.length) return ''; const k = (s.turn || 0);
   return '【这一年代这类人的活法（材料，不是白名单：玩家做什么都不拦，能不能成照钱、人、权、名分；主角可兼几样、随时改行）】\n' + W.map(w => {
@@ -12755,6 +12781,8 @@ function blocks(s, forStory) {
   L.push(cardBlock(s)); { const mb = memoryBlock(s); if (mb) L.push(mb); }
   { const ob = orgBlock(s); if (ob) L.push(ob); }
   { let wb = ''; try { wb = waysBlock(s); } catch (_) {} if (wb) L.push(wb); }   // 任务十二：此刻沾着的活法当材料
+  { let eb = ''; try { eb = eventsBlock(s); } catch (_) {} if (eb) L.push(eb); }   // R-241：世事库当材料
+  { let tb = ''; try { tb = tiesBlock(s); } catch (_) {} if (tb) L.push(tb); }   // R-241：人物关系当材料
   if (false && s.face && typeof FACE !== 'undefined') { const ft = faceText(s.face); if (ft) L.push('【主角的相貌（玩家捏的；写到主角的样子照这个，不另编）】' + ft); }
   const hh = arr(s.household);
   const fb = familyBlock(s), pb = policiesBlock(s); if (fb) L.push(fb); if (pb) L.push(pb.trim());

@@ -138,6 +138,7 @@ start ai.js && {
   run "家里人不许叫「某」：开局、记账带进来的「韩某」照制度起名，男丁随主角的姓，族谱页看不到「某」（试玩查出）" 120 env PLAY="$ROOT/web/play.html" node kinname.js
   run "游戏读时代世情库：主角此刻沾着的活法当写戏材料（930 牙兵认出牙兵），称呼里的某换成〔姓〕，库里没有的年代、自编的行当照旧走不拦（任务十二）" 120 env PLAY="$ROOT/web/play.html" node ways.js
   run "随时改行接得上账：930 后唐连转五次（农家子→投军→落草→招安镇将→入朝→自立），现钱、家产、债、兵、仇家兄弟照旧带着走（任务十二，R-232）" 150 env PLAY="$ROOT/web/play.html" node careerchain.js
+  run "世事库、人物关系、政权总表接进游戏：照身份挑本年代两件世事当写戏材料并轮换，朝中身边人的史载关系进材料（R-241）" 120 env PLAY="$ROOT/web/play.html" node evlib.js
   run "官员名录也照任职年表和朝廷数据：明 1625 年表上的户部尚书、荆南 926 年高季兴高从诲进名录，模型不给人也有；真点人物页看得到（R-225、R-227）" 150 env PLAY="$ROOT/web/play.html" node rostertable.js
   run "错词表进写戏：后唐正文写了总兵、衙役这类这时还没有的说法打回并给当时说法，两可今义词不打回，明朝的总兵不算错（任务十五、十七，R-233）" 120 env PLAY="$ROOT/web/play.html" node eravocab.js
   run "兵力虚实：敌军只给估计（传闻虚张、给范围），真点派探子探准，探报一年就旧；自己直接统的兵照实数（任务三，R-221）" 150 env PLAY="$ROOT/web/play.html" node troopfog.js
