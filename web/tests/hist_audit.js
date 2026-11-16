@@ -7,6 +7,9 @@ const DEATH_WORD = /卒|死|葬|追|谥|崩|薨|遗|殁|被杀|遇害|诛|灵|�
 const N = v => (v == null || v === 0 || v === '') ? null : v;   // 0 是「不详」，不当年份
 const out = {}; const add = (k, s) => (out[k] = out[k] || []).push(s);
 const packs = fs.readdirSync(path.join(W, 'history')).filter(f => f.endsWith('.json') && f !== 'polities.json' && !SKIP.has(f)).map(f => ({ f, d: J('history/' + f) }));
+// 生卒写 0：不详要写 null（写 0 游戏会当成公元 0 年生，算出几百岁；zcode 三回交来都有，2026-11-17 起体检拦）
+for (const { f, d } of packs) for (const x of d.figures || []) for (const k of ['born', 'died']) if (x && x[k] === 0) add('生卒写了 0（不详写 null）', `${f}：${x.name} ${k}`);
+for (const f of fs.existsSync(path.join(W, 'figures')) ? fs.readdirSync(path.join(W, 'figures')).filter(f => f.endsWith('.json')) : []) { const d = J('figures/' + f); for (const x of d.people || []) for (const k of ['born', 'died']) if (x && x[k] === 0) add('生卒写了 0（不详写 null）', `figures/${f}：${x.name} ${k}`); }
 const died = {};   // 名 → [{died, range, src}]
 for (const { f, d } of packs) {
   const [y0, y1] = d.range || [-9999, 9999];
