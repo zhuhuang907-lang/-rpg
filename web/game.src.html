@@ -925,6 +925,7 @@ const store = {
     return m;
   },
   async save(s) {
+    try { lifeScan(s); } catch (_) { /* 人生纪事记不上不耽误存档 */ }
     s.updatedAt = Date.now();
     s.sub = `${s.clock.yearLabel || ''} · ${s.place.full || ''} · 第${s.turn}回合`;
     shrink(s);
@@ -1305,6 +1306,44 @@ function within(p, ms, dflt = null) {
   p.catch(() => { /* 到点以后才出错的不管 */ });
   return Promise.race([p, cap]).finally(() => clearTimeout(t));
 }
+/* ========== 人生纪事（R-245，2026-11-17 玩家转来外部策划的评审：「让玩家知道自己已经走了多远……不要只记录成功」）：
+ *  程序自己比前后两回的账，把人生的转折一条条记下来——身份变了、得官丢官、成家添丁丧亲、头一回有兵有地盘、投了谁的门下、结交了谁、跟谁结了仇、被参、下狱、家底翻身或败落、改了史书上的事。
+ *  不问模型、不花钱；成的败的都记；只记头一回或真变了的，不记流水账。摆在「年谱」页最上面。 ========== */
+const LIFE_KINDS = ['人生', '权力', '人际', '历史'];
+function lifeMark(s, kind, key, text) { s.life = arr(s.life); if (!text || s.life.some(x => x.key === key)) return false; const c = s.clock || {};
+  s.life.push({ key, kind: LIFE_KINDS.includes(kind) ? kind : '人生', turn: s.turn || 0, when: `${c.yearLabel || (c.y != null ? c.y + '年' : '')}`, age: num((s.protagonist || {}).age), text: one(text, 60) }); s.life = s.life.slice(-200); return true; }
+function lifeSnapOf(s) { const p = s.protagonist || {}, C = s.court2 || {};
+  return { name: p.name || '', role: one(p.role, 40), office: one((s.career || {}).office, 30), cash: N0((s.money || {}).cash), hh: arr(s.household).filter(m => m && m.name && !/先人/.test(m.relation || '')).map(m => [m.name, m.relation || '', m.dead ? 1 : 0]), troops: arr(s.forces).filter(f => { try { return myForce(s, f); } catch (_) { return false; } }).reduce((a, f) => a + (N0(f.troops) || 0), 0),
+    land: arr(s.territory).length, patron: C.patron || '', imp: s.impeach ? 1 : 0, jail: s.jail ? 1 : 0, hist: arr(s.history).length,
+    fav: Object.fromEntries(Object.entries(s.people || {}).filter(([, v]) => v && Math.abs(num(v.favor) || 0) >= 40).map(([k, v]) => [k, num(v.favor) > 0 ? 1 : -1])) }; }
+/** 比上一回的样子，记下转折。头一回调用只立底，不记 */
+function lifeScan(s) {
+  if (!s || !s.protagonist || !s.clock) return []; const now = lifeSnapOf(s), old = s.lifeSnap, out = [], mk = (k, key, t) => { if (lifeMark(s, k, key, t)) out.push(t); }, t = s.turn || 0;
+  s.lifeSnap = now; if (!old) { s.life = arr(s.life); return out; }
+  if (old.name && now.name && old.name !== now.name) { mk('人生', 'succ' + t, `${old.name}去世，${now.name}接着把这一家撑下去`); return out; }
+  if (old.role !== now.role && now.role) mk('人生', 'role' + t, `从「${cut(old.role || '白身', 16)}」成了「${cut(now.role, 16)}」`);
+  if (!old.office && now.office) mk('权力', 'off1', `头一回得官：${now.office}`);
+  else if (old.office && !now.office) mk('权力', 'offlost' + t, `丢了官（原任${old.office}）`);
+  else if (old.office && now.office && old.office !== now.office) mk('权力', 'off' + t, `由${cut(old.office, 12)}改任${cut(now.office, 12)}`);
+  if (old.cash != null && now.cash != null) { const base = num(s.lifeCash0) ?? (s.lifeCash0 = old.cash);
+    if (base > 0 && now.cash >= base * 10) mk('人生', 'rich', '攒下了十倍于当初的家当'); if (base > 0 && old.cash > base * 0.3 && now.cash <= base * 0.1) mk('人生', 'poor' + t, '家底败落，手头只剩当初的一成'); }
+  const oh = new Map(arr(old.hh).map(x => [x[0], x]));
+  for (const [n, rel, dead] of now.hh) { const o = oh.get(n);
+    if (!o && !dead) { if (/妻|夫|室/.test(rel) && !/妾|母|父/.test(rel)) mk('人生', 'wed_' + n, `成家：${rel}${n}`); else if (/妾|通房/.test(rel)) mk('人生', 'conc_' + n, `纳${n}为妾`); else if (/子|女/.test(rel) && !/孙|侄|媳|婿/.test(rel)) mk('人生', 'kid_' + n, `添丁：${rel}${/未取名/.test(n) ? '' : n}`); }
+    if (o && !o[2] && dead) mk('人生', 'die_' + n, `${rel}${n}去世`); }
+  if (!(old.troops > 0) && now.troops > 0) mk('权力', 'troop1', `头一回手里有了兵（${now.troops}人）`);
+  if (old.troops >= 50 && now.troops <= old.troops * 0.3) mk('权力', 'rout' + t, `兵马折损大半（${old.troops}人只剩${now.troops}人）`);
+  if (!(old.land > 0) && now.land > 0) mk('权力', 'land1', '头一回据有一块地盘'); if (old.land > 0 && !now.land) mk('权力', 'landlost' + t, '丢了所有的地盘');
+  if (now.patron && now.patron !== old.patron) mk('人际', 'patron_' + now.patron, `投在${now.patron}门下`); if (old.patron && !now.patron) mk('人际', 'patronlost_' + old.patron + t, `靠山${old.patron}没了`);
+  if (!old.imp && now.imp) mk('权力', 'imp' + t, `被人上章参劾${s.impeach && s.impeach.by ? '（' + s.impeach.by + '）' : ''}`);
+  if (!old.jail && now.jail) mk('人生', 'jail' + t, '下了狱'); if (old.jail && !now.jail) mk('人生', 'unjail' + t, '出了狱');
+  for (const [n, sg] of Object.entries(now.fav)) if ((old.fav || {})[n] !== sg) mk('人际', (sg > 0 ? 'friend_' : 'foe_') + n, sg > 0 ? `与${n}成了至交` : `与${n}结下了仇`);
+  if (now.hist > (old.hist || 0)) { const h = arr(s.history)[now.hist - 1] || {}; mk('历史', 'hist' + now.hist, `改了史书上的一件事：${cut(h.event || '', 20)}${h.now ? '——' + cut(h.now, 20) : ''}`); }
+  return out;
+}
+function lifeHtml(s) { const L = arr(s.life); if (!L.length) return '';
+  const cls = { 人生: '', 权力: 'b-done', 人际: '', 历史: 'b-bad' };
+  return `<div class="h" style="margin-top:6px"><span class="seal">纪</span>人生纪事<span class="note">一路走到今天的转折，成的败的都在</span></div><div class="list">${L.slice().reverse().slice(0, 60).map(x => `<div><span class="muted">${esc(x.when || '')}${x.age != null ? ' · ' + x.age + '岁' : ''}</span> <span class="badge ${cls[x.kind] || ''}">${esc(x.kind)}</span> ${esc(x.text)}</div>`).join('')}</div>`; }
 /* ========== 朝局能玩（R-240，2026-11-15 玩家：「朝局我看了一下，写得也太过敷衍了吧，而且那个表示的方式也很糟糕，基本上不能称之为游戏，而且游戏根本没有任何影响」）：
  *  以前朝局页是一张官员名单。现在顶上是一张「朝局态势」：谁在位、谁当权、谁对你怎样、谁的位子要动（照朝廷数据里的任期——书中人不知将来，要花一回走动去打听）、你靠着谁；
  *  能走动：拜谒、送礼、打听、投门下、弹劾。一个月两回。每样有代价、会不成、有后果：情分记在人物账上（写戏的照此写他待你的样子）、官声涨落、
@@ -15981,7 +16020,7 @@ function pane(tab) {
   if (tab === 'chron') {
     const p = s.protagonist;
     const kv = [['姓名', p.name], ['性别', p.gender], ['年岁', p.age != null ? p.age + ' 岁' : ''], ['身份', p.role], ['籍贯', p.nativePlace], ['出身', p.real ? '史载真人' : '虚构人物']].concat(Object.entries(s.status)).filter(([, v]) => v);
-    return `<div class="h" style="margin-top:6px"><span class="seal">我</span>我</div><dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    return `${SH(() => lifeHtml(s), 'lifeHtml')}<div class="h" style="margin-top:6px"><span class="seal">我</span>我</div><dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
       ${arr(s.yearCards).length ? `<div class="h"><span class="seal">年</span>年终总结</div>${s.yearCards.slice().reverse().map(c => `<div class="yearcard"><b>${esc(c.label)}</b>${arr(c.lines).map(l => `<div>${esc(l)}</div>`).join('')}</div>`).join('')}` : ''}
       ${arr(s.logicLog).length ? `<details class="fold"><summary>常理更正（${s.logicLog.length}）<span class="note">通读账册挑出的不合常理、前后矛盾之处，已照改，往后照此</span></summary><div class="list">${s.logicLog.slice().reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.text)}</div>`).join('')}</div></details>` : ''}
       ${arr(s.canon).length ? `<div class="h"><span class="seal">定</span>定本<span class="note">本局确立、一直成立的事；AI 每回都照这里</span></div><div class="list">${s.canon.slice().reverse().map(c => `<div><span class="when">第${c.turn}回合</span>${esc(c.text)}</div>`).join('')}</div>` : ''}
