@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261117234331';
+const BUILD = '20261117235402';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -5048,7 +5048,9 @@ function familyNeeds(s) {
   if (/僧|和尚|道士|尼姑|出家|太监|宦官|内侍|宫女/.test(role)) return [];
   const H = arr(s.household).filter(m => m && !m.dead), male = !/女/.test(p.gender || '');
   const elite = ['emperor', 'noble', 'official', 'warlord'].includes(s.idm) || /皇|王|公|侯|伯|贵|宗室|勋|官|绅|富|盐商|地主|员外|举人|进士|将|帅|督|抚|知府|知县|大臣/.test(role);
-  const out = [], marry = male ? (elite ? 18 : 22) : 17, F = s.famOk || {};
+  const out = [], marry = male ? (elite ? 18 : 22) : 17, F = Object.assign({}, s.famOk || {});
+  // 正文、玩家的话里写明主角没娶（没嫁）：不替他补配偶和孩子，要成亲照玩法来（R-257：二十岁答书吏「未娶」，后台补了个成婚两年的正室和嫡子）
+  if (arr(s.chat).slice(-40).some(c => /未娶|没娶|尚未娶|没有娶亲|未曾娶|未成家|没成家|没成亲|未婚|尚未婚配|未许人家|未出阁/.test(String(c && c.text || '')))) { F.spouse = true; F.kids = true; F.conc = true; }
   if (age >= marry && !F.spouse && !H.some(m => male ? WIFE_RE.test(m.relation) : /^(夫|丈夫|夫君)$/.test(m.relation))) out.push(male ? '正妻' : '丈夫');
   if (male && elite && age >= 24 && !F.conc && !H.some(m => CONC_RE.test(m.relation))) out.push('妾');
   if (age >= marry + 4 && !F.kids && !H.some(m => KID_RE.test(m.relation) && !/孙|侄|甥/.test(m.relation))) out.push('子女');
@@ -6755,6 +6757,19 @@ function bumpEra(label, dy) {
   return m[1] + NUMZH(n + dy) + m[3];
 }
 const NUMZH = n => { const d = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']; if (n === 1) return '元'; if (n < 10) return d[n]; if (n < 20) return '十' + d[n - 10]; return d[Math.floor(n / 10)] + '十' + d[n % 10]; };
+/** 正文里明写的最后一个「年号某年某月」（R-257）：照史料里各家年号对成公元年月；只认眼下到往后六年之间的，回忆往事的年月不算 */
+function storyDate(s, text) {
+  const t = String(text || ''), y0 = s.clock.y, M = {}, D = '一二三四五六七八九', zh = w => w === '十' ? 10 : w.length === 1 ? D.indexOf(w) + 1 : w[0] === '十' ? 10 + D.indexOf(w[1]) + 1 : (D.indexOf(w[0]) + 1) * 10 + (w[2] ? D.indexOf(w[2]) + 1 : 0);
+  for (let y = y0 - 1; y <= y0 + 6; y++) for (const r of rulersAt(y, s)) if (r && r.era && r.n) for (const suf of ['年', '载']) M[r.era + NUMZH(r.n) + suf] = y;
+  const re = /([\u4e00-\u9fa5]{2})(元|[一二三四五六七八九十]{1,3})(年|载)(春|夏|秋|冬)?(正|腊|冬|[一二三四五六七八九十]{1,3})?(月)?/g, mon = { 正: 1, 腊: 12, 冬: 11 }, sea = { 春: 1, 夏: 4, 秋: 7, 冬: 10 };
+  let best = null, m;
+  while ((m = re.exec(t))) {
+    const y = M[m[1] + m[2] + m[3]]; if (y == null) continue;
+    let mo = m[5] && m[6] ? (mon[m[5]] || zh(m[5])) : m[4] ? sea[m[4]] : null; if (!mo || mo > 12) { if (y <= y0) continue; mo = 1; }
+    const c = { y, m: mo, d: 1 }; if (ymOf(c) < ymOf(s.clock) - 0.01 && !(y === y0 && mo === s.clock.m)) continue; best = c;
+  }
+  return best;
+}
 function eraLabel(s, y) {
   const pol = String(s.place.polity || '');
   const all = rulersAt(y, s).filter(r => r.era);
@@ -16167,12 +16182,15 @@ function auditSweep(obj, audit) {
   } catch (_) { return obj; }
 }
 /** 账房改正的史实硬伤：原文确有的才改 */
+/** 改法其实是批注：原句照抄、后面加个括号说「无误、保留、史实如此」，或者改成的话本身就是审稿口吻 */
+const fixIsNote = (wrong, right) => (right.startsWith(wrong) && /^[（(].*[)）]$/.test(right.slice(wrong.length).trim())) || /可保留|可以保留|史实如此|无误|不必改|无需改|原文(不动|保留)|照旧保留/.test(right);
 function applyFixes(text, fixes) {
   const done = [];
   if (SETTINGS.check === false) return { text, done };
   for (const f of arr(fixes).slice(0, 12)) {
     const wrong = String((f && f.wrong) || '').trim(), right = String((f && f.right) || '').replace(/【(幕后|当前情况|戏外)】/g, '').trim();   // 改正的话里夹了内部标记，会把幕后露给玩家
     if (!wrong || !right || wrong === right || wrong.length < 2 || wrong.length > 40) continue;   // 单个字（两→钱）会把全文同字都改坏
+    if (fixIsNote(wrong, right)) continue;   // R-257：「国号大闽」→「国号大闽（史实如此，可保留）」——审稿把批注当改法，照替就把批注露进正文
     if (text.includes(wrong)) text = text.split(wrong).join(right);
     else {
       // 审校摘的原文常常差一个引号、空格或标点：放宽这些再找一遍
@@ -16188,6 +16206,20 @@ function applyFixes(text, fixes) {
 
 /* ========== 记账 ========== */
 const W = v => (v >= 80 ? '感戴' : v >= 60 ? '安' : v >= 40 ? '平常' : v >= 25 ? '不满' : '怨');
+/** 账房漏报主角身份变化时补问一句（R-257）：正文里主角补了名、授了职、编进了哪一营却没给 identity，用快型号单问「现在是什么身份」；没变就不动 */
+const ID_HINT = /补(入|为|了|进)|编入|编进|授(了|为)?|擢|升(为|任|作|了)|拜为|除为|署为|辟为|任为|充任|当上|做了.{0,6}(头|长|将|官|使|吏)|补.{0,8}名|入了.{0,6}籍|选(进|入|上)/;
+async function idFollow(s, said, txt) {
+  if (!ID_HINT.test(String(txt || ''))) return null;
+  try {
+    const old = s.protagonist.role || '';
+    const r = await callClaude(`一局历史游戏这一回的正文如下。主角是${s.protagonist.name}，这一回开始时的身份是「${old}」。
+【正文】${cut(String(txt || ''), 2500)}
+只看正文里主角本人：这一回他的身份、职位、所在的营伍或衙门有没有真的变了（补进了、授了、升了、调了、罢了）？只是有人许诺、举荐、还在等批的不算。
+只输出一个 JSON 对象：{"changed":"是/否","role":"变了以后的身份，照当时的叫法写全（哪一军哪一营什么职；没变就空）","why":"正文哪一句为凭"}`, null, { maxTokens: 300, temperature: 0.1, kind: '研读', thinking: false });
+    const d = parseJSON(r && r.text); if (!d || !/是/.test(String(d.changed || '')) || String(d.role || '').trim().length < 2 || String(d.role).trim() === old) return null;
+    return { role: one(d.role, 30), why: one(d.why, 40) };
+  } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
+}
 function applyReply(s, d, said) {
   try { for (const v of Object.values(s.people || {})) if (v && !v.pid) v.pid = 'p' + (s.pidSeq = (num(s.pidSeq) || 0) + 1); } catch (_) {}
   // 「严某」这类占位称呼：正文、人物、家人、大事记、账里一律换成起好的名字（不止正文）
@@ -16212,7 +16244,7 @@ function applyReply(s, d, said) {
     // 身份变了：身份、数值、看大势的角度、本朝官制、目标一起换，记进履历
     const idc = d.identity && typeof d.identity === 'object' && String(d.identity.role || '').trim().length >= 2 && !/没变|未变|不变|^无$|才填|一句话/.test(String(d.identity.role)) ? d.identity : null;
     // 身份变化要有正文为凭：正文里真写了授官、考中、罢官、从军、出嫁……才认；账房自己给主角换身份不认
-    const ID_EV = /考中|中了|及第|登科|授|任为|除为|擢|迁为|升|降为|贬|罢|革职|革去|免官|致仕|成了|改做|改行|入了|出家|还俗|从军|投军|应募|退伍|落草|招安|嫁|入赘|过继|袭爵|袭了|封为|册为|捐了|纳捐|称王|称帝|即位|登基|拜为|辟为|署为|补为/;
+    const ID_EV = /考中|中了|及第|登科|授|任为|除为|擢|迁为|升|降为|贬|罢|补入|补进|编入|编进|充任|选进|选入|当上|革职|革去|免官|致仕|成了|改做|改行|入了|出家|还俗|从军|投军|应募|退伍|落草|招安|嫁|入赘|过继|袭爵|袭了|封为|册为|捐了|纳捐|称王|称帝|即位|登基|拜为|辟为|署为|补为/;
     if (idc && !ID_EV.test(String(d.reply || '') + String(said || ''))) { noteErr('账房擅自改了主角的身份，没认', one(idc.role, 30)); }
     else if (idGainBarred(s, idc, said, CUR_RULING)) {
       // 正文不作凭据（任务十六）：得官、登科、封爵要有玩家这一步或在办的事为凭，光是正文写了不认
@@ -16344,6 +16376,7 @@ function applyReply(s, d, said) {
     const capDays = asked ? 1900 : !tw.test(rep2) ? 1 : /(数|几|两|三|四|五|六|七|八|九|十|半)(个)?(月|年|载)|月余|一晃|转眼/.test(rep2) ? 400 : 45;
     let days = Math.max(0, Math.min(capDays, Math.max(400, Math.round(spanMonths(d.span, said) * 30.5)), 1900, Math.round(Number(d.elapsedDays) || 0)));
     { const sm = spanAsked(d.span, said); if (sm >= 1) days = Math.max(days, Math.min(capDays, Math.round(sm * 30.5 * 0.9))); }
+    { const tg = storyDate(s, rep2); if (tg) { const want = dayIdx(tg) - dayIdx(s.clock); if (want > 0 && Math.abs(days - want) > 45) days = Math.min(2200, want); else if (want <= 0 && want > -40 && days > 60) days = Math.max(1, want + 30); } }   // R-257：正文写到「长兴二年四月」，钟照账房报的天数走，少了停在上一年腊月、多了跳到第二年九月：以正文明写的最后一个年月为准
     { const br = CUR_RULING && CUR_RULING.battleResult, bd = br ? arr(br.rounds).length : 0; if (bd > 1) days = Math.max(days, bd); }   // 一仗打了几日，时间就至少过几日（R-254：七日的仗，钟上只过了几个时辰）   // 玩家说了过多久，账房报得少也照玩家说的过（R-254：「过半年」账上只过了几个钟头）   // 玩家说过两年、过五年：照他说的推，最多五年多
     // 赶路：从原来所在到这一回所在，照历史地名库的路程和走法算日子，不会一天就到
     { const from = geoCenter(s), to = one(d.moveTo || d.nowAt, 30).replace(/[（(].*$/, '');
@@ -17697,6 +17730,7 @@ async function send(said, span, note, resume) {
       for (let k = 0; k < 3 && !d0; k++) {
         try { const { text: lt } = await callClaude(ledgerInput(S, said, txt, hid, span, ruling) + (k ? '\n\n（上一次的回答不是合法的 JSON 或被截断了。这次只输出那一个 JSON 对象，括号配对，没变的字段不要给，写短些。）' : ''), null, { maxTokens: 8000, temperature: 0.3, kind: '记账' }); d0 = parseJSON(lt); } catch (e) { if (e && e.code === 'cancelled') throw e; }
       }
+      if (d0 && !d0.identity && !(d0.extra || {}).identity) { const nid = await idFollow(S, said, txt); if (nid) d0.identity = nid; }   // R-257：账房漏报身份变化（选进宿卫、补了水手名，身份栏照旧是小卒）
       return d0;
     };
     let ledgerP = null;

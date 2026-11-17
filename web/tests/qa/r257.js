@@ -17,7 +17,30 @@ const path = require('path');
     return { with_, without, okNote, none: battlePlan({ name: '', p: 50 }), big: [big.p, big.fx.atk, big.fx.def, big.fx.orgHit, big.fx.casualty, big.whole],
       clash1: battleTextClash(lostR, '众人齐声呐喊，把冲进门洞的建州兵赶出门外，城门守住了。'), clash2: battleTextClash(lostR, '西门失守，本部溃散，卢继带残兵退往子城。'), clash3: battleTextClash(wonR, '城头一阵乱箭，建州兵退去。'), clash4: battleTextClash(wonR, '西门失守，我军溃败。') };
   });
+  // 账房漏报身份：正文写补了水手名，补问一句拿到新身份；正文没写身份变化不问；回答「没变」不动
+  const idr = await p.evaluate(async () => {
+    const s = newSave({ name: '林承海', gender: '男', age: 24, role: '牙军小卒', gregorianYear: 933, month: 9, day: 9, place: '福州', polity: '闽' });
+    const keep = callClaude; let asked = 0, reply = '{"changed":"是","role":"楼船营平波号水手","why":"补入平波号水手名"}';
+    callClaude = async () => { asked++; return { text: reply }; };
+    const a = await idFollow(s, '投水军', '三个月满，书办来船上验看，你补了水手名，编入甲板一队。');
+    const n1 = asked; const b2 = await idFollow(s, '照常当差', '这一日你照常站门巡夜，夜里下了雨。'); const n2 = asked;
+    reply = '{"changed":"否","role":"","why":""}'; const c = await idFollow(s, '求升', '赵大说船上的小头目，兴许有你的份，只是还要等批。');
+    callClaude = keep; return { a, n1, b2, n2, c };
+  });
+  const nt = await p.evaluate(() => [applyFixes('正月里改元，国号大闽，城中传遍。', [{ wrong: '国号大闽', right: '国号大闽（史实如此，可保留）' }]).text, applyFixes('长兴四年正月初一改元。', [{ wrong: '长兴四年正月初一', right: '长兴四年春正月' }]).text]);
+  const fam = await p.evaluate(() => { const s = newSave({ name: '林承海', gender: '男', age: 25, role: '楼船营水手', gregorianYear: 933, month: 9, day: 9, place: '福州', polity: '闽' }); s.household = [{ relation: '母', name: '陈婉娘', age: 50 }];
+    const before = familyNeeds(s).join(); s.chat = [{ role: 'gm', text: '书吏提笔问：「娶亲否？」你答：「未娶。」' }]; return [before, familyNeeds(s).join()]; });
+  const sd = await p.evaluate(() => { const s = newSave({ name: '林承海', gender: '男', age: 22, role: '宿卫', gregorianYear: 930, month: 12, day: 3, place: '福州', polity: '闽' });
+    const f = t => { const c = storyDate(s, t); return c ? c.y + '-' + c.m : ''; };
+    return [f('此后一年多，经天成四年、长兴元年，到长兴二年（931年）春，你照常当差。'), f('长兴二年四月，福州城忽然绷紧了。'), f('前年天成三年腊月的事，你还记得。'), f('这日你值夜回来。'), f('长兴三年正月里，使府张出告示。')]; });
   const bad = [];
+  if (sd.join() !== '931-1,931-4,,,932-1') bad.push('正文明写的年月没认对：' + sd.join());
+  if (!/正妻/.test(fam[0]) || /正妻|子女/.test(fam[1])) bad.push('正文写明未娶，还要替主角补正妻、子女：' + fam.join(' / '));
+  if (/可保留|史实如此/.test(nt[0])) bad.push('审稿批注被当改法替进正文：' + nt[0]);
+  if (!/长兴四年春正月/.test(nt[1])) bad.push('正常的改法没替：' + nt[1]);
+  if (!idr.a || idr.a.role !== '楼船营平波号水手') bad.push('正文写补了水手名，没补问出新身份：' + JSON.stringify(idr.a));
+  if (idr.b2 || idr.n2 !== idr.n1) bad.push('正文没写身份变化也去补问');
+  if (idr.c) bad.push('回答没变也改了身份');
   if (r.with_ < 6) bad.push(`预先布好的守法十仗只守住 ${r.with_} 仗`);
   if (r.with_ <= r.without) bad.push(`布了守法（${r.with_}）不比没布（${r.without}）强`);
   if (r.okNote < 5) bad.push(`守方的主意得手却报「没成」（得手 ${r.okNote}/10）`);
