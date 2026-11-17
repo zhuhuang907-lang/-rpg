@@ -34,7 +34,7 @@ const path = require('path');
         if (sl.q.holder) bad.push(nm + y + '年尚书令有人：' + sl.q.holder + '（' + sl.q.src + '）');
         if (sl.q.status !== '照例不授' || !sl.q.noGrant) bad.push(nm + ' 尚书令没标照例不授：' + JSON.stringify(sl.q)); }
       for (const x of P) if (x.q.src === '拟' && orgMajor(x.n, x.q)) bad.push(nm + ' 大人物位子是虚构的：' + x.n.name + x.q.title + x.q.holder);
-      for (const t of ['左仆射', '吏部尚书', '京兆尹', '大将军']) { const x = P.find(z => z.q.title === t); if (!x) { bad.push(nm + ' 没有' + t); continue; } if (x.q.holder) bad.push(nm + ' ' + t + '查不到真人却填了' + x.q.holder); if (!/出缺/.test(x.q.status || '') || !x.q.needReal) bad.push(nm + ' ' + t + '空着却没写出缺、没记再查：' + x.q.status); }
+      for (const t of ['左仆射', '吏部尚书', '京兆尹', '大将军']) { const x = P.find(z => z.q.title === t); if (!x) { bad.push(nm + ' 没有' + t); continue; } if (x.q.holder && !histFor(y, s).some(h => arr(h.figures).some(f => f.name === x.q.holder))) bad.push(nm + ' ' + t + '查不到真人却填了' + x.q.holder);   /* 内置史料里有的真人（隋唐前期史料包：宇文述 605—616 左翊卫大将军）坐上去是对的 */ if (!/出缺/.test(x.q.status || '') || !x.q.needReal) bad.push(nm + ' ' + t + '空着却没写出缺、没记再查：' + x.q.status); }
       const tw = P.find(x => x.q.title === '太尉'); if (tw && (tw.q.holder || !/虚衔/.test(tw.q.status || ''))) bad.push(nm + ' 太尉没标加官虚衔：' + JSON.stringify(tw.q));
       const shuli = P.find(x => x.q.title === '书吏'); if (!shuli || shuli.q.holder || shuli.q.status !== '照额') bad.push(nm + ' 书吏这类丙等位子只写员额、不起虚构名字（2026-11-05 玩家定）：' + JSON.stringify(shuli && shuli.q));
       if (!orgSeekDue(s) && canSearch()) bad.push(nm + ' 大人物空着，后台没排上再查');

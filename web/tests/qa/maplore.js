@@ -17,5 +17,15 @@ const path = require('path');
   if (!r.panel) errs.push('地图上点河南府（洛阳），详情里没有「此地人物与史事」');
   if (!r.btn) errs.push('同地的名臣没有「去拜访」按钮');
   else { await p.click('[data-fig="visit"]'); const v = await p.evaluate(() => ($('#said') || {}).value || ''); if (!/去拜访/.test(v)) errs.push('点了去拜访，输入框里没写上：' + v); }
+  // 地图名臣记号：图上有名臣印，点了选中那一处、详情里有此地人物
+  const mk = await p.evaluate(() => ({ n: document.querySelectorAll('[data-mapfig]').length, lay: !!document.querySelector('[data-maplay="fig"]') }));
+  if (!mk.lay) errs.push('图层里没有「名臣」开关');
+  if (!(mk.n > 0)) errs.push('930 年地图上没有名臣记号');
+  else { await p.click('[data-mapfig]'); const sel = await p.evaluate(() => ({ sel: MAPZ.sel, txt: /此地人物与史事/.test(document.body.innerText) })); if (!sel.sel || !sel.txt) errs.push('点名臣记号没选中那一处：' + JSON.stringify(sel)); }
+  // 开局知府照长官表：表里有的不问模型
+  const po = await p.evaluate(async () => { S = newSave({ name: '张守诚', gender: '男', age: 35, role: '绸缎商人', gregorianYear: 920, month: 3, day: 1, place: '开封', polity: '后梁' }); const oc = callClaude; let asked = ''; callClaude = async pr => { asked += pr; return { text: '{"rows":[]}' }; };
+    try { await prefOffDS(S); } catch (e) {} finally { callClaude = oc; } const M = (S.prefOff || {}).map || {}; const k = Object.keys(M).find(n => /汴|开封/.test(n)); return { k, v: k && M[k], asked: k ? asked.includes('. ' + k + '\n') : null }; });
+  if (!po.k || !/长官表/.test((po.v || {}).basis || '')) errs.push('920 年汴州长官没照长官表填：' + JSON.stringify(po));
+  else if (po.asked) errs.push('长官表里有的州还拿去问模型');
   console.log('MAPLORE', JSON.stringify({ off: r.off, bian: r.bian })); console.log('ERRS', JSON.stringify(errs)); await b.close(); process.exit(errs.length ? 1 : 0);
 })();
