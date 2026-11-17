@@ -9,7 +9,8 @@ const path = require('path');
   const setup = (role, y) => p.evaluate(async ([role, y]) => { S = newSave({ name: '荀彧', gender: '男', age: 38, role, gregorianYear: y, month: 1, day: 1, place: '许县', polity: '汉' }); S.chat = [{ role: 'gm', text: '开场' }];
     S.org = { nodes: [{ id: 'root', name: '朝廷', depth: 0, posts: [{ title: '皇帝', holder: '刘协' }] }, { id: 'X1', name: '丞相府', depth: 1, parent: 'root', posts: [{ title: '丞相', rank: '万石', holder: '曹操', src: '史书' }] }], log: [] };
     const oc = callClaude; callClaude = async () => ({ text: JSON.stringify({ people: [{ name: '诸葛亮', born: 181, died: 234, native: '琅邪阳都', now: '隆中躬耕，每自比管乐', temper: '淡泊', will: '难', path: [{ y: 207, m: 11, post: '出山辅佐刘备，为军师', how: '投靠', patron: '刘备' }, { y: 221, m: 4, post: '丞相府丞相', how: '升', patron: '刘备' }], source: '三国志·诸葛亮传' }, { name: '司马懿', born: 179, died: 251, native: '河内温县', now: '在野', temper: '深沉', will: '难', path: [{ y: 208, post: '丞相府文学掾', how: '征辟', patron: '曹操' }], source: '晋书' }] }) });
-    try { await talentDS(S); } finally { callClaude = oc; } }, [role, y]);
+    const fl = FIGLIB.splice(0, FIGLIB.length);   /* 这条测的是人才年表照史书调人：名臣预制包（R-244）盖住了 200 年、又不收诸葛亮这类已在内置史料里的人，这里先拿开，照旧请（假）模型 */
+    try { await talentDS(S); } finally { callClaude = oc; FIGLIB.push(...fl); } }, [role, y]);
   // 1 年表进档案；名臣谱只写此刻
   await setup('许县的读书人', 200);
   const a = await p.evaluate(() => { TAB = 'people'; VIEW = 'game'; SIDE_FOLD = false; render0(); const t = document.body.innerText; return { car: arr(S.dossiers.诸葛亮.career).length, now: figNow(S, '诸葛亮'), html: /名臣谱/.test(t) && /隆中躬耕/.test(t), spoil: /丞相府丞相|出山辅佐刘备/.test(t), due: talentDue(S), to: S.tl.to }; });
