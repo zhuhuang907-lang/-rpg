@@ -115,4 +115,5 @@
 - `zcode/task-44`（`8123b39`）：新建 `web/figures/suitang.json` **258 人**（581—711）——史料包 116（died≤720，39 位天宝后人物留 tangmo）＋宰相表 97（有卒年）＋补传 45（四杰、玄奘、义净、智顗、李淳风、长孙晟、薛道衡、屈突通、张丽华、始罗突三可汗等）。
 - 每人 posts/where 齐、where 有地名；**stats 全空**（无史评不套模子）；生卒无考 null。
 - 门禁：build 8021754、prompt_guard 282/0、rules_regress 101/0、hist_audit 0 可疑。
+- **旧 `zcode/task-44`（ba0a601，250 人版）已由本版取代**：旧版 51 人 posts/where 空、王勃无任职无地点、李义府 tag 标「后妃」、长孙晟标「外族首领」、fate 只写「卒」；本版 258 人逐人补 posts/where、改正 tag、fate 具体。分支以 `--force-with-lease=ba0a601` 覆盖，旧版不再保留。
 - 接做任务四十七（隋唐前期、两宋长官表）。
