@@ -507,7 +507,7 @@ const routes = {
     const ck = b.cache ? require('crypto').createHash('md5').update(JSON.stringify([msgs, String(b.system || ''), b.json !== false, !!b.fast, !!b.thinking, b.maxTokens || 0])).digest('hex') : '';
     if (ck) { const hit = llmCache().get(ck); if (hit) { job.status = 'done'; job.text = hit; job.cached = true; return { ok: true, job: id, cached: true }; } }
     engine.chatCall({ messages: msgs, system: String(b.system || '').slice(0, 60000), maxTokens: Math.min(16000, Number(b.maxTokens) || 8000), json: b.json !== false, temperature: Number.isFinite(Number(b.temperature)) ? Number(b.temperature) : 0.8, thinking: b.thinking === true, fast: b.fast === true, provider: b.provider === 'glm' ? 'glm' : '', onDelta: t => { if (job.status === 'cancelled') { const e = new Error('玩家停下了'); e.stopStream = true; throw e; } if (job.status === 'running') job.text = String(t || ''); } })
-      .then(r => { if (job.status === 'running') { job.status = 'done'; job.text = r.text; job.truncated = r.truncated; recordTest(true); if (ck && r.text && !r.truncated) llmCacheSet(ck, r.text); } })
+      .then(r => { if (job.status === 'running') { job.status = 'done'; job.text = r.text; job.truncated = r.truncated; job.usage = r.usage || null; job.model = r.model || ''; recordTest(true); if (ck && r.text && !r.truncated) llmCacheSet(ck, r.text); } })
       .catch(e => { if (job.status === 'running') { job.status = 'error'; job.error = String(e && e.message || e).slice(0, 400); recordTest(false, job.error); logErr('[llm]', job.error); } });
     for (const [k, j] of LLM_JOBS) if (Date.now() - j.at > 3600e3) LLM_JOBS.delete(k);
     return { ok: true, job: id };
@@ -591,7 +591,7 @@ const routes = {
     const j = LLM_JOBS.get((body || {}).job);
     if (!j) return { ok: false, why: '任务不存在或已过期' };
     // 写完的任务留一阵：页面刷新或网络抖一下再来取，结果还在
-    return { ok: true, status: j.status, text: j.text, error: j.error, truncated: !!j.truncated };
+    return { ok: true, status: j.status, text: j.text, error: j.error, truncated: !!j.truncated, usage: j.usage || null, model: j.model || '' };
   },
   // 启动器再开一次时先请旧服务自己退出（连同看着它的守护进程），免得守护进程一秒后又把它拉起来抢端口
   async 'POST /api/quit'() {

@@ -69,7 +69,7 @@ async function fetchX(url, opts, { noFastFail = false } = {}) {
 async function check() {
   const targets = [
     ['DeepSeek（写剧情）', 'https://api.deepseek.com/models'],
-    ['博查（查史，可选）', 'https://api.bochaai.com/v1/web-search'],
+    // 不用博查（R-253）：不再自检博查
     ['维基百科（免费查史）', 'https://zh.wikipedia.org/w/api.php?action=query&format=json&meta=siteinfo'],
     ['Wikidata（免费查人物）', 'https://query.wikidata.org/sparql?format=json&query=ASK%7B%7D'],
   ];

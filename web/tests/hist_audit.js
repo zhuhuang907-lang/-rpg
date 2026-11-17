@@ -30,7 +30,9 @@ for (const { f, d } of packs) {
   const byPol = {}; for (const r of d.rulers || []) (byPol[r.polity] = byPol[r.polity] || []).push(r);
   for (const [pol, L] of Object.entries(byPol)) { L.sort((a, b) => a.from - b.from);
     for (let i = 1; i < L.length; i++) if (L[i].from != null && L[i - 1].from != null && L[i].from < L[i - 1].to - 1 && L[i].name !== L[i - 1].name && L[i].to - L[i].from > 1 &&   /* 篡位数月的（司马伦 301）不算 */ !/并立|对立|伪|僭|共治|太上|割据/.test(String(L[i].title) + String(L[i].note || '')) && !/鲜卑|俄罗斯|安南|马腾|乌桓|匈奴|羌/.test(pol)) add('同一政权两位君主在位重叠两年以上', `${f}·${pol}：${L[i - 1].name}（${L[i - 1].from}—${L[i - 1].to}）与 ${L[i].name}（${L[i].from}—${L[i].to}）`);
-    for (const r of L) for (const [era, ey] of r.reigns || []) if (!/（/.test(era) && (ey < r.from - 1 || ey > r.to)) add('年号起年不在君主在位年内', `${f}·${r.name}（${r.from}—${r.to}）年号「${era}」起 ${ey}`); }
+    // 沿用前朝年号接着数的（后晋出帝、后汉高祖的「天福」起 936）：前头有君主同一年起过同一个年号就不算错（R-254）
+    const inherited = (era, ey, r) => (d.rulers || []).some(q => q !== r && q.from != null && q.from < r.from && (q.reigns || []).some(([e2, y2]) => e2 === era && y2 === ey));
+    for (const r of L) for (const [era, ey] of r.reigns || []) if (!/（/.test(era) && (ey < r.from - 1 || ey > r.to) && !inherited(era, ey, r)) add('年号起年不在君主在位年内', `${f}·${r.name}（${r.from}—${r.to}）年号「${era}」起 ${ey}`); }
 }
 // 任职年表、朝廷数据里的卒年也收进来比
 for (const t of fs.readdirSync(path.join(W, 'tenure')).filter(f => f.endsWith('.json') && !/^ming/.test(f))) {

@@ -187,7 +187,7 @@ async function streamChat(url, headers, body, timeoutMs, onDelta) {
   try {
   const res = await require('../core/net').fetchX(url, {
     method: 'POST', headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify({ ...body, stream: true }), signal: ac.signal,
+    body: JSON.stringify({ ...body, stream: true, stream_options: { include_usage: true } }), signal: ac.signal,   // 要回每次的 token 用量（含缓存命中），页面记花费账（R-255）
   }, { noFastFail: true });
   if (!res.ok) {
     const raw = await res.text();
