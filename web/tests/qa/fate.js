@@ -13,8 +13,11 @@ const path = require('path');
     const s1 = mk(713), once = figuresNow(s1).filter(x => x.f.n === '姚甲'), at = once[0] && figAt(once[0].f, 713);
     const s2 = mk(731), dead = figuresNow(s2).some(x => x.f.n === '乙将');
     const s3 = mk(730); const no = fateCheck(s3, '乙将', '乙将病重，没救过来'); const yes = fateCheck(s3, '乙将', '你请来名医，救下了乙将的性命'); s3.clock.y = 735; const alive = figuresNow(s3).some(x => x.f.n === '乙将');
-    FIGLIB = keep; return { n: once.length, place: at && at.place, dead, no, yes, alive };
+    // 跨代：只记在前一段包里、出没记载延到后一段的人，后一段照样够得着
+    FIGLIB = [{ era: 'a', range: [581, 711], people: [{ n: '丙臣', tag: '名臣', t: 1, b: 660, d: 730, w: [[700, 725, '长安', '']], po: [] }] }]; const cross = figuresNow(mk(720)).some(x => x.f.n === '丙臣');
+    FIGLIB = keep; return { cross, n: once.length, place: at && at.place, dead, no, yes, alive };
   });
+  if (!r.cross) errs.push('只记在前一段包里、出没延到后一段的人，后一段见不着');
   if (r.n !== 1) errs.push('跨两段的同一人出了 ' + r.n + ' 个');
   if (r.place !== '长安') errs.push('去重没取这一年有地点的那份：' + r.place);
   if (r.dead) errs.push('730 年卒的人 731 年还在');

@@ -5349,14 +5349,16 @@ function figuresNow(s) {
   const me = (s.protagonist || {}).name;
   const saved = s.fateSaved || {}, seen = new Set();
   // R-252：跨两段的同一人两包都收，这里照名字去重——先取这一年有出没地点的那份；到史载卒年就不出场，玩家亲手救下改了命的（存档 fateSaved）照常出
-  const L = FIGLIB.filter(R => R && R.range && y >= R.range[0] - 5 && y <= R.range[1] + 5).flatMap(R => arr(R.people)).sort((a, b) => (figAt(b, y) ? 1 : 0) - (figAt(a, y) ? 1 : 0));
+  // 包盖得住这一年的全收；包外的人这一年有出没记载也收（跨代的人记在前一段、后一段的包里，R-252）
+  const L = FIGLIB.filter(R => R && R.range).flatMap(R => { const own = y >= R.range[0] - 5 && y <= R.range[1] + 5; return (own ? arr(R.people) : arr(R.people).filter(f => figAt(f, y))).map(f => [f, own]); })
+    .sort((a, b) => (b[1] ? 1 : 0) - (a[1] ? 1 : 0) || (figAt(b[0], y) ? 1 : 0) - (figAt(a[0], y) ? 1 : 0)).map(x => x[0]);   // 同一人两包都有：先取本段那一包的（930 年的安重诲照五代包，不照唐末包）
   return L.filter(f => { if (seen.has(f.n)) return false; seen.add(f.n); return true; })
     .filter(f => f.n !== me && (f.b == null || y >= f.b + 12) && (saved[f.n] || (f.d != null ? y <= f.d : y <= Math.max(-9999, ...arr(f.w).map(x => x[1] ?? -9999), ...arr(f.po).map(x => x[2] ?? -9999)) + 5))).map(f => ({ f, r: figReach(s, f, y) }));   // 卒年不详的：最后见于记载五年后不再出
 }
 function figBlock(s) {
   const L = figuresNow(s); if (!L.length) return ''; const y = s.clock.y;
   const line = ({ f, r }) => `${f.n}（${f.tag || '名人'}${figPost(f, y) ? '，' + figPost(f, y) : ''}${r.at ? '，此刻在' + r.at.place + (r.at.why ? '（' + r.at.why + '）' : '') : ''}${f.tr && f.tr.length ? '；' + f.tr.join('、') : ''}${f.br ? '；' + one(f.br, 40) : ''}）`;
-  const near = L.filter(x => /同地|可求见|可致书/.test(x.r.lv)).sort((a, b) => a.f.t - b.f.t).slice(0, 8), far = L.filter(x => x.r.lv === '远' && x.f.t === 1).slice(0, 6);
+  const rk = f => { const po = figPost(f, y); return /皇帝|君主|^帝|王$|平章事|宰相|丞相|枢密使|尚书令|中书令|侍中|节度使|留守/.test(po) || f.tag === '君主' ? 0 : po ? 1 : 2; }, near = L.filter(x => /同地|可求见|可致书/.test(x.r.lv)).sort((a, b) => rk(a.f) - rk(b.f) || a.f.t - b.f.t).slice(0, 12)   /* 这一年身居要职的先列（冯道 930 年为相），再是有官的，再是只记了出没的 */, far = L.filter(x => x.r.lv === '远' && x.f.t === 1).slice(0, 6);
   return (near.length ? '【这一带够得着的名臣（史书真人，出场照这里写的官职、所在和为人；「可求见」的要主角派人去请、对方肯不肯来照身份定；在京里的只能写信托人）】\n' + near.map(x => '· ' + line(x) + (x.r.lv === '可求见' ? '〔可求见〕' : x.r.lv === '可致书' ? '〔人在京里，只能写信、托人〕' : '')).join('\n') : '')
     + (far.length ? (near.length ? '\n' : '') + '【远处的名臣（只是听说，主角见不着，除非赶去或托人；不许让他们凭空出现在主角身边）】\n' + far.map(x => '· ' + line(x)).join('\n') : '');
 }
