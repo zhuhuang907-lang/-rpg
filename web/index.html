@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261117174024';
+const BUILD = '20261117183905';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -14801,7 +14801,8 @@ function applyBattle(s, r) {
   { // R-177 军望：胜则军中声望涨，大败则掉
     const won = /胜/.test(r.outcome) && !/败/.test(r.outcome); if (mine.length && r.ours) { const R = repOf(s); R.jun = Math.max(0, Math.min(100, R.jun + (won ? (r.deadThem > r.deadUs ? 4 : 2) : /大败/.test(r.outcome) ? -5 : -2))); } }
   { // 当面之敌记进兵马册（标敌军）：舆图、军务页「敌情」看得见对手剩多少、在哪，迎击、劫营、劫粮按得了（R-254：打完两仗，舆图和军务页上一个敌兵都没有）
-    const en = one(r.enemy, 24); if (en && !r.virtual) { const P = arr(s.powers).find(p => p && p.name && (en.includes(p.name) || (p.leader && en.includes(p.leader)) || String(p.name).includes(en.replace(/[（(].*$/, ''))));
+    // 只管正文里打的仗（推演出的 battleResult）；行军迎击、劫营那几路由军务自己记敌军剩多少，这里再减就减两遍（R-254 完整测试查出）
+    const en = one(r.enemy, 24); if (en && !r.virtual && r.fromStory) { const P = arr(s.powers).find(p => p && p.name && (en.includes(p.name) || (p.leader && en.includes(p.leader)) || String(p.name).includes(en.replace(/[（(].*$/, ''))));
       const left = Math.max(0, Math.round((N0(r.theirs) || 0) - (N0(r.deadThem) || 0))), at = one(r.place, 30) || (s.place && s.place.full) || '';
       let f = arr(s.forces).find(x => x && x.foe && (x.name === en || (P && x.owner === P.name)));
       if (!f && left > 0) { f = { name: en, leader: (P && P.leader) || en.replace(/[（(].*$/, ''), owner: (P && P.name) || en, foe: true, troops: left, at, status: '交战', src: '战报' }; s.forces = arr(s.forces).concat([f]); }
@@ -17728,7 +17729,7 @@ async function send(said, span, note, resume) {
       const g = S.chat[S.chat.length - 1];
       if (FIXACK) { g.extra = Object.assign(g.extra || {}, { fixack: FIXACK }); FIXACK = ''; }
       CUR_RULING = null;
-      if (ruling && ruling.battleResult) { applyBattle(S, ruling.battleResult); g.extra = Object.assign(g.extra || {}, { battle: ruling.battleResult }); }
+      if (ruling && ruling.battleResult) { ruling.battleResult.fromStory = true; applyBattle(S, ruling.battleResult); g.extra = Object.assign(g.extra || {}, { battle: ruling.battleResult }); }
       if (looked) g.extra = Object.assign(g.extra || {}, { looked });
       if (FEED.length) g.extra = Object.assign(g.extra || {}, { refs: FEED.slice(-16).map(f => ({ t: f.t, site: f.site, u: f.u })) });
       if (ruling) g.extra = Object.assign(g.extra || {}, { ruling });

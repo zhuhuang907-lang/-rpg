@@ -29,12 +29,12 @@ const path = require('path');
       const d1 = s2.clock.y * 400 + s2.clock.m * 31 + s2.clock.d; if (d1 - d0 < 6) bad.push('七日的仗时间没过七日：' + (d1 - d0) + ' 天'); }
     // 3 当面之敌进兵马册
     { const s = mk(); s.forces = [{ name: '直属牙兵', leader: '周铁山', troops: '800', at: '潭州长沙县' }]; s.powers = [{ name: '朗州马希萼', leader: '马希萼', troops: '约三千', seat: '朗州' }];
-      applyBattle(s, { turn: 6, enemy: '马希萼（朗州军先头）', ours: 800, theirs: 3000, deadUs: 100, deadThem: 120, outcome: '小败', ourForces: ['直属牙兵'], place: '潭州长沙县北湘江渡口', rounds: [] });
+      applyBattle(s, { turn: 6, enemy: '马希萼（朗州军先头）', ours: 800, theirs: 3000, deadUs: 100, deadThem: 120, outcome: '小败', ourForces: ['直属牙兵'], place: '潭州长沙县北湘江渡口', rounds: [], fromStory: true });
       const f = arr(s.forces).find(x => x.foe); if (!f || f.owner !== '朗州马希萼' || N0(f.troops) !== 2880 || !/湘江渡口/.test(f.at)) bad.push('当面之敌没进兵马册：' + JSON.stringify(f));
       if (myForce(s, f)) bad.push('敌军被当成了自家兵马');
-      applyBattle(s, { turn: 7, enemy: '马希萼（朗州军先头）', ours: 700, theirs: 2880, deadUs: 50, deadThem: 2880, outcome: '大胜', ourForces: ['直属牙兵'], place: '益阳', rounds: [] });
+      applyBattle(s, { turn: 7, enemy: '马希萼（朗州军先头）', ours: 700, theirs: 2880, deadUs: 50, deadThem: 2880, outcome: '大胜', ourForces: ['直属牙兵'], place: '益阳', rounds: [], fromStory: true });
       if (arr(s.forces).some(x => x.foe)) bad.push('敌军打光了还留在兵马册里');
-      applyBattle(s, { turn: 8, enemy: '马希萼（朗州军先头）', ours: 700, theirs: 2000, deadUs: 50, deadThem: 100, outcome: '相持', ourForces: ['直属牙兵'], place: '益阳', rounds: [] });
+      applyBattle(s, { turn: 8, enemy: '马希萼（朗州军先头）', ours: 700, theirs: 2000, deadUs: 50, deadThem: 100, outcome: '相持', ourForces: ['直属牙兵'], place: '益阳', rounds: [], fromStory: true });
       S = s; VIEW = 'game'; SIDE_FOLD = false; TAB = 'board'; render0(); }
     // 4 年号：楚不立年号，照中原；后汉天福接着数，后晋出帝天福也接着数
     { const s = mk(); const e947 = eraLabel(s, 947), e946 = eraLabel(s, 946), e950 = eraLabel(s, 950); s.place.polity = '后晋'; const j943 = eraLabel(s, 943); s.place.polity = '后汉'; const h947 = eraLabel(s, 947);
