@@ -31,13 +31,13 @@ const { chromium } = require('playwright');
     if (ow.length) bad('不占地盘的势力也画了地盘：' + ow.join()); }
   // 当成一方之主
   await p.evaluate(async () => { await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); SEARCH_OFF = ''; SEARCH_DOWN = 0; });
-  await p.evaluate(async () => { S.idm = 'emperor'; S.protagonist.role = '皇帝'; S.dossiers = { ...(S.dossiers || {}), 年羹尧: { real: true, born: 1679, died: 1726 }, 刘统勋: { real: true, born: 1698, died: 1773 }, 傅恒: { real: true, born: 1720, died: 1770 }, 来保: { real: true } }; while (ORGING) await new Promise(r => setTimeout(r, 200)); S.org = null; await buildOrg(S); });
+  await p.evaluate(async () => { S.idm = 'emperor'; S.protagonist.role = '皇帝'; S.dossiers = { ...(S.dossiers || {}), 年羹尧: { real: true, born: 1679, died: 1726 }, 刘统勋: { real: true, born: 1698, died: 1773 }, 傅恒: { real: true, born: 1720, died: 1770 }, 来保: { real: true } }; while (ORGING) await new Promise(r => setTimeout(r, 200)); S.org = null; ECON_Q = { turn: -1, bg: 0, ds: 0 }; /* 不用博查以后（R-253）大官由 DeepSeek 检索员找；平常回合检索每回一批（R-239），这里当新的一回重排人事树 */ await buildOrg(S); });
   const o = await p.evaluate(() => ({ n: S.org && S.org.nodes.length, pols: arr(S.polBook).length, pts: S.polPts, fake: S.org && S.org.nodes.some(n => n.posts.some(x => /某/.test(x.holder))) }));
   if (!o.n || o.pols < 2) bad('人事树、国策书没整理出来：' + JSON.stringify(o));
   if (o.fake) bad('人事树里填了「某」这种编的名字');
   // 人事树真人优先：要紧位子空着的，先大量博查、DeepSeek 只从材料里认人；材料里没有的名字（钱不存）不收（CLAUDE.md「人事与职权」人事树先填真人）
   { const r = await p.evaluate(() => { const q = S.org.nodes.find(n => n.name === '户部').posts.find(x => x.title === '尚书'); return { h: q.holder, src: q.src, fake: S.org.nodes.some(n => n.posts.some(x => x.holder === '钱不存' || arr(x.others).includes('钱不存'))), mg: S.org.nodes.some(n => n.posts.some(x => x.manage !== undefined)) }; });
-    if (r.h !== '蒋溥' || r.src !== '博查') bad('户部尚书空着时没有用博查找真人：' + JSON.stringify(r)); if (r.fake) bad('材料里没有的名字被填进人事树'); }
+    if (r.h !== '蒋溥' || !/DeepSeek检索|原文库|史/.test(r.src || '')) bad('户部尚书空着时没有找真人（不用博查以后由 DeepSeek 检索、原文库补，R-253）：' + JSON.stringify(r)); if (r.fake) bad('材料里没有的名字被填进人事树'); }
   const deep = await p.evaluate(() => ({ max: Math.max(...S.org.nodes.map(n => n.depth || 0)), vac: S.org.nodes.filter(n => n.id !== 'root').some(n => n.posts.some(x => !x.holder && ((orgMajor(n, x) || x.noGrant) ? !/出缺|史载|不授|虚衔/.test(x.status || '') : x.status !== '照额'))), fz: S.org.nodes.find(n => /保甲/.test(n.name)).posts[0], fs: fictionSet(S).size }));
   if (deep.max < 4) bad('人事树没有一路通到基层：最深 ' + deep.max + ' 层');
   // 2026-11-02 大人物照真官：大位子查不到真人就空着写待查，小官照旧起名
@@ -64,6 +64,7 @@ const { chromium } = require('playwright');
   // 人选只能是开科、招贤来的人、身边的门客幕僚、已在官的人；凭空写个名字不行；开科取的下一回才到；真人照真实处境肯不肯来（王猛不会给别人当官）
   { const tl = await p.evaluate(async () => { const n = S.org.nodes.find(x => x.id === 'A2'); const r = {}; ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: '张三丰' }); r.free = ORGMSG;
       S.examDone = []; S.talent = { y: S.clock.y, list: arr(S.talent && S.talent.list).filter(t => t.name !== '蔡以台') }; S.polPts = Math.max(S.polPts || 0, 6);
+      ECON_Q = { turn: -1, bg: 0, ds: 0 };   /* 不用博查以后进士名录由 DeepSeek 检索员查（R-253），平常回合每回限批（R-239）：这里当新的一回开科 */
       const got = await recruit(S, 'exam'); ORGMSG = ''; orgAct(S, 'appoint', { node: n, pi: 0, person: got[0] }); r.wait = ORGMSG; r.got = got.length; r.fake = got.filter(x => !talentOf(S, x).real).every(x => fictionSet(S).has(x)); r.real = got.filter(x => talentOf(S, x).real); r.noFake = !got.includes('假进士'); r.cai = (talentOf(S, '蔡以台') || {}).qual || null; r.allQual = got.every(x => talentOf(S, x).qual && talentOf(S, x).qual.max != null);
       S.talent.list.push({ name: '王猛', real: true, from: '查访', where: '长安', situation: '前秦丞相', will: '不肯' }); const w = await willCheck(S, '王猛', '户部尚书'); r.wm = w; return r; });
     if (!/不在人选里/.test(tl.free)) bad('凭空写个名字也能委任：' + tl.free);
@@ -83,7 +84,7 @@ const { chromium } = require('playwright');
     if (!q.liuOk) bad('照史料现任协办大学士的刘统勋调户部尚书被拦了：' + JSON.stringify(q.liu)); }
   // 真人优先（CLAUDE.md「人事与职权」真人优先）：DeepSeek 报的名字一个都不先扔，全部拿博查核，核得上的用真人
   { const v = await p.evaluate(() => { const q = S.org.nodes.find(n => n.name === '户部').posts.find(x => x.title === '侍郎'); return { h: q.holder, src: q.src, where: S.org.nodes.flatMap(n => n.posts.filter(z => z.holder === '钱维城' || arr(z.others).includes('钱维城')).map(z => n.name + z.title + ':' + z.src)), dz: (S.dossiers || {})['钱维城'] }; });
-    if (v.h !== '钱维城' || v.src !== '博查') bad('DeepSeek 报的真人没拿博查核、当场换成了虚构的：' + JSON.stringify(v)); }
+    if (v.h !== '钱维城' || /拟|虚/.test(v.src || '')) bad('DeepSeek 报的真人没核、当场换成了虚构的：' + JSON.stringify(v)); }
   // 虚构的不许和史书人物同名：一批联网查，撞了就改名（以前一次只查三个）
   { const v = await p.evaluate(async () => { const n = S.org.nodes.find(x => x.name === '户部'); n.posts.push({ title: '笔帖式', rank: '', quota: 1, holder: '王守仁', src: '拟' }); S.clashOK = {}; await fictionClash(S); const h = n.posts[n.posts.length - 1].holder; n.posts.pop(); return h; });
     if (v === '王守仁') bad('虚构的官员和王守仁同名没改'); }

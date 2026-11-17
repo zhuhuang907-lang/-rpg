@@ -1,5 +1,5 @@
 // 填 Key 的每一步：没 Key 时开始不了；粘贴带空格、引号、Bearer、全角的 Key；坏 Key 如实报；换 Key、不换了、只换型号、回车保存；
-// 博查 Key 坏的、好的、关掉、重新用；页面重画时输入框里的字不丢；页面上没有重复的按钮编号；游戏里「设置」也能换 Key
+// 不用博查（页面没有博查 Key 的框）；页面重画时输入框里的字不丢；页面上没有重复的按钮编号；游戏里「设置」也能换 Key
 const { chromium } = require('playwright');
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage();
@@ -35,17 +35,11 @@ const { chromium } = require('playwright');
   // 只换型号，回车保存
   await p.click('#bKeyOpen'); await p.fill('#kModel', ' DeepSeek-V4-Flash '); await p.press('#kModel', 'Enter'); await p.waitForFunction(() => !KEYSAVING, null, { timeout: 60000 }); await p.waitForTimeout(200);
   if ((await p.evaluate(() => KEY.model)) !== 'deepseek-v4-flash') bad('只换型号没换上：' + await p.evaluate(() => KEY.model) + ' ' + await msg());
-  // 博查：坏 Key 如实报；好 Key 回车保存
-  await p.fill('#bIn', 'bk-bad999'); await p.click('#bBochaSave'); await p.waitForFunction(() => !KEYSAVING, null, { timeout: 60000 }); await p.waitForTimeout(200);
-  if (!/没通/.test(await msg())) bad('博查坏 Key 没报：' + await msg());
-  await p.fill('#bIn', ' bk-good1234 '); await p.press('#bIn', 'Enter'); await p.waitForFunction(() => !KEYSAVING, null, { timeout: 60000 }); await p.waitForTimeout(200);
-  if (!/✓ 博查已保存/.test(await msg())) bad('博查好 Key 没保存：' + await msg());
-  if (!(await p.evaluate(() => KEY.bocha && KEY.bochaTestOk && KEY.bochaTail === '1234'))) bad('博查状态不对：' + JSON.stringify(await p.evaluate(() => KEY)));
-  // 关掉博查 → 重新用
-  await p.click('#bNoBocha'); await p.waitForTimeout(500);
-  if (!(await p.$('#bBochaOn')) || await p.evaluate(() => KEY.bocha)) bad('关掉博查后状态不对：' + await msg());
-  await p.click('#bBochaOn'); await p.waitForTimeout(800);
-  if (!(await p.evaluate(() => KEY.bocha && KEY.bochaTestOk))) bad('重新用博查没用上：' + await msg());
+  // 不用博查（R-253，2026-11-17）：页面上没有填博查 Key 的框和按钮，写明只查维基、内置史料和原文库；服务那边存过博查 Key 也不用
+  { const h = await p.evaluate(() => ({ box: !!document.querySelector('#bIn, #wBocha, #bBochaSave, #bWBocha, #bNoBocha, #bBochaOn'), txt: document.body.innerText }));
+    if (h.box) bad('页面上还有填博查 Key 的框或按钮');
+    if (!/不用博查/.test(h.txt)) bad('页面上没写明不用博查'); }
+  { const k = await p.evaluate(async () => { await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); return !!(KEY && KEY.bocha); }); if (k) bad('存了博查 Key 游戏还当接上了博查'); }
   if ((await dupIds()).length) bad('页面上有重复的编号：' + (await dupIds()).join(','));
   // 开一局，「设置」里也能换 Key
   await p.fill('#qText', '乾隆二十二年扬州的盐商'); await p.click('#bStart');

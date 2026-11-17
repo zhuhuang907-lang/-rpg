@@ -25,8 +25,8 @@ const { chromium } = require('playwright');
   if (fx.before[0] !== 20 || fx.before[1] !== 60) bad('程序自己把年岁改了：' + JSON.stringify(fx.before));
   if (!fx.iss.some(x => /吴氏/.test(x)) || !fx.iss.some(x => /汪大成/.test(x))) bad('年岁对不上的地方没指出来：' + JSON.stringify(fx.iss));
   if (!fx.got.length || !fx.m[1] || !fx.c[1]) bad('对不上的年岁没交给 DeepSeek 照经历重推、写依据：' + JSON.stringify(fx));
-  // 人物一律大量博查（维基只查天下大势）：这里把博查 Key 存上，家谱、身边人都从博查来
-  { const k = await p.evaluate(async () => { const r = await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); SEARCH_OFF = ''; SEARCH_DOWN = 0; return { r, bocha: KEY && KEY.bocha, can: canSearch() }; }); console.log('BOCHAKEY', JSON.stringify(k).slice(0, 400)); if (!k.bocha) bad('博查 Key 没存上：' + JSON.stringify(k).slice(0, 300)); }
+  // 不用博查（R-253）：家谱、身边人由 DeepSeek 检索补；就算存过博查 Key 也不用
+  { const k = await p.evaluate(async () => { const r = await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); SEARCH_OFF = ''; SEARCH_DOWN = 0; return { bocha: KEY && KEY.bocha, can: canSearch() }; }); if (k.bocha) bad('存了博查 Key 游戏还在用博查：' + JSON.stringify(k)); }
   // 史书真人：家里人只照史料，查不到的不添、不推
   const rr = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = false; const due = familyDue(s); const add = await familyFix(s); return { due, add, hh: s.household.map(m => m.relation + m.name + '|' + (m.basis || '')) }; });
   if (rr.hh.some(h => /推/.test(h.split('|')[1] || '') && !/管家|仆|婢|丫鬟/.test(h)) || rr.hh.some(h => /正室|妾|程婉贞/.test(h))) bad('真人主角被按常情添了家里人：' + JSON.stringify(rr));
@@ -39,9 +39,10 @@ const { chromium } = require('playwright');
   // 大量博查，DeepSeek 只整理博查搜到的：材料里没有的名字不收；身边人照史料列上；查家谱时一次博查二十来条问法、不问维基（CLAUDE.md「人物」）
   { const c = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = 0; s.people = {}; await familyFix(s); return { hh: s.household.map(m => m.name), ppl: Object.keys(s.people), rec: s.famRec, due: familyDue(s) }; });
     if (c.hh.includes('汪假人')) bad('材料里没有的家里人被收进来了：' + JSON.stringify(c));
-    if (!c.hh.includes('汪景明')) bad('博查搜到的兄弟没列上：' + JSON.stringify(c));
+    if (!c.hh.includes('汪景明')) bad('检索到的兄弟没列上：' + JSON.stringify(c));
     { let wl = ''; try { wl = require('fs').readFileSync('wiki.log', 'utf8'); } catch (_) {} if (/汪景和|江春|程晋芳/.test(wl)) bad('查人物还去问了维基（维基只查天下大势）'); }
-    { const lg = require('fs').readFileSync('bocha.log', 'utf8').split('\n').filter(l => /汪景和/.test(l)).length; if (lg < 15) bad('查家谱、身边人博查用得太少：' + lg + ' 条'); }
+    { const rd = f => { try { return require('fs').readFileSync(f, 'utf8'); } catch (_) { return ''; } }; const bo = rd('bocha.log').split('\n').filter(l => /汪景和/.test(l)).length, ds = rd('dsq.log').split('\n').filter(l => /汪景和/.test(l)).length;
+      if (bo) bad('不用博查了，查家谱还在搜博查：' + bo + ' 条'); if (ds < 5) bad('查家谱、身边人检索用得太少：' + ds + ' 条'); }
     if (!c.ppl.includes('江春') || !c.ppl.includes('程晋芳') || c.ppl.includes('编造部将')) bad('身边的人没照史料列，或收了材料里没有的人：' + JSON.stringify(c));
     if (c.due) bad('家谱查完了还说要查'); }
   // 照史料生年算的岁数，程序不拿「父母比本人大二十二岁」这种常情去改；家谱查得太少的过两回再查
