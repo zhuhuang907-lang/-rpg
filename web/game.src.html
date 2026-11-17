@@ -5338,11 +5338,20 @@ function figReach(s, f, y) {
   if (cap && samePlace(at.place, cap) && ofc) return { lv: '可致书', at };   // 外任的官够不着京里的人，只能写信、托人
   return { lv: '远', at };
 }
+/** R-252 改命：史书上该在这几年死的名臣，正文里主角救下了，记进存档 fateSaved，往后照常出场 */
+function fateCheck(s, who, what) {
+  if (!who || !/救下|救活|救了|保全|免于一死|躲过|拦下|没死成|转危为安|劝.{0,6}(戒|改|节)/.test(what) || /没救|未能救|救不/.test(what)) return false;
+  const f = FIGLIB.flatMap(R => arr(R.people)).find(z => z.n === who); if (!f || f.d == null || Math.abs(f.d - s.clock.y) > 3) return false;
+  s.fateSaved = s.fateSaved || {}; s.fateSaved[who] = { y: s.clock.y, why: one(what, 40) }; return true;
+}
 function figuresNow(s) {
   const y = s && s.clock && s.clock.y; if (y == null || !FIGLIB.length) return [];
   const me = (s.protagonist || {}).name;
-  return FIGLIB.filter(R => R && R.range && y >= R.range[0] - 5 && y <= R.range[1] + 5).flatMap(R => arr(R.people))
-    .filter(f => f.n !== me && (f.b == null || y >= f.b + 12) && (f.d != null ? y <= f.d : y <= Math.max(-9999, ...arr(f.w).map(x => x[1] ?? -9999), ...arr(f.po).map(x => x[2] ?? -9999)) + 5)).map(f => ({ f, r: figReach(s, f, y) }));   // 卒年不详的：最后见于记载五年后不再出
+  const saved = s.fateSaved || {}, seen = new Set();
+  // R-252：跨两段的同一人两包都收，这里照名字去重——先取这一年有出没地点的那份；到史载卒年就不出场，玩家亲手救下改了命的（存档 fateSaved）照常出
+  const L = FIGLIB.filter(R => R && R.range && y >= R.range[0] - 5 && y <= R.range[1] + 5).flatMap(R => arr(R.people)).sort((a, b) => (figAt(b, y) ? 1 : 0) - (figAt(a, y) ? 1 : 0));
+  return L.filter(f => { if (seen.has(f.n)) return false; seen.add(f.n); return true; })
+    .filter(f => f.n !== me && (f.b == null || y >= f.b + 12) && (saved[f.n] || (f.d != null ? y <= f.d : y <= Math.max(-9999, ...arr(f.w).map(x => x[1] ?? -9999), ...arr(f.po).map(x => x[2] ?? -9999)) + 5))).map(f => ({ f, r: figReach(s, f, y) }));   // 卒年不详的：最后见于记载五年后不再出
 }
 function figBlock(s) {
   const L = figuresNow(s); if (!L.length) return ''; const y = s.clock.y;
@@ -15085,6 +15094,8 @@ function applyReply(s, d, said) {
     for (const x of arr(d.lifeEvents).slice(0, 10)) {
       const what = one(typeof x === 'string' ? x : (x && x.what), 90), who = one(x && x.who, 12);
       if (what) { const r = { turn, when: `${s.clock.yearLabel || ''}${CAL.label(s.clock.m, 0, s.clock.leap)}`, who, what }; s.chronicle.push(r); life.push(r); }
+      // R-252 改命：史书上该在这几年死的名臣，正文里主角救下了（拦下刺杀、救活、劝改起居），记进存档，往后照常出场
+      fateCheck(s, who, what);
     }
     for (const h of arr(d.household).slice(0, 6)) {
       if (!h || !h.name) continue;
