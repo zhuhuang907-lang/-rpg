@@ -166,7 +166,17 @@ function answer(p, last, json) {
   if (p.includes('国策书：照这个政权')) return JSON.stringify({ policies: [{ id: 'p1', area: '经济', name: '清查盐课', desc: '清查两淮盐商积欠', cost: 3, need: [], real: '乾隆三十三年两淮盐引案', effect: '国库增收，盐商怨' }, { id: 'p2', area: '经济', name: '改行票盐', desc: '废纲盐行票盐', cost: 6, need: ['p1'], real: '道光年间陶澍', effect: '盐价降，总商失势' }] });
   if (p.includes('整理主角这一路仕途')) { fs.appendFileSync('promo.log', 'x\n'); return JSON.stringify({ office: '知县', rank: '正七品', superior: '知府', review: '三年大计', tenure: '三年俸满', next: [{ post: '同知', rank: '正五品', how: '俸满考称职，督抚题升，吏部议准' }, { post: '知州', rank: '从五品', how: '卓异保举' }], limits: ['不得本籍为官'], appoint: '吏部铨选，给文凭，限期赴任', entry: ['科举', '捐纳'], unsure: [], basis: '清会典' }); }
   if (p.includes('核实几位官员')) { fs.appendFileSync('tenure.log', 'x\n'); return JSON.stringify({ people: /1\. 傅恒：/.test(p) ? [{ name: '傅恒', still: false, why: '调任经略', successor: '来保', basis: '测试' }] : [] }); }
-  if (p.includes('只管查资料')) { fs.appendFileSync('dsq.log', 'x\n'); const qs = [...p.matchAll(/^\d+\. (.+)$/gm)].map(m => m[1]); return JSON.stringify({ results: qs.map(q => ({ q, items: [{ title: q.split(' ')[0], snippet: q + '：据通行史书所载的一条事实', src: '通行史书' }] })) }); }
+  // 不用博查以后（R-253）人物、当年当地由 DeepSeek 检索补：假检索员照原来假博查的那几条资料答（江春、钱维城、王守仁、进士、户部尚书、汪景和）
+  if (p.includes('只管查资料')) { const qs = [...p.matchAll(/^\d+\. (.+)$/gm)].map(m => m[1]); for (const q of qs) fs.appendFileSync('dsq.log', q + '\n');
+    const know = q => { const nm = ['江春', '卢见曾', '高恒', '傅恒', '爱新觉罗·允禄'].find(n => q.includes(n)); if (nm) return [{ title: nm, snippet: nm + '，清代乾隆年间人，生于康熙末年，官至两淮。', src: '清史稿' }];
+      if (/钱维城/.test(q)) return [{ title: '钱维城', snippet: '钱维城，乾隆年间官户部侍郎，工书画。', src: '清史稿' }];
+      if (/王守仁/.test(q)) return [{ title: '王守仁', snippet: '王守仁（1472年—1529年），字伯安，号阳明，明代思想家、军事家，官至南京兵部尚书。', src: '明史' }];
+      if (/进士|殿试|会试/.test(q)) return [{ title: '乾隆二十二年丁丑科进士', snippet: '乾隆二十二年丁丑科殿试，蔡以台一甲第一名（状元），浙江嘉善人。会试总裁刘统勋。', src: '清秘述闻' }];
+      if (/户部/.test(q) && /尚书/.test(q)) return [{ title: '蒋溥', snippet: '蒋溥，乾隆年间官户部尚书，掌天下钱粮。', src: '清史稿' }];
+      if (/汪景和/.test(q)) return [{ title: '汪景和', snippet: '汪景和，字景和，号松溪，徽州歙县人，清代扬州盐商，两淮总商。祖父汪廷璋。母吴氏。子汪承裕；乾隆二十四年四子汪承禧生。兄汪景明。', src: '扬州画舫录' }, { title: '扬州画舫录·汪景和条', snippet: '汪景和与江春同为两淮总商，幕中有程晋芳，常相唱和。', src: '扬州画舫录' }];
+      if (/编造|假人|无名|钱不存/.test(q)) return [];   // 真 DeepSeek 举不出编出来的人：假检索员也不给
+      return [{ title: q.split(' ')[0], snippet: q + '：据通行史书所载的一条事实', src: '通行史书' }]; };
+    return JSON.stringify({ results: qs.map(q => ({ q, items: know(q) })) }); }
   if (p.includes('整理出确实写在资料里')) return JSON.stringify({ almanac: [{ cat: '物价', text: '米价一石一两六钱', src: '志' }] });
   if (p.includes('压成一段四百字以内')) return '较早的经过：查账、置产、结亲。';
   if (p.includes('账房兼史官') && p.includes('【开局】')) return opening();
@@ -185,7 +195,7 @@ http.createServer((req, res) => {
       const sp = new URL('http://x' + req.url).searchParams; res.writeHead(200, { 'content-type': 'application/json' });
       fs.appendFileSync('wiki.log', decodeURIComponent(req.url) + '\n');
       if (sp.get('titles')) { const t = sp.get('titles'), r = REALP[t]; return res.end(JSON.stringify({ query: { pages: r ? { '9': { pageid: 9, title: t, fullurl: 'https://zh.wikipedia.org/wiki/' + encodeURIComponent(t), extract: `${t}，${r[2]}。生于${r[0] || '?'}年，卒于${r[1]}年。` } } : { '-1': { title: t, missing: '' } } } })); }
-      if (sp.get('list') === 'search') return res.end(JSON.stringify({ query: { search: [] } }));
+      if (sp.get('list') === 'search') { const q = sp.get('srsearch') || ''; return res.end(JSON.stringify({ query: { search: /安禄山/.test(q) ? [{ pageid: 64765, title: '安祿山', snippet: '安祿山，營州柳城胡也，本姓康。天寶中為范陽、平盧、河東三鎮節度使。' }] : [] } })); }
       if (sp.get('action') === 'wbsearchentities') { const t = sp.get('search'); return res.end(JSON.stringify({ search: REALP[t] ? [{ id: 'Q' + t.charCodeAt(0), label: t }] : [] })); }
       if (sp.get('action') === 'wbgetentities') { const E = {}; for (const id of String(sp.get('ids')).split('|')) { const t = Object.keys(REALP).find(k => 'Q' + k.charCodeAt(0) === id); if (!t) continue; const r = REALP[t], tm = y => y == null ? [] : [{ mainsnak: { datavalue: { value: { time: '+' + y + '-00-00T00:00:00Z' } } } }]; E[id] = { id, descriptions: { 'zh-cn': { value: r[2] } }, claims: { P31: [{ mainsnak: { datavalue: { value: { id: 'Q5' } } } }], P569: tm(r[0]), P570: tm(r[1]) }, sitelinks: { zhwiki: { title: t } } }; } return res.end(JSON.stringify({ entities: E })); }
     }

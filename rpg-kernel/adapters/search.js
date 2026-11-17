@@ -139,7 +139,7 @@ const PROVIDERS = {
     note: '权威度够用、覆盖到人物生卒年与地名沿革，但中文条目偏简略，晚唐五代、宋代中下层人物常缺。',
     async search(q, cfg) {
       const lang = cfg.lang || 'zh';
-      const u = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=${cfg.limit || 5}&srsearch=${encodeURIComponent(q)}`;
+      const u = `${process.env.WIKI_BASE || `https://${lang}.wikipedia.org`}/w/api.php?action=query&list=search&format=json&origin=*&srlimit=${cfg.limit || 5}&srsearch=${encodeURIComponent(q)}`;   // WIKI_BASE 只给测试用（完整测试不连真维基）
       const { json } = await httpRetry(u);
       const hits = json?.query?.search || [];
       return hits.map(h => ({
@@ -280,6 +280,7 @@ async function listProviders() {
 }
 
 function isConfigured(id, cfg) {
+  if (id === 'bocha') return false;   // 不用博查（R-253，2026-11-17 项目主人：「以后不用 bocha 了，bocha 太贵了」）：存过 Key、设置里选过博查的也一律当没配，走维基兜底
   if (id === 'wikipedia' || id === 'wikisource' || id === 'wikidata' || id === 'off') return true;
   if (id === 'searxng') return !!cfg.baseUrl;
   return !!cfg.apiKey;

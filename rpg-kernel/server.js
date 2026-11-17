@@ -172,7 +172,7 @@ const STATUS_FILE = path.join(__dirname, 'data', 'status.json');
 function readStatus() { try { return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')); } catch (_) { return {}; } }
 function setStatus(patch) { try { fs.writeFileSync(STATUS_FILE, JSON.stringify({ ...readStatus(), ...patch }), 'utf8'); } catch (_) { /* 忽略 */ } }
 /** 用不用博查：填了博查 Key 就用（试搜没通也照用，可能只是网络抖了一下），只有玩家点了「不用博查」才不用 */
-async function bochaOn() { const c = await search.loadConfig(); return !!(c.providers && c.providers.bocha && c.providers.bocha.apiKey) && !readStatus().bochaOff; }
+async function bochaOn() { return false; }   // 不用博查（R-253，2026-11-17 项目主人：「以后不用 bocha 了，bocha 太贵了」）：人物、当年当地改由维基、内置史料与原文库、DeepSeek 检索补
 function friendlySearch(e, bocha) {
   const s = String(e || '').split(' :: ')[0], who = bocha ? '博查' : '维基百科搜索';
   if (bocha && /401|无效|invalid|unauthor/i.test(s)) return '博查 Key 无效（到 open.bochaai.com 核对，或在首页重新填）';
@@ -316,7 +316,7 @@ const routes = {
     // 全角转半角，去掉空格、换行、看不见的字符、两头的引号、「Bearer」前缀
     const clean = v => String(v || '').replace(/[\uFF01-\uFF5E]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[\s\u200B-\u200D\uFEFF\u3000]+/g, '').replace(/^["'“”‘’「」]+|["'“”‘’「」]+$/g, '').replace(/^Bearer/i, '').replace(/^(api[_-]?key|key)[:：=]/i, '');
     const k = clean(b.apiKey);
-    const bk = clean(b.bochaKey);
+    const bk = '';   // 不用博查（R-253）：传来的博查 Key 不存、不试
     if (b.bochaOn) { setStatus({ bochaOff: false }); const r = await search.search('苏轼', { provider: 'bocha', noCache: true }); if (!r.error) await search.saveConfig({ provider: 'bocha' }); return { ok: true, bochaOff: false, bocha: r.error ? { ok: false, why: friendlySearch(r.error, true) } : { ok: true, count: (r.results || []).length } }; }
     if (b.noBocha) { setStatus({ bochaOff: true }); await search.saveConfig({ provider: 'wikipedia' }); return { ok: true, saved: { bocha: false }, bochaOff: true }; }
     if (b.bochaKey) setStatus({ bochaOff: false });
@@ -405,7 +405,7 @@ const routes = {
       ok: true, model: aid, modelName: c.model || (aid === 'deepseek' ? 'deepseek-v4-pro' : ''),
       hasKey: !!c.apiKey || ['ollama', 'skeleton', 'mock'].includes(aid),
       keyTail: c.apiKey ? String(c.apiKey).slice(-4) : '',
-      search: scfg.provider, hasBocha: !!bochaKey && !readStatus().bochaOff, bochaSaved: !!bochaKey, bochaOff: !!readStatus().bochaOff, bochaTail: bochaKey ? String(bochaKey).slice(-4) : '', bochaTestOk: scfg.provider === 'bocha', lookup: LOOKUP_STATUS,
+      search: scfg.provider, hasBocha: false, bochaSaved: !!bochaKey, bochaOff: !!readStatus().bochaOff, bochaTail: bochaKey ? String(bochaKey).slice(-4) : '', bochaTestOk: scfg.provider === 'bocha', lookup: LOOKUP_STATUS,
       lastTest: readStatus().lastTest || null,
       glm: (() => { const g = (saved.configs || {}).glm || {}; return { has: !!g.apiKey, model: g.model || '', tail: g.apiKey ? String(g.apiKey).slice(-4) : '', baseUrl: g.baseUrl || '' }; })(),
     };
@@ -538,7 +538,7 @@ const routes = {
       // 博查：慢了、被限流、网络抖了，隔一下再试一次
       const bOnce = () => race(search.search(q, { provider: 'bocha', noFallback: true }), Math.min(18000, left()));
       const bP = isBocha ? bOnce().then(async b => (!(b.results || []).length && b.error && !/Key|401|403|余额|鉴权/.test(b.error) && left() > 4000) ? (await new Promise(r => setTimeout(r, 1200)), bOnce()) : b) : null;
-      const wP = (async () => {
+      const wP = !isW ? Promise.resolve({ results: [] }) : (async () => {   // 维基只查天下大势：人物、当年当地的不发（以前也发、再扔掉——测试连的是真维基，没查出来）
         if (Date.now() - WIKI_DOWN_AT <= 300000) return { results: [] };
         let w = await race(search.search(q, { provider: 'wikipedia' }), Math.min(9000, left()));
         if (!(w.results || []).length && !netDown(w.error)) { const ws = await race(search.search(q, { provider: 'wikisource' }), Math.min(4000, left())); if ((ws.results || []).length) w = { ...ws, provider: 'wikisource' }; }

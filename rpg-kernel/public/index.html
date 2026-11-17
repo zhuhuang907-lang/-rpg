@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261117043346';
+const BUILD = '20261117052335';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -7087,7 +7087,9 @@ async function wfetch(params, ms = 9000) {
   try { const r = await fetch(u, { signal: c.signal }); if (!r.ok) throw new Error('维基百科回了 ' + r.status); return await r.json(); } finally { clearTimeout(t); }
 }
 /* 网页版也走博查：博查的接口允许浏览器直接调，用玩家自己在「设置」里填的博查 Key；没填或出错才退回维基 */
-let BOCHA_KEY = (() => { try { return lsGet('hrpg:bochakey') || ''; } catch (_) { return ''; } })();
+/* 不用博查（R-253，2026-11-17 项目主人：「以后不用 bocha 了，bocha 太贵了」）：联网查资料只走维基百科、内置史料与原文库、DeepSeek 检索；以前存的博查 Key 清掉 */
+const BOCHA_OFF = true;
+let BOCHA_KEY = (() => { try { localStorage.removeItem('hrpg:bochakey'); } catch (_) { /* 清不掉也照样不用 */ } return ''; })();
 const BOCHA_FICTION = /小说|演义|游戏|手游|攻略|电视剧|剧情|剧集|影视|动漫|抖音|快手|视频|bilibili|B站|起点|晋江|番茄|同人|穿越|全文阅读|章节/i;
 async function bochaFetch(q, ms = 12000, count = 8) {
   const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
@@ -7184,7 +7186,7 @@ async function dsLookup(queries) {
   return arr(queries).map(q => ({ q, items: DSQ_CACHE[String(q || '').trim()] || [], provider: 'deepseek' }));
 }
 async function dsBatch(qs) {
-  if (qs.length && econTight() && !econQuota(S, 'ds', 1)) qs = [];   // 省着用（R-239）：平常回合里让模型充当搜索，每回最多一批
+  if (qs.length && econTight() && !econQuota(S, 'ds', 3)) qs = [];   // 省着用（R-239）：平常回合里让模型充当搜索每回最多三批（不用博查以后它是核人的唯一一路，R-253；一批走快型号约一两分钱）
   if (qs.length) {
     try {
       const { text } = await callClaude(`你是一名史料检索员，只管查资料，不写故事。下面几条搜索词问的是人物和当年当地的情况，请照你确知的正史、实录、方志、通行百科给出相关条目：每条一句到三句（人名、官职、年份、地名、数目要准），写明出处（书名篇名或「通行史书」）。
@@ -7262,7 +7264,9 @@ async function bochaDeep(s, qs, cap = 50) {
   if (items.length) feedAdd(items.slice(0, 4).map(i => ({ t: i.title, u: i.url, q: i.q, site: i.ds ? 'DeepSeek 检索' : '博查' })));
   const use = items.slice(0, cap);
   const text = use.length ? `【${on ? '博查' : 'DeepSeek 检索'}搜到的 ${use.length} 条（以此为准；同名的别人不算）】\n` + use.map(i => `· ${i.ds ? '〔DeepSeek〕' : '〔博查〕'}${i.title}：${cut(i.snippet, 700)}`).join('\n') : '';
-  return { text, items, bocha: on };
+  // 这回检索份额用完、一条也没真查（R-239 每回限批）：标 skipped，调用的地方别当成「查过了没有」，下回再查（R-253）
+  const skipped = !on && !items.length && DSM() && qs.slice(0, 12).every(q => !(q.trim() in DSQ_CACHE));
+  return { text, items, bocha: on, skipped };
 }
 /** 返回 { real, src, who, born, died, identity, evidence, why }；real 由程序照证据定，不由 AI 随口说 */
 async function personCheck(s, name, hint) {
@@ -7744,9 +7748,12 @@ async function buildRoster(s) {
     cand.push({ realm: rn, name: nm, post: one(x.post, 30), grp: one(x.group, 8), since: num(x.since), note: one(x.note, 40), source: one(x.source, 50) }); } }
   // 有博查的一个个按名字核：名字和那一家（或官职）同在一条资料里的收；博查一条也没回的（断网、限流）照表收
   let items = []; const hasB = MODE === 'local' ? !!(KEY && KEY.bocha) : !!BOCHA_KEY;
-  if (hasB && cand.length) { const QS = cand.slice(0, 160).map(c => `${c.name} ${c.realm || pol}`); for (let k = 0; k < QS.length; k += 24) { const b = await bochaDeep(s, QS.slice(k, k + 24), 300); items.push(...b.items.filter(i => !i.ds)); } }
+  // 不用博查以后（R-253）：另起一路 DeepSeek 检索员一个个核（和列表的那一路分开问），核不上的不收
+  let skippedAll = false;
+  if ((hasB || DSM()) && cand.length) { const QS = cand.slice(0, 160).map(c => `${c.name} ${c.realm || pol}`); skippedAll = true; for (let k = 0; k < QS.length; k += 24) { const b = await bochaDeep(s, QS.slice(k, k + 24), 300); if (!b.skipped) skippedAll = false; items.push(...b.items.filter(i => !hasB || !i.ds)); } }
   const hay = items.map(i => `${i.title} ${i.snippet}`).join('\n');
-  const ok = c => !items.length || hay.includes(c.name);
+  // 一条也没真查（这回检索份额用完）：DeepSeek 列的名字一个不收，只列内置史料里的（R-253）；查了但一条没回（断网、限流）照旧照表收
+  const ok = c => skippedAll ? false : (!items.length || hay.includes(c.name));
   const MISC = RA ? '各家要人（史料没写归哪家）' : (pol || '朝中'), byR = new Map(); const nk = k => { const k0 = String(k || '').replace(/[（(].*$/, ''); return realms.find(n => n === k || (k0 && (n === k0 || n.replace(/[（(].*$/, '') === k0))) || k; };   // 「契丹（辽）」「荆南（南平）」和表上的「契丹」「荆南」是一家
   for (const b of base) { const k = b.g ? nk(b.g) : MISC; if (!byR.has(k)) byR.set(k, []); if (byR.get(k).some(z => z.name === b.name)) continue; byR.get(k).push({ name: b.name, post: b.post, since: b.since || null, note: '', source: b.src }); }
   for (const c of cand) { if (!ok(c)) continue; const k = nk(c.realm || pol || '朝中'); if (!byR.has(k)) byR.set(k, []); const L = byR.get(k); if (L.some(z => z.name === c.name)) continue;
@@ -15765,7 +15772,7 @@ function realAll(s) {
   return R;
 }
 /** 联网看这个名字是不是历史上的名人（任何朝代；现代人同名不算）——人物只问博查（维基只查天下大势） */
-const clashHit = (name, items) => arr(items).find(x => !x.ds && String(x.title).includes(name) && !/中华人民共和国|演员|歌手|运动员|足球|网络|电视剧|小说|游戏|动画|公司|教授|博士/.test(String(x.title + x.snippet).slice(0, 200)) && /朝|代|年号|进士|举人|官|帝|王|将|诗|字|号|生于|卒于|[（(]\d{2,4}年?[—–-]/.test(String(x.snippet).slice(0, 300)));
+const clashHit = (name, items) => arr(items).find(x => (BOCHA_OFF || !x.ds) && String(x.title).includes(name) && !/中华人民共和国|演员|歌手|运动员|足球|网络|电视剧|小说|游戏|动画|公司|教授|博士/.test(String(x.title + x.snippet).slice(0, 200)) && /朝|代|年号|进士|举人|官|帝|王|将|诗|字|号|生于|卒于|[（(]\d{2,4}年?[—–-]/.test(String(x.snippet).slice(0, 300)));
 async function clashNet(name) {
   if (!canSearch() || name.length < 2) return null;
   let B = null; try { B = await within(bochaDeep(null, [name, `${name} 历史人物`, `${name} 生平`], 12), 30000, null); } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
@@ -15835,7 +15842,7 @@ async function fictionClash(s) {
 ${cand0.map(n => n + (roleOf(n) ? '（' + roleOf(n) + '）' : '')).join('、')}
 只输出一个 JSON 对象：{"famous":[{"name":"","who":"是哪朝的什么人","same":false}],"unsure":[""]}`, null, { maxTokens: 2000, temperature: 0, kind: '检索', detached: true, thinking: false });
       const d = parseJSON(text); if (d) { for (const x of arr(d.famous)) { const n = one(x && x.name, 8); if (!cand0.includes(n)) continue; if (x.same === true || x.same === 'true') { SAME.add(n); continue; } NB[n] = `${n}：${one(x.who, 40)}（DeepSeek）`; } const uns = new Set(arr(d.unsure).map(x => one(x, 8))); for (const n of cand0) if (!(n in NB) && !uns.has(n)) NB[n] = ''; toNet = cand0.filter(n => uns.has(n)); } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
-  if (canSearch()) for (let k = 0; k < toNet.length; k += 24) { const P = toNet.slice(k, k + 24); try { const B = await within(bochaDeep(s, P, 300), 60000, null); if (!B) continue; for (const n of P) { const h = clashHit(n, arr(B.items).filter(i => i.q === n || String(i.title).includes(n))); NB[n] = h ? `${n}：${cut(h.snippet, 60)}（博查）` : ''; } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+  if (canSearch()) for (let k = 0; k < toNet.length; k += 24) { const P = toNet.slice(k, k + 24); try { const B = await within(bochaDeep(s, P, 300), 60000, null); if (!B || B.skipped) continue; for (const n of P) { const h = clashHit(n, arr(B.items).filter(i => i.q === n || String(i.title).includes(n))); NB[n] = h ? `${n}：${cut(h.snippet, 60)}（${h.ds ? 'DeepSeek 检索' : '博查'}）` : ''; } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
   for (const n of SAME) { markRealPerson(s, n); s.clashOK[n] = 1; }
   for (const n of F) {
     if (SAME.has(n)) continue;
@@ -16755,8 +16762,7 @@ function keyBox() {
       <div class="row"><button id="bNet">检查网络</button><button id="bSelfTest2">联网自检（真实试一遍）</button>${KEY.has && !KEY.bad ? '<button class="link" id="bKeyClose">不换了</button>' : ''}</div>${SELFTEST ? `<div id="selfBox2">${SELFTEST}</div>` : ''}
     </div></div>` : ''}
     <div class="howto" style="grid-template-columns:1fr;margin-top:8px"><div>
-      <b>联网查资料（每回合自动：人物、当地一律用博查，维基百科只查天下大势）</b> ${KEY.bocha ? (KEY.bochaTestOk ? `<span class="savest">✓ 已接上博查（Key 尾号 ${esc(KEY.bochaTail)}）</span>` : `<span class="muted">博查 Key（尾号 ${esc(KEY.bochaTail)}）已存，每回合都在用；上次试搜没通，可能是网络抖了一下，一直查不到就重新填</span>`) + ' <button class="link" id="bNoBocha">不用博查</button>' : KEY.bochaOff && KEY.bochaSaved ? '<span class="muted">你关掉了博查：人物只能用 DeepSeek 检索</span> <button class="link" id="bBochaOn">重新用博查</button>' : '<span class="muted">没有博查：天下大势查维基百科，人物只能用 DeepSeek 检索（没经网页核对）；填上博查 Key，人物才查得准</span>'}
-      <div class="row"><input id="bIn" type="password" autocomplete="off" placeholder="${KEY.bochaSaved ? '换一个博查 Key' : '博查 API Key（open.bochaai.com 申请，按次计费、很便宜）'}" class="grow"><button id="bBochaSave" ${KEYSAVING ? 'disabled' : ''}>${KEYSAVING === 'bc' ? '保存中，正在试搜…' : '保存'}</button></div>
+      <b>联网查资料</b> <span class="muted">每回合自动查维基百科、内置史料和原文库；不用博查（太贵，2026-11-17 起停用）</span>
     </div></div>
     ${KEYMSG ? `<div class="${/✓/.test(KEYMSG) ? 'banner' : 'err'}">${esc(KEYMSG)}</div>` : ''}`;
 }
@@ -16772,8 +16778,7 @@ function webKeyBox() {
       <div class="muted" style="margin-top:6px">没有 Key？去 platform.deepseek.com 注册，在「API keys」里生成一个；新账户要先充值（几块钱就能玩很久）。${KEY.has && !KEY.bad ? ' <button class="link" id="bKeyClose">不换了</button>' : ''}</div>
     </div></div>` : ''}
     <div class="howto" style="grid-template-columns:1fr;margin-top:8px"><div>
-      <b>联网查资料（每回合自动查维基百科；填了博查 Key 先查博查，中文资料多得多）</b> ${BOCHA_KEY ? `<span class="savest">✓ 已填博查 Key（尾号 ${esc(BOCHA_KEY.slice(-4))}）</span> <button class="link" id="bWBochaOff">不用博查</button>` : '<span class="muted">可选</span>'}
-      <div class="row"><input id="wBocha" type="password" autocomplete="off" placeholder="博查 API Key（open.bochaai.com 申请，可不填）" class="grow" style="min-width:0"><button id="bWBocha">保存并试搜</button><span class="muted" id="wBochaMsg" style="font-size:12px"></span></div>
+      <b>联网查资料</b> <span class="muted">每回合自动查维基百科、内置史料和原文库；不用博查（太贵，2026-11-17 起停用）</span>
     </div></div>
     ${KEYMSG ? `<div class="${/✓/.test(KEYMSG) ? 'banner' : 'err'}">${esc(KEYMSG)}</div>` : ''}`;
 }
@@ -17189,9 +17194,6 @@ function pane(tab) {
     <p class="muted" style="font-size:13px;margin-top:10px">每回合都会：${MODE !== 'none' ? `联网查这一回涉及的真人、事件、年份（${MODE !== 'local' ? (BOCHA_KEY ? '博查 + 维基百科' : '维基百科') : KEY.bocha ? '博查 + 维基百科' : '维基百科；填博查 Key 资料更多'}）；` : ''}${DSM() ? '写正文前先深度构思；' : ''}天下的事照史书往下走；写完核实史实、记账。这些关掉剧情就会失真，所以不能关。</p>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">联网查资料眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}
     
     
-    ${MODE === 'claude' ? `<div class="h"><span class="seal">查</span>博查搜索</div>
-    <p class="muted" style="font-size:13px">${BOCHA_KEY ? '✓ 已填博查 Key（尾号 ' + esc(BOCHA_KEY.slice(-4)) + '），每回合先用博查查，查不到的再查维基。' : '现在只用维基百科。填上博查 Key（open.bochaai.com 申请），每回合就先用博查查政局、官职、人物、地理，中文资料多得多。'}Key 只存在这个浏览器里。</p>
-    <div class="row"><input id="wBocha" type="password" autocomplete="off" placeholder="博查 API Key" class="grow" style="min-width:0"><button id="bWBocha">保存并试搜</button>${BOCHA_KEY ? '<button class="link" id="bWBochaOff">不用博查</button>' : ''}<span class="muted" id="wBochaMsg" style="font-size:12px"></span></div>` : ''}
     <div class="h"><span class="seal">修</span>版本与问题报告</div>
     <p class="muted" style="font-size:13px">${esc(versionLine())}</p>
     <p class="muted" style="font-size:13px">现在的版本：${esc(/^\d{8}/.test(BUILD) ? `${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : BUILD)}${MODE === 'local' && UPDINFO ? (UPDINFO.remote && String(UPDINFO.remote) > BUILD ? `；网上有更新的版本${UPDINFO.using === 'updated' ? '，已下载好，空下来时自动换上' : ''}` : UPDINFO.why ? `；上次查更新没成：${esc(UPDINFO.why)}` : UPDINFO.checked ? '；已是最新' : '') : ''}${UPDINFO && UPDINFO.needReinstall ? '；这次改动大，要重新下载安装包' : ''}</p>
@@ -17252,8 +17254,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
               if (r2 && r2.name && r2.name !== r.name) { const f2 = openingState(r2, pre); f2.research = arr(fake.research); const ck2 = await personCheck(f2, r2.name, `${r2.polity || ''} ${r2.role || ''}`.trim().slice(0, 30)); if (ck2.real) { r = r2; fake = f2; ck = ck2; } else ck = ck2.searched ? ck2 : ck; }
             }
             if (!ck.real) {
-              const sx = ck.searched || {}, bo = (MODE === 'local' ? KEY && KEY.bocha : BOCHA_KEY);
-              throw { code: 'notreal', message: `${r.name ? `查不到史书上有「${r.name}」这个人` : '没找到合乎这个身份的史书真人'}${hint ? '（' + hint + '）' : ''}。查过：${bo ? `博查${sx.bocha > 0 ? '有' + sx.bocha + '条但对不上' : '没搜到'}` : '博查（没填博查 Key，没法查——在「设置」里填上博查 Key 再开局，人物才查得准）'}，DeepSeek 也举不出正史、方志的出处。可以写这个人的全名、加上朝代和官职再开局；想当虚构人物，就在「自己定制开局」里把「人物」选成「虚构人物」。` };
+              throw { code: 'notreal', message: `${r.name ? `查不到史书上有「${r.name}」这个人` : '没找到合乎这个身份的史书真人'}${hint ? '（' + hint + '）' : ''}。查过：内置史料、原文库、维基百科都没有，DeepSeek 也举不出正史、方志的出处。可以写这个人的全名、加上朝代和官职再开局；想当虚构人物，就在「自己定制开局」里把「人物」选成「虚构人物」。` };
             }
             r.real = true; r.realChk = ck; r.traces = arr(r.traces).concat(arr(ck.evidence).map(x => cut(x, 140))).slice(0, 10);
             if (ck.born != null && r.y != null) { const age = r.y - ck.born + 1; if (age > 0 && age < 110) { if (r.age != null && Math.abs(r.age - age) > 1) r.adjust = arr(r.adjust).concat([`${r.name}生于${ck.born}年（${ck.src}），这一年${age}岁`]); r.age = age; r.born = ck.born; r.bornSrc = ck.src; } }
@@ -17783,7 +17784,6 @@ document.addEventListener('keydown', e => {
   if (e.target.id === 'said' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#bSend').click(); }
   if ((e.target.id === 'kIn' || e.target.id === 'kModel') && e.key === 'Enter') { e.preventDefault(); const b = $('#bKeySave'); if (b) b.click(); }
   if ((e.target.id === 'aPw' || e.target.id === 'aName') && e.key === 'Enter') { e.preventDefault(); const b = $('#bLogin'); if (b) b.click(); }
-  if (e.target.id === 'bIn' && e.key === 'Enter') { e.preventDefault(); const b = $('#bBochaSave'); if (b) b.click(); }
   if (e.target.id === 'regenNote' && e.key === 'Enter') { e.preventDefault(); const b = $('#bRegenGo'); if (b) b.click(); }
   if (e.key === 'Escape' && typeof SIDE_FOLD !== 'undefined' && !SIDE_FOLD && matchMedia('(max-width: 960px)').matches) { SIDE_FOLD = true; render(); }
 });
@@ -18068,34 +18068,12 @@ document.addEventListener('click', async e => {
     } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
     KEYSAVING = ''; render(); return;
   }
-  if (t.id === 'bWBocha') {
-    const k = String(($('#wBocha') || {}).value || '').replace(/\s+/g, ''); const m = $('#wBochaMsg'); if (!k) { if (m) m.textContent = '先把博查的 Key 粘贴进左边的框里'; const el = $('#wBocha'); if (el) el.focus(); return; }
-    t.disabled = true; const old = BOCHA_KEY; BOCHA_KEY = k;
-    try { const items = await bochaFetch('苏轼'); lsSet('hrpg:bochakey', k); SEARCH_OFF = ''; SEARCH_DOWN = 0; render(); const m2 = $('#wBochaMsg'); if (m2) m2.textContent = `✓ 试搜成功（${items.length} 条），以后每回合先用博查`; }
-    catch (e) { BOCHA_KEY = old; t.disabled = false; if (m) m.textContent = '没通：' + (e.name === 'AbortError' ? '博查超时' : e.message); }
-    return;
-  }
-  if (t.id === 'bWBochaOff') { BOCHA_KEY = ''; lsSet('hrpg:bochakey', ''); render(); return; }
   if (t.id === 'bReport') { exportReport().catch(e => { const m = $('#updMsg'); if (m) m.textContent = '没导出来：' + (e.message || e); }); return; }
   if (t.id === 'bUpdCheck') {
     t.disabled = true; t.textContent = '查更新中…（最多一两分钟）';
     try { const u = await api('/api/update/check', {}); UPDINFO = u; if (u.using === 'updated' && u.remote && String(u.remote) > BUILD) { lsSet('hrpg:reloaded', String(u.remote)); if (!BUSY && !BG) { location.reload(); return; } } }
     catch (e) { UPDINFO = { why: e.message || String(e) }; }
     render(); return;
-  }
-  if (t.id === 'bNoBocha' || t.id === 'bBochaOn') { if (KEYSAVING) return; try { const r = await api('/api/quick-key', t.id === 'bNoBocha' ? { noBocha: true } : { bochaOn: true }); await refreshKey(); KEYMSG = !r.ok ? '没改成：' + (r.why || '') : t.id === 'bNoBocha' ? '✓ 已关掉博查，只用维基百科' : '✓ 又用上博查了'; } catch (e) { KEYMSG = '游戏服务没有回应：' + (e.message || e); } render(); return; }
-  if (t.id === 'bBochaSave') {
-    if (KEYSAVING) return;
-    const k = cleanKey($('#bIn').value); if (!k) { KEYMSG = '先把博查的 Key 粘贴进框里'; render(); const el = $('#bIn'); if (el) el.focus(); return; }
-    KEYSAVING = 'bc'; KEYMSG = ''; render();
-    try {
-      const r = await api('/api/quick-key', { bochaKey: k });
-      await refreshKey();
-      if (r.bocha && r.bocha.ok) { SEARCH_OFF = ''; SEARCH_DOWN = 0; }
-      KEYMSG = !r.ok ? '没保存上：' + (r.why || '') : r.bocha && r.bocha.ok ? `✓ 博查已保存，试搜成功（${r.bocha.count} 条）` : '博查 Key 已存下，但试搜没通：' + plainWhy((r.bocha && r.bocha.why) || '');
-      if (r.ok) { const el = $('#bIn'); if (el) el.value = ''; }
-    } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
-    KEYSAVING = ''; render(); return;
   }
   if (t.id === 'bNet') {
     if (NETCHECKING) return; NETCHECKING = true;

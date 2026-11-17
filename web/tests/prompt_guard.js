@@ -324,6 +324,7 @@ const checks = [
   ['核人铁证：名字＋官称（或年号、衙门）同段同现才算核上，光杆名字只算线索；博查核实也照别称认官（R-250）', /名字与官称同段/.test(src) && /只有光杆名字，算线索/.test(src) && /function postHitText/.test(src) && /postHitText\(h, x\.q\.title\)/.test(src)],
   ['核实落档：各处核上的都写进人物档案，real 只升不降，古人照时代门拦下（R-251）', /function filePerson/.test(src) && /if \(src && !s\.courtChk\[name\]\) s\.courtChk\[name\] = src; filePerson\(s, name/.test(src) && /eraPersonOkName\(s, name\)\.ok/.test(src)],
   ['翻史书照问的猜卷类意图（R-248）', /function libHint/.test(src) && /citeFetch\(s, histBooksFor\(s, q\), terms, 8, libHint\(q\)\)/.test(src)],
+  ['不用博查（R-253）：网页版不读博查 Key、服务端博查恒关、搜索模块不认博查；页面没有博查 Key 的框；份额用完没真查的不放过', /const BOCHA_OFF = true;/.test(src) && /async function bochaOn\(\) \{ return false; \}/.test(server) && !/id="bIn"|id="wBocha"|id="bBochaSave"/.test(src) && /return \{ text, items, bocha: on, skipped \};/.test(src) && /if \(id === 'bocha'\) return false;/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'rpg-kernel', 'adapters', 'search.js'), 'utf8'))],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
