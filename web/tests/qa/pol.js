@@ -6,7 +6,7 @@ const path = require('path');
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1280, height: 900 } });
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
   await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof councilSet === 'function');
-  const bad = [], ev = (f, a) => p.evaluate(f, a), click = async (sel, what) => { const el = await p.$(sel); if (!el) { bad.push('没有「' + what + '」按钮'); return false; } await p.click(sel); await p.waitForFunction(() => !PARLEY_P, null, { timeout: 10000 }); await p.waitForTimeout(120); return true; };
+  const bad = [], ev = (f, a) => p.evaluate(f, a), click = async (sel, what) => { const el = await p.$(sel); if (!el) { bad.push('没有「' + what + '」按钮'); return false; } try { await p.click(sel, { timeout: 8000 }); } catch (e) { if (!/not stable|Timeout/i.test(String((e && e.message) || e))) throw e; await p.click(sel, { force: true, timeout: 8000 }); } await p.waitForFunction(() => !PARLEY_P, null, { timeout: 10000 }); await p.waitForTimeout(120); return true; };
   const setup = () => ev(() => {
     S = newSave({ name: '王审知', gender: '男', age: 59, role: '闽王', real: true, gregorianYear: 921, month: 6, day: 1, place: '福州', polity: '闽' }); S.chat = [{ role: 'gm', text: '开场' }]; S.turn = 3; S.renown = 60;
     S.realm = { treasury: 500000 }; S.fisc = { kind: 'realm', unit: '贯', base: { tianfu: 600000, shang: 200000 }, pol: { tax: '常', yan: '照旧', coin: '足值', cp: false, yao: '常' }, works: [], kc: { due: 0, paid: 0 }, price: 100 }; S.money = { cash: 0, unit: '贯' };

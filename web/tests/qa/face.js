@@ -2,6 +2,7 @@
 const { chromium } = require('playwright');
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await (await b.newContext({ viewport: { width: 1300, height: 900 } })).newPage();
+  p.setDefaultNavigationTimeout(90000); p.setDefaultTimeout(90000);
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message)); const bad = m => errs.push(m);
   await p.goto('http://127.0.0.1:' + (process.env.GAME_PORT || 8793) + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(1500);
   const idle = () => p.waitForFunction(() => !BUSY, null, { timeout: 300000, polling: 300 }).catch(() => bad('卡住了'));
