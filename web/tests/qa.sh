@@ -155,6 +155,7 @@ start ai.js && {
   run "后台整理的本机缓存：同样的问题第二次从本机出、不再请模型；没让缓存的照旧问（R-243）" 60 node llmcache.js
   run "唐后期、两宋宰执逐年接进游戏：官制树照旧，到年份真人坐上宰相位子（1070 王安石、870 刘瞻、1140 秦桧在朝）（R-244）" 60 env PLAY="$ROOT/web/play.html" node zaifu.js
   run "地图联上后台知识：点一处看这年长官、名臣在此（同地一键去拜访，真点）、此地史事；府名与治所旧称对得上（河南府＝洛阳）；名臣记号真点；开局知府照长官表填" 60 env PLAY="$ROOT/web/play.html" node maplore.js
+  run "名臣跨段只出一个、到卒年不再出场、主角救下的记进存档照常出场（R-252）" 60 env PLAY="$ROOT/web/play.html" node fate.js
   run "开局底账接进游戏：史料有户口记载的州郡直接填、不请模型；推行情时史料价目当锚（任务四十二，R-244）" 60 env PLAY="$ROOT/web/play.html" node preset.js
   run "官员名录也照任职年表和朝廷数据：明 1625 年表上的户部尚书、荆南 926 年高季兴高从诲进名录，模型不给人也有；真点人物页看得到（R-225、R-227）" 150 env PLAY="$ROOT/web/play.html" node rostertable.js
   run "错词表进写戏：后唐正文写了总兵、衙役这类这时还没有的说法打回并给当时说法，两可今义词不打回，明朝的总兵不算错（任务十五、十七，R-233）" 120 env PLAY="$ROOT/web/play.html" node eravocab.js
