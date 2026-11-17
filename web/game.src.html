@@ -3850,6 +3850,12 @@ async function tacEval(s, name, desc) {
   ORGMSG = `「${name}」可以用：成功约${x.p}成${x.terrain.length ? '，' + x.terrain.join('、') + '用得上' : ''}${x.cost ? '，每次约花' + fmtN(x.cost, (s.money || {}).unit || '') : ''}。出征时在战法里选「自创：${name}」`;
   return x;
 }
+/** 临阵出的主意（R-257：玩家在正文里说的打法——门后二道障、两排轮射、浇沸汤——以前算仗时一条不认）：推演照年代条件评出把握和效果，程序照战法簿的上限夹住，这一仗当自创战法用；预先布好、整场管用的每天都算 */
+function battlePlan(d) {
+  if (!d || typeof d !== 'object') return null; const name = one(d.name, 40); if (!name || num(d.p) == null) return null;
+  return { name, desc: name, ok: true, temp: true, why: one(d.why, 60), whole: /是|有|真/.test(String(d.whole || '')), terrain: [], season: [], cav: 0, rng: 0, mou: '',
+    p: clampN(d.p, 5, 85, 40), fx: { atk: clampN(d.atk, 0.8, 1.4, 1), def: clampN(d.def, 0.8, 1.4, 1), orgHit: clampN(d.orgHit, 0, 40, 0), moraleHit: 0, casualty: clampN(d.casualty, 1, 1.6, 1) }, fail: { atk: 0.9, def: 0.95 } };
+}
 /** 自创战法这一仗用不用得上：地形、季节、兵种、统帅谋略 */
 function tacUsable(s, x, f, terrain) {
   if (!x || !x.ok) return '还没评估、或这个年代用不了';
@@ -5768,7 +5774,7 @@ ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.k
 只是盘算还没动手的（计）和玩家写明「暗中、私下、悄悄」做的，旁人不知道，不会有人因此告发、责罚、找上门（R-254）；暗中做的事照常算成不成，只是不声张。
 acts：把玩家这一回的话照性质分开——只是问的（问）、只是盘算还没动手的（计）、向上头或别人请准的（请）、凭主角自己的职权、身份让下面的人办的（令）、越出职权或冒险去做的（试；ok 写「越权」或「冒险」）；一件事一条，tmp 写 t1、t2……；在职权之内、钱粮人手够的「令」ok 写「能」。主角职权以内、人就在跟前或就在本地的吩咐，下面的人这一回就去办、正文里见结果，不无故拖延、推诿、来回请示；拖、打折、敷衍只在他的利害、本事、路程真说得通时才有（写进 why），不为添波折而设。后患只写这一步照常理真会带出来的，不凭空加祸事。
 lookup：写这一回要从账上查的几样（从这些里挑：${LOOKUP_KEYS}；人物、地图、往事后面写名字或关键词，如「人物:王某甲」「地图:江都县」「往事:盐引」），凡要写到兵数、钱粮、家里人、旧事、某人近况的都要查；要引经据典、写典章礼制、官署故实，再加「原文:关键词」（如「原文:盐铁」「原文:丧礼」），程序会去二十四史、通鉴、通典这些史书原文里查几段带出处的给你；程序会把账上的原样给写正文、记账的人。
-只输出一个 JSON 对象：{"lookup":["兵马"],"acts":[{"tmp":"t1","type":"问/计/请/令/试","what":"","who":"谁去办（主角自己办写「自己」）","to":"向谁请（申请才写）","perm":"凭什么：职权、关系、钱财","ok":"能/要批准/越权/冒险"}],"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"battle":{"fight":"这一回真要交兵才写「是」，否则空","enemy":"对手（势力或将领真名）","enemyTroops":0,"enemyQuality":"精/中/弱","enemySupply":"足/缺","place":"在哪打（当时的地名）","terrain":"平原/山地/城池/关隘/河网/山林","attacker":"我/敌","surprise":"有/无","ourForces":["参战的我方兵马名（照【国势账】里的名字）"],"ourTroops":"主角名下没有兵马时（随军、守城、统带朝廷的兵、被卷进来）：主角这一边参战的人数","ourSide":"那时主角这一边叫什么（如 某军某指挥、守城兵民）","ourQuality":"精/中/弱","basis":"敌军兵力从哪来的（史料、探报、推断）"},"realPeople":["这一回牵涉的真实历史人物的名字：只列玩家点名要见、要找、要投奔、要对付的，和此时确实就在此地、凭主角的身份够得着的（如本县的官员）；远在别处、跟主角没有来往的名人不列，不为热闹把真人请进场面；史书上早已去世、不在这一朝的人（如唐人绝不能列进清朝这一回）绝不列，程序会照生卒年再核一遍（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人，一律写全名：照【本地官员名册】与上面材料；都没有的，照常理起一个合乎时代的全名","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么","risk":"他怕什么、这件事让他担什么风险","flip":"什么情况下他会拖延、反口或翻脸"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
+只输出一个 JSON 对象：{"lookup":["兵马"],"acts":[{"tmp":"t1","type":"问/计/请/令/试","what":"","who":"谁去办（主角自己办写「自己」）","to":"向谁请（申请才写）","perm":"凭什么：职权、关系、钱财","ok":"能/要批准/越权/冒险"}],"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"battle":{"fight":"这一回真要交兵才写「是」，否则空","enemy":"对手（势力或将领真名）","enemyTroops":0,"enemyQuality":"精/中/弱","enemySupply":"足/缺","place":"在哪打（当时的地名）","terrain":"平原/山地/城池/关隘/河网/山林","attacker":"我/敌","surprise":"有/无","ourForces":["参战的我方兵马名（照【国势账】里的名字）"],"ourTroops":"主角名下没有兵马时（随军、守城、统带朝廷的兵、被卷进来）：主角这一边参战的人数","ourSide":"那时主角这一边叫什么（如 某军某指挥、守城兵民）","ourQuality":"精/中/弱","basis":"敌军兵力从哪来的（史料、探报、推断）","plan":{"name":"主角这一仗自己出的打法、布置（照玩家原话归纳成一句，没出主意就空）","p":"照这个年代的兵器工艺、地形、兵力、主角说不说得上话判断，成的把握（百分数，五到八十五）","atk":"成了我方攻打得更狠多少倍（零点八到一点四）","def":"成了我方守得更稳多少倍（零点八到一点四）","orgHit":"成了一下打乱敌军几成阵脚（零到四十）","casualty":"成了敌军伤亡多几倍（一到一点六）","whole":"预先布好的工事、轮射、器械、阵法这类整场都管用的写「是」，一锤子的奇计写「否」","why":"凭什么这么判（照的史例、条件）"}},"realPeople":["这一回牵涉的真实历史人物的名字：只列玩家点名要见、要找、要投奔、要对付的，和此时确实就在此地、凭主角的身份够得着的（如本县的官员）；远在别处、跟主角没有来往的名人不列，不为热闹把真人请进场面；史书上早已去世、不在这一朝的人（如唐人绝不能列进清朝这一回）绝不列，程序会照生卒年再核一遍（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人，一律写全名：照【本地官员名册】与上面材料；都没有的，照常理起一个合乎时代的全名","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么","risk":"他怕什么、这件事让他担什么风险","flip":"什么情况下他会拖延、反口或翻脸"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
 }
 async function getRuling(s, said) {
   try {
@@ -5789,7 +5795,7 @@ async function getRuling(s, said) {
       if (sc.offstage && !known.some(n => sc.offstage.includes(n))) sc.offstage = '';
     }
     if (sc) { const t = s.turn + 1; s.shapes = arr(s.shapes).filter(x => x.turn !== t).concat([{ turn: t, type: sc.type, where: one(sc.where, 30), cast: sc.cast.map(x => x.name).join('、') || '无', end: one(sc.end, 40) }]).slice(-6); }
-    const bt = d.battle && typeof d.battle === 'object' && /是|有|真/.test(String(d.battle.fight || '')) ? { enemy: one(d.battle.enemy, 20), enemyTroops: N0(d.battle.enemyTroops), enemyQuality: one(d.battle.enemyQuality, 2), enemySupply: one(d.battle.enemySupply, 2), place: one(d.battle.place, 16), terrain: one(d.battle.terrain, 6), attacker: /敌/.test(d.battle.attacker || '') ? '敌' : '我', surprise: /有|是/.test(d.battle.surprise || ''), ourForces: arr(d.battle.ourForces).map(x => one(x, 20)).filter(Boolean), ourTroops: N0(d.battle.ourTroops), ourSide: one(d.battle.ourSide, 20), ourQuality: one(d.battle.ourQuality, 2), basis: one(d.battle.basis, 60) } : null;
+    const bt = d.battle && typeof d.battle === 'object' && /是|有|真/.test(String(d.battle.fight || '')) ? { enemy: one(d.battle.enemy, 20), enemyTroops: N0(d.battle.enemyTroops), enemyQuality: one(d.battle.enemyQuality, 2), enemySupply: one(d.battle.enemySupply, 2), place: one(d.battle.place, 16), terrain: one(d.battle.terrain, 6), attacker: /敌/.test(d.battle.attacker || '') ? '敌' : '我', surprise: /有|是/.test(d.battle.surprise || ''), ourForces: arr(d.battle.ourForces).map(x => one(x, 20)).filter(Boolean), ourTroops: N0(d.battle.ourTroops), ourSide: one(d.battle.ourSide, 20), ourQuality: one(d.battle.ourQuality, 2), basis: one(d.battle.basis, 60), plan: battlePlan(d.battle.plan) } : null;
     const acts = arr(d.acts).filter(x => x && x.what).slice(0, 6).map((x, i) => { const t = /问/.test(x.type || '') ? '问' : /计|谋|盘算/.test(x.type || '') ? '计' : /请|申/.test(x.type || '') ? '请' : /试|越|冒/.test(x.type || '') || /越权/.test(x.ok || '') ? '试' : '令'; const o = { tmp: one(x.tmp, 4) || 't' + (i + 1), type: t, what: one(x.what, 80), who: one(x.who, 16), to: one(x.to, 16), perm: one(x.perm, 40), ok: one(x.ok, 8) };
       /* 越权不再一律办不成（R-242「不要有太多限制」）：写之前由程序掷一回——名望、手里有兵、一方之主、乱世都让越权更容易成；成了照办成记，事后多半有人参你擅权；不成照走漏风声、被底下人顶回去写 */
       if (/越权/.test(o.ok)) o.over = overRoll(s, o.what, i);
@@ -9253,7 +9259,7 @@ function tacticMul(tac, T, f, s) { const st = f ? forceStats(s, f) : {}, tr = f 
  *   组织度先打光的一方撤；机动强、骑兵多的一方追击多杀；夹击得手、对方机动低，被围的还要被俘；八天还没分出来的，攻方收兵；
  *  玩家自创的战法（战法簿）由 AI 照年代、地形、季节、兵种评估：成没成看成功率（统帅谋略对敌将），成了照评估的效果加（有上限），败了照评估的代价扣 */
 const BT_W = { 平原: 12000, 丘陵: 9000, 山地: 6000, 林泽: 7000, 河渡: 8000, 城池: 10000, 关隘: 3000 };
-const BT_FX = { 平原: { atk: 1, def: 1.1, cav: 1.2 }, 丘陵: { atk: 0.9, def: 1.15, cav: 0.9 }, 山地: { atk: 0.75, def: 1.35, cav: 0.6 }, 林泽: { atk: 0.8, def: 1.2, cav: 0.6 }, 河渡: { atk: 0.7, def: 1.25, cav: 0.8 }, 城池: { atk: 0.6, def: 2.2, cav: 0.5 }, 关隘: { atk: 0.5, def: 2.6, cav: 0.4 } };
+const BT_FX = { 平原: { atk: 1, def: 1.1, cav: 1.2 }, 丘陵: { atk: 0.9, def: 1.15, cav: 0.9 }, 山地: { atk: 0.75, def: 1.35, cav: 0.6 }, 林泽: { atk: 0.8, def: 1.2, cav: 0.6 }, 河渡: { atk: 0.7, def: 1.25, cav: 0.8 }, 城池: { atk: 0.6, def: 3, cav: 0.5 }, 关隘: { atk: 0.5, def: 3.2, cav: 0.4 } };
 const btTerrain = T => /关/.test(T || '') ? '关隘' : /城/.test(T || '') ? '城池' : /河|渡|江|水/.test(T || '') ? '河渡' : /林|泽|沼|苇/.test(T || '') ? '林泽' : /山|谷|岭/.test(T || '') ? '山地' : /丘|坡|冈|塬/.test(T || '') ? '丘陵' : '平原';
 // 战术：atk 攻、def 守、org 对方组织度多掉、ok 什么时候用得上、beats 克哪一手（被克的那方这一天打七五折）
 const BTAC = {
@@ -9282,7 +9288,7 @@ function btSide(s, o) {
 }
 /** 主将挑这一天的战术：玩家指定的先用（用得上的话），自创战法照成功率，其余照统兵挑最合用的 */
 function btPick(a, b, T, W, day, rnd) {
-  if (day === 1 && a.custom) return '自创';
+  if (a.custom && (day === 1 || (a.custom.whole && a.customOk))) return '自创';
   const can = k => { const x = BTAC[k]; return !x.ok || x.ok(a, T, W); };
   if (a.pref && BTAC[a.pref] && can(a.pref) && (day === 1 || rnd() < 0.5)) return a.pref;
   const L = Object.keys(BTAC).filter(can); if (!L.length) return '冲阵';
@@ -9298,12 +9304,14 @@ function battleSim(s, A, B, ctx) {
   let end = null;
   for (let d = 1; d <= maxD && !end; d++) {
     const ta = btPick(A, B, T, wx.txt, d, rnd), tb = btPick(B, A, T, wx.txt, d, rnd), note = [];
-    const fxOf = (x, k) => { if (k !== '自创') return BTAC[k]; const c = x.custom, okp = rnd() * 100 < Math.max(5, Math.min(95, (c.p || 50) + (x.mou - 50) * 0.4)); x.customOk = okp; note.push(`${x.name}${okp ? '施' : '行'}「${c.name}」${okp ? '得手' : '没成'}`); return okp ? { atk: c.fx.atk, def: c.fx.def, org: 1, hit: c.fx } : { atk: c.fail.atk, def: c.fail.def, org: 1 }; };
+    const fxOf = (x, k) => { if (k !== '自创') return BTAC[k]; const c = x.custom, again = d > 1 && x.customOk, okp = again || rnd() * 100 < Math.max(5, Math.min(95, (c.p || 50) + (x.mou - 50) * 0.4)); x.customOk = okp; if (!again) note.push(`${x.name}${okp ? '施' : '行'}「${c.name}」${okp ? '得手' : '没成'}`); return okp ? { atk: c.fx.atk, def: c.fx.def, org: 1, hit: again ? Object.assign({}, c.fx, { orgHit: 0 }) : c.fx } : { atk: c.fail.atk, def: c.fail.def, org: 1 }; };
     const xa = fxOf(A, ta), xb = fxOf(B, tb), ca = ta !== '自创' && BTAC[ta].beats === tb ? 0.75 : 1, cb = tb !== '自创' && BTAC[tb].beats === ta ? 0.75 : 1;
     if (ca < 1) note.push(`${B.name}的${tb}克住了${A.name}的${ta}`); if (cb < 1) note.push(`${A.name}的${ta}克住了${B.name}的${tb}`);
     const pw = (x, xf, c, att) => x.front / 1000 * ((att ? x.atk * 0.6 + x.shock * 0.4 : x.atk * 0.7 + x.shock * 0.3) / 50) * xf.atk * c * x.supply * (0.5 + x.morale / 200) * (0.6 + x.org / 250) * (1 + (x.tong - 50) / 250) * (att ? FX.atk * wx.atk * (x.cav > 0.2 ? FX.cav : 1) : 1);
     const dv = (x, xf, c, att) => x.front / 1000 * (x.def / 50) * xf.def * c * (att ? 1 : FX.def * fort * wx.def);
-    const pA = pw(A, xa, ca, true), pB = pw(B, xb, cb, false), dA = dv(A, xa, ca, true), dB = dv(B, xb, cb, false);
+    // 攻城、叩关：城头、关上打下来的是挤在城下的人堆，攻方人再多，挨打的也只算城下摆得开的那几排（R-257：一百人据城门守三百人，以前回回大败、敌只死四五个）
+    const wall = T === '城池' || T === '关隘', dA = wall ? dv(Object.assign({}, A, { front: Math.min(A.front, Math.max(150, B.front * 1.5)) }), xa, ca, true) : dv(A, xa, ca, true);
+    const pA = pw(A, xa, ca, true), pB = pw(B, xb, cb, false), dB = dv(B, xb, cb, false);
     const rA = pA / Math.max(0.01, dB), rB = pB / Math.max(0.01, dA), j = () => 0.85 + rnd() * 0.3;
     let oB = 16 * rA * (xa.org || 1) * j(), oA = 16 * rB * (xb.org || 1) * j();
     if (xa.hit && A.customOk) { oB += xa.hit.orgHit || 0; B.morale = Math.max(0, B.morale - (xa.hit.moraleHit || 0)); }
@@ -9321,7 +9329,7 @@ function battleSim(s, A, B, ctx) {
   if (end === 'B' && T === '城池' && B.men > 0) { const cap = Math.round(B.men * 0.6), k = Math.round(B.men * 0.25); B.caught = (B.caught || 0) + cap; B.dead += k; B.men = Math.max(0, B.men - cap - k); pursuit = Object.assign(pursuit || {}, { fall: true }); }
   const lossA = A.dead / Math.max(1, A.dead + A.men), lossB = (B.dead + B.caught) / Math.max(1, B.dead + B.caught + B.men);
   const outcome = !end ? '相持' : end === 'B' ? (lossB > 0.3 || (pursuit && pursuit.enc) ? '大胜' : '小胜') : (lossA > 0.3 || (pursuit && pursuit.enc) ? '大败' : '小败');
-  return { days, outcome, end, pursuit, terrain: T, width: W, A: { men: A.men, dead: A.dead, caught: A.caught || 0, org: Math.round(A.org) }, B: { men: B.men, dead: B.dead, caught: B.caught || 0, org: Math.round(B.org) }, customOk: A.customOk };
+  return { days, outcome, end, pursuit, terrain: T, width: W, A: { men: A.men, dead: A.dead, caught: A.caught || 0, org: Math.round(A.org) }, B: { men: B.men, dead: B.dead, caught: B.caught || 0, org: Math.round(B.org) }, customOk: A.custom ? A.customOk : B.customOk };
 }
 function battleRounds(r) {
   if (arr(r.days).length) {   // 按天打的：一天一行，末了追击、被俘
@@ -13705,7 +13713,7 @@ function resolveBattle(s, b) {
   if (b.tactic === '围城') { pu *= 1; }
   const { pWin } = clashCore(pu, pt, 0.5, ours, N0(b.enemyTroops));   // 只拿来报战前胜算；胜负伤亡照下面一天一天打出来
   // 按天打（需求台账 R-141）：我方照主力那支的编成和统帅，敌方照推演给的精粗和主将；补给、天候、疲兵折进去
-  const lead = mine.filter(f => !f.virtual).sort((x, y) => N0(y.troops) - N0(x.troops))[0] || null, slU = lead ? supplyLine(s, lead) : { k: 1 }, cust0 = b.custom ? tacBookGet(s, b.custom) : (b.tactic && tacBookGet(s, b.tactic)), custNo = cust0 ? tacUsable(s, cust0, lead, T) : '', cust = custNo ? null : cust0;   // 自创战法这里用不上（地形、季节、兵种、谋略不够）就照常打，战报里写明
+  const lead = mine.filter(f => !f.virtual).sort((x, y) => N0(y.troops) - N0(x.troops))[0] || null, slU = lead ? supplyLine(s, lead) : { k: 1 }, cust0 = (b.custom ? tacBookGet(s, b.custom) : (b.tactic && tacBookGet(s, b.tactic))) || (b.plan && b.plan.ok ? b.plan : null), custNo = cust0 ? tacUsable(s, cust0, lead, T) : '', cust = custNo ? null : cust0;   // 自创战法这里用不上（地形、季节、兵种、谋略不够）就照常打，战报里写明
   const us = btSide(s, { name: '我军', f: lead, men: ours, quality: lead ? lead.quality : b.ourQuality, leader: lead ? lead.leader : '', tac: cust ? '' : b.tactic, custom: cust, supply: supplyUs * tired * slU.k }), them = btSide(s, { name: b.enemy || '敌军', men: N0(b.enemyTroops), quality: b.enemyQuality, leader: b.enemyLeader || '', supply: supplyThem, cav: /骑|胡|虏|蒙|契丹|女真|突厥|鞑/.test((b.enemy || '') + (b.enemyType || '')) ? 0.4 : null });
   if (b.surprise) { if (b.attacker === '我') them.org *= 0.6; else us.org *= 0.6; }
   if (b.attacker === '敌' && /城/.test(T) && lead && genHas(s, lead.leader, '善守城')) us.def *= 1.15;
@@ -13717,6 +13725,14 @@ function resolveBattle(s, b) {
   const r0 = { ...b, ours, ourForces: mine.map(f => f.name), virtual: mine.some(f => f.virtual), odds: Math.round(pWin * 100), outcome, deadUs: b.tactic === '围城' ? Math.round(deadUs * 0.5) : deadUs, deadThem, take, lose, turn: s.turn + 1, tacWhy: TM[1] };
   r0.wx = WX.txt; r0.tired = tired < 1; r0.days = sim.days.map(d => ({ d: d.d, us: b.attacker === '我' ? d.ta : d.tb, them: b.attacker === '我' ? d.tb : d.ta, du: b.attacker === '我' ? d.kA : d.kB, dt: b.attacker === '我' ? d.kB : d.kA, usMen: (b.attacker === '我' ? d.A : d.B).men, usOrg: (b.attacker === '我' ? d.A : d.B).org, thMen: (b.attacker === '我' ? d.B : d.A).men, thOrg: (b.attacker === '我' ? d.B : d.A).org, note: d.note }));
   r0.terrain2 = sim.terrain; if (cust0) { r0.custom = cust0.name; r0.customOk = custNo ? null : !!sim.customOk; r0.tacWhy = custNo ? `「${cust0.name}」这里用不上：${custNo}` : sim.customOk ? `「${cust0.name}」得手` : `「${cust0.name}」没成`; } r0.width = sim.width; r0.caughtUs = us.caught || 0; r0.caughtThem = them.caught || 0; r0.encircled = !!(sim.pursuit && sim.pursuit.enc); r0.rounds = battleRounds(r0); return r0;
+}
+/** 正文写的胜负跟程序算的对不上（R-257）：算的是败、正文写成打退守住；算的是胜、正文写成城破溃逃。对不上就打回去照结果重写 */
+function battleTextClash(r, text) {
+  const t = String(text || ''), lost = /败/.test(r.outcome || '') && !/敌/.test(r.outcome || ''), won = /胜/.test(r.outcome || '');
+  const saysWin = /击退|打退|守住了|退了下去|赶出门外|大获全胜|溃不成军地退|敌.{0,4}(退去|退走|败走|溃退)/.test(t), saysLose = /城破|失守|(我军|本部|我方).{0,4}(溃|败退|大败)|丢了/.test(t);
+  if (lost && saysWin && !saysLose) return `这一仗程序算的是我方${r.outcome}（我方死伤约 ${r.deadUs}、敌方约 ${r.deadThem}${r.lose ? '，丢了' + r.lose : ''}），正文写成了打退敌人、守住了：照【这一仗的结果】重写，败就写败`;
+  if (won && saysLose && !saysWin) return `这一仗程序算的是我方${r.outcome}（我方死伤约 ${r.deadUs}、敌方约 ${r.deadThem}），正文写成了我方溃败失守：照【这一仗的结果】重写`;
+  return '';
 }
 function battleBlock(r) {
   if (!r) return '';
@@ -16572,6 +16588,7 @@ async function send(said, span, note, resume) {
       if (!st.talk) preFaults = preFaults.concat(vocabFaults(S, st.text));
       if (!st.talk) preFaults = preFaults.concat(factFaults(S, said, st.text, ruling));   // 没凭据的得官、在世真人的死讯：打回（任务十六）   // 这一年代还没有的说法：打回照当时的说法改（任务十七）   // 写成史论/课件的打回：RPG 要戏、要对话、要停在拿主意处
       if (!st.talk && ruling && ruling.battleResult && !/伤|死|阵亡|折了/.test(st.text)) preFaults.push(`这一仗写成了只有胜负：照【这一仗的结果】写出伤亡（我方约 ${ruling.battleResult.deadUs}、敌方约 ${ruling.battleResult.deadThem}）、士气、粮草和战后的事`);
+      { const bR = ruling && ruling.battleResult; if (!st.talk && bR) { const f = battleTextClash(bR, st.text); if (f) preFaults.push(f); } }   // R-257：程序算的是大败、丢了西门，正文写成守住了、只死十几个
       if (preFaults.length) noteErr('审稿退回', preFaults.map(f => f.slice(0, 40)).join(' / '), { said: cut(said, 60) });   // 记下来，问题报告里能看到常犯哪几条
     }
     // 给玩家看之前：核实史实、情理审读、记账，桌面版三件一起做（网页版一次只发一个请求，依次做）；
