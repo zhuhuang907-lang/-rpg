@@ -37,10 +37,11 @@ const { chromium } = require('playwright');
     if (!g.dead.includes('汪廷璋')) bad('史载已故的亲属没列进家谱：' + JSON.stringify(g));
     if (!/汪承禧/.test(g.plan) || !g.born.includes('汪承禧')) bad('日后才出生的子女没到年照记：' + JSON.stringify(g)); }
   // 大量博查，DeepSeek 只整理博查搜到的：材料里没有的名字不收；身边人照史料列上；查家谱时一次博查二十来条问法、不问维基（CLAUDE.md「人物」）
+  const wl0 = (() => { try { return require('fs').readFileSync('wiki.log', 'utf8').length; } catch (_) { return 0; } })();   // 只看查家谱这一步新发的维基全文搜索（核真人按条目名取不算，那是设计里的）
   { const c = await p.evaluate(async () => { const s = JSON.parse(JSON.stringify(S)); s.protagonist.real = true; s.household = []; s.famRec = 0; s.people = {}; await familyFix(s); return { hh: s.household.map(m => m.name), ppl: Object.keys(s.people), rec: s.famRec, due: familyDue(s) }; });
     if (c.hh.includes('汪假人')) bad('材料里没有的家里人被收进来了：' + JSON.stringify(c));
     if (!c.hh.includes('汪景明')) bad('检索到的兄弟没列上：' + JSON.stringify(c));
-    { let wl = ''; try { wl = require('fs').readFileSync('wiki.log', 'utf8'); } catch (_) {} if (/汪景和|江春|程晋芳/.test(wl)) bad('查人物还去问了维基（维基只查天下大势）'); }
+    { let wl = ''; try { wl = require('fs').readFileSync('wiki.log', 'utf8').slice(wl0); } catch (_) {} if (wl.split('\n').some(l => /list=search/.test(l) && /汪景和|江春|程晋芳/.test(l))) bad('查人物还去问了维基（维基只查天下大势）'); }
     { const rd = f => { try { return require('fs').readFileSync(f, 'utf8'); } catch (_) { return ''; } }; const bo = rd('bocha.log').split('\n').filter(l => /汪景和/.test(l)).length, ds = rd('dsq.log').split('\n').filter(l => /汪景和/.test(l)).length;
       if (bo) bad('不用博查了，查家谱还在搜博查：' + bo + ' 条'); if (ds < 5) bad('查家谱、身边人检索用得太少：' + ds + ' 条'); }
     if (!c.ppl.includes('江春') || !c.ppl.includes('程晋芳') || c.ppl.includes('编造部将')) bad('身边的人没照史料列，或收了材料里没有的人：' + JSON.stringify(c));

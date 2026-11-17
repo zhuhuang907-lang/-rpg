@@ -6082,13 +6082,16 @@ function dsqPump() {
     qs.forEach(q => DSQ_FLY.set(q, job));
   }
 }
-async function dsLookup(queries) {
+/* 核真假人用的检索（重名、名录）另有份额：不吃平常回合每回三批的份额，不然份额一满它就回回空跑、占着后台那一格，天下推演饿死（R-253 完整测试查出） */
+const DSQ_VER = new Set();
+async function dsLookup(queries, verify) {
+  if (verify) for (const q of arr(queries)) DSQ_VER.add(String(q || '').trim());
   const all = [...new Set(arr(queries).map(q => String(q || '').trim()).filter(q => q.length >= 2 && !(q in DSQ_CACHE)))].slice(0, 12);
   await Promise.all(all.map(q => DSQ_FLY.get(q) || new Promise(res => { if (!DSQ_WAIT.has(q)) DSQ_WAIT.set(q, []); DSQ_WAIT.get(q).push(res); })).concat([new Promise(r => { if (!DSQ_T) DSQ_T = setTimeout(dsqPump, 300); r(); })]));
   return arr(queries).map(q => ({ q, items: DSQ_CACHE[String(q || '').trim()] || [], provider: 'deepseek' }));
 }
 async function dsBatch(qs) {
-  if (qs.length && econTight() && !econQuota(S, 'ds', 3)) qs = [];   // 省着用（R-239）：平常回合里让模型充当搜索每回最多三批（不用博查以后它是核人的唯一一路，R-253；一批走快型号约一两分钱）
+  if (qs.length && econTight() && !qs.some(q => DSQ_VER.has(q)) && !econQuota(S, 'ds', 3)) qs = [];   // 省着用（R-239）：平常回合里让模型充当搜索每回最多三批（不用博查以后它是核人的唯一一路，R-253；一批走快型号约一两分钱）
   if (qs.length) {
     try {
       const { text } = await callClaude(`你是一名史料检索员，只管查资料，不写故事。下面几条搜索词问的是人物和当年当地的情况，请照你确知的正史、实录、方志、通行百科给出相关条目：每条一句到三句（人名、官职、年份、地名、数目要准），写明出处（书名篇名或「通行史书」）。
@@ -6151,7 +6154,7 @@ const PCHK = {};
 const WIKIDATA_API = 'https://www.wikidata.org/w/api.php';
 /** 人物专用：大量博查（维基只查天下大势，人物一律不问维基）——一批二十来条问法同时搜，每条十条结果、带长摘要；
  *  没有博查（或一条都没搜到）才用 DeepSeek 检索补 */
-async function bochaDeep(s, qs, cap = 50) {
+async function bochaDeep(s, qs, cap = 50, opt) {
   qs = [...new Set(arr(qs).map(q => String(q || '').replace(/\s+/g, ' ').trim()).filter(q => q.length >= 2))].slice(0, 24);
   if (!qs.length || !canSearch()) return { text: '', items: [], bocha: false };
   let R = [], on = false;
@@ -6160,7 +6163,7 @@ async function bochaDeep(s, qs, cap = 50) {
     else if (BOCHA_KEY) { on = true; const one = q => bochaFetch(q, 25000, 10).then(items => ({ q, items })).catch(async e => { const m = String(e && e.message || e); if (/Key|余额/.test(m)) return { q, items: [], error: m }; await new Promise(r => setTimeout(r, 1500)); return bochaFetch(q, 25000, 10).then(items => ({ q, items })).catch(e2 => ({ q, items: [], error: String(e2 && e2.message || e2) })); });
       for (let i = 0; i < qs.length; i += 4) R.push(...await Promise.all(qs.slice(i, i + 4).map(one))); }
   } catch (e) { if (e && e.code === 'cancelled') throw e; }
-  if (!R.some(x => arr(x.items).length) && DSM()) { try { R = arr(await within(dsLookup(qs.slice(0, 12)), 40000, [])).map(y => ({ q: y.q, items: arr(y.items).map(i => ({ ...i, ds: true })) })); } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+  if (!R.some(x => arr(x.items).length) && DSM()) { try { R = arr(await within(dsLookup(qs.slice(0, 12), !!(opt && opt.verify)), 40000, [])).map(y => ({ q: y.q, items: arr(y.items).map(i => ({ ...i, ds: true })) })); } catch (e) { if (e && e.code === 'cancelled') throw e; } }
   const items = [], seen = new Set();
   for (const x of R) for (const i of arr(x.items)) { const k = String(i.url || i.title || '').replace(/[?#].*$/, '') || String(i.snippet).slice(0, 40); if (seen.has(k)) continue; seen.add(k); if (FICTION_RE.test(i.title || '')) continue; items.push({ q: x.q, ...i }); }
   if (items.length) feedAdd(items.slice(0, 4).map(i => ({ t: i.title, u: i.url, q: i.q, site: i.ds ? 'DeepSeek 检索' : '博查' })));
@@ -6652,7 +6655,7 @@ async function buildRoster(s) {
   let items = []; const hasB = MODE === 'local' ? !!(KEY && KEY.bocha) : !!BOCHA_KEY;
   // 不用博查以后（R-253）：另起一路 DeepSeek 检索员一个个核（和列表的那一路分开问），核不上的不收
   let skippedAll = false;
-  if ((hasB || DSM()) && cand.length) { const QS = cand.slice(0, 160).map(c => `${c.name} ${c.realm || pol}`); skippedAll = true; for (let k = 0; k < QS.length; k += 24) { const b = await bochaDeep(s, QS.slice(k, k + 24), 300); if (!b.skipped) skippedAll = false; items.push(...b.items.filter(i => !hasB || !i.ds)); } }
+  if ((hasB || DSM()) && cand.length) { const QS = cand.slice(0, 160).map(c => `${c.name} ${c.realm || pol}`); skippedAll = true; for (let k = 0; k < QS.length; k += 24) { const b = await bochaDeep(s, QS.slice(k, k + 24), 300, { verify: true }); if (!b.skipped) skippedAll = false; items.push(...b.items.filter(i => !hasB || !i.ds)); } }
   const hay = items.map(i => `${i.title} ${i.snippet}`).join('\n');
   // 一条也没真查（这回检索份额用完）：DeepSeek 列的名字一个不收，只列内置史料里的（R-253）；查了但一条没回（断网、限流）照旧照表收
   const ok = c => skippedAll ? false : (!items.length || hay.includes(c.name));
@@ -14744,7 +14747,7 @@ async function fictionClash(s) {
 ${cand0.map(n => n + (roleOf(n) ? '（' + roleOf(n) + '）' : '')).join('、')}
 只输出一个 JSON 对象：{"famous":[{"name":"","who":"是哪朝的什么人","same":false}],"unsure":[""]}`, null, { maxTokens: 2000, temperature: 0, kind: '检索', detached: true, thinking: false });
       const d = parseJSON(text); if (d) { for (const x of arr(d.famous)) { const n = one(x && x.name, 8); if (!cand0.includes(n)) continue; if (x.same === true || x.same === 'true') { SAME.add(n); continue; } NB[n] = `${n}：${one(x.who, 40)}（DeepSeek）`; } const uns = new Set(arr(d.unsure).map(x => one(x, 8))); for (const n of cand0) if (!(n in NB) && !uns.has(n)) NB[n] = ''; toNet = cand0.filter(n => uns.has(n)); } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
-  if (canSearch()) for (let k = 0; k < toNet.length; k += 24) { const P = toNet.slice(k, k + 24); try { const B = await within(bochaDeep(s, P, 300), 60000, null); if (!B || B.skipped) continue; for (const n of P) { const h = clashHit(n, arr(B.items).filter(i => i.q === n || String(i.title).includes(n))); NB[n] = h ? `${n}：${cut(h.snippet, 60)}（${h.ds ? 'DeepSeek 检索' : '博查'}）` : ''; } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+  if (canSearch()) for (let k = 0; k < toNet.length; k += 24) { const P = toNet.slice(k, k + 24); try { const B = await within(bochaDeep(s, P, 300, { verify: true }), 60000, null); if (!B || B.skipped) continue; for (const n of P) { const h = clashHit(n, arr(B.items).filter(i => i.q === n || String(i.title).includes(n))); NB[n] = h ? `${n}：${cut(h.snippet, 60)}（${h.ds ? 'DeepSeek 检索' : '博查'}）` : ''; } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
   for (const n of SAME) { markRealPerson(s, n); s.clashOK[n] = 1; }
   for (const n of F) {
     if (SAME.has(n)) continue;
@@ -16382,7 +16385,9 @@ async function afterTurnPool(s0) {
   const tried = new Set();
   const due = j => { try { return !!j.due(); } catch (_) { return false; } };
   // 有先后的：前头那件还在做、或者该做还没轮到，就先不挑它
-  const blocked = (j, L) => arr(j.needs).some(n => { if (BG_RUN.has(n)) return true; const x = L.find(y => y.id === n); return !!x && !tried.has(n) && due(x); });
+  // 前头的活这一回排不上（平常回合后台每回只做一件，那一件已经用掉）就不等它：天下推演不该因为同步史事这一回轮不上而一直饿着（R-253 完整测试查出）
+  const quotaOut = x => s0.settledAt != null && !x.ex && !x.free && typeof ECON_Q !== 'undefined' && ECON_Q.turn === (s0.turn || 0) && ECON_Q.bg >= 1;
+  const blocked = (j, L) => arr(j.needs).some(n => { if (BG_RUN.has(n)) return true; const x = L.find(y => y.id === n); return !!x && !tried.has(n) && due(x) && !quotaOut(x); });
   // 省着用（R-239）：开局查齐以后，后台每回合只做一件（和记账写同一处的不限）；天下大势隔四回才看一次；排不上的下回再做
   const tight = s0.settledAt != null;
   const okEcon = j => !tight || j.ex || j.free || (j.id === 'world' ? (s0.turn || 0) - (num(s0.econWorldAt) || -9) >= 4 : true);
