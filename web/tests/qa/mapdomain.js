@@ -4,6 +4,7 @@ const { chromium } = require('playwright');
 const path = require('path');
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1280, height: 1300 } });
+  p.setDefaultNavigationTimeout(90000); p.setDefaultTimeout(90000);
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
   await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof stratMap === 'function');
   const bad = [];

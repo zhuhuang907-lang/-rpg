@@ -317,6 +317,10 @@ const checks = [
   ['朝局待办与回音：下了令、上了疏，页面上看得到批没批、到没到任、朝局日志（R-213）', /朝局待办与回音/.test(src) && /上头准了/.test(src) && /约第\$\{esc\(x\.arrive\)\}回到任/.test(src)],
   ['你的位子没落进人事树也有卡；人事空缺不把照额员额、照例不授的算进去（R-214）', /还没排到你这个衙门/.test(src) && /const seatGap = /.test(src) && /status === '照额'\) \|\| p\.noGrant \|\| p\.histVacant/.test(src)],
   ['AI 把本朝人的生卒写错时，史料能证这名字在本朝有人就清掉日期、不误退真人（R-209 补）', (src.match(/与这一朝不合，不采信/g) || []).length >= 3],
+  ['官称别称表与同段近邻、卷类意图：检索核心桌面网页一字不差（R-236~238）', (() => { const core = fs.readFileSync(path.join(__dirname, '..', '..', 'rpg-kernel', 'core', 'libcore.js'), 'utf8').replace(/^'use strict';\n/, '').replace(/module\.exports[^\n]*\n?$/, '').trim(); return src.includes(core) && /const POST_ALIAS/.test(core) && /function libNear/.test(core) && /IV\[hint\]/.test(core); })()],
+  ['核人铁证：名字＋官称（或年号、衙门）同段同现才算核上，光杆名字只算线索；博查核实也照别称认官（R-240）', /名字与官称同段/.test(src) && /只有光杆名字，算线索/.test(src) && /function postHitText/.test(src) && /postHitText\(h, x\.q\.title\)/.test(src)],
+  ['核实落档：各处核上的都写进人物档案，real 只升不降，古人照时代门拦下（R-241）', /function filePerson/.test(src) && /if \(src && !s\.courtChk\[name\]\) s\.courtChk\[name\] = src; filePerson\(s, name/.test(src) && /eraPersonOkName\(s, name\)\.ok/.test(src)],
+  ['翻史书照问的猜卷类意图（R-238）', /function libHint/.test(src) && /citeFetch\(s, histBooksFor\(s, q\), terms, 8, libHint\(q\)\)/.test(src)],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);

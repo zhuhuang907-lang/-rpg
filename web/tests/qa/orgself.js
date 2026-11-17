@@ -3,7 +3,8 @@
 const { chromium } = require('playwright');
 const path = require('path'), http = require('http'), fs = require('fs');
 (async () => {
-  const WEB = process.env.PLAY ? path.dirname(path.resolve(process.env.PLAY)) : path.resolve(__dirname, '../..'), COR = path.resolve(WEB, '..', 'corpus');
+  const PLAY = String(process.env.PLAY || ''), winPlay = /^\/[a-zA-Z]\//.test(PLAY) ? PLAY.slice(1, 2).toUpperCase() + ':/' + PLAY.slice(3) : PLAY;
+  const WEB = winPlay ? path.resolve(path.dirname(winPlay)) : path.resolve(__dirname, '../..'), COR = path.resolve(WEB, '..', 'corpus');
   const srv = http.createServer((q, r) => {
     const f = decodeURIComponent(q.url.split('?')[0]);
     const fp = f.startsWith('/corpus/') ? path.join(COR, f.slice(8)) : path.join(WEB, f === '/' ? 'play.html' : f.slice(1));
