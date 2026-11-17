@@ -8,7 +8,7 @@ const path = require('path');
   const r = await p.evaluate(async () => {
     const run = async y => { S = newSave({ name: '张守诚', gender: '男', age: 35, role: '绸缎商人', gregorianYear: y, month: 2, day: 1, place: '洛阳', polity: y < 937 ? '后唐' : '北宋' });
       const oc = callClaude; let asks = 0; callClaude = async pr => { if (/人才年表/.test(pr)) { asks++; return { text: JSON.stringify({ people: [{ name: '赵普', born: 922, died: 992, native: '幽州蓟县', now: '在野', temper: '', will: '肯', path: [{ y: 960, post: '枢密直学士' }], source: '宋史·赵普传' }] }) }; } return { text: '{}' }; };
-      let n = 0; try { n = await talentDS(S); } finally { callClaude = oc; } return { asks, n, feng: !!(S.dossiers || {})['冯道'], fc: arr(((S.dossiers || {})['冯道'] || {}).career).length }; };
+      let n = 0; try { n = await talentDS(S); } catch (_) { } finally { callClaude = oc; }   /* 1300 年模型给的人不合年代会被退、抛错，这里只看问没问 */ return { asks, n, feng: !!(S.dossiers || {})['冯道'], fc: arr(((S.dossiers || {})['冯道'] || {}).career).length }; };
     return { a: await run(925), b: await run(1300) };
   });
   if (r.a.asks !== 0) errs.push('925 年三块都在预制包里，还请了模型 ' + r.a.asks + ' 次');
