@@ -5628,6 +5628,8 @@ function eraLabel(s, y) {
   let rs = pol ? all.filter(r => r.polity === pol) : all.filter(r => HIST.some(h => arr(h.polities)[0] === r.polity));
   if (!rs.length && !pol) rs = all;
   if (!rs.length && pol) rs = all.filter(r => pol.includes(r.polity) || r.polity.includes(pol)).sort((a, b) => (a.polity.startsWith(pol) ? 1 : 0) - (b.polity.startsWith(pol) ? 1 : 0));
+  // 自己不立年号的（楚、吴越、荆南、归义军……奉中原正朔）：用中原这一年的年号；同年几家都有，用新立的那一家（947 年后汉天福十二年，不是已亡的后晋开运）（R-254）
+  if (!rs.length && pol && rulersAt(y, s).some(r => !r.era && (r.polity === pol || pol.includes(r.polity) || r.polity.includes(pol)))) { const C = ['后梁', '后唐', '后晋', '后汉', '后周']; rs = all.filter(r => C.includes(r.polity)).sort((a, b) => C.indexOf(a.polity) - C.indexOf(b.polity)); }
   if (!rs.length) return '';
   const r = rs[rs.length - 1];
   // 天宝三载起到至德二载，唐朝改「年」为「载」
@@ -5731,6 +5733,7 @@ ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.k
 玩家一句话里有几个动作：steps 照先后拆开，第一步之后各步能不能成，看第一步的结果和旁人的利害（写进 why），玩家宣布的结果（众人跟随、对方答应）不当真。犯了禁的，写清本朝律令怎么定、当时实际怎么办、哪个衙门哪个人来管、多久能反应过来。
 玩家这一步要交兵（攻城、出战、迎敌、伏击、守城）：填 battle——敌军兵力照史料、探报、【各方势力】合理估计，写依据；胜负和伤亡由程序算，你不要定结果。
 如果玩家这回是在戏外提问（问历史、地理、局面、建议），steps 给 []，scene 不给，search 列出回答需要查的。
+只是盘算还没动手的（计）和玩家写明「暗中、私下、悄悄」做的，旁人不知道，不会有人因此告发、责罚、找上门（R-254）；暗中做的事照常算成不成，只是不声张。
 acts：把玩家这一回的话照性质分开——只是问的（问）、只是盘算还没动手的（计）、向上头或别人请准的（请）、凭主角自己的职权、身份让下面的人办的（令）、越出职权或冒险去做的（试；ok 写「越权」或「冒险」）；一件事一条，tmp 写 t1、t2……；在职权之内、钱粮人手够的「令」ok 写「能」。主角职权以内、人就在跟前或就在本地的吩咐，下面的人这一回就去办、正文里见结果，不无故拖延、推诿、来回请示；拖、打折、敷衍只在他的利害、本事、路程真说得通时才有（写进 why），不为添波折而设。后患只写这一步照常理真会带出来的，不凭空加祸事。
 lookup：写这一回要从账上查的几样（从这些里挑：${LOOKUP_KEYS}；人物、地图、往事后面写名字或关键词，如「人物:王某甲」「地图:江都县」「往事:盐引」），凡要写到兵数、钱粮、家里人、旧事、某人近况的都要查；要引经据典、写典章礼制、官署故实，再加「原文:关键词」（如「原文:盐铁」「原文:丧礼」），程序会去二十四史、通鉴、通典这些史书原文里查几段带出处的给你；程序会把账上的原样给写正文、记账的人。
 只输出一个 JSON 对象：{"lookup":["兵马"],"acts":[{"tmp":"t1","type":"问/计/请/令/试","what":"","who":"谁去办（主角自己办写「自己」）","to":"向谁请（申请才写）","perm":"凭什么：职权、关系、钱财","ok":"能/要批准/越权/冒险"}],"steps":[{"what":"这一步做什么","who":"谁去办","cost":"要花的钱粮与人手","time":"要多久","ok":"能/有代价/办不到（主角权限之内、人手钱粮够的一律写「能」，下面的人照办）","why":"别人会怎么回应、为什么（身份、利害、制度、路程）"}],"risks":["可能带出的后果与后患"],"alt":"客观办不到时可行的别的路子（没有就空）","search":["搜索词"],"places":["这一回要去、要打、要派人去的地方（写当时的县、州府名，最多四个）"],"battle":{"fight":"这一回真要交兵才写「是」，否则空","enemy":"对手（势力或将领真名）","enemyTroops":0,"enemyQuality":"精/中/弱","enemySupply":"足/缺","place":"在哪打（当时的地名）","terrain":"平原/山地/城池/关隘/河网/山林","attacker":"我/敌","surprise":"有/无","ourForces":["参战的我方兵马名（照【国势账】里的名字）"],"ourTroops":"主角名下没有兵马时（随军、守城、统带朝廷的兵、被卷进来）：主角这一边参战的人数","ourSide":"那时主角这一边叫什么（如 某军某指挥、守城兵民）","ourQuality":"精/中/弱","basis":"敌军兵力从哪来的（史料、探报、推断）"},"realPeople":["这一回牵涉的真实历史人物的名字：只列玩家点名要见、要找、要投奔、要对付的，和此时确实就在此地、凭主角的身份够得着的（如本县的官员）；远在别处、跟主角没有来往的名人不列，不为热闹把真人请进场面；史书上早已去世、不在这一朝的人（如唐人绝不能列进清朝这一回）绝不列，程序会照生卒年再核一遍（最多四个；虚构人物不列）"],"brief":{"institutions":"牵涉的衙门、职权与办事程序、文书","people":"相关职位上的人，一律写全名：照【本地官员名册】与上面材料；都没有的，照常理起一个合乎时代的全名","terms":"当时的说法、称谓、行话","interests":"各方的利害与惯常做法","details":"可写进场面的器物、场所、细节"},"scene":{"where":"这一场在哪里、什么时辰天气","cast":[{"name":"出场的人","want":"他此刻想要什么、瞒着什么","risk":"他怕什么、这件事让他担什么风险","flip":"什么情况下他会拖延、反口或翻脸"}],"offstage":"不在场的人这段日子做了什么、哪件在这一回露出来（没有就空）","surprise":"这一回顺理成章要发作的一件意外及其来由（没有就空）","type":"场面类型（如 路上/公堂/军中/市集/酒席/书房/田头/寺观/朝会/家中私话/独处/意外，与最近几回不同）","end":"停在哪里、怎么停（与最近几回的停法不同）"}}。steps 零到四步。`;
@@ -6769,12 +6772,14 @@ function guideHtml(s) {
    单子有经手人、要什么、状态、经过和回执；记账只能报单子的进展，不能凭空说办成；三回没下文的明写「没有下文」，不悄悄删掉 ========== */
 const ACT_T = { 问: '询问', 计: '谋划', 请: '申请', 令: '下令', 试: '尝试' };
 const ACT_OPEN = /在办|待批|拖着|部分/;
+/** 行动单上给玩家看的话：去掉「玩家盘算：」「主角打算」这类内部说法，「玩家」「主角」改称「你」（R-254，真模型实测查出） */
+const actPlain = w => String(w || '').replace(/^\s*(玩家|主角)(的)?(盘算|打算|想法|心里想|计划|意图)[：:，,]?\s*/, '').replace(/^\s*(盘算|打算)[：:]\s*/, '').replace(/玩家|主角/g, '你');
 function actNew(s, a) {
-  const x = { id: 'a' + ((s.actSeq = (num(s.actSeq) || 0) + 1)), type: ACT_T[a.type] ? a.type : '令', what: one(a.what, 80), who: one(a.who, 16), to: one(a.to, 16), perm: one(a.perm, 40), ok: one(a.ok, 8), src: a.src || '输入框', turn: s.turn, ym: Math.floor(ymOf(s.clock)), state: a.state || (a.type === '请' ? '待批' : '在办'), log: arr(a.log), ref: a.ref || null };
+  const x = { id: 'a' + ((s.actSeq = (num(s.actSeq) || 0) + 1)), type: ACT_T[a.type] ? a.type : '令', what: one(actPlain(a.what), 80), who: one(a.who, 16), to: one(a.to, 16), perm: one(a.perm, 40), ok: one(a.ok, 8), src: a.src || '输入框', turn: s.turn, ym: Math.floor(ymOf(s.clock)), state: a.state || (a.type === '请' ? '待批' : '在办'), log: arr(a.log), ref: a.ref || null };
   s.acts = arr(s.acts).concat([x]).slice(-80); return x;
 }
 const actOpen = s => arr(s.acts).filter(x => ACT_OPEN.test(x.state));
-function actSet(s, pred, state, why) { for (const x of arr(s.acts)) if (ACT_OPEN.test(x.state) && pred(x)) { x.state = state; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state, why: one(why, 60) }]).slice(-8); x.touched = s.turn; } }
+function actSet(s, pred, state, why) { for (const x of arr(s.acts)) if (ACT_OPEN.test(x.state) && pred(x)) { x.state = state; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state, why: one(actPlain(why), 60) }]).slice(-8); x.touched = s.turn; } }
 /** 推演、写正文、记账都看得到的行动单 */
 /** 犯禁的事做得成，后果看人看时局（R-242「少限制」）：pr 的可能被人揪住，下个月起临门；同一桩没了结前不重复 */
 function riskPress(s, title, who, demand, pr, seedK) {
@@ -6809,7 +6814,7 @@ function applyActs(s, d) {
     let st = /办成|成了|完成/.test(r.state || '') && !/部分/.test(r.state || '') ? '办成' : /部分/.test(r.state || '') ? '部分办成' : /驳/.test(r.state || '') ? '驳回' : /受阻|失败|没成|办砸/.test(r.state || '') ? '受阻' : /搁/.test(r.state || '') ? '搁下' : '拖着';
     // 裁定在写之前定的成败压过正文（任务十六第四步）：这一回新开的单子，裁定说办不到、越权的，记账报「办成」也只记受阻
     { const an = arr(s.actsNow).find(z => z.realId === x.id); if (an && /办成/.test(st)) { const rs = arr(CUR_RULING && CUR_RULING.steps).find(t => t && simText(t.what || '', x.what) >= 0.3); if (an.over === 'ok' && /越权/.test(String(an.ok || '')) && !(rs && /办不到|办不成/.test(String(rs.ok || '')))) { overPress(s, an); } else if (rs && /办不到|办不成/.test(String(rs.ok || '')) || /越权/.test(String(an.ok || ''))) { st = '受阻'; r.why = one((rs && rs.why) || '越了权限，办不下去', 60); r.changed = '没改'; s.unbooked = arr(s.unbooked).concat([{ turn: s.turn, text: `正文写「${one(x.what, 20)}」办成了，可照你的身份和手里的东西这一步办不到，账上记受阻` }]).slice(-30); } } }
-    x.state = st; x.touched = s.turn; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state: st, why: one(r.why, 60), changed: one(r.changed, 60) }]).slice(-8);
+    x.state = st; x.touched = s.turn; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state: st, why: one(actPlain(r.why), 60), changed: one(actPlain(r.changed), 60) }]).slice(-8);
     out.push({ id: x.id, type: x.type, what: x.what, state: st, why: one(r.why, 60), changed: one(r.changed, 60) });
   }
   // 这一回新开、职权以内、跟前就能办的令（推演说「能」、步骤不费月余、没走诏令），记账漏报的照办成记（玩家吩咐了、正文写了，不能吊着三回再写「没有下文」）
@@ -13697,6 +13702,12 @@ function applyBattle(s, r) {
   }
   { // R-177 军望：胜则军中声望涨，大败则掉
     const won = /胜/.test(r.outcome) && !/败/.test(r.outcome); if (mine.length && r.ours) { const R = repOf(s); R.jun = Math.max(0, Math.min(100, R.jun + (won ? (r.deadThem > r.deadUs ? 4 : 2) : /大败/.test(r.outcome) ? -5 : -2))); } }
+  { // 当面之敌记进兵马册（标敌军）：舆图、军务页「敌情」看得见对手剩多少、在哪，迎击、劫营、劫粮按得了（R-254：打完两仗，舆图和军务页上一个敌兵都没有）
+    const en = one(r.enemy, 24); if (en && !r.virtual) { const P = arr(s.powers).find(p => p && p.name && (en.includes(p.name) || (p.leader && en.includes(p.leader)) || String(p.name).includes(en.replace(/[（(].*$/, ''))));
+      const left = Math.max(0, Math.round((N0(r.theirs) || 0) - (N0(r.deadThem) || 0))), at = one(r.place, 30) || (s.place && s.place.full) || '';
+      let f = arr(s.forces).find(x => x && x.foe && (x.name === en || (P && x.owner === P.name)));
+      if (!f && left > 0) { f = { name: en, leader: (P && P.leader) || en.replace(/[（(].*$/, ''), owner: (P && P.name) || en, foe: true, troops: left, at, status: '交战', src: '战报' }; s.forces = arr(s.forces).concat([f]); }
+      else if (f) { f.troops = left; f.at = at; f.status = left ? (/败/.test(r.outcome || '') && !/敌/.test(r.outcome || '') ? '交战' : '退却') : '溃散'; f.src = '战报'; if (!left) s.forces = arr(s.forces).filter(x => x !== f); } } }
   if (r.take && !arr(s.territory).some(x => x.place === r.take)) s.territory = arr(s.territory).concat([{ place: r.take, pop: null, troops: Math.round(r.ours * 0.1), grain: null, loyalty: 30, note: `第${r.turn}回打下` }]);
   if (r.lose) s.territory = arr(s.territory).filter(x => x.place !== r.lose);
   if (!r.virtual && (r.take || r.lose)) { s.mapOwn = s.mapOwn || {}; if (r.take) s.mapOwn[geoStem(r.take)] = { owner: '你', turn: r.turn, why: '打下' }; if (r.lose) s.mapOwn[geoStem(r.lose)] = { owner: String(r.enemyOwner || r.enemy || '敌').replace(/(守军|军|兵)$/, '') || '敌', turn: r.turn, why: '丢了' }; }
@@ -14085,6 +14096,14 @@ function spanMonths(span, said) {
   if (/到年底|到年终|过年|到明年|开春|入冬|到秋|整年/.test(t)) return 6;
   return 0;
 }
+/** 玩家要日子往前走（「过半年」「过一年」「这三个月照常……」）：那是给游戏的话，不是主角嘴里说的（R-254 真模型实测：审讯堂上玩家写「过半年，打听……」，正文写成主角对都监说「过半年」，时间一天没动） */
+/** 玩家明说了过多久（「过半年」「过三个月」「这一年」，或下拉框选的）：只认明说的数，「过年」「开春」这类不算 */
+const spanAsked = (span, said) => { const SP = { xun: 0.3, month: 1, season: 3, year: 12 }; if (SP[span]) return SP[span]; const t0 = String(said || '').replace(/过年|新年|年节|年下|年关/g, ''); return /(半|[一两二三四五六七八九十]|\d+)\s*(年|个?月)/.test(t0) ? spanMonths('', t0) : 0; };
+function jumpBlock(s, span, said) {
+  const mo = spanAsked(span, said); if (mo < 1 || !s.clock) return '';
+  const k = mo >= 12 ? Math.round(mo / 12) + '年' : (mo === 0.5 ? '半个月' : mo + '个月');
+  return `\n【玩家要日子往前走约${k}】玩家话里的「过${k}」「这段日子照常……」是让时间往前过，不是主角说出口的话，正文里谁也不说这句。眼前的场面先照情势简短了结（审完、散了、各自回去），再把这${k}按先后写过去（主角做了什么、身边和天下出了什么事），停在这段日子末尾的一件事上；时间至少过去${k}。`;
+}
 function spanBlock(s, span, said) {
   const mo = spanMonths(span, said); if (mo < 2 || !s.clock) return '';
   const now = ymOf(s.clock), L = [];
@@ -14231,11 +14250,20 @@ function recapTail(s, said, span) {
   if (!SPANS[span]) L.push(`【字数】正文${LEN[SETTINGS.len] || LEN.normal}，不超出；写完这件事就停（要交账的，正文停了再交账）。`);
   return L.join('\n');
 }
+/* 心里的盘算不写成说出口（R-254，2026-11-17 项目主人：「必须给我修好，全部修好」——真模型实测：玩家写「趁两边打得最凶时按兵不动」「等两边精疲力竭再突入长沙」，正文写成主角当众说出、被人告发下狱）：
+ *  推演分出来的「计」（只是盘算）和玩家话里「暗中、私下、打算、等……时、趁……」这类，写成主角心里怎么想、私下怎么谋划，不当众说出、旁人不知道 */
+const PRIVATE_RE = /暗中|暗地|私下|悄悄|秘密|偷偷|不动声色|心里|心中|盘算|打算|想着|寻思|准备|伺机|等[^，。]{1,16}(时候|之时|再|以后|之后)|趁[^，。]{1,16}(时候|之时|机会|空子)|按兵不动|保存实力|不露声色/;
+function privateBlock(said, ruling) {
+  const plans = arr(ruling && ruling.acts).filter(a => a && a.type === '计').map(a => a.what).filter(Boolean);
+  const raw = String(said || '').split(/[，,。；;！!\n]/).map(x => x.trim()).filter(x => x.length >= 4 && PRIVATE_RE.test(x));
+  const L = [...new Set(plans.concat(raw))].slice(0, 6); if (!L.length) return '';
+  return `\n【主角心里的盘算、私下的打算（不是说出口的话）】\n${L.map(x => '· ' + x).join('\n')}\n这几件写成主角心里怎么想、私下怎么准备（独处时，或只对最亲信的一两个人低声交代）；不当众说出、不嚷给旁人听，旁人不知道就不能拿它告发、责罚、对质。玩家没写他对谁说的，就是没对任何人说。`;
+}
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
   const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : ''));
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、身边人自己的事（真有才写）、结识的人、家里的变化、季节年景、传来的天下大事），其余一两句带过。` : '';
-  const what = String(said || '').trim() ? `【玩家这回说】\n${said}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。';
+  const what = String(said || '').trim() ? `【玩家这回说】\n${said}${privateBlock(said, ruling)}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。';
   // 制度程序只在玩家这一步本身是公事时才给写正文的人（不然它就满篇衙门文书、摊派差役）
   const adm = /衙|官|公文|奏|疏|审|案|税|赋|兵|军|朝|任|升|调|考|吏|差事|公事/.test(String(said || ''));
   const BN = { institutions: '衙门与程序', people: '相关的人', terms: '当时的说法', interests: '各方利害', details: '可写的细节' };
@@ -14245,7 +14273,7 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const scene = sc ? `\n【人物底（出场的人各自的心思、不在场的人做了什么；参考着写，人物照各自的盘算说话做事）】${sc.type ? '\n场面：' + sc.type : ''}${sc.where ? '\n场合：' + sc.where : ''}${sc.cast.length ? '\n出场：' + sc.cast.map(x => `${x.name}（${x.want}${x.risk ? '；怕：' + x.risk : ''}${x.flip ? '；会翻脸的时候：' + x.flip : ''}）`).join('；') : ''}${sc.offstage ? '\n不在场的人：' + sc.offstage : ''}${sc.surprise ? '\n要发作的意外（照来由写，别写成天降）：' + sc.surprise : ''}${sc.beats.length ? '\n' + sc.beats.map((b, i) => `${i + 1}. ${b}`).join('\n') : ''}${sc.end ? '\n停在：' + sc.end : ''}` : '';
   const dos = dossierBlock(s, said + ' ' + (sc ? sc.cast.map(x => x.name).join(' ') : '') + ' ' + arr(ruling && ruling.realPeople).join(' '));
   const ab = archiveBlock(s, said + ' ' + (sc ? sc.cast.map(x => x.name).join(' ') + ' ' + (sc.where || '') : ''));
-  const sb2 = spanBlock(s, span, said);
+  const sb2 = spanBlock(s, span, said) + jumpBlock(s, span, said);
   const dir = directorBlock(s, said) + (sb2 ? sb2 + '\n' : '') + (s.mainNow && s.mainNow.upcoming && s.mainNow.days > 3 && !SPANS[span] && /歇着|歇几天|歇一阵|等着|等等看|观望|过几天|过些日子|闲着|没什么事|养病|守孝|读书度日/.test(said) ? `【这一回的时间】玩家要歇着、等着：把日子往前推，写这几天到几十天里主线的前兆一件件来，推到离那件大事更近的时候（它约${s.mainNow.days}天后到来，可以直接写到它前一两天或当天）。\n` : '');
   const bb = ruling && ruling.battleResult ? battleBlock(ruling.battleResult) : '';
   const lastUnb = arr(s.unbooked).filter(u => u && u.turn === s.turn).map(u => String(u.text || '').replace(/^正文写了?/, '').replace(/，可这一步.*$|，没有凭据.*$|，可照你的.*$/, '')).filter(Boolean).slice(0, 5);
@@ -14769,8 +14797,10 @@ const clashDue = s => s && !settled(s) && [...fictionSet(s), ...(s.protagonist &
 /** 显示用：每段正文里，虚构人物头一次出现时后面标「（虚拟）」 */
 function markFict(s, text) {
   let t = String(text || ''); if (!s) return t;
-  const F = [...fictionShow(s)].sort((a, b) => b.length - a.length);
-  for (const n of F) { const i = t.indexOf(n); if (i >= 0 && t.slice(i + n.length, i + n.length + 4) !== '（虚拟）') t = t.slice(0, i + n.length) + '（虚拟）' + t.slice(i + n.length); }
+  // 主角自己不标；标在叙述里头一次出现处，不标进人物说的话（「」里）——真模型实测「周铁山（虚拟）押到」读着别扭（R-254）
+  const me = (s.protagonist || {}).name, F = [...fictionShow(s)].filter(n => n && n !== me).sort((a, b) => b.length - a.length);
+  const inQuote = i => { const a = t.lastIndexOf('「', i), b = t.lastIndexOf('」', i); return a > b; };
+  for (const n of F) { let i = t.indexOf(n); while (i >= 0 && inQuote(i)) i = t.indexOf(n, i + n.length); if (i >= 0 && t.slice(i + n.length, i + n.length + 4) !== '（虚拟）') t = t.slice(0, i + n.length) + '（虚拟）' + t.slice(i + n.length); }
   return t;
 }
 /** 名册里只写「程氏」「王氏」的女眷：起一个合乎身份的名字（姓不变），原来的「某氏」记作称呼；正文里照旧可以称「程氏」 */
@@ -15162,7 +15192,9 @@ function applyReply(s, d, said) {
     const said2 = String(said || ''), rep2 = String(d.reply || ''), asked = SPANS[d.span] || spanMonths(d.span, said2) || /过|等|歇|熬|守|赶路|上路|动身|出发|启程|前往|回乡|进京|赶考|赴任/.test(said2) || travelSaid(s, said2);
     const tw = /(数|几|两|三|四|五|六|七|八|九|十|半|一)(日|天|旬|月|个月|年|载)|次日|翌日|第二天|隔日|转眼|一晃|月余|旬日|半月|入夜|天明|次晨/;
     const capDays = asked ? 1900 : !tw.test(rep2) ? 1 : /(数|几|两|三|四|五|六|七|八|九|十|半)(个)?(月|年|载)|月余|一晃|转眼/.test(rep2) ? 400 : 45;
-    let days = Math.max(0, Math.min(capDays, Math.max(400, Math.round(spanMonths(d.span, said) * 30.5)), 1900, Math.round(Number(d.elapsedDays) || 0)));   // 玩家说过两年、过五年：照他说的推，最多五年多
+    let days = Math.max(0, Math.min(capDays, Math.max(400, Math.round(spanMonths(d.span, said) * 30.5)), 1900, Math.round(Number(d.elapsedDays) || 0)));
+    { const sm = spanAsked(d.span, said); if (sm >= 1) days = Math.max(days, Math.min(capDays, Math.round(sm * 30.5 * 0.9))); }
+    { const br = CUR_RULING && CUR_RULING.battleResult, bd = br ? arr(br.rounds).length : 0; if (bd > 1) days = Math.max(days, bd); }   // 一仗打了几日，时间就至少过几日（R-254：七日的仗，钟上只过了几个时辰）   // 玩家说了过多久，账房报得少也照玩家说的过（R-254：「过半年」账上只过了几个钟头）   // 玩家说过两年、过五年：照他说的推，最多五年多
     // 赶路：从原来所在到这一回所在，照历史地名库的路程和走法算日子，不会一天就到
     { const from = geoCenter(s), to = one(d.moveTo || d.nowAt, 30).replace(/[（(].*$/, '');
       if (to && from && !String(from).includes(to) && geoStem(to) !== geoStem(from)) {
