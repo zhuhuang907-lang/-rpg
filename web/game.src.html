@@ -3107,19 +3107,43 @@ function findPost(s, name) { for (const n of arr(s.org && s.org.nodes)) for (con
 const PEV_MEMO = new Map();
 async function personEvidence(s, name, ctx) {
   if (!name || String(name).length < 2) return null;
-  const key = (s.clock || {}).y + '|' + name;
+  const key = (s.clock || {}).y + '|' + name + '|' + String(ctx || '').slice(0, 10);
   if (PEV_MEMO.has(key)) return PEV_MEMO.get(key);
   if (PEV_MEMO.size > 300) PEV_MEMO.clear();
   let r = null;
   try {
-    const hits = await within(citeFetch(s, histBooksFor(s, ctx || ''), [name]), 25000);
-    const hit = hits.find(h => String(h.text || '').includes(name));
-    if (hit) r = { ok: true, src: '原文库·' + (hit.name || '') + (hit.volume || '') };
+    /* R-250 核人铁证：名字＋官称（或它的史称别称、年号、衙门）同段同现才算核上；
+       光杆名字只算线索——同名同姓的太多，史书里还爱只称字、只称官，光见名字就把人钉死，是核错人的头号来路。
+       检索词也照官称别称展开（R-246：知府在宋史里写作知某府事、太守，只查「知府」就漏）；问人，列传优先（R-248）。 */
+    const ttl = postTitleOf(ctx || ''), als = postAliasAll(ttl), he = histEraName(s), stem = String(ctx || '').replace(ttl, '').slice(0, 2);
+    const terms = [name + '*2'].concat(als.slice(1, 4).map(a => a + '*1.2')).concat(he ? [he] : []);
+    const hits = await within(citeFetch(s, histBooksFor(s, (ctx || '') + ' 人物'), terms, 6, '人'), 25000);
+    for (const h of hits) {
+      const seg = String(h.seg || '') + ' ' + String(h.text || ''), t = String(h.text || '');
+      if (!seg.includes(name)) continue;
+      const src = '原文库·' + (h.name || '') + (h.volume || '');
+      if (als.some(a => a.length >= 2 && seg.includes(a)) || (he && seg.includes(he)) || (stem.length >= 2 && seg.includes(stem))) { r = { ok: true, src: src + '（名字与官称同段）', post: ttl }; break; }
+      if (!r) r = { ok: false, src: src + '（只有光杆名字，算线索，不算核上）', clue: true, post: ttl };
+    }
   } catch (_) { r = null; }
   PEV_MEMO.set(key, r);
   return r;
 }
-function courtChkMark(s, name, src) { s.courtChk = s.courtChk || {}; if (src && !s.courtChk[name]) s.courtChk[name] = src; }
+function courtChkMark(s, name, src) { s.courtChk = s.courtChk || {}; if (src && !s.courtChk[name]) s.courtChk[name] = src; filePerson(s, name, { ok: true, src }); }
+/* R-251 核实落档：不管哪一处把人核实了（原文库、博查、CBDB、维基），都写进人物档案；
+   档案 real 只升不降，已立档的补上核实出处与「最后核实的年份」；核上的若与史料里生卒对不上（R-209 同一道门），照旧不立档 */
+function filePerson(s, name, ev) {
+  if (!s || !name || (s.protagonist && name === s.protagonist.name) || !ev || !ev.ok) return null;
+  if (!eraPersonOkName(s, name).ok) return null;
+  const D = s.dossiers = s.dossiers || {}, made = !D[name], d = D[name] || (D[name] = { real: true, y: (s.clock || {}).y });
+  if (made && ev.post) d.post = String(ev.post).slice(0, 30);
+  d.real = true; delete d.doubt; if (!d.chk || d.chk === '查无此人') d.chk = ev.src || d.chk || ''; if (!d.src || /未联网/.test(d.src || '')) d.src = ev.src || d.src; d.ver = (s.clock || {}).y;
+  return d;
+}
+/** 官称认得（R-246）：这段话里有没有这个官（或它的史称别称；长官名取末两字兜底，如「参知政事」的「政事」） */
+function postHitText(h, title) { const t = String(h || ''), als = postAliasAll(title); return als.some(a => t.includes(a) || (a.length > 2 && t.includes(a.slice(-2)))); }
+/** 这一问是问人、问制度、还是问事（R-248 卷类意图）：照问的词猜，问不出就当问人 */
+function libHint(q) { const x = String(q || ''); return /官|制|礼|赋|税|役|兵|刑|志|会要|典|河|水利|盐|茶|马政|币|铸|漕|科举|贡举|铨|品级|俸禄|沿革|舆图/.test(x) ? '制' : /纪|实录|本末|之乱|之变|起兵|北伐|南征|东征|西讨|迁都|改元|即位|登基|驾崩|亲征|围城|破城|合战|大战|称帝/.test(x) ? '事' : '人'; }
 /* ---------- R-204 主角落位：做了官的主角必须落在人事树上（照 career.office 找位子），不然朝局就是别人的戏 ----------
    「你的位子」卡：上司、同僚、辖地全用树上核过的真人；主角自己上任，盖过程序起的占位名（player 优先） ---------- */
 function seatSelf(s) {
@@ -4241,20 +4265,35 @@ function castBlock(s) {
 /* ---------- R-172 历史原文库取证：写正文前照年号、人名、制度词查几段原文（全量正史＋通鉴＋政书＋兵书，见仓库 corpus/） ----------
  *  桌面版走本机服务 /api/histlib/cite（书按需下载到 data/cache/histlib）；网页版浏览器直连云端按书下载、IndexedDB 缓存。
  *  原文带书名卷名出处给写正文的模型：引原文必须照抄，不得改字。 */
-/* 原文库检索核心（R-189，桌面服务与网页两边同一套）：
+/* 原文库检索核心（R-189 起，桌面服务与网页两边同一套，一字不差；R-246~250 检索中枢）：
  *  · 检索词整词比对（不是两字一拆乱凑）：每个词照它在这本书里出现的段数算稀有度（越少见越要紧），带权重（人名、地名重，年号轻）；
  *  · 一段里同时中了几个词的加倍（年号＋人名＋事同在一段，才是要找的那段）；出现在过半段落里的词当常用字，不计分；
- *  · 摘句：在命中最密的地方截一百五十字左右、顺着句号断开，不再从段首硬截（以前截出来的常常根本不含要找的词）。 */
+ *  · 同段近邻（R-247）：中了几个词的，还要在一百二十字内挤在一起才再加倍——以前整段东一个词、西一个词也算「同段」，常把不相干的段排到前头；
+ *  · 卷类意图（R-248，hint：'人'/'制'/'事'）：问人优先列传、世家，问制度优先志、考、会要、典，问事优先纪、实录、本末；
+ *  · 官称别称（R-246）：一个官，今称与史称对不上（知府＝太守＝郡守），检索与核人都照别称表一起查、一起认；
+ *  · 摘句：在命中最密的地方截一百五十字左右、顺着句号断开，不再从段首硬截（以前截出来的常常根本不含要找的词）；命中的整段也随条带回（seg），核人要照整段判「名字与官称同段」。 */
 const LIB_ZH = { beiqishu: '北齐书', beishi: '北史', cefuyuangui: '册府元龟', changbian: '续资治通鉴长编', chenshu: '陈书', daminghuidian: '大明会典', dushifangyu: '读史方舆纪要', dutongjianlun: '读通鉴论', guoyu: '国语', hanshu: '汉书', houhanshu: '后汉书', huangchaowenxiantongkao: '皇朝文献通考', jianyanjilu: '建炎以来系年要录', jinshi: '金史', jinshu: '晋书', jiutangshu: '旧唐书', jiuwudaishi: '旧五代史', jixiaoxinshu: '纪效新书', lianbingjinji: '练兵实纪', liangshu: '梁书', liaoshi: '辽史', lijibingshu: '天下郡国利病书', liutao: '六韬', mingshi: '明史', mingshilu: '明实录', mingtongjian: '明通鉴', nanqishu: '南齐书', nanshi: '南史', nianershi: '廿二史札记', qingshigao: '清史稿', qingshilu: '清实录', sanguozhi: '三国志', sanlue: '三略', shanhaijing: '山海经', shiji: '史记', shuijingzhu: '水经注', sima: '司马法', songhuiyao: '宋会要辑稿', songshi: '宋史', songshu: '宋书', suishu: '隋书', sunzibingfa: '孙子兵法', taipingyulan: '太平御览', tanghuiyao: '唐会要', tongdian: '通典', tongzhi: '通志', weiliaozi: '尉缭子', weishu: '魏书', wenxiantongkao: '文献通考', wubeizhi: '武备志', wudaihuiyao: '五代会要', wujingzongyao: '武经总要', wuyuechunqiu: '吴越春秋', wuzi: '吴子', xintangshu: '新唐书', xinwudaishi: '新五代史', xuzizhitongjian: '续资治通鉴', yuanhejunxian: '元和郡县图志', yuanshi: '元史', yuejueshu: '越绝书', yuhai: '玉海', zhanguoce: '战国策', zhoushu: '周书', zhushujinian: '竹书纪年', zizhitongjian: '资治通鉴' };
 function libTerms(x) { const out = []; for (const raw of (Array.isArray(x) ? x : String(x || '').split(/[|\s]+/))) { const o = typeof raw === 'object' && raw ? raw : (() => { const m = String(raw).match(/^(.+?)\*(\d+(?:\.\d+)?)$/); return m ? { q: m[1], w: +m[2] } : { q: String(raw), w: 1 }; })(); const q = String(o.q || '').replace(/[^一-鿿]/g, ''); if (q.length >= 2 && !out.some(t => t.q === q)) out.push({ q: q.slice(0, 12), w: Math.max(0.2, Math.min(4, +o.w || 1)) }); if (out.length >= 10) break; } return out; }
 function libSnip(t0, m, L) { L = L || 150; const t = String(t0 || '').replace(/__NOEDITSECTION__/g, '').replace(/\s+/g, ' ').trim(); const pos = []; for (const q of m) { let p = t.indexOf(q); while (p >= 0 && pos.length < 40) { pos.push(p); p = t.indexOf(q, p + q.length); } } pos.sort((a, b) => a - b);
   if (!pos.length) return t.slice(0, L); let best = pos[0], bc = 0; for (const p of pos) { const c = new Set(m.filter(q => { const k = t.indexOf(q, Math.max(0, p - 10)); return k >= 0 && k < p + L - 20; })).size; if (c > bc) { bc = c; best = p; } }
   let a = Math.max(0, best - 40); const pre = t.lastIndexOf('。', best); if (pre >= 0 && best - pre <= 70) a = pre + 1; let e = Math.min(t.length, a + L); const nx = t.indexOf('。', Math.max(a, e - 30)); if (nx >= 0 && nx < e + 40) e = nx + 1;
   return (a > 0 ? '……' : '') + t.slice(a, e).trim() + (e < t.length ? '……' : ''); }
-function libScan(texts, terms, n) { const N = texts.length; if (!N || !terms.length) return []; const sc = new Map();
+/* 官称别称表（R-246）：只收史书、实录、政书里真用过的叫法；键是游戏与今称里的官名，值是它在史料里的写法。检索先照它展开词形（连展开两层：太守＝知府，知府又写作知某府事），核人、核官也照它认 */
+const POST_ALIAS = { 知府: ['太守', '郡守', '府尹', '知某府事'], 太守: ['知府', '郡守'], 郡守: ['太守', '知府'], 府尹: ['知府'], 知州: ['知某州军州事', '刺史'], 刺史: ['知州', '太守'], 县令: ['县尹', '知县'], 知县: ['县令', '县尹'], 县丞: ['丞'], 主簿: ['簿'], 通判: ['通守', '倅'], 同知: ['贰'], 推官: ['理官'], 巡抚: ['抚台', '部院'], 总督: ['制台', '制军', '督师'], 总兵: ['总戎', '镇台'], 按察使: ['臬台', '臬司'], 布政使: ['藩台', '藩司'], 提刑: ['宪司', '监司'], 转运使: ['漕司', '漕使'], 知谏院: ['谏院'], 尚书: ['冢宰', '大司马', '大宗伯', '大司寇', '大司空', '大司农'], 宰相: ['相国', '丞相', '平章政事', '同平章事', '尚书左仆射', '尚书右仆射', '中书令', '侍中', '参政', '首辅', '阁老', '大学士'], 参知政事: ['参政', '执政'], 枢密使: ['枢相', '枢密'], 枢密副使: ['枢副'], 翰林学士: ['内相', '学士'], 御史中丞: ['中丞'], 御史: ['台官', '宪台'], 节度使: ['节帅', '藩帅'], 太尉: ['司马'] };
+function postAliasAll(q) { const t = String(q || '').trim(), out = [t]; for (const a of POST_ALIAS[t] || []) if (!out.includes(a)) out.push(a); for (const a of out.slice()) for (const b of POST_ALIAS[a] || []) if (!out.includes(b)) out.push(b); return out; }
+/** 从「汉中知府」这类「衙门＋官职」里认出官名（认最长那个；认不出返回空） */
+function postTitleOf(ctx) { const t = String(ctx || ''), ks = Object.keys(POST_ALIAS).sort((a, b) => b.length - a.length); for (const k of ks) if (t.includes(k)) return k; return ''; }
+/** 同段近邻（R-247）：这些词在一百二十字内最多同现几个（2 以上才算真挤在一起；散落全段的只算各中各的） */
+function libNear(t, qs, L) { L = Math.max(20, L || 120); const s = String(t || ''), P = [];
+  for (const q of new Set(qs || [])) { if (!q) continue; let p = s.indexOf(q), c = 0; while (p >= 0 && c < 16) { P.push([p, q]); p = s.indexOf(q, p + q.length); c++; } }
+  if (!P.length) return 0; P.sort((a, b) => a[0] - b[0]); const cnt = new Map(); let best = 0, j = 0;
+  for (let i = 0; i < P.length; i++) { cnt.set(P[i][1], (cnt.get(P[i][1]) || 0) + 1); while (P[i][0] - P[j][0] > L) { const v = cnt.get(P[j][1]) - 1; if (v <= 0) cnt.delete(P[j][1]); else cnt.set(P[j][1], v); j++; } if (cnt.size > best) best = cnt.size; }
+  return best; }
+function libScan(texts, terms, n, hint) { const N = texts.length; if (!N || !terms.length) return []; const sc = new Map();
   for (const T of terms) { const hit = []; for (let i = 0; i < N; i++) if (texts[i].t.indexOf(T.q) >= 0) hit.push(i); const df = hit.length; if (!df || (df > N * 0.5 && N > 20)) continue; const idf = Math.log(1 + N / df) * T.w; for (const i of hit) { const o = sc.get(i) || { s: 0, m: [] }; o.s += idf; o.m.push(T.q); sc.set(i, o); } }
-  const out = []; for (const [i, o] of sc) out.push({ i, s: o.s * (1 + 0.7 * (o.m.length - 1)), m: o.m }); out.sort((a, b) => b.s - a.s);
-  return out.slice(0, n || 4).map(x => ({ volume: texts[x.i].v, text: libSnip(texts[x.i].t, x.m), terms: x.m, score: Math.round(x.s * 100) / 100 })); }
+  const IV = { 人: /传|世家|载记/, 制: /志|考|典|会要|沿革/, 事: /纪|实录|本末/ }, ire = IV[hint];
+  const out = []; for (const [i, o] of sc) { const near = o.m.length > 1 ? libNear(texts[i].t, o.m) : 1, iv = ire && ire.test(texts[i].v || '') ? 1.3 : 1; out.push({ i, s: o.s * (1 + 0.7 * (o.m.length - 1)) * (1 + 0.4 * (near - 1)) * iv, m: o.m }); } out.sort((a, b) => b.s - a.s);
+  return out.slice(0, n || 4).map(x => ({ volume: texts[x.i].v, text: libSnip(texts[x.i].t, x.m), seg: String(texts[x.i].t || '').slice(0, 2400), terms: x.m, score: Math.round(x.s * 100) / 100 })); }
 /* 哪个年代、哪一家查哪几部书（照朝代与政权；南北朝分南北，宋辽金元分开） */
 function libBooksFor(y, pol, said) { const P = String(pol || ''), B = []; const add = (...a) => { for (const x of a) if (!B.includes(x)) B.push(x); };
   if (y < -221) add('shiji', 'zhanguoce', 'guoyu', 'zhushujinian'); else if (y < -202) add('shiji', 'zizhitongjian'); else if (y < 9) add('hanshu', 'shiji', 'zizhitongjian'); else if (y < 25) add('hanshu', 'zizhitongjian'); else if (y < 189) add('houhanshu', 'zizhitongjian');
@@ -4265,7 +4304,8 @@ function libBooksFor(y, pol, said) { const P = String(pol || ''), B = []; const 
   else if (y < 1127) { if (/辽|契丹/.test(P)) add('liaoshi'); else if (/金|女真/.test(P)) add('jinshi'); add('songshi', 'changbian', 'songhuiyao'); }
   else if (y < 1279) { if (/金|女真|齐/.test(P) && y <= 1234) add('jinshi'); else if (/蒙古|元/.test(P)) add('yuanshi'); add('songshi', y <= 1162 ? 'jianyanjilu' : 'xuzizhitongjian', 'songhuiyao'); if (y >= 1206 && !/蒙古|元/.test(P)) add('yuanshi'); }
   else if (y < 1368) add('yuanshi', 'xuzizhitongjian'); else if (y < 1644) add('mingshi', 'mingshilu', 'mingtongjian'); else add('qingshigao', 'qingshilu', 'huangchaowenxiantongkao');
-  const x = String(said || ''); const T = [[/科举|贡举|进士|察举|九品|铨选|官制|品级|俸禄|考成|考课|磨勘|荫补|封赠/, y >= 1368 ? ['daminghuidian', 'tongdian'] : ['tongdian', 'wenxiantongkao']], [/赋税|两税|一条鞭|盐法|钱法|宝钞|铸钱|漕运|常平|义仓|徭役|丁银|摊丁|米价|荒政|赈济|饥|旱|蝗/, y >= 1644 ? ['huangchaowenxiantongkao'] : y >= 1368 ? ['daminghuidian', 'wenxiantongkao'] : ['tongdian', 'wenxiantongkao']], [/兵制|府兵|卫所|绿营|八旗|屯田|军器|阵法|火器|马政|练兵|战船|守城/, y >= 1550 && y < 1650 ? ['jixiaoxinshu', 'wujingzongyao'] : ['wujingzongyao', 'tongdian']], [/山川|关隘|渡口|里程|形胜|险要|城池|舆图|沿革/, ['dushifangyu', 'yuanhejunxian']], [/婚礼|丧礼|祭礼|冠礼|葬制|服丧|礼仪|朝仪|郊祀|宗庙/, ['tongdian', 'wenxiantongkao']]];
+  const x = String(said || ''), HY = y >= 1644 ? ['huangchaowenxiantongkao'] : y >= 1368 ? ['daminghuidian'] : y >= 960 ? ['songhuiyao'] : y >= 618 ? ['tanghuiyao'] : [];   /* 本朝会要（R-249）：问本朝的制度、赋役，补上本朝自己的政书 */
+  const T = [[/科举|贡举|进士|察举|九品|铨选|官制|职官|品级|俸禄|考成|考课|磨勘|荫补|封赠/, y >= 1644 ? ['huangchaowenxiantongkao', 'tongdian'] : y >= 1368 ? ['daminghuidian', 'tongdian'] : ['tongdian', 'wenxiantongkao'].concat(HY)], [/赋税|两税|一条鞭|盐法|钱法|宝钞|铸钱|漕运|常平|义仓|徭役|丁银|摊丁|米价|荒政|赈济|饥|旱|蝗|茶马|市舶|榷/, y >= 1644 ? ['huangchaowenxiantongkao'] : y >= 1368 ? ['daminghuidian', 'wenxiantongkao'] : ['tongdian', 'wenxiantongkao'].concat(HY)], [/兵制|府兵|卫所|绿营|八旗|屯田|军器|阵法|火器|马政|练兵|战船|守城/, y >= 1550 && y < 1650 ? ['jixiaoxinshu', 'wujingzongyao'] : ['wujingzongyao', 'tongdian']], [/山川|关隘|渡口|里程|形胜|险要|城池|舆图|沿革|河工|治河|水利|河渠|堤堰/, ['dushifangyu', 'yuanhejunxian']], [/婚礼|丧礼|祭礼|冠礼|葬制|服丧|礼仪|朝仪|郊祀|宗庙/, ['tongdian', 'wenxiantongkao']], [/典故|掌故|成语|训诂|类书|故事|异闻|志怪|轶事|逸事|传说/, ['taipingyulan', 'yuhai', 'cefuyuangui']]];
   for (const [re, bs] of T) if (re.test(x)) add(...bs); return B.slice(0, 6); }
 /* 和桌面服务 rpg-kernel/core/libcore.js 同一套（护栏核对两边一字不差） */
 function histBooksFor(s, said) { return libBooksFor(((s.clock || {}).y) || 0, (s.place || {}).polity || '', String(said || '') + ' ' + String(s.citeExtra || '')); }
@@ -4291,15 +4331,15 @@ async function wlibLoad(id) {
   return texts;
 }
 /** 查原文：qs 是检索词（可带权重「王安石*2」）；桌面走本机服务，网页直连云端语料 */
-async function citeFetch(s, bookIds, qs, n) {
+async function citeFetch(s, bookIds, qs, n, hint) {
   const ids = bookIds.slice(0, 6), terms = libTerms(qs); if (!terms.length || !ids.length) return [];
   if (MODE === 'local') {
-    const r = await within(api('/api/histlib/cite?q=' + encodeURIComponent(terms.map(t => t.q + (t.w !== 1 ? '*' + t.w : '')).join('|')) + '&books=' + ids.join(',') + '&n=' + (n || 4)), 25000);
+    const r = await within(api('/api/histlib/cite?q=' + encodeURIComponent(terms.map(t => t.q + (t.w !== 1 ? '*' + t.w : '')).join('|')) + '&books=' + ids.join(',') + '&n=' + (n || 4) + (hint ? '&hint=' + encodeURIComponent(hint) : '')), 25000);
     return (r && r.ok) ? arr(r.hits).map(h => ({ ...h, name: LIB_ZH[h.book] || h.name })) : [];
   }
   if (!WLIB_OK) throw new Error('网页版原文库不可用');
   const out = [];
-  for (const id of ids) { const texts = await wlibLoad(id); for (const h of libScan(texts, terms, 4)) out.push({ book: id, name: LIB_ZH[id] || id, ...h }); }
+  for (const id of ids) { const texts = await wlibLoad(id); for (const h of libScan(texts, terms, 4, hint)) out.push({ book: id, name: LIB_ZH[id] || id, ...h }); }
   return out.sort((a, b) => b.score - a.score).slice(0, n || 4);
 }
 /** 给推演、设定朝局用的原文佐证（R-189）：照检索词查几段，拼成材料；查不到、查得慢都不挡路 */
@@ -4309,7 +4349,7 @@ function libFindHtml(s) { const H = LIBFIND.hits; return `<div class="h"><span c
   <div class="opost"><input id="libQ" maxlength="30" placeholder="例如：${esc(histEraName(s) || '年号')} 某人 某事" value="${esc(LIBFIND.q)}" style="flex:1;min-width:160px"><button class="link" data-libfind="1"${LIBFIND.busy ? ' disabled' : ''}>${LIBFIND.busy ? '正在翻……' : '查原文'}</button> <span class="muted" style="font-size:12px">照这些书：${histBooksFor(s, LIBFIND.q).map(b => esc(LIB_ZH[b] || b)).join('、')}</span></div>
   ${LIBFIND.msg ? `<div class="muted" style="font-size:12px">${esc(LIBFIND.msg)}</div>` : ''}${H && H.length ? `<div class="list">${H.map(h => `<div><b>《${esc(h.name)}》${esc(h.volume || '')}</b><div style="font-size:13px">${esc(h.text)}</div></div>`).join('')}</div>` : ''}`; }
 async function libFind(s, q) { q = String(q || '').trim(); if (q.replace(/[^\u4e00-\u9fff]/g, '').length < 2) { LIBFIND.msg = '至少写两个字'; return; } LIBFIND = { q, hits: null, busy: true, msg: '' }; render();
-  try { const terms = q.split(/[\s,，、]+/).filter(Boolean).slice(0, 6); const hits = await within(citeFetch(s, histBooksFor(s, q), terms, 8), 60000); LIBFIND.hits = arr(hits); LIBFIND.msg = hits && hits.length ? `查到 ${hits.length} 段` : '这几部书里没查到；换个写法（人名写全、年号写对）再查'; }
+  try { const terms = q.split(/[\s,，、]+/).filter(Boolean).slice(0, 6); const hits = await within(citeFetch(s, histBooksFor(s, q), terms, 8, libHint(q)), 60000); LIBFIND.hits = arr(hits); LIBFIND.msg = hits && hits.length ? `查到 ${hits.length} 段` : '这几部书里没查到；换个写法（人名写全、年号写对）再查'; }
   catch (e) { LIBFIND.msg = '没查成（' + errText(e) + '）'; } finally { LIBFIND.busy = false; } }
 const LIB_CACHE = new Map();   /* 同一年、同一批书、同一批词，一局里只查一回（R-192 顺畅） */
 async function libEvidence(s, terms, said, n, ms) { try { const books = histBooksFor(s, said || ''), ck = [Math.floor((((s.clock || {}).y) || 0)), books.join(','), arr(terms).join('|'), n || 5].join('#'); let hits = LIB_CACHE.get(ck); if (!hits) { hits = await within(citeFetch(s, books, terms, n || 5), ms || 25000); if (arr(hits).length) { LIB_CACHE.set(ck, hits); if (LIB_CACHE.size > 200) LIB_CACHE.delete(LIB_CACHE.keys().next().value); } } if (!arr(hits).length) return ''; try { feedAdd(hits.slice(0, 2).map(h => ({ t: `《${h.name}》${h.volume}：${cut(h.text, 26)}……`, site: '史书原文' }))); } catch (_) {}
@@ -9995,7 +10035,7 @@ async function orgVerifyReal(s) {
   if (canSearch()) for (let k = 0; k < QS.length; k += 24) { const b = await bochaDeep(s, QS.slice(k, k + 24), 120); items.push(...b.items.filter(i => !i.ds)); }
   const bad = []; let ok = pevOk;
   for (const x of rest) { if (x.q.src && !/^DS表/.test(x.q.src)) continue; const nm = x.q.holder, stem = x.n.name.replace(/(衙门|衙署|府署|公署|署|司|院|部|寺|监|处|府|厅|省)$/, '').slice(0, 2), t2 = x.q.title.slice(-2);
-    const hit = items.some(i => { const h = `${i.title} ${i.snippet}`; return h.includes(nm) && (h.includes(x.q.title) || h.includes(t2) || (stem.length >= 2 && h.includes(stem))); });
+    const hit = items.some(i => { const h = `${i.title} ${i.snippet}`; return h.includes(nm) && (postHitText(h, x.q.title) || (stem.length >= 2 && h.includes(stem))); });
     x.q.ver = s.turn; if (hit) { x.q.src = 'DS表·博查核'; courtChkMark(s, nm, '博查'); ok++; } else bad.push(x); }
   if (bad.length && items.length) ok += await postSeek(s, bad.slice(0, 60), true);
   /* 核不上的大员不配占位子：腾出来写出缺（后台 orgSeek 会继续找真人），宁缺毋滥——玩家看到假人比看到空位更伤 */

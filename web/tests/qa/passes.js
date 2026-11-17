@@ -4,8 +4,8 @@ const path = require('path'), fs = require('fs');
 (async () => {
   const bad = [];
   // 1. 数据完整性（不动 playwright）：坐标在域内、起止年不倒置、无重名、每个大时代都有关
-  const WEB = process.env.PLAY ? path.dirname(path.resolve(process.env.PLAY)) : path.resolve(__dirname, '../..');   // qa.sh 把测试复制到临时目录再跑
-  const T = JSON.parse(fs.readFileSync(path.join(WEB, 'terrain.json'), 'utf8'));
+  const PLAY0 = String(process.env.PLAY || ''), winP = /^\/[a-zA-Z]\//.test(PLAY0) ? PLAY0.slice(1, 2).toUpperCase() + ':/' + PLAY0.slice(3) : PLAY0;
+  const T = JSON.parse(fs.readFileSync(path.join(winP ? path.dirname(winP) : path.resolve(__dirname, '../..'), 'terrain.json'), 'utf8'));
   const P = T.passes || [], C = T.corridors || [];
   if (P.length < 70) bad.push('关卡不该只有 ' + P.length + ' 个');
   const names = new Set();

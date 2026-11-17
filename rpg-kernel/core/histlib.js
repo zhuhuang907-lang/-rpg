@@ -84,8 +84,8 @@ async function ensureBook(id) {
   return true;
 }
 
-/** 在几本书里查（q：检索词，用「|」或空格隔开，可带权重「王安石*2」），返回 [{book,name,volume,text,terms,score}]：整词比对、照稀有度和同段命中数打分、在命中处摘句（R-189） */
-async function search(q, bookIds, n) {
+/** 在几本书里查（q：检索词，用「|」或空格隔开，可带权重「王安石*2」；hint：'人'/'制'/'事' 卷类意图，R-248），返回 [{book,name,volume,text,seg,terms,score}]：整词比对、照稀有度、同段命中数与近邻打分、在命中处摘句（R-189/R-247） */
+async function search(q, bookIds, n, hint) {
   if (!META) await loadMeta();
   const terms = C.libTerms(q); if (!terms.length) return [];
   const out = [];
@@ -93,7 +93,7 @@ async function search(q, bookIds, n) {
     if (!knownId(id)) continue;
     try { await ensureBook(id); } catch (_) { continue; }
     const texts = passagesOf.get(id); if (!texts) continue;
-    for (const h of C.libScan(texts, terms, 4)) out.push({ book: id, name: C.LIB_ZH[id] || id, ...h });
+    for (const h of C.libScan(texts, terms, 4, hint)) out.push({ book: id, name: C.LIB_ZH[id] || id, ...h });
   }
   return out.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(8, n || 4)));
 }

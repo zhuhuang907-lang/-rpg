@@ -102,6 +102,7 @@ start ai.js && {
   run "省 token：材料照这一步的话题和身份裁，用不上的不带、长的有上限、玩家的话和正文不动；不要紧的一步不另请审稿（R-238）" 120 env PLAY="$ROOT/web/play.html" node econ.js
   run "朝局能玩：朝局态势（在位、当权、待你怎样）、拜谒送礼打听投门下弹劾真点得动、一月两回、情分官声靠山弹章都有后果、进写戏材料、页面没有内部字样（R-240）" 180 env PLAY="$ROOT/web/play.html" node courtplay.js
   run "朝局可玩：朝议摆上页面、玩家表态定成败、待办与回音看得到、位子没落树也有卡、空缺数不虚高（R-212~214）" 120 env PLAY="$ROOT/web/play.html" node courtissue.js
+  run "史料中枢：检索同段近邻与卷类、官称别称、核人铁证（名字＋官称同段，光杆名字只算线索）、核实落档不降级（R-246~250）" 240 env PLAY="$ROOT/web/play.html" node hub.js
   run "原文库检索：照朝代政权挑书、整词比对、同段多词排前、在命中处摘句、真语料查得到（R-189）" 300 env PLAY="$ROOT/web/play.html" node libsearch.js
   run "三方分工：整理归 DeepSeek、写故事想事情归 GLM、互为后备、材料过长删中间；原文佐证进推演（R-189）" 150 env PLAY="$ROOT/web/play.html" node r189.js
   run "默认全交 DeepSeek；翻史书真点；朝臣互谋、大臣奏事、敌国之主、当面说、立真人档案带史书原文；同查询只查一回（R-192）" 150 env PLAY="$ROOT/web/play.html" node r192.js
