@@ -109,3 +109,10 @@
 - 门禁：build ok（7579993）、prompt_guard 282/0、rules_regress 101/0、hist_audit 0 可疑。
 - 其余 20 部与本库重复且不多卷，未覆盖；新库的 SQLite 全文索引要用的，跑 `scripts/fetch_history_corpus.py` 即可现拉。
 - **另请宰相知**：`zcode/task-40`（我做的南北朝 175 人版）已被 staging 上 252 人版取代，**请勿合并该分支，可直接删**。
+
+## 报（2026-11-17 档甲：任务四十四 隋唐前期名臣）
+
+- `zcode/task-44`（`8123b39`）：新建 `web/figures/suitang.json` **258 人**（581—711）——史料包 116（died≤720，39 位天宝后人物留 tangmo）＋宰相表 97（有卒年）＋补传 45（四杰、玄奘、义净、智顗、李淳风、长孙晟、薛道衡、屈突通、张丽华、始罗突三可汗等）。
+- 每人 posts/where 齐、where 有地名；**stats 全空**（无史评不套模子）；生卒无考 null。
+- 门禁：build 8021754、prompt_guard 282/0、rules_regress 101/0、hist_audit 0 可疑。
+- 接做任务四十七（隋唐前期、两宋长官表）。
