@@ -293,6 +293,7 @@ textarea{resize:vertical}
 <script type="application/json" id="figlib">__FIGLIB__</script>
 <script type="application/json" id="offlib">__OFFLIB__</script>
 <script type="application/json" id="presetlib">__PRESETLIB__</script>
+<script type="application/json" id="placenames">__PLACENAMES__</script>
 <script type="application/json" id="tieslib">__TIES__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
@@ -5319,7 +5320,10 @@ function officialsAt(s, n, y) { const out = []; for (const R of OFFLIB) { if (!R
 const PLACE_AKA = { 河南府: ['洛阳', '洛州', '东都', '西京'], 京兆府: ['长安', '雍州', '西京', '大兴'], 开封府: ['汴州', '开封', '东京', '汴梁'], 大名府: ['魏州', '邺都', '兴唐府'], 太原府: ['太原', '并州', '北京', '晋阳'],
   江宁府: ['金陵', '建康', '昇州', '江宁', '西都'], 临安府: ['杭州', '临安', '钱塘'], 成都府: ['成都', '益州', '蜀'], 江陵府: ['江陵', '荆州'], 凤翔府: ['凤翔', '岐州'], 河中府: ['河中', '蒲州'], 兴元府: ['兴元', '梁州'],
   应天府: ['宋州', '睢阳', '南京'], 真定府: ['镇州', '恒州', '真定'], 幽都府: ['幽州', '燕京'], 析津府: ['幽州', '燕京', '南京'], 扬州: ['广陵', '江都'], 广州: ['番禺', '兴王府'], 福州: ['长乐府'], 潭州: ['长沙'] };
-const placeAka = (n, extra) => { const L = [n, extra].filter(Boolean); for (const [k, v] of Object.entries(PLACE_AKA)) { if (samePlace(k, n)) L.push(...v); if (v.some(x => samePlace(x, n))) L.push(k, ...v); } return [...new Set(L)]; };
+let PLACENAMES = []; try { PLACENAMES = JSON.parse((document.getElementById('placenames') || {}).textContent || '[]'); if (!Array.isArray(PLACENAMES)) PLACENAMES = []; } catch (_) { PLACENAMES = []; }   // 七段地名对照表（任务四十九，1468 条）
+const placeAka = (n, extra, y) => { const L = [n, extra].filter(Boolean); for (const [k, v] of Object.entries(PLACE_AKA)) { if (samePlace(k, n)) L.push(...v); if (v.some(x => samePlace(x, n))) L.push(k, ...v); }
+  for (const [nm, seat, aka, a, b] of PLACENAMES) { if (y != null && ((a != null && y < a - 30) || (b != null && y > b + 30))) continue; const all = [nm, seat].concat(arr(aka)).filter(Boolean); if (all.some(x => samePlace(x, n) || (extra && samePlace(x, extra)))) L.push(...all); }
+  return [...new Set(L)]; };
 /** 地图上的名臣记号（2026-11-17 项目主人：「给我做好」）：这一年名臣在哪，一处一个小印，悬停看是谁，点了选中那一处看详情；一品大员、名将在前，最多三十处 */
 function figMarks(s, y, inBox, px, py) {
   const by = new Map();
@@ -5329,7 +5333,7 @@ function figMarks(s, y, inBox, px, py) {
     return `<g data-mapfig="${esc(g.nm)}" style="cursor:pointer"><title>${esc(g.nm)}：${esc(top.slice(0, 8).map(f => f.n + (f.tag ? '（' + f.tag + '）' : '')).join('、'))}${top.length > 8 ? '等' + top.length + '人' : ''}</title><circle cx="${X.toFixed(0)}" cy="${Y.toFixed(0)}" r="7" fill="#7a2e1f" stroke="#f3e6c8" stroke-width="1.4"/><text x="${X.toFixed(0)}" y="${(Y + 3.5).toFixed(0)}" font-size="9" fill="#f3e6c8" text-anchor="middle" pointer-events="none">${top.length > 1 ? top.length : '臣'}</text></g>`; }).join('');
 }
 function placeLore(s, n, seat) {
-  const y = s && s.clock && s.clock.y; if (y == null || !n) return ''; const NM = placeAka(n, seat), at = x => String(x || '').split(/[、，,\/]/).some(pl => NM.some(k => samePlace(pl, k)));
+  const y = s && s.clock && s.clock.y; if (y == null || !n) return ''; const NM = placeAka(n, seat, y), at = x => String(x || '').split(/[、，,\/]/).some(pl => NM.some(k => samePlace(pl, k)));
   const off = NM.flatMap(k => officialsAt(s, k, y)).filter((o, i, A) => A.findIndex(z => z.name === o.name && z.office === o.office) === i), me = (s.protagonist || {}).name;
   const figs = figuresNow(s).filter(({ f }) => { const a = figAt(f, y); return a && at(a.place); }).sort((a, b) => a.f.t - b.f.t).slice(0, 10);
   const ev = HALL(s).filter(h => h && h.range && y >= h.range[0] && y <= h.range[1]).flatMap(h => arr(h.events)).filter(e => e && e.y >= y - 1 && e.y <= y && e.where && at(e.where)).slice(-4);
