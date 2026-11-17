@@ -117,3 +117,8 @@
 - 门禁：build 8021754、prompt_guard 282/0、rules_regress 101/0、hist_audit 0 可疑。
 - **旧 `zcode/task-44`（ba0a601，250 人版）已由本版取代**：旧版 51 人 posts/where 空、王勃无任职无地点、李义府 tag 标「后妃」、长孙晟标「外族首领」、fate 只写「卒」；本版 258 人逐人补 posts/where、改正 tag、fate 具体。分支以 `--force-with-lease=ba0a601` 覆盖，旧版不再保留。
 - 接做任务四十七（隋唐前期、两宋长官表）。
+
+## 报（2026-11-17 档甲：任务四十七 两宋、隋唐长官表）
+
+- 分支 `zcode/task-47o`（`zcode/task-47` 上是旧的四十四 251 人稿，未动）：新建 `officials-song.json` **30 席 142 人**（开封、河南、大名、太原、江宁/建康、成都、江陵、扬、杭/临安、苏/平江、越/绍兴、湖、明/庆元、温、婺、建宁、泉、福、广、潭、洪/隆兴、宣/宁国、襄、鄂、延、秦、代、青、郓、颍），holders 带宋史卷次；新建 `officials-suitang.json` **34 席 40 人**（京兆、河南、益、荆、幽、凉、相等），holders 带通鉴卷次。隋唐只到 40 条：本纪无逐年任命句式，通鉴任职表覆盖有限，大州多缺，如实报。
+- 门禁：build 8027906、prompt_guard 282/0、rules_regress 101/0、hist_audit 0 可疑。
