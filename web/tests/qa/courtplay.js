@@ -17,7 +17,7 @@ const path = require('path');
   if (/true ·|核实：|回合整理/.test(t)) bad.push('页面上还有内部字样：' + (t.match(/true ·|核实：[^\n]{0,10}|第\d+回合整理/) || [''])[0]);
   // 真点：打听安重诲（照朝廷数据，他 931 年去位）
   await p.click('[data-c2="ask"][data-n="安重诲"]'); t = await txt();
-  if (!/托人打听：安重诲[^\n]*(坐不长|坐不久|去位)/.test(t)) bad.push('点了打听没出结果');
+  if (!/托人打听：[^\n]*安重诲[^\n]*(坐不长|坐不久|去位)/.test(t)) bad.push('点了打听没出结果');
   if (!/安重诲[\s\S]{0,30}风声不好/.test(t)) bad.push('打听过以后没标风声');
   if (!/还能走动 1 回/.test(t)) bad.push('走动的回数没扣');
   // 真点：给冯道送礼——花钱、涨情分

@@ -264,6 +264,26 @@ if _sup.exists():
             nx = [w for w in P[i + 1:] if w['polity'] == z['polity'] and w['seat'] != z['seat'] and w['from'] > z['from'] and w['from'] <= z['to']]
             if nx and z['how'] == '推定': z['to'] = min(w['from'] for w in nx) - 1
         x['posts'] = [z for z in x['posts'] if z['to'] >= z['from']]
+# 大位子（宰执、枢密、三司、六部尚书、留守、府尹、节度使、御史台长官、侍卫与诸卫统兵官）史书这年没载在任者：空着，游戏不补虚构人
+#   （试玩查出：930 后唐北京留守、河东节度使、吏户兵部尚书都坐着补出来的虚构人——zcode 补的位子原来没带这个标记）
+import re as _re
+_BIG = _re.compile(r'宰相|平章事|枢密|崇政院|三司使|租庸使|尚书|留守|尹|节度使|御史大夫|御史中丞|都指挥使|大将军|翰林学士承旨')
+for p in out['polities']:
+    for q in p['seats']:
+        if _BIG.search(q.get('office', '')) and '刺史' not in q.get('office', ''): q['noFill'] = True
+# 补人物生平（游戏照 fate 判断去位的风声）、同一人两职年份接上（都带出处）
+_FIX = {
+  '安重诲': {'died': 931, 'fate': '长兴二年（931）罢枢密使，以太子太师致仕，寻被诛于河中', 'src_fate': '资治通鉴·卷277'},
+}
+for x in out['people']:
+    f = _FIX.get(x['name'])
+    if f:
+        x['died'] = x.get('died') or f['died']
+        if not x.get('fate'): x['fate'] = f['fate'] + '（' + f['src_fate'] + '）'
+    if x['name'] == '张延朗':
+        for z in x['posts']:
+            if z['seat'] == 'ht-smsf' and z['to'] >= 930:
+                z['to'] = 928; z['how'] = '推定'; z['src'] += '；离任照「以前忠武节度使张延朗……充三司使」（资治通鉴·卷277）：930 年前已出镇忠武，枢密副使推至 928'
 (ROOT / 'web' / 'court').mkdir(exist_ok=True)
 json.dump(out, open(ROOT / 'web' / 'court' / 'wudai.json', 'w', encoding='utf8'), ensure_ascii=False, indent=1)
 print('荆南位子', len(JINGNAN['seats']), '后唐位子', len(HOUTANG['seats']), '人', len(PEOPLE), '其中推定条目', sum(1 for p in PEOPLE for x in p['posts'] if x['how'] == '推定'))
