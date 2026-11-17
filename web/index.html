@@ -1698,7 +1698,7 @@ function ledgerLiteRules() {
 }
 const LEDGER_LITE_KEEP = /^(此刻|主角|家业账|数值条|人物（|差事|行动单|临门的事|应下的差事|定本|主角眼下的目标)/;
 function ledgerLiteInput(s, said, story, hidden, span, ruling) {
-  const parts = blocks(s).split(/\n(?=【[^】\n]{2,60}】)/).filter(seg => { const m = /^【([^】\n]{2,60})】/.exec(seg); return m && LEDGER_LITE_KEEP.test(m[1]); })
+  const parts = blocks(s).split(/\n(?=【[^】\n]{2,240}】)/).filter(seg => { const m = /^【([^】\n]{2,240})】/.exec(seg); return m && LEDGER_LITE_KEEP.test(m[1]); })
     .map(seg => /^【(定本|人物（)/.test(seg) ? econCap(seg, /^【定本/.test(seg) ? 1200 : 2400, /^【定本/.test(seg) ? 'tail' : 'head') : seg);
   const el = eraLabel(s, s.clock.y);
   return ledgerLiteRules() + '\n\n' + parts.join('\n') + (el ? `\n【按史料，本年年号纪年为「${el}」；若本局君主或年号已被改写，照本局】` : '') + (ruling ? '\n\n' + rulingText(ruling) : '')
@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261117183905';
+const BUILD = '20261117194130';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -1867,7 +1867,7 @@ async function glmDirect(input, opts = {}) {
   const messages = [...(opts.system ? [{ role: 'system', content: opts.system }] : []), ...(Array.isArray(input) ? input : [{ role: 'user', content: String(input) }])];
   let json = opts.json !== false, sendThink = true, budget = opts.maxTokens || 8000; if (opts.thinking) budget = Math.min(16000, Math.max(budget * 2, 4000));
   for (let attempt = 0; attempt < 4; attempt++) {
-    const body = { model, messages, max_tokens: budget, stream: true };
+    const body = { model, messages, max_tokens: budget, stream: true, stream_options: { include_usage: true } };   // 要回 token 用量记花费账（R-255）
     if (sendThink) body.thinking = { type: opts.thinking ? 'enabled' : 'disabled' };
     if (json) body.response_format = { type: 'json_object' };
     if (!opts.thinking) body.temperature = Math.min(1, opts.temperature ?? 0.9);
@@ -1883,15 +1883,15 @@ async function glmDirect(input, opts = {}) {
         if (res.status === 400 && /max_tokens|max tokens|max_completion|too large/i.test(raw) && budget > 2000) { budget = Math.floor(budget / 2); continue; }   /* 额度超了型号的上限：减半再来（R-189） */
         if (res.status === 400 && /context|length|too long|exceed/i.test(raw) && messages.length) { const m = messages[messages.length - 1]; m.content = fitCtx(m.content, Math.floor(String(m.content).length * 0.6)); continue; }
         throw { code: 'local', message: `GLM 返回出错（HTTP ${res.status}）${res.status === 401 ? '：Key 不对或失效' : res.status === 429 ? '：太频繁或余额不足' : ''}` }; }
-      const rd = res.body.getReader(), dec = new TextDecoder(); let buf = '', content = '', finish = null;
+      const rd = res.body.getReader(), dec = new TextDecoder(); let usage = null, buf = '', content = '', finish = null;
       for (;;) { let r; try { r = await rd.read(); } catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; throw { code: 'local', net: true, message: '和 GLM 的连接中途断了' }; }
         if (r.done) break; buf += dec.decode(r.value, { stream: true }); let i;
         while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (!line.startsWith('data:')) continue; const d = line.slice(5).trim(); if (d === '[DONE]') continue;
-          let j; try { j = JSON.parse(d); } catch (_) { continue; } const ch = j.choices && j.choices[0]; if (!ch) continue;
+          let j; try { j = JSON.parse(d); } catch (_) { continue; } if (j.usage) usage = j.usage; const ch = j.choices && j.choices[0]; if (!ch) continue;
           if (ch.delta && ch.delta.content) { content += ch.delta.content; opts.onText && opts.onText({ text: content, delta: ch.delta.content }); } if (ch.finish_reason) finish = ch.finish_reason; } }
       if (!content.trim() && budget < 16000) { budget = Math.min(16000, Math.max(budget * 2, 4000)); continue; }
       if (!content.trim()) throw { code: 'local', message: 'GLM 没给出正文' };
-      return { text: content, truncated: finish === 'length' };
+      return { text: content, truncated: finish === 'length', usage, model };
     } finally { if (opts.signal) opts.signal.removeEventListener('abort', onAbort); }
   }
   throw { code: 'local', message: 'GLM 连续几次没给出正文' };
@@ -1904,7 +1904,7 @@ async function directSample(input, opts = {}) {
   let model = opts.fast ? 'deepseek-v4-flash' : base, json = opts.json !== false, sendThink = true;
   const thinking = !!opts.thinking; let budget = opts.maxTokens || 8000; if (thinking) budget = Math.min(16000, Math.max(budget * 2, 4000));
   for (let attempt = 0; attempt < 5; attempt++) {
-    const body = { model, messages, max_tokens: budget, stream: true };
+    const body = { model, messages, max_tokens: budget, stream: true, stream_options: { include_usage: true } };   // 要回 token 用量记花费账（R-255）
     if (sendThink) body.thinking = { type: thinking ? 'enabled' : 'disabled' };
     if (json) body.response_format = { type: 'json_object' };
     if (!thinking) body.temperature = opts.temperature ?? 0.9;
@@ -1925,7 +1925,7 @@ async function directSample(input, opts = {}) {
         if (res.status === 402) { lsSet('hrpg:dspoor', '1'); if (MODE === 'web') webKeyRefresh(); }
         throw { code: 'local', message: (DS_HINT[res.status] || 'DeepSeek 返回出错') + `（HTTP ${res.status}）` };
       }
-      const rd = res.body.getReader(), dec = new TextDecoder(); let buf = '', content = '', finish = null;
+      const rd = res.body.getReader(), dec = new TextDecoder(); let usage = null, buf = '', content = '', finish = null;
       for (;;) {
         let r; try { r = await rd.read(); } catch (e) { if (opts.signal && opts.signal.aborted) throw { code: 'cancelled' }; throw { code: 'local', net: true, message: '和 DeepSeek 的连接中途断了，请再试一次' }; }
         if (r.done) break;
@@ -1933,7 +1933,7 @@ async function directSample(input, opts = {}) {
         while ((i = buf.indexOf('\n')) >= 0) {
           const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
           if (!line.startsWith('data:')) continue; const d = line.slice(5).trim(); if (d === '[DONE]') continue;
-          let j; try { j = JSON.parse(d); } catch (_) { continue; }
+          let j; try { j = JSON.parse(d); } catch (_) { continue; } if (j.usage) usage = j.usage;
           const ch = j.choices && j.choices[0]; if (!ch) continue;
           if (ch.delta && ch.delta.content) { content += ch.delta.content; opts.onText && opts.onText({ text: content, delta: ch.delta.content }); }
           if (ch.finish_reason) finish = ch.finish_reason;
@@ -1942,7 +1942,7 @@ async function directSample(input, opts = {}) {
       if (lsGet('hrpg:dspoor')) { lsSet('hrpg:dspoor', null); if (MODE === 'web') webKeyRefresh(); }   // 充值后又写得出了：提示去掉
       if (!content.trim() && budget < 16000) { budget = Math.min(16000, Math.max(budget * 2, 4000)); continue; }   // 额度全被思考吃掉：放大再来
       if (!content.trim()) throw { code: 'local', message: 'DeepSeek 没给出正文，请再试一次' };
-      return { text: content, truncated: finish === 'length' };
+      return { text: content, truncated: finish === 'length', usage, model };
     } finally { if (opts.signal) opts.signal.removeEventListener('abort', onAbort); }
   }
   throw { code: 'local', message: 'DeepSeek 连续几次没给出正文，请再试一次' };
@@ -1983,7 +1983,7 @@ function localSample(input, opts = {}) {
         // 偶尔一次没问到（电脑卡了一下）不算失败：连着二十来次（约半分钟）都问不到才报
         let j; try { j = await api('/api/llm-job', { job }); miss = 0; } catch (_) { if (++miss < 40) continue; return reject({ code: 'local', message: SERVER_GONE }); }
         if (j.text && j.text !== last) { last = j.text; opts.onText && opts.onText({ text: last, delta: '' }); }
-        if (j.status === 'done') return resolve({ text: j.text, truncated: !!j.truncated });
+        if (j.status === 'done') return resolve({ text: j.text, truncated: !!j.truncated, usage: j.usage || null, model: j.model || '' });
         // 游戏服务半路重启过（任务丢了）：重新发一次，不让这一回作废
         if (!j.ok && /不存在|过期/.test(j.why || '') && restarts < 2) { restarts++; const r2 = await api('/api/llm-start', { messages, system: opts.system || '', maxTokens: opts.maxTokens || 8000, json: opts.json !== false, temperature: opts.temperature, thinking: !!opts.thinking, fast: !!opts.fast, provider: opts.provider || '' }).catch(() => null); if (r2 && r2.ok) { job = r2.job; opts.onJob && opts.onJob(job); continue; } }
         if (j.status === 'error' || !j.ok) return reject({ code: 'local', message: plainWhy(j.error || j.why) || '没写成' });
@@ -2621,6 +2621,13 @@ const ECON_RULES = [
   [/^人物（/, null, 2600, 'head'],
   [/^(县级地理|地理册|本地志)/, c => c.geo || true, 900, 'head'],
   [/^(联网查到的资料|这一回联网查到的资料|翻到的资料)/, null, 1500, 'head'],
+  // 块名一长（「本地官员名册（此刻在任；……）」）以前切不开，这几块从来没裁过（R-255 成本审计：写正文一次三万五千字，其中「目标」一块连带名册、地理、升迁之制共四千五）
+  [/^本地官员名册/, null, 900, 'head'],
+  [/^早年旧事/, null, 1000, 'tail'],
+  [/^(制度程序|本朝制度|衙门程序)/, c => c.official || c.adm, 900, 'head'],
+  [/^(古代人的想法|通用推演)/, null, 500, 'head'],
+  [/^(档案馆里|仅 GM 知道)/, null, 400, 'tail'],
+  [/^(远处的名臣|天下名录)/, null, 350, 'head'],
 ];
 /** 省 token：不是要紧的一步（没有打仗、任免、婚嫁、诉讼、谋划这类字眼，话也不长），程序的硬伤检查过了就不另请一位审稿——审稿一次一万多 token，还常常为小毛病引出一次重写 */
 const econSkipReview = (said, ruling) => ECON_ON() && !(ruling && ruling.battleResult) && String(said || '').length <= 60 && !HEAVY_RE.test(String(said || ''));
@@ -2635,11 +2642,11 @@ function econCap(seg, n, keep) {
 }
 function econTrimText(text, ctx) {
   const t = String(text || ''); if (t.length < 6000) return t;
-  const parts = t.split(/\n(?=【[^】\n]{2,60}】)/);
+  const parts = t.split(/\n(?=【[^】\n]{2,240}】)/);
   // 一块材料到头一个空行为止；空行后面跟着的（各自的规矩、输出格式）不算这一块，原样留着——
   // 真模型实测（2026-11-15）：裁定的提示词里，输出格式那一大段紧跟在一块材料后面，被上限一刀切掉，模型不知道要输出什么，回回写成正文、回回重试四次
   // 最后一段一个字不动：各家提示词的规矩和输出格式常常就接在最后一块材料后面，中间连空行都没有（真模型实测第六轮：裁定的输出格式又被丢了）
-  return parts.map((seg, i) => { const m = /^【([^】\n]{2,60})】/.exec(seg); if (!m || i === parts.length - 1) return seg;
+  return parts.map((seg, i) => { const m = /^【([^】\n]{2,240})】/.exec(seg); if (!m || i === parts.length - 1) return seg;
     const cutAt = seg.indexOf('\n\n'), blk = cutAt < 0 ? seg : seg.slice(0, cutAt), tail = cutAt < 0 ? '' : seg.slice(cutAt);
     for (const [re, when, cap, keep] of ECON_RULES) if (re.test(m[1])) { if (when && !when(ctx)) return tail ? tail.replace(/^\n+/, '') : null; return econCap(blk, cap, keep) + tail; }
     return seg; }).filter(x => x != null).join('\n');
@@ -2657,8 +2664,8 @@ function econTrim(input, s, said) {
 let CACHE_SEQ = { segs: [], seen: new Map(), n: 0 };
 function cacheOrder(text, s) {
   const t = String(text || ''); if (t.length < 4000) return t;
-  const parts = t.split(/\n(?=【[^】\n]{2,60}】)/);
-  const head = /^【[^】\n]{2,60}】/.test(parts[0]) ? '' : parts.shift();
+  const parts = t.split(/\n(?=【[^】\n]{2,240}】)/);
+  const head = /^【[^】\n]{2,240}】/.test(parts[0]) ? '' : parts.shift();
   if (parts.length < 2) return t;
   // 跨回合记住：一字不差、早就见过的材料块（本朝制度、地理、没变的人物……）排最前，这一回才变的排后面——同一回的几次调用、下一回的同一种调用，开头都对得上，按缓存价算
   const now = s ? (s.turn || 0) : 0;
@@ -2686,6 +2693,28 @@ function econSafe(raw, out) {
   if (a.slice(-200) !== b.slice(-200)) return false;
   for (const k of ['只输出', 'JSON', 'json']) if ((a.split(k).length) !== (b.split(k).length)) return false;
   return true;
+}
+/* 花费账（R-255，2026-11-17 项目主人转来的 AI 调度改造建议：先记清每回的钱花在哪一步、哪个型号、多少 token、多少吃到缓存价）：
+ *  每次调用照 DeepSeek 官方价目（每百万 token，元；工作日北京时间 9—12、14—18 点高峰价翻倍）记进存档，设置页列出 */
+const COST_PRICE = { flash: [0.02, 1, 4], pro: [0.15, 4.5, 13.5] };   // [缓存命中输入, 未命中输入, 输出]
+const costPeak = () => { const d = new Date(Date.now() + 8 * 3600e3), h = d.getUTCHours(), w = d.getUTCDay(); return w >= 1 && w <= 5 && ((h >= 9 && h < 12) || (h >= 14 && h < 18)); };
+const costCat = k => /^(|写戏)$/.test(k || '') ? '写正文' : k === '裁定' ? '推演' : k === '改稿' ? '改稿' : k === '记账' ? '记账' : /审读|审校/.test(k || '') ? '审稿' : '后台';
+function costNote(kind, r, fast) {
+  try { const u = r && r.usage; if (!u || typeof S === 'undefined' || !S) return; const inn = num(u.prompt_tokens) || 0, hit = num(u.prompt_cache_hit_tokens) || 0, out = num(u.completion_tokens) || 0;
+    const m = /flash/i.test(String(r.model || '')) || (fast && !/pro/i.test(String(r.model || ''))) ? 'flash' : 'pro', P = COST_PRICE[m], k = costPeak() ? 2 : 1;
+    const yuan = Math.round(((hit * P[0] + Math.max(0, inn - hit) * P[1] + out * P[2]) / 1e6) * k * 10000) / 10000;
+    S.costLog = arr(S.costLog).concat([{ turn: S.turn || 0, cat: costCat(kind), m, in: inn, hit, out, yuan }]).slice(-600); } catch (_) { /* 记不上不影响游戏 */ }
+}
+function costHtml(s) {
+  const L = arr(s && s.costLog); if (!L.length) return '<p class="muted" style="font-size:13px">还没有记账（开一局玩一两回就有）。</p>';
+  const turns = [...new Set(L.map(x => x.turn))].sort((a, b) => a - b), last = turns[turns.length - 1], recent = turns.filter(t => t > 0).slice(-10);
+  const sum = xs => xs.reduce((a, x) => a + x.yuan, 0), y2 = v => '¥' + v.toFixed(3);
+  const R = L.filter(x => recent.includes(x.turn)), cats = ['写正文', '推演', '改稿', '记账', '审稿', '后台'];
+  const row = c => { const X = R.filter(x => x.cat === c); if (!X.length) return ''; const inn = X.reduce((a, x) => a + x.in, 0), hit = X.reduce((a, x) => a + x.hit, 0), out = X.reduce((a, x) => a + x.out, 0), pro = X.filter(x => x.m === 'pro').length;
+    return `<tr><td>${c}</td><td>${X.length}次（贵型号${pro}）</td><td>${fmtN(Math.round(inn / recent.length))}</td><td>${inn ? Math.round(hit * 100 / inn) : 0}%</td><td>${fmtN(Math.round(out / recent.length))}</td><td>${y2(sum(X) / recent.length)}</td></tr>`; };
+  const op = sum(L.filter(x => x.turn === 0));
+  return `<p style="font-size:13px">上一回（第${last}回）：<b>${y2(sum(L.filter(x => x.turn === last)))}</b>；最近${recent.length}回平均每回 <b>${y2(recent.length ? sum(R) / recent.length : 0)}</b>${op ? `；开局 ${y2(op)}` : ''}。照 DeepSeek 官方价目算，工作日 9—12、14—18 点高峰价翻倍。</p>
+    <table class="tbl" style="font-size:12px"><tr><th>哪一步</th><th>调用</th><th>每回输入 token</th><th>缓存价</th><th>每回输出 token</th><th>每回花费</th></tr>${cats.map(row).join('')}</table>`;
 }
 async function callClaude(input, onReply, extra, tier) {
   if (!(extra && extra.detached) && /^(|记账|推演|改稿|审校|审读|裁定)$/.test((extra && extra.kind) || '') && typeof S !== 'undefined' && S) { try { const raw = input; input = econTrim(input, S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''); if (typeof input === 'string' && !(extra && extra.system)) input = cacheOrder(input, S); else if (Array.isArray(input) && input.length > 1 && input[0] && input[0].role === 'user' && typeof input[0].content === 'string') input = [{ ...input[0], content: cacheOrder(input[0].content, S) }].concat(input.slice(1));   /* 写正文：头一条（账册材料）也照「早见过、没变的排最前」排，跨回合吃缓存价 */ if (!econSafe(raw, input)) input = raw; } catch (_) { /* 裁不成就照原样发 */ } }
@@ -2730,6 +2759,7 @@ async function callClaude(input, onReply, extra, tier) {
   try {
     const r = await SAMPLE(input, { ...opts, ...(DSM() ? extra || {} : {}), onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
     logRaw(kind, r && r.text, r && r.truncated);
+    costNote(kind, r, !!(extra && extra.fast));
     return r;
   } catch (e) {
     logRaw(kind, (e && e.text) || '', false, (e && (e.code + ' ' + (e.message || ''))) || String(e));
@@ -2737,7 +2767,7 @@ async function callClaude(input, onReply, extra, tier) {
     if (DSM() && extra && extra.thinking && !(e && (e.code === 'cancelled' || e.code === 'no_key')) && !(TURN && TURN.signal.aborted)) {
       CTL = new AbortController(); if (TURN) { const c = CTL; TURN.signal.addEventListener('abort', () => c.abort(), { once: true }); }
       const r2 = await SAMPLE(input, { ...opts, ...extra, thinking: false, signal: CTL.signal, onText: onReply ? ({ text }) => onReply(plain ? showText(text) : partial(text)) : undefined });
-      logRaw(kind + '（关思考重试）', r2 && r2.text, r2 && r2.truncated);
+      logRaw(kind + '（关思考重试）', r2 && r2.text, r2 && r2.truncated); costNote(kind, r2, !!(extra && extra.fast));
       return r2;
     }
     /* DeepSeek 出错（不是玩家停下、不是没填 Key）而 GLM 有 Key：换 GLM 再来一次（R-189；以前只有 GLM 出错退回 DeepSeek，反过来没有） */
@@ -6793,7 +6823,9 @@ const HEAVY_RE = /谋|争|战|兵|攻|守|围|官|升|迁|告状|审|案|婚|娶
 /** 家常的一步（跟在场的人说句话、问一句、逛一逛）：不深想、少等查证、不另起一回审稿，像平常聊天一样快；要紧的事照旧走全套 */
 const lightTurn = (s, said, span) => { const x = String(said || '').trim(); return !!x && x.length <= 40 && !heavyStep(s, x) && !stratWant(x) && !(SPANS[span]) && !/过(了)?[一二三四五六七八九十几数半]+[天日月年旬]|歇|等[一几]|闭门|养病|守孝|推行|颁行|改革|新政|变法|清丈|兴修|开垦|兴办|整顿|裁撤|设立/.test(x) && !arr(s.campaigns).some(c => /待发|行军/.test(c.state || '')); };
 // 一方之主话稍长就算要紧的一步——这一条去掉了（R-238，真模型第七轮）：寨主、藩帅回回都被当成要紧的一步，裁定和正文回回开深想，一回多等一分多钟、多花五六千思考 token；要紧不要紧只看话里有没有要紧的事、话长不长
-const heavyStep = (s, said) => { const x = String(said || ''); return x.length > 40 || HEAVY_RE.test(x) || arr(s.press).some(z => z.state === '临门' && (x.includes(z.who || '\u0000') || x.includes(String(z.title).slice(0, 4)))); };
+/* 要紧的一步（裁定用贵型号深想、写正文深想、改稿用贵型号）只认真大事（R-255 成本审计：小兵那局 29 回里 21 回算成要紧——话长过四十字、带「兵」「守」「官」「争」单字就算，钱七成花在这上头） */
+const BIG_STEP_RE = /攻打|攻城|攻下|出兵|发兵|进兵|迎战|迎击|交战|开战|决战|伏击|劫营|夜袭|围城|突入|破城|兵变|政变|造反|起事|起兵|谋反|篡|弑|自立|称王|称帝|即位|登基|继承[^，。]{0,4}位|夺位|废立|刺杀|行刺|任命|罢免|革职|弹劾|下狱|处斩|赐死|成婚|成亲|娶|出嫁|纳妾|议亲|立嗣|分家|谋害|毒杀|投降|归降|和亲|结盟|宣战/;
+const heavyStep = (s, said) => { const x = String(said || ''); return BIG_STEP_RE.test(x) || arr(s && s.campaigns).some(c => /行军|交战/.test(c.state || '')) || arr(s.press).some(z => z.state === '临门' && (x.includes(z.who || '\u0000') || x.includes(String(z.title).slice(0, 4)))); };
 /** 人物分远近：家里人、最近三回见过的、和主角同在一地的算眼前；其余是外地的或断了来往的，没有来由不出场 */
 function splitPeople(s, P) {
   // 「眼前」照主角此刻人在哪算：出门在外时，家里人和老家的人都在远处
@@ -17232,6 +17264,8 @@ function pane(tab) {
     <p class="muted" style="font-size:13px;margin-top:10px">每回合都会：${MODE !== 'none' ? `联网查这一回涉及的真人、事件、年份（${MODE !== 'local' ? (BOCHA_KEY ? '博查 + 维基百科' : '维基百科') : KEY.bocha ? '博查 + 维基百科' : '维基百科；填博查 Key 资料更多'}）；` : ''}${DSM() ? '写正文前先深度构思；' : ''}天下的事照史书往下走；写完核实史实、记账。这些关掉剧情就会失真，所以不能关。</p>${SEARCH_OFF ? `<p class="muted" style="font-size:12px;color:var(--zhu)">联网查资料眼下连不上：${esc(SEARCH_OFF)}（五分钟后自动再试）</p>` : ''}
     
     
+    <div class="h"><span class="seal">费</span>每回花了多少<span class="note">照 DeepSeek 返回的用量记；哪一步又贵起来一眼看得到</span></div>
+    ${costHtml(S)}
     <div class="h"><span class="seal">修</span>版本与问题报告</div>
     <p class="muted" style="font-size:13px">${esc(versionLine())}</p>
     <p class="muted" style="font-size:13px">现在的版本：${esc(/^\d{8}/.test(BUILD) ? `${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : BUILD)}${MODE === 'local' && UPDINFO ? (UPDINFO.remote && String(UPDINFO.remote) > BUILD ? `；网上有更新的版本${UPDINFO.using === 'updated' ? '，已下载好，空下来时自动换上' : ''}` : UPDINFO.why ? `；上次查更新没成：${esc(UPDINFO.why)}` : UPDINFO.checked ? '；已是最新' : '') : ''}${UPDINFO && UPDINFO.needReinstall ? '；这次改动大，要重新下载安装包' : ''}</p>

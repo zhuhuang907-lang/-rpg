@@ -137,6 +137,7 @@ start ai.js && {
   run "各年代任职年表：资治通鉴逐年任免（三国两晋十六国南北朝五代）与哈佛库唐末五代十国表照政权取；前秦王猛不混进东晋；东西魏并立只写魏不乱认；前秦开局吏部尚书照表坐王猛（R-226）" 150 env PLAY="$ROOT/web/play.html" node tenure2.js
   run "南北朝、隋唐前期君主年号：君主照正史、年号照哈佛库年号表，换君改元同年归对人；只有君主年号的表不挡联网自建史事；东魏开局年号是武定（R-226）" 120 env PLAY="$ROOT/web/play.html" node rulers2.js
   run "真玩查出的五处：心里的盘算不写成说出口、「过半年」让时间走、一仗几日过几日、敌情看得见交过手的敌军、楚照中原正朔、行动单不露内部说法、主角不标虚拟（R-254）" 120 env PLAY="$ROOT/web/play.html" node r254.js
+  run "AI 调度省钱第一阶段：要紧的一步只认真大事、块名长的也裁得到、每次调用记花费账、设置页看得到（R-255）" 120 env PLAY="$ROOT/web/play.html" node r255.js
   run "五代十国朝廷照数据排：荆南小国十几个位子，明载、推定的人坐原位，空位照用人来路补人、标虚构、不与真人重名、重开同一人；南平也认（任务七，R-227）" 150 env PLAY="$ROOT/web/play.html" node wudai_court.js
   run "家里人不许叫「某」：开局、记账带进来的「韩某」照制度起名，男丁随主角的姓，族谱页看不到「某」（试玩查出）" 120 env PLAY="$ROOT/web/play.html" node kinname.js
   run "游戏读时代世情库：主角此刻沾着的活法当写戏材料（930 牙兵认出牙兵），称呼里的某换成〔姓〕，库里没有的年代、自编的行当照旧走不拦（任务十二）" 120 env PLAY="$ROOT/web/play.html" node ways.js

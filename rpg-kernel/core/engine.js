@@ -2521,7 +2521,7 @@ async function chatCall({ messages, system = '', maxTokens = 8000, temperature =
       await new Promise(r => setTimeout(r, i === 0 ? 2500 : 6000));
     }
   }
-  return { text: String((res && res.text) || ''), truncated: !!(res && res.meta && res.meta.truncated) };
+  return { text: String((res && res.text) || ''), truncated: !!(res && res.meta && res.meta.truncated), usage: (res && res.meta && res.meta.usage) || null, model: (res && res.meta && res.meta.model) || '' };
 }
 
 module.exports = {
