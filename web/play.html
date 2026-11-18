@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261118000455';
+const BUILD = '20261118001559';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -6771,7 +6771,8 @@ function storyDate(s, text) {
   // 后面只写「到了五月」「七月里」、不带年号的：接着最后那个年号年（没有就照眼下）往后数，月份比前面小的算第二年
   const base = best || { y: y0, m: s.clock.m, at: 0 }, rest = t.slice(base.at || 0), re2 = /(^|[^年\d一二三四五六七八九十元])(正|腊|十一|十二|[一二三四五六七八九十])月(里|间|初|中|底|末|下旬|上旬|中旬|[一二三四五六七八九十廿初]{1,3}日?)?/g;
   let last = null, k; while ((k = re2.exec(rest))) last = k;
-  if (last) { const mo = { 正: 1, 腊: 12 }[last[2]] || zh(last[2]); if (mo >= 1 && mo <= 12) { const y = base.y + (mo < base.m ? 1 : 0); if (y <= y0 + 6) { const c = { y, m: mo, d: 1 }; if (ymOf(c) >= ymOf(s.clock) - 0.01) best = c; } } }
+  // 只往后认：比前面那个年月早的月份是在说旧事（「二月十三到西廊」），不当第二年；前头写了「次年、明年、开春」的才往下一年数
+  if (last) { const mo = { 正: 1, 腊: 12 }[last[2]] || zh(last[2]), nx = /(次年|来年|明年|翌年|过了年|开春|新年|岁首)[^。]{0,8}$/.test(rest.slice(0, last.index + 1)); if (mo >= 1 && mo <= 12 && (nx || mo >= base.m)) { const y = base.y + (nx ? 1 : 0); if (y <= y0 + 6) { const c = { y, m: mo, d: 1 }; if (ymOf(c) >= ymOf(s.clock) - 0.01) best = c; } } }
   return best;
 }
 function eraLabel(s, y) {
