@@ -44,7 +44,7 @@ const path = require('path');
     const b = mk(), y1 = ymOf(b.clock); applyReply(b, { elapsedDays: 2, elapsedHours: 2, reply: '此后半年，你在营中日日操练，弩手三排轮射。' }, '练半年看这一营有多少人');
     return [ymOf(a.clock) - y0, ymOf(b.clock) - y1]; });
   const mf = await p.evaluate(() => { const s = newSave({ name: '林承海', gender: '男', age: 35, role: '海商', gregorianYear: 943, month: 8, day: 1, place: '泉州', polity: '闽' }); s.forces = [{ name: '泉州团练水陆营', leader: '林承海（教习点将）', troops: '87', at: '泉州' }, { name: '本都牙兵', leader: '卢继', troops: 78 }];
-    return [myForce(s, s.forces[0]), myForce(s, s.forces[1]), tabsFor(s).some(t => t[0] === 'army')]; });
+    return [myForce(s, s.forces[0]), myForce(s, s.forces[1]), tabsFor(s).some(t => t[0] === 'army') && identityOf(s).military.troops === 87]; });
   const bad = [];
   if (!mf[0] || mf[1] || !mf[2]) bad.push('统兵写成「林承海（教习点将）」不认是主角的兵、军务页不出：' + mf.join());
   if (jm[0] > 1 || jm[1] < 4) bad.push('正文停在第二天也照玩家说的过了半年（或正文写了半年却没过）：' + jm.join());
