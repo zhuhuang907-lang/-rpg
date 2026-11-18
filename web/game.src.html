@@ -6863,8 +6863,11 @@ function actBlock(s) {
     + (now.length ? '\n这一回新开的：' + now.map(x => `${x.tmp}「${ACT_T[x.type]}」${x.what}${x.who ? '（' + x.who + '去办）' : ''}${x.to ? '（向' + x.to + '请）' : ''}${x.ok === '越权' ? (x.over === 'ok' ? '（越权：这回办得成，照办成写，只是越了分际、事后难免有人说话）' : '（越权：这回走漏风声或被底下人顶回去，没办成，照此写）') : ''}`).join('；') : '')
     + (L.length ? '\n还在办的：' + L.map(x => `${x.id}「${ACT_T[x.type]}」${x.what}（${x.state}，第${x.turn}回开的${x.who ? '，' + x.who + '经手' : ''}）`).join('；') : '')
     + (L.some(x => s.turn - (x.touched || x.turn) >= 2) ? '\n拖了两回的（这一回正文必须写出结果——办成了，或者卡在哪、谁压着，记账照报；不许再写「还在办」）：' + L.filter(x => s.turn - (x.touched || x.turn) >= 2).map(x => x.id + x.what).join('；') : '')
-    + (stale.length ? '\n三回没有下文的（正文交代一句：为什么搁下、谁压着）：' + stale.map(x => x.what).join('；') : '');
+    + (stale.length ? '\n三回没有下文的（正文交代一句：为什么搁下、谁压着）：' + stale.map(x => x.what).join('；') : '')
+    + (askOverdue(s).length ? '\n向上头请准、挂了三回以上的（这一回上头必须给准话：准就照办——授职、拨钱粮、下文书当场给齐，记账照「办成」报；驳就说清为什么，记账照「驳回」报；不许再写留中、再议、看了没言语）：' + askOverdue(s).map(x => x.id + x.what).join('；') : '');
 }
+/** 向上头请的事挂了三回以上还没准话（R-257：外放泉州、论功给押衙，五六回都是「看了没言语」「名册核完再议」） */
+const askOverdue = s => actOpen(s).filter(x => /请/.test(x.type || '') && (s.turn - (x.turn || s.turn)) >= 3).slice(-4);
 /** 记账报的结果落到单子上；这一回推演新开的单子先登记；三回没进展的标「没有下文」 */
 function applyActs(s, d) {
   const out = [];
