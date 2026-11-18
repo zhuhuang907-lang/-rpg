@@ -78,7 +78,7 @@ for f in sorted((here / 'figures').glob('*.json')) if (here / 'figures').exists(
         figlib.append({'era': h.get('era') or f.stem, 'range': h.get('range'), 'people': [{'n': p.get('name'), 'tag': p.get('tag') or '', 't': p.get('tier') or 3, 'b': p.get('born'), 'd': p.get('died'),
             'w': [[x.get('from'), x.get('to'), x.get('place') or '', x.get('why') or ''] for x in p.get('where') or [] if x.get('place')],
             'po': [[x.get('office') or '', x.get('from'), x.get('to'), x.get('polity') or ''] for x in p.get('posts') or []][:12],
-            'st': p.get('stats') or {}, 'tr': (p.get('traits') or [])[:3], 'f': p.get('faction') or '', 'br': p.get('brief') or '', 'src': p.get('src') or ''} for p in h.get('people') or [] if p.get('name')]})
+            'st': p.get('stats') or {}, 'tr': (p.get('traits') or [])[:3], 'f': p.get('faction') or '', 'br': p.get('brief') or '', 'src': p.get('src') or '', 'al': [a for a in (p.get('alias') or []) if a][:4], 'fa': p.get('fate') or ''} for p in h.get('people') or [] if p.get('name')]})
     except Exception as e: print('skip figures', f.name, e)
 offlib = []   # 地方长官表 web/figures/officials-*.json（任务四十一、四十七）：地图上点一处看这年谁在任
 for f in sorted((here / 'figures').glob('officials-*.json')) if (here / 'figures').exists() else []:
