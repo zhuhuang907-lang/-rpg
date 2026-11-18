@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261118015805';
+const BUILD = '20261118021838';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -14876,7 +14876,7 @@ function resolveBattle(s, b) {
   const sim = battleSim(s, b.attacker === '我' ? us : them, b.attacker === '我' ? them : us, { terrain: T, wx: WX, fort: (() => { const v = (cityOf(s, b.place || '') || {}).cheng; return v == null ? v : v * (1 - Math.min(90, num(b.breach) || 0) / 100); })(), seed: (s.turn || 0) * 31 + ours % 997 + N0(b.enemyTroops) % 991 });
   const flip = { 大胜: '大败', 小胜: '小败', 相持: '相持', 小败: '小胜', 大败: '大胜' }, outcome = b.attacker === '我' ? sim.outcome : flip[sim.outcome];
   const deadUs = us.dead + (us.caught || 0), deadThem = them.dead + (them.caught || 0);
-  const take = !b.noTake && !b.field && b.attacker === '我' && /大胜|小胜/.test(outcome) && b.place ? b.place : '';   // 野战、劫营、设伏不占城（R-145）
+  const take = !b.noTake && !b.field && b.attacker === '我' && /大胜|小胜/.test(outcome) && b.place && landPlace(b.place) ? b.place : '';   // R-258：口外锚地跳帮拿船不算打下地盘   // 野战、劫营、设伏不占城（R-145）
   const lose = !b.field && b.attacker === '敌' && /大败/.test(outcome) && b.place ? b.place : '';
   const r0 = { ...b, ours, ourForces: mine.map(f => f.name), virtual: mine.some(f => f.virtual), odds: Math.round(pWin * 100), outcome, deadUs: b.tactic === '围城' ? Math.round(deadUs * 0.5) : deadUs, deadThem, take, lose, turn: s.turn + 1, tacWhy: TM[1] };
   r0.wx = WX.txt; r0.tired = tired < 1; r0.days = sim.days.map(d => ({ d: d.d, us: b.attacker === '我' ? d.ta : d.tb, them: b.attacker === '我' ? d.tb : d.ta, du: b.attacker === '我' ? d.kA : d.kB, dt: b.attacker === '我' ? d.kB : d.kA, usMen: (b.attacker === '我' ? d.A : d.B).men, usOrg: (b.attacker === '我' ? d.A : d.B).org, thMen: (b.attacker === '我' ? d.B : d.A).men, thOrg: (b.attacker === '我' ? d.B : d.A).org, note: d.note }));
@@ -14890,6 +14890,8 @@ function battleTextClash(r, text) {
   if (won && saysLose && !saysWin) return `这一仗程序算的是我方${r.outcome}（我方死伤约 ${r.deadUs}、敌方约 ${r.deadThem}），正文写成了我方溃败失守：照【这一仗的结果】重写`;
   return '';
 }
+/** 打得下、守得住的地方（城、州、县、镇、寨、关、堡）；港外、锚地、海面、江面、渡口、船上不算地盘（R-258：口外跳帮拿了两条船，记成「打下泉州港外口」，主角一下成了割据一方之主） */
+const landPlace = p => { const t = String(p || ''); return !/口外|港外|锚地|海面|江面|湾口|洋面|船上|舟中|渡口|滩头|水面/.test(t) && /城|州|县|镇|寨|关|堡|府|军|乡|村|庄|山/.test(t); };
 function battleBlock(r) {
   if (!r) return '';
   return `【这一仗的结果（程序按双方兵力、精粗、粮草、地形、奇袭算定的，正文照此写，不得改胜负和伤亡）】我方 ${r.ours} 人（${r.ourForces.join('、')}）对 ${r.enemy || '敌军'} 约 ${r.enemyTroops} 人，在${r.place || '阵前'}（${r.terrain || '野战'}${r.surprise ? '，' + (r.attacker === '我' ? '我方' : '敌方') + '奇袭' : ''}），${r.attacker === '我' ? '我攻' : '敌攻'}；结果：${r.outcome}。${r.wx ? '天时：' + r.wx + '。' : ''}${r.tired ? '我军远来疲惫。' : ''}我方死伤约 ${r.deadUs} 人，敌方死伤约 ${r.deadThem} 人。${r.take ? '拿下了' + r.take + '。' : ''}${r.lose ? '丢了' + r.lose + '。' : ''}写出这一仗是怎么打成这样的：谁先动、哪里撑不住、谁立了功谁误了事、伤兵与降卒怎么处置；不要写成别的结果。`;
@@ -14916,7 +14918,7 @@ function applyBattle(s, r) {
       let f = arr(s.forces).find(x => x && x.foe && (x.name === en || (P && x.owner === P.name)));
       if (!f && left > 0) { f = { name: en, leader: (P && P.leader) || en.replace(/[（(].*$/, ''), owner: (P && P.name) || en, foe: true, troops: left, at, status: '交战', src: '战报' }; s.forces = arr(s.forces).concat([f]); }
       else if (f) { f.troops = left; f.at = at; f.status = left ? (/败/.test(r.outcome || '') && !/敌/.test(r.outcome || '') ? '交战' : '退却') : '溃散'; f.src = '战报'; if (!left) s.forces = arr(s.forces).filter(x => x !== f); } } }
-  if (r.take && !arr(s.territory).some(x => x.place === r.take)) s.territory = arr(s.territory).concat([{ place: r.take, pop: null, troops: Math.round(r.ours * 0.1), grain: null, loyalty: 30, note: `第${r.turn}回打下` }]);
+  if (r.take && landPlace(r.take) && !arr(s.territory).some(x => x.place === r.take)) s.territory = arr(s.territory).concat([{ place: r.take, pop: null, troops: Math.round(r.ours * 0.1), grain: null, loyalty: 30, note: `第${r.turn}回打下` }]);
   if (r.lose) s.territory = arr(s.territory).filter(x => x.place !== r.lose);
   if (!r.virtual && (r.take || r.lose)) { s.mapOwn = s.mapOwn || {}; if (r.take) s.mapOwn[geoStem(r.take)] = { owner: '你', turn: r.turn, why: '打下' }; if (r.lose) s.mapOwn[geoStem(r.lose)] = { owner: String(r.enemyOwner || r.enemy || '敌').replace(/(守军|军|兵)$/, '') || '敌', turn: r.turn, why: '丢了' }; }
   { const won = /胜/.test(r.outcome) && !/败/.test(r.outcome), ld = mine.slice().sort((a, b) => N0(b.troops) - N0(a.troops))[0];   // 将领阅历、厌战、主将被俘（R-139）
@@ -16669,7 +16671,7 @@ function applyReply(s, d, said) {
 /** 每回底下的【当前情况】和第一行的【时间·地点·年龄】：程序照账册写，不靠 AI 记得写 */
 /** 身份切换不靠模型自觉：照账册判断——有了官职就是官，有了地盘兵马就是一方之主，登了大位就是皇帝，受了爵就是贵人；罢了官、丢光地盘也照改 */
 function autoIdentity(s, extra) {
-  const p = s.protagonist || {}, c = s.career || {}, office = String(c.office || ''), troops = identityOf(s).military.troops, land = arr(s.territory).length;   // 只算自己统带的兵，别人的兵不算到你头上
+  const p = s.protagonist || {}, c = s.career || {}, office = String(c.office || ''), troops = identityOf(s).military.troops, land = arr(s.territory).filter(t => t && landPlace(t.place)).length;   // 港外锚地不算地盘（R-258）；只算自己统带的兵，别人的兵不算到你头上
   const st = Object.entries(s.status || {}).map(([k, v]) => k + v).join(' ');
   // 受朝廷任命的官（总兵、知府……）驻防有兵有地方，照旧是朝廷命官；要写明自立、割据、举兵反了才算一方之主
   const appointedStill = office && !ID_IDLE.test(office) && !/自立|割据|自称|叛|反|举兵|称王|拥兵自重|不受节制/.test(String(p.role || '') + office + st);
