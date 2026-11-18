@@ -14170,8 +14170,10 @@ function spanMonths(span, said) {
   const SP = { xun: 0.3, month: 1, season: 3, year: 12 };
   if (SP[span]) return SP[span];
   const zh = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 半: 0.5 };
-  let m = t.match(/(半|[一两二三四五六七八九十]|\d+)\s*年/); if (m && /过|等|守|熬|住|做|当|在/.test(t)) return Math.min(60, (zh[m[1]] ?? +m[1]) * 12);
-  m = t.match(/(半|[一两二三四五六七八九十]|\d+)\s*个?月/); if (m && /过|等|守|熬|住|做|当|在/.test(t)) return Math.min(24, zh[m[1]] ?? +m[1]);
+  // 只认真叫日子往前走的说法（R-257：借钱「一年还本」，钟一下过了一年）：「过一年」「一年后」「当差两年」「这一年照常……」
+  const N = '(半|[一两二三四五六七八九十]|\\d+)', SPAN_RE = new RegExp(`(?:过|等|守|熬|住|待|歇|当差|当直|操练|经营|干|做|跑|练|混)\\s*(?:了|上|满)?\\s*${N}\\s*(年|个?月)|${N}\\s*(年|个?月)\\s*(?:以后|之后|后|过去|光景|下来|再看|再说|里|中|间)|这${N}?\\s*(年|个?月)(?:里|中|间|下来)?[^。；]{0,12}(?:照常|照旧|当差|当直|操练|经营|攒|练|守)`);
+  const mm = t.match(SPAN_RE); if (mm) { const n = mm[1] || mm[3] || mm[5] || '一', u = mm[2] || mm[4] || mm[6]; const v = zh[n] ?? +n; return /年/.test(u) ? Math.min(60, v * 12) : Math.min(24, v); }
+  let m = null;
   if (/到年底|到年终|过年|到明年|开春|入冬|到秋|整年/.test(t)) return 6;
   return 0;
 }
