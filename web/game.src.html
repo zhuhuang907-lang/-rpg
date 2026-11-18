@@ -3952,7 +3952,7 @@ function familyNeeds(s) {
   const elite = ['emperor', 'noble', 'official', 'warlord'].includes(s.idm) || /皇|王|公|侯|伯|贵|宗室|勋|官|绅|富|盐商|地主|员外|举人|进士|将|帅|督|抚|知府|知县|大臣/.test(role);
   const out = [], marry = male ? (elite ? 18 : 22) : 17, F = Object.assign({}, s.famOk || {});
   // 正文、玩家的话里写明主角没娶（没嫁）：不替他补配偶和孩子，要成亲照玩法来（R-257：二十岁答书吏「未娶」，后台补了个成婚两年的正室和嫡子）
-  if (arr(s.chat).slice(-40).some(c => /未娶|没娶|尚未娶|没有娶亲|未曾娶|未成家|没成家|没成亲|未婚|尚未婚配|未许人家|未出阁/.test(String(c && c.text || '')))) { F.spouse = true; F.kids = true; F.conc = true; }
+  if (arr(s.chat).slice(-40).some(c => /未娶|没娶|尚未娶|没有娶亲|未曾娶|未成家|没成家|没成亲|未婚|尚未婚配|未许人家|未出阁/.test(String(c && c.text || '')))) { s.famOk = Object.assign(s.famOk || {}, { spouse: true, kids: true, conc: true }); F.spouse = true; F.kids = true; F.conc = true; }   // 记死：四十条以后翻篇了也不再补（以前十几回后又补了个正室）
   if (age >= marry && !F.spouse && !H.some(m => male ? WIFE_RE.test(m.relation) : /^(夫|丈夫|夫君)$/.test(m.relation))) out.push(male ? '正妻' : '丈夫');
   if (male && elite && age >= 24 && !F.conc && !H.some(m => CONC_RE.test(m.relation))) out.push('妾');
   if (age >= marry + 4 && !F.kids && !H.some(m => KID_RE.test(m.relation) && !/孙|侄|甥/.test(m.relation))) out.push('子女');
@@ -5668,8 +5668,12 @@ function storyDate(s, text) {
   while ((m = re.exec(t))) {
     const y = M[m[1] + m[2] + m[3]]; if (y == null) continue;
     let mo = m[5] && m[6] ? (mon[m[5]] || zh(m[5])) : m[4] ? sea[m[4]] : null; if (!mo || mo > 12) { if (y <= y0) continue; mo = 1; }
-    const c = { y, m: mo, d: 1 }; if (ymOf(c) < ymOf(s.clock) - 0.01 && !(y === y0 && mo === s.clock.m)) continue; best = c;
+    const c = { y, m: mo, d: 1 }; if (ymOf(c) < ymOf(s.clock) - 0.01 && !(y === y0 && mo === s.clock.m)) continue; best = c; best.at = m.index + m[0].length;
   }
+  // 后面只写「到了五月」「七月里」、不带年号的：接着最后那个年号年（没有就照眼下）往后数，月份比前面小的算第二年
+  const base = best || { y: y0, m: s.clock.m, at: 0 }, rest = t.slice(base.at || 0), re2 = /(^|[^年\d一二三四五六七八九十元])(正|腊|十一|十二|[一二三四五六七八九十])月(里|间|初|中|底|末|下旬|上旬|中旬|[一二三四五六七八九十廿初]{1,3}日?)?/g;
+  let last = null, k; while ((k = re2.exec(rest))) last = k;
+  if (last) { const mo = { 正: 1, 腊: 12 }[last[2]] || zh(last[2]); if (mo >= 1 && mo <= 12) { const y = base.y + (mo < base.m ? 1 : 0); if (y <= y0 + 6) { const c = { y, m: mo, d: 1 }; if (ymOf(c) >= ymOf(s.clock) - 0.01) best = c; } } }
   return best;
 }
 function eraLabel(s, y) {
