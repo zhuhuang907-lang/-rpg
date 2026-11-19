@@ -1,0 +1,54 @@
+diff --git a/web/game.src.html b/web/game.src.html
+index 6e30f5a..9bbd1ec 100644
+--- a/web/game.src.html
++++ b/web/game.src.html
+@@ -103,6 +103,7 @@ textarea{resize:vertical}
+ .feed{margin-top:10px;font-size:13px;color:var(--ink2)}.feed .fh{color:var(--mute);font-size:12px;margin-bottom:4px}.feed .fi{animation:fadein .4s ease;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ @keyframes fadein{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+ @keyframes battlepulse{0%{stroke-width:1.2;opacity:.55}50%{stroke-width:3.4;opacity:1}100%{stroke-width:1.2;opacity:.55}}.battlepulse{animation:battlepulse 1.6s ease-in-out infinite}
++@keyframes wardash{to{stroke-dashoffset:-28}}.warfront{stroke-dasharray:10 4;animation:wardash 1.1s linear infinite}   /* 战线红虚线流动（钢铁雄心前线效果） */
+ .msg.talk .text{font-family:var(--f-ui);font-size:15px;line-height:1.85}
+ .text[contenteditable="true"]{outline:2px dashed var(--ochre);padding:6px;border-radius:6px}
+ .caret::after{content:"▍";color:var(--qing);animation:blink 1s steps(2) infinite}
+@@ -9031,8 +9032,14 @@ function stratMap(s) {
+         if (b[0] < 0 || b[2] > W || b[1] < 0 || b[3] > H || boxes.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3])) || (u.lv !== 3 && LBLD.has(u.n) === false && PL && lblBox.some(o => !(b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3])))) continue;   // 补写在治所旁的州名避开地块上的州名；县名照旧
+         boxes.push(b); CITYB.push(b); LBLD.add(u.n); out.push(`<text x="${(x + dx).toFixed(1)}" y="${(yy + dy).toFixed(1)}" font-size="${f}" fill="#1f1f1f" pointer-events="none" stroke="#fff" stroke-width="2" paint-order="stroke">${esc(t)}</text>`); break; } }
+     return out.join(''); };
+-  const forces = arr(s.forces).map(f => { const C = arr(s.campaigns).find(c => c.force === f.name && c.state === '行军' && c.pos); const p = C ? C.pos : f.march && f.wrPos ? f.wrPos : null; return { f, u: p ? { ...p, name: f.at } : f.at ? placeXY(s, f.at, y) : null }; }).filter(x => x.u && x.u.lat);   /* 行军中的兵马画在路上走到的地方（R-154） */
+-  const battles = arr(s.battles).slice(-8).map(b => ({ b, u: b.place ? placeXY(s, b.place, y) : null })).filter(x => x.u && x.u.lat);
++  /* 兵驻地、战场、目标的模糊定位：地名库里查不到的（「洛阳城西北六军大营」「汴州城下」这类营地写法）逐级收短再查、再查不到就取最近地名（2026-11-20 项目主人：「地图要钢铁雄心效果」——兵牌、战线画不出来多半是驻地写法定位不到，整层静默消失） */
++  const mapXY = (n, yy) => { const t = String(n || '').trim(); if (!t) return null; let u = placeXY(s, t, yy); if (u && u.lat) return u;
++    for (const g of [t.replace(/[（(].*$/, '').replace(/[城内外东西南北上下左右中大营寨营地下]+$/, ''), geoStem(t), t.slice(0, 3), t.slice(0, 2)]) {
++      if (!g || g.length < 2) continue; u = placeXY(s, g, yy); if (u && u.lat) return u;
++      try { const gn = geoNear(g, yy); if (gn && gn.lat != null) return { lon: gn.lon, lat: gn.lat, name: t }; } catch (_) { /* 查不到就算了 */ } }
++    return null; };
++  const forces = arr(s.forces).map(f => { const C = arr(s.campaigns).find(c => c.force === f.name && c.state === '行军' && c.pos); const p = C ? C.pos : f.march && f.wrPos ? f.wrPos : null; return { f, u: p ? { ...p, name: f.at } : f.at ? mapXY(f.at, y) : null }; }).filter(x => x.u && x.u.lat);   /* 行军中的兵马画在路上走到的地方（R-154） */
++  const battles = arr(s.battles).slice(-8).map(b => ({ b, u: b.place ? mapXY(b.place, y) : null })).filter(x => x.u && x.u.lat);
+   const special = u => ownOf(u) || MAPZ.sel === u.n || forces.some(x => geoStem(x.u.name) === geoStem(u.n)) || (here && geoStem(u.n) === geoStem(here.name)) || (M.ok && arr(M.A.regimes).some(r => r.lat && Math.abs(r.lat - u.lat) < 0.05 && Math.abs(r.lon - u.lon) < 0.05));
+   // 照放大的程度给地名：天下只标都城、你在的、你的地盘和有兵的；放大到几个省才标各州府；再放大才标县
+   const ctyL = near && sp > 1.6 ? cty.filter(u => (homeU && u.p === homeU.n) || special(u)) : near && sp > 0.8 ? cty.filter(u => (homeU && u.p === homeU.n) || special(u)) : cty;   // 中间那一档只标你那个府州的县，免得县名挤掉州名
+@@ -9049,12 +9056,23 @@ function stratMap(s) {
+     ${battles.filter(x => inBox(x.u)).map(x => `<g pointer-events="none"><title>${esc(x.b.when || '')} ${esc(x.b.place)}之战：${esc(x.b.outcome)}${x.b.turn === s.turn ? '（这一回打的）' : ''}</title><circle cx="${px(x.u).toFixed(0)}" cy="${py(x.u).toFixed(0)}" r="11" fill="none" stroke="${x.b.turn === s.turn ? '#d61a1a' : '#8b1a1a'}" stroke-width="${x.b.turn === s.turn ? 2.4 : 1.4}" ${x.b.turn === s.turn ? 'class="battlepulse"' : ''} opacity=".9"/><circle cx="${px(x.u).toFixed(0)}" cy="${py(x.u).toFixed(0)}" r="${x.b.turn === s.turn ? 16 : 13}" fill="none" stroke="${x.b.turn === s.turn ? '#d61a1a' : '#8b1a1a'}" stroke-width=".8" opacity=".5"/></g>`).join('')}
+     ${battles.filter(x => inBox(x.u)).map(x => `<text x="${px(x.u).toFixed(0)}" y="${(py(x.u) - 6).toFixed(0)}" font-size="13" text-anchor="middle" pointer-events="none">⚔</text>`).join('')}
+     ${(() => { /* R-200 新占/新丢的城：这一回变色的画金圈高亮，一眼看见地盘变了；关名地名库里没有的照关表坐标落 */ const MO = s.mapOwn || {}; return Object.entries(MO).filter(([, v]) => v && v.turn === s.turn).map(([stem, v]) => { const u = placeXY(s, stem, y) || (() => { const q = passesIn(s, y).find(p => samePlace(p.n, stem) || p.n.includes(stem)); return q ? { lon: q.lon, lat: q.lat } : null; })(); return u && u.lat && inBox(u) ? `<circle cx="${px(u).toFixed(0)}" cy="${py(u).toFixed(0)}" r="9" fill="none" stroke="#e8b021" stroke-width="2" stroke-dasharray="3 2" opacity=".95" pointer-events="none"><title>${esc(stem)}：这一回${esc(v.why || '易手')}（归${v.owner === '你' ? '你' : esc(v.owner || '？')}）</title></circle>` : ''; }).join(''); })()}
++    ${Ly.war !== false && arr(s.wars).some(w => w && w.state === '交战') ? SH(() => { const out = [];   /* 战线画上地图（2026-11-20 项目主人「地图要钢铁雄心效果」）：对每场交战，取两军相邻州府对（warFronts），画红虚线＋中点菱形标；兵牌压在其上 */
++      for (const w of arr(s.wars).filter(w => w && w.state === '交战')) {
++        for (const F of warFronts(s, w.with).slice(0, 4)) {
++          const a = mapXY(F.a, y), b = mapXY(F.b, y); if (!a || !b || (!inBox(a) && !inBox(b))) continue;
++          const pa = [px(a).toFixed(0), py(a).toFixed(0)], pb = [px(b).toFixed(0), py(b).toFixed(0)];
++          out.push(`<polyline class="warfront" points="${pa.join(',')} ${pb.join(',')}" fill="none" stroke="#b31212" stroke-width="3.5" stroke-linecap="round" opacity=".8" pointer-events="none"><title>对${esc(w.with)}战线：${esc(F.a)}（我兵${F.ours ? fmtN(F.ours, '人') : '无'}）—${esc(F.b)}，相距约${F.li}里</title></polyline>`);
++          const mx = (+pa[0] + +pb[0]) / 2, my = (+pa[1] + +pb[1]) / 2;
++          out.push(`<rect x="${(mx - 7).toFixed(0)}" y="${(my - 7).toFixed(0)}" width="14" height="14" fill="#b31212" stroke="#fff" stroke-width="1.4" transform="rotate(45 ${mx.toFixed(0)} ${my.toFixed(0)})" pointer-events="none" opacity=".85"><title>战线中段</title></rect>`);
++        }
++      }
++      return out.join(''); }, 'warfront') : ''}
+     ${(() => { /* 军旗牌：像《钢铁雄心》的兵牌——旗色分敌我，下面三条是兵力、士气、组织；行军的画出去向；点牌子选中这支兵马 */
+       const at = new Map(), out = [];
+       for (const x of forces.filter(x => inBox(x.u))) { const k = x.u.lon.toFixed(2) + ',' + x.u.lat.toFixed(2), i = at.get(k) || 0; at.set(k, i + 1);
+         const f = x.f, mine = myForce(s, f), col = mine ? '#a63a2a' : (own.get(geoStem(f.owner || '')) || {}).col || '#555', X = px(x.u) + i * 6, Y = py(x.u) - i * 30, men = N0(f.troops) || 0, mo = num(f.morale) ?? 60, org = num(f.orgNow) ?? 70, w = Math.max(54, String(f.name).length * 10 + 46), sel = MAPZ.from === f.name;
+         const bar = (yy, v, c) => `<rect x="${(X + 3).toFixed(0)}" y="${yy.toFixed(0)}" width="${(w - 6).toFixed(0)}" height="3" fill="#0004"/><rect x="${(X + 3).toFixed(0)}" y="${yy.toFixed(0)}" width="${((w - 6) * Math.max(0, Math.min(100, v)) / 100).toFixed(0)}" height="3" fill="${c}"/>`;
+-        const C = arr(s.campaigns).find(c => c.force === f.name && /行军|待发/.test(c.state)), T = C ? placeXY(s, C.target, y) : null;
++        const C = arr(s.campaigns).find(c => c.force === f.name && /行军|待发/.test(c.state)), T = C ? mapXY(C.target, y) : null;
+         const RT = (C && C.route) || (f.march && f.march.route) || null;
+         if (RT && RT.pts) { const dn = C ? C.done || 0 : f.march.done || 0, P = wrPos(RT, dn), seen = RT.pts.slice(0, P.i + 1).concat([P]), left = [P].concat(RT.pts.slice(P.i + 1)); out.push(`<polyline class="wroute" points="${seen.map(XY).join(' ')}" fill="none" stroke="${col}" stroke-width="3" opacity=".9" pointer-events="none"/><polyline class="wroute" points="${left.map(XY).join(' ')}" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#marr)" opacity=".85" pointer-events="none"><title>${esc(f.name)}的行军路线：${esc(wrTxt(RT))}</title></polyline>`); }
+         else if (T && T.lat) out.push(`<line x1="${px(x.u).toFixed(0)}" y1="${py(x.u).toFixed(0)}" x2="${px(T).toFixed(0)}" y2="${py(T).toFixed(0)}" stroke="${col}" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#marr)" opacity=".85" pointer-events="none"/>`);
