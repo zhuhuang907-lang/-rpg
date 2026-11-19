@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261118144900';
+const BUILD = '20261119164750';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -5485,9 +5485,12 @@ function libNear(t, qs, L) { L = Math.max(20, L || 120); const s = String(t || '
   for (let i = 0; i < P.length; i++) { cnt.set(P[i][1], (cnt.get(P[i][1]) || 0) + 1); while (P[i][0] - P[j][0] > L) { const v = cnt.get(P[j][1]) - 1; if (v <= 0) cnt.delete(P[j][1]); else cnt.set(P[j][1], v); j++; } if (cnt.size > best) best = cnt.size; }
   return best; }
 function libScan(texts, terms, n, hint) { const N = texts.length; if (!N || !terms.length) return []; const sc = new Map();
-  for (const T of terms) { const hit = []; for (let i = 0; i < N; i++) if (texts[i].t.indexOf(T.q) >= 0) hit.push(i); const df = hit.length; if (!df || (df > N * 0.5 && N > 20)) continue; const idf = Math.log(1 + N / df) * T.w; for (const i of hit) { const o = sc.get(i) || { s: 0, m: [] }; o.s += idf; o.m.push(T.q); sc.set(i, o); } }
+  for (const T of terms) { const hit = []; for (let i = 0; i < N; i++) if (texts[i].t.indexOf(T.q) >= 0) hit.push(i); const df = hit.length; if (!df || (df > N * 0.3 && N > 20)) continue; const idf = Math.log(1 + N / df) * T.w; for (const i of hit) { const o = sc.get(i) || { s: 0, m: [] }; o.s += idf; o.m.push(T.q); sc.set(i, o); } }
+  const minTerms = Math.min(2, terms.length);
   const IV = { 人: /传|世家|载记/, 制: /志|考|典|会要|沿革/, 事: /纪|实录|本末/ }, ire = IV[hint];
-  const out = []; for (const [i, o] of sc) { const near = o.m.length > 1 ? libNear(texts[i].t, o.m) : 1, iv = ire && ire.test(texts[i].v || '') ? 1.3 : 1; out.push({ i, s: o.s * (1 + 0.7 * (o.m.length - 1)) * (1 + 0.4 * (near - 1)) * iv, m: o.m }); } out.sort((a, b) => b.s - a.s);
+  const out = []; for (const [i, o] of sc) { if (o.m.length < minTerms) continue; const near = o.m.length > 1 ? libNear(texts[i].t, o.m) : 1, iv = ire && ire.test(texts[i].v || '') ? 1.3 : 1; out.push({ i, s: o.s * (1 + 0.7 * (o.m.length - 1)) * (1 + 0.4 * (near - 1)) * iv, m: o.m }); }
+  if (!out.length && terms.length === 1) { for (const [i, o] of sc) { out.push({ i, s: o.s, m: o.m }); } }
+  out.sort((a, b) => b.s - a.s);
   return out.slice(0, n || 4).map(x => ({ volume: texts[x.i].v, text: libSnip(texts[x.i].t, x.m), seg: String(texts[x.i].t || '').slice(0, 2400), terms: x.m, score: Math.round(x.s * 100) / 100 })); }
 /* 哪个年代、哪一家查哪几部书（照朝代与政权；南北朝分南北，宋辽金元分开） */
 function libBooksFor(y, pol, said) { const P = String(pol || ''), B = []; const add = (...a) => { for (const x of a) if (!B.includes(x)) B.push(x); };
