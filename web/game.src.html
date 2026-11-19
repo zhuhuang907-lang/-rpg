@@ -9438,7 +9438,29 @@ function presetPop(s, names) { const y = s.clock.y, out = {};
   return out; }
 async function econDS(s) {
   const u = (s.money || {}).unit || '文', pol = s.place.polity || '', pl = geoCenter(s), p = s.protagonist || {};
-  const PP = presetPrices(s), ppTxt = PP.length ? `\n【史料里记下的价目（以此为准折算；单位是文，折成「${u}」时照本朝钱法）】\n` + PP.map(x => `· ${x.from}—${x.to}年${x.region}：${x.rice != null ? '米一石' + x.rice + '文' : ''}${x.cloth != null ? '，绢一匹' + x.cloth + '文' : ''}${x.landPrice != null ? '，田一亩' + x.landPrice + '文' : ''}（${x.src || ''}）`).join('\n') : '';
+  const PP = presetPrices(s);
+  /* R-256 降本增效：preset 有的价目直接用（史料载值，比 AI 推的准），只问 AI 要 preset 没有的 */
+  const PK = ['rice','wage','landPrice','yield','rentRate','cloth'];
+  const fromPreset = {}; let presetN = 0;
+  for (const k of PK) { const hit = PP.find(x => x[k] != null); if (hit) { fromPreset[k] = hit[k]; presetN++; } }
+  const needAI = ['caravan','ransom','protect','interest','myLand','juan','pay','payOff','feast','opera','incense','doctor'];
+  const ppTxt = PP.length ? `\n【史料里记下的价目（以此为准折算；单位是文，折成「${u}」时照本朝钱法）】\n` + PP.map(x => `· ${x.from}—${x.to}年${x.region}：${x.rice != null ? '米一石' + x.rice + '文' : ''}${x.cloth != null ? '，绢一匹' + x.cloth + '文' : ''}${x.landPrice != null ? '，田一亩' + x.landPrice + '文' : ''}（${x.src || ''}）`).join('\n') : '';
+  if (presetN >= 4) {
+    /* preset 覆盖了大部分价目：只问 AI 要 preset 没有的（9 个而非 15 个），省一截 */
+    const askKeys = needAI.filter(k => true);
+    const askJson = askKeys.map(k => `"${k}":null`).join(',');
+    const { text } = await callClaude(`你是精通历代民间生计的经济史家。替一局历史游戏给${timeText(s.clock)}${pl}（${pol}）推几项民间行情，钱一律折成「${u}」。${ppTxt}\n米价、工钱、田价、租率、绢价已有史料载值，不用推。只推下面这几项：\n- caravan 一队过路客商一趟随身的财货大约值多少；ransom 本地一个殷实富户能出的赎金；protect 一个村子一个月被山寨勒交的「孝敬」；\n- interest 民间借贷的月息（写零到一之间的小数）；\n- myLand 主角${p.name || ''}（${p.role || ''}）此刻名下大约有多少亩田（照身份推，没有田写 0）；\n- juan 这一朝捐一个最低的出身要多少钱；pay 本朝一个普通兵丁一个月的饷；payOff 本朝最低一级带兵武官一个月的俸饷；\n- feast 本地办一桌像样的酒席的钱；opera 听一回曲的钱；incense 去寺观进一回香的钱；doctor 请一回郎中连药的钱。\n只输出一个 JSON 对象：{${askJson},"basis":""}`, null, { maxTokens: 800, temperature: 0.1, kind: '研读', detached: true, thinking: false });
+    const d = parseJSON(text); if (!d) { s.ecFail = s.turn; throw { code: 'bad_json' }; }
+    const E = { v: 2, y: s.clock.y, pl, unit: u, basis: one(d.basis, 160), src: 'preset（史料载值）+ AI 推民间行情' };
+    for (const k of PK) if (fromPreset[k] != null) E[k] = fromPreset[k];
+    for (const k of needAI) { const v = num(d[k]); if (v != null && v >= 0) E[k] = v; }
+    if (E.rentRate > 1) E.rentRate = E.rentRate / 10; if (E.interest > 1) E.interest = E.interest / 100;
+    econUnitFix(E);
+    s.econ = E; if (s.ms) msApply(s);
+    if (E.myLand != null && !s.land && (/地主|乡绅|绅|田主|庄主|员外/.test(String(p.role || '')) || E.myLand > 0)) s.land = { mu: Math.round(E.myLand), rent: E.rentRate || 0.5, loans: [], basis: '照身份推' };
+    return E;
+  }
+  /* preset 没覆盖：照旧全问 AI */
   const { text } = await callClaude(`你是精通历代物价、田制、赋役、民间生计的经济史家。替一局历史游戏给${timeText(s.clock)}${pl}（${pol}）列一张本地行情表，钱一律折成「${u}」。照史料和经济史研究写；拿不准的照同朝同地相近年份推一个确切的数，写依据。${ppTxt}
 - rice 一石米价；wage 一个壮丁打短工一日的工钱；landPrice 一亩中等田的价钱；yield 一亩中田一年收谷几石；rentRate 佃户交租几成（写零到一之间的小数）；
 - caravan 一队过路客商一趟随身的财货大约值多少；ransom 本地一个殷实富户能出的赎金；protect 一个村子一个月被山寨勒交的「孝敬」；
