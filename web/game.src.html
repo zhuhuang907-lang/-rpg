@@ -3042,8 +3042,11 @@ const govDue = s => s && s.clock && govScope(s) && (!s.gov || s.gov.scope !== go
 async function buildGov(s) {
   const scope = govScope(s), keys = scope === 'realm' ? GOV_KEYS : LOCAL_KEYS, u = (s.money || {}).unit || '两', pol = s.place.polity || '', yl = s.clock.yearLabel || s.clock.y + '年';
   const found = await searchFirst(s, scope === 'realm' ? [`${yl} ${pol} 国库 岁入 岁出`, `${yl} ${pol} 灾荒 民变`, `${yl} ${pol} 边患 军饷`, `${pol}代 社会阶层 士绅 商人`] : [`${geoCenter(s)} ${yl} 钱粮 赋额`, `${geoCenter(s)} ${yl} 灾 荒`, `${pol}代 州县 吏治 积案`]);
+  /* R-256 降本：preset 有的户口直接给 AI（不再让 AI 猜），查不到就不注入 */
+  const _pp = (() => { try { const place = geoCenter(s); const PP = presetPop(s, [place]); const hit = PP[place]; if (hit && hit.households) return `【史料里的户口（照此填「人口」，不要另猜）】${place}：${hit.households} 户、${hit.mouths || '口数无载'} 人（${hit.src || '地理志'}）`; } catch (_) {} return ''; })();
   const { text } = await callClaude(`你是严谨的史家，替一局历史游戏定${scope === 'realm' ? '主角治下这个政权' : '主角治下这一' + (s.career && s.career.office || '地')}此刻（${timeText(s.clock)}）的家底。主角：${s.protagonist.name}（${s.protagonist.role}），在${geoCenter(s)}。
 ${found}
+${_pp}
 ${factBlock(s)}
 ${realmBlock(s)}
 ${libFacts(s, ['tax', 'military', 'ranks', 'society'])}
@@ -4387,9 +4390,12 @@ function libNear(t, qs, L) { L = Math.max(20, L || 120); const s = String(t || '
   for (let i = 0; i < P.length; i++) { cnt.set(P[i][1], (cnt.get(P[i][1]) || 0) + 1); while (P[i][0] - P[j][0] > L) { const v = cnt.get(P[j][1]) - 1; if (v <= 0) cnt.delete(P[j][1]); else cnt.set(P[j][1], v); j++; } if (cnt.size > best) best = cnt.size; }
   return best; }
 function libScan(texts, terms, n, hint) { const N = texts.length; if (!N || !terms.length) return []; const sc = new Map();
-  for (const T of terms) { const hit = []; for (let i = 0; i < N; i++) if (texts[i].t.indexOf(T.q) >= 0) hit.push(i); const df = hit.length; if (!df || (df > N * 0.5 && N > 20)) continue; const idf = Math.log(1 + N / df) * T.w; for (const i of hit) { const o = sc.get(i) || { s: 0, m: [] }; o.s += idf; o.m.push(T.q); sc.set(i, o); } }
+  for (const T of terms) { const hit = []; for (let i = 0; i < N; i++) if (texts[i].t.indexOf(T.q) >= 0) hit.push(i); const df = hit.length; if (!df || (df > N * 0.3 && N > 20)) continue; const idf = Math.log(1 + N / df) * T.w; for (const i of hit) { const o = sc.get(i) || { s: 0, m: [] }; o.s += idf; o.m.push(T.q); sc.set(i, o); } }
+  const minTerms = Math.min(2, terms.length);
   const IV = { 人: /传|世家|载记/, 制: /志|考|典|会要|沿革/, 事: /纪|实录|本末/ }, ire = IV[hint];
-  const out = []; for (const [i, o] of sc) { const near = o.m.length > 1 ? libNear(texts[i].t, o.m) : 1, iv = ire && ire.test(texts[i].v || '') ? 1.3 : 1; out.push({ i, s: o.s * (1 + 0.7 * (o.m.length - 1)) * (1 + 0.4 * (near - 1)) * iv, m: o.m }); } out.sort((a, b) => b.s - a.s);
+  const out = []; for (const [i, o] of sc) { if (o.m.length < minTerms) continue; const near = o.m.length > 1 ? libNear(texts[i].t, o.m) : 1, iv = ire && ire.test(texts[i].v || '') ? 1.3 : 1; out.push({ i, s: o.s * (1 + 0.7 * (o.m.length - 1)) * (1 + 0.4 * (near - 1)) * iv, m: o.m }); }
+  if (!out.length && terms.length === 1) { for (const [i, o] of sc) { out.push({ i, s: o.s, m: o.m }); } }
+  out.sort((a, b) => b.s - a.s);
   return out.slice(0, n || 4).map(x => ({ volume: texts[x.i].v, text: libSnip(texts[x.i].t, x.m), seg: String(texts[x.i].t || '').slice(0, 2400), terms: x.m, score: Math.round(x.s * 100) / 100 })); }
 /* 哪个年代、哪一家查哪几部书（照朝代与政权；南北朝分南北，宋辽金元分开） */
 function libBooksFor(y, pol, said) { const P = String(pol || ''), B = []; const add = (...a) => { for (const x of a) if (!B.includes(x)) B.push(x); };
@@ -9435,7 +9441,29 @@ function presetPop(s, names) { const y = s.clock.y, out = {};
   return out; }
 async function econDS(s) {
   const u = (s.money || {}).unit || '文', pol = s.place.polity || '', pl = geoCenter(s), p = s.protagonist || {};
-  const PP = presetPrices(s), ppTxt = PP.length ? `\n【史料里记下的价目（以此为准折算；单位是文，折成「${u}」时照本朝钱法）】\n` + PP.map(x => `· ${x.from}—${x.to}年${x.region}：${x.rice != null ? '米一石' + x.rice + '文' : ''}${x.cloth != null ? '，绢一匹' + x.cloth + '文' : ''}${x.landPrice != null ? '，田一亩' + x.landPrice + '文' : ''}（${x.src || ''}）`).join('\n') : '';
+  const PP = presetPrices(s);
+  /* R-256 降本增效：preset 有的价目直接用（史料载值，比 AI 推的准），只问 AI 要 preset 没有的 */
+  const PK = ['rice','wage','landPrice','yield','rentRate'];   /* 注意：preset 的 cloth 是绢价（一匹多少文），游戏的 cloth 是纺织月收入——不同东西，不从 preset 取 */
+  const fromPreset = {}; let presetN = 0;
+  for (const k of PK) { const hit = PP.find(x => x[k] != null); if (hit) { fromPreset[k] = hit[k]; presetN++; } }
+  const needAI = ['caravan','ransom','protect','interest','myLand','juan','pay','payOff','feast','opera','incense','doctor'];
+  const ppTxt = PP.length ? `\n【史料里记下的价目（以此为准折算；单位是文，折成「${u}」时照本朝钱法）】\n` + PP.map(x => `· ${x.from}—${x.to}年${x.region}：${x.rice != null ? '米一石' + x.rice + '文' : ''}${x.cloth != null ? '，绢一匹' + x.cloth + '文' : ''}${x.landPrice != null ? '，田一亩' + x.landPrice + '文' : ''}（${x.src || ''}）`).join('\n') : '';
+  if (presetN >= 4) {
+    /* preset 覆盖了大部分价目：只问 AI 要 preset 没有的（9 个而非 15 个），省一截 */
+    const askKeys = needAI.filter(k => true);
+    const askJson = askKeys.map(k => `"${k}":null`).join(',');
+    const { text } = await callClaude(`你是精通历代民间生计的经济史家。替一局历史游戏给${timeText(s.clock)}${pl}（${pol}）推几项民间行情，钱一律折成「${u}」。${ppTxt}\n米价、工钱、田价、租率、绢价已有史料载值，不用推。只推下面这几项：\n- caravan 一队过路客商一趟随身的财货大约值多少；ransom 本地一个殷实富户能出的赎金；protect 一个村子一个月被山寨勒交的「孝敬」；\n- interest 民间借贷的月息（写零到一之间的小数）；\n- myLand 主角${p.name || ''}（${p.role || ''}）此刻名下大约有多少亩田（照身份推，没有田写 0）；\n- juan 这一朝捐一个最低的出身要多少钱；pay 本朝一个普通兵丁一个月的饷；payOff 本朝最低一级带兵武官一个月的俸饷；\n- feast 本地办一桌像样的酒席的钱；opera 听一回曲的钱；incense 去寺观进一回香的钱；doctor 请一回郎中连药的钱。\n只输出一个 JSON 对象：{${askJson},"basis":""}`, null, { maxTokens: 800, temperature: 0.1, kind: '研读', detached: true, thinking: false });
+    const d = parseJSON(text); if (!d) { s.ecFail = s.turn; throw { code: 'bad_json' }; }
+    const E = { v: 2, y: s.clock.y, pl, unit: u, basis: one(d.basis, 160), src: 'preset（史料载值）+ AI 推民间行情' };
+    for (const k of PK) if (fromPreset[k] != null) E[k] = fromPreset[k];
+    for (const k of needAI) { const v = num(d[k]); if (v != null && v >= 0) E[k] = v; }
+    if (E.rentRate > 1) E.rentRate = E.rentRate / 10; if (E.interest > 1) E.interest = E.interest / 100;
+    econUnitFix(E);
+    s.econ = E; if (s.ms) msApply(s);
+    if (E.myLand != null && !s.land && (/地主|乡绅|绅|田主|庄主|员外/.test(String(p.role || '')) || E.myLand > 0)) s.land = { mu: Math.round(E.myLand), rent: E.rentRate || 0.5, loans: [], basis: '照身份推' };
+    return E;
+  }
+  /* preset 没覆盖：照旧全问 AI */
   const { text } = await callClaude(`你是精通历代物价、田制、赋役、民间生计的经济史家。替一局历史游戏给${timeText(s.clock)}${pl}（${pol}）列一张本地行情表，钱一律折成「${u}」。照史料和经济史研究写；拿不准的照同朝同地相近年份推一个确切的数，写依据。${ppTxt}
 - rice 一石米价；wage 一个壮丁打短工一日的工钱；landPrice 一亩中等田的价钱；yield 一亩中田一年收谷几石；rentRate 佃户交租几成（写零到一之间的小数）；
 - caravan 一队过路客商一趟随身的财货大约值多少；ransom 本地一个殷实富户能出的赎金；protect 一个村子一个月被山寨勒交的「孝敬」；
@@ -16354,7 +16382,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
         }
         PHASE = 'dossier'; render();
         try { await within(ensureDossiers(fake, (r.real ? [r.name] : []).concat(r.people)), 60000); } catch (e) { if (e && e.code === 'cancelled') throw e; }
-        try { fake.libOpen = await libEvidence(fake, [(r.real ? r.name + '*2' : ''), histEraName(fake), String(r.place || '').replace(/[省府州县郡].*$/, '') + '*1.5'].concat(arr(r.people).slice(0, 3).map(n => n + '*1.5')).filter(x => x && x.length >= 2), String(r.role || ''), 6, 40000); } catch (e) { if (e && e.code === 'cancelled') throw e; }   /* 开局先照原文库立人立事（R-194：第一次就写对） */
+        try { fake.libOpen = await libEvidence(fake, [(r.real ? r.name + '*2' : ''), histEraName(fake), String(r.place || '').replace(/[省府州县郡].*$/, '') + '*1.5'].concat(arr(r.people).filter(n => { try { return ERA_FIGS && ERA_FIGS.some(f => f.name === n); } catch (_) { return false; } }).slice(0, 3).map(n => n + '*1.5')).filter(x => x && x.length >= 2), String(r.role || ''), 6, 40000); } catch (e) { if (e && e.code === 'cancelled') throw e; }   /* 开局先照原文库立人立事（R-194）；R-256 降本：只搜真人（名臣包里有的），NPC 不搜（搜了也查不到） */
         pre = Object.assign(pre || {}, { research: fake.research, almanac: fake.almanac, wikiDone: fake.wikiDone, setting: r, fake });
       }
     }
