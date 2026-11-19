@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261119181931';
+const BUILD = '20261119233905';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4615,7 +4615,7 @@ function armyMonthly(s, months) {
 /* ---------- 行军与交战：军令下去以后由程序照日子走（每日里数照兵种机动，急行、缓行），到了地方照那里的守军结算一仗（或占下、驻守）；
    守军多少照已知的兵马、势力，不知道的派探报（博查 + DeepSeek 照史料估）；敌军强而近的也会来攻。结果写进军报，正文照此写，不另编 ---------- */
 const stemP = x => String(x || '').replace(/[省府州郡县縣城镇鎮军卫所]$/, '').slice(0, 4);
-const samePlace = (a, b) => { const x = stemP(a), y = stemP(b); if (!x || !y) return false; if (String(a).trim() === String(b).trim() || x === y) return true; /* 虔州、汀州这种一个字的州：以前一律对不上，那里的守军、兵马都认不出来 */ return x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x)); };
+const samePlace = (a, b) => { const x = stemP(a), y = stemP(b); if (!x || !y) return false; if (String(a).trim() === String(b).trim()) return true; if (x === y) { if (x.length >= 2) return true; const sa = String(a).trim().slice(x.length), sb = String(b).trim().slice(y.length); return !sa || !sb || sa === sb; }   /* 一个字的：南州≠南郡（R-260：点漳州（南州）显示荆南节度使高从诲） */ /* 虔州、汀州这种一个字的州：以前一律对不上，那里的守军、兵马都认不出来 */ return x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x)); };
 function campPace(s, f, pace) { const st = forceStats(s, f), base = st.mob != null ? 20 + st.mob * 0.4 : 40; return Math.round(base * (/急/.test(pace || '') ? 1.5 : /缓/.test(pace || '') ? 0.7 : 1)); }
 function campLi(s, from, to) { const a = placeXY(s, from, s.clock.y), b = placeXY(s, to, s.clock.y); return a && b ? Math.max(10, Math.round(liOf(hav(a, b)) * 1.3)) : null; }
 /** 那个地方的守军：已知的别家兵马、势力的据地；都不知道就要探报 */
@@ -6546,7 +6546,7 @@ function officialsAt(s, n, y) { const out = []; for (const R of OFFLIB) { if (!R
 /** 府名和治所、旧称对得上（地图上是「河南府」，名臣包、史料写「洛阳」） */
 const PLACE_AKA = { 河南府: ['洛阳', '洛州', '东都', '西京'], 京兆府: ['长安', '雍州', '西京', '大兴'], 开封府: ['汴州', '开封', '东京', '汴梁'], 大名府: ['魏州', '邺都', '兴唐府'], 太原府: ['太原', '并州', '北京', '晋阳'],
   江宁府: ['金陵', '建康', '昇州', '江宁', '西都'], 临安府: ['杭州', '临安', '钱塘'], 成都府: ['成都', '益州', '蜀'], 江陵府: ['江陵', '荆州'], 凤翔府: ['凤翔', '岐州'], 河中府: ['河中', '蒲州'], 兴元府: ['兴元', '梁州'],
-  应天府: ['宋州', '睢阳', '南京'], 真定府: ['镇州', '恒州', '真定'], 幽都府: ['幽州', '燕京'], 析津府: ['幽州', '燕京', '南京'], 扬州: ['广陵', '江都'], 广州: ['番禺', '兴王府'], 福州: ['长乐府'], 潭州: ['长沙'] };
+  应天府: ['宋州', '睢阳', '南京'], 真定府: ['镇州', '恒州', '真定'], 幽都府: ['幽州', '燕京'], 析津府: ['幽州', '燕京', '南京'], 扬州: ['广陵', '江都'], 广州: ['番禺', '兴王府'], 福州: ['长乐府'], 潭州: ['长沙'], 漳州: ['南州'], 泉州: ['清源军', '清源郡'] };
 let PLACENAMES = []; try { PLACENAMES = JSON.parse((document.getElementById('placenames') || {}).textContent || '[]'); if (!Array.isArray(PLACENAMES)) PLACENAMES = []; } catch (_) { PLACENAMES = []; }   // 七段地名对照表（任务四十九，1468 条）
 const placeAka = (n, extra, y) => { const L = [n, extra].filter(Boolean); for (const [k, v] of Object.entries(PLACE_AKA)) { if (samePlace(k, n)) L.push(...v); if (v.some(x => samePlace(x, n))) L.push(k, ...v); }
   for (const [nm, seat, aka, a, b] of PLACENAMES) { if (y != null && ((a != null && y < a - 30) || (b != null && y > b + 30))) continue; const all = [nm, seat].concat(arr(aka)).filter(Boolean); if (all.some(x => samePlace(x, n) || (extra && samePlace(x, extra)))) L.push(...all); }
@@ -10211,10 +10211,10 @@ function mapInfo(s) {
   const L = u && u.lat ? Object.values(MAPC.links).flat().filter(l => l.a.n === n || l.b.n === n).filter((l, i, A) => A.findIndex(x => (x.a.n === l.a.n && x.b.n === l.b.n)) === i) : [];
   return AC + `<div class="affair"><b>${esc(n)}</b> <span class="muted">${esc(u && u.t || '')}${u && u.p ? ' · 属' + esc(u.p) : ''}${d != null ? ' · 离你约' + d + '里' : ''}${u && u.b === '推算' ? ' · 建置推算' : ''}</span>
     <div>${o ? `归属：<b>${esc(o.who)}</b>` : r ? `归属：<b>${esc(r.name)}</b>${regRuler(s, r) ? '（' + esc(regRuler(s, r)) + '在位）' : ''}` : M.era ? `归属：<b>清</b>${regRuler(s, { name: '清' }) ? '（' + esc(regRuler(s, { name: '清' })) + '在位）' : ''}` : '<span class="muted">归属没查定</span>'}${P ? `（${esc(P.leader || '')}，兵${esc(P.troops || '正在照史料推')}，对你${esc(P.stance || '正在照史料推')}）` : ''}</div>
-    ${u && u.lv === 2 ? `<div>${u.noSeat ? '<span class="muted">治所：谭图没标（盟旗、驻防、牧场之类）</span>' : `治所：<b>${esc(u.seatC || '（附郭县没对上）')}</b>${u.seatC ? '（附郭，图上 ◉ 处）' : ''}`}${u.poly ? '<span class="muted"> · 界址照谭图</span>' : M.era ? '<span class="muted"> · 府界还没下好，地块是示意</span>' : ''}</div>` : ''}
+    ${u && u.lv === 2 ? `<div>${u.noSeat ? '<span class="muted">治所：谭图没标（盟旗、驻防、牧场之类）</span>' : (u.seatC || presetSeat(s, n)) ? `治所：<b>${esc(u.seatC || presetSeat(s, n))}</b>${u.seatC ? '（附郭，图上 ◉ 处）' : ''}` : ''}${u.poly ? '<span class="muted"> · 界址照谭图</span>' : M.era ? '<span class="muted"> · 府界还没下好，地块是示意</span>' : ''}</div>` : ''}
     ${u && u.lat ? `<div class="muted">海拔约${Math.max(0, Math.round(elevAt(u.lon, u.lat) || 0))}米</div>` : ''}
     ${L.length ? `<div>通往：${L.map(l => { const x = l.a.n === n ? l.b : l.a; return `${esc(x.n)}（约${liOf(hav(l.a, l.b) * (l.k === 'mtn' ? 1.6 : 1.25))}里，${LINK_TXT[l.k]}${l.via ? '，经' + esc(l.via) : ''}）`; }).join('；')}</div>` : ''}
-    ${(() => { const v = popOf(s, n); if (u && u.lv === 2 && v && (v.hh || v.pop)) return ''; return v && (v.hh || v.pop) ? `<div>户口：<b>${esc(popTxt(v))}</b> <span class="muted" style="font-size:11px">${esc(v.why || '')}</span></div>` : `<div class="muted" style="font-size:12px">户口：后台正照地理志推，下一回就有</div>`; })()}
+    ${(() => { const v = popOf(s, n); if (u && u.lv === 2 && v && (v.hh || v.pop)) return ''; return v && (v.hh || v.pop) ? `<div>户口：<b>${esc(popTxt(v))}</b> <span class="muted" style="font-size:11px">${esc(v.why || '')}</span></div>` : `<div class="muted" style="font-size:12px">户口：${/[县縣]$/.test(String(n)) ? '史书没单列这一县，算在州里' : '史书没留下这一州的户口数'}</div>`; })()}
     ${u && u.lv === 2 ? cityHtml(s, n) : ''}
     ${SH(() => placeLore(s, n, u && u.seatC), 'placeLore')}
     ${u && admMine(s, u) ? `<details class="oadd"><summary class="muted">划分政区…</summary><div class="opost"><input class="oin" data-admto placeholder="新名字 / 等第 / 府州名"><button class="link" data-adm="rename" data-n="${esc(n)}">改名</button><button class="link" data-adm="type" data-n="${esc(n)}">改等第</button>${u.lv === 3 ? `<button class="link" data-adm="move" data-n="${esc(n)}">改隶到</button><button class="link" data-adm="split" data-n="${esc(n)}">以此县分置新州</button>` : ''}<button class="link" data-adm="capital" data-n="${esc(n)}">定都于此</button></div><div class="muted" style="font-size:11px">改名、改等第、改隶各花一点国策点，分置两点，定都三点</div></details>` : ''}
@@ -10281,7 +10281,11 @@ function admMonthly(s) {
 /* ========== 户口：图上每个府州都看得到户数、口数。主角地盘的照账；别的照正史《地理志》（《汉书》《续汉书》《晋书》《宋书》《隋书》《新唐书》《宋史》《元史》《明史》《嘉庆一统志》）和人口史研究，
  *  由 DeepSeek 后台一批一批推出确切的数（不写「约」，资料少也照同朝同类州府合理推一个数），写依据；每月照开发、民心、年景涨落 ========== */
 const popKey = s => Math.round(s.clock.y / 25);
-function popOf(s, n) { const t = arr(s.territory).find(x => geoStem(x.place) === geoStem(n)), P = s.popEst && s.popEst.k === popKey(s) ? s.popEst.m || {} : {}, e = P[n] || null; if (t && N0(t.pop)) return { ...(e || {}), pop: N0(t.pop), hh: e && e.hh ? Math.round(e.hh * N0(t.pop) / Math.max(1, e.pop || N0(t.pop))) : null, why: '账上的数', mine: true }; return e; }   // 自家地盘的户口照账，农商城防照推的
+function popOf(s, n) { const t = arr(s.territory).find(x => geoStem(x.place) === geoStem(n)), P = s.popEst && s.popEst.k === popKey(s) ? s.popEst.m || {} : {}, e = P[n] || null; if (t && N0(t.pop)) return { ...(e || {}), pop: N0(t.pop), hh: e && e.hh ? Math.round(e.hh * N0(t.pop) / Math.max(1, e.pop || N0(t.pop))) : null, why: '账上的数', mine: true }; return e || popPresetNear(s, n); }   // 还没推出来的先给史料著录（R-260：地图上处处写「后台正照地理志推，下一回就有」）
+/** 预制政区表里的治所（R-260：泉州写「附郭县没对上」） */
+function presetSeat(s, n) { try { const y = s.clock.y, NM = placeAka(n); for (const R of PRESETLIB) { if (!R.range || y < R.range[0] - 30 || y > R.range[1] + 30) continue; const p = arr(R.places).find(x => x && x.seat && NM.some(k => samePlace(x.name, k))); if (p) return one(p.seat, 8); } } catch (_) {} return ''; }
+/** 史料里最近的一次户口著录（前后三百年内），写明哪年哪部书 */
+function popPresetNear(s, n) { try { const y = s.clock.y, NM = /[县縣]$/.test(String(n)) ? [n] : placeAka(n), L = PRESETLIB.flatMap(R => arr(R.pop)).filter(x => x && x.year != null && Math.abs(x.year - y) <= 300 && NM.some(k => samePlace(x.place, k))).sort((a, b) => Math.abs(a.year - y) - Math.abs(b.year - y)); const h = L[0]; return h ? { hh: N0(h.households) || null, pop: N0(h.mouths) || null, why: `${h.year}年著录（${one(h.src, 30)}）${Math.abs(h.year - y) > 30 ? '，此后户口有增减' : ''}`, preset: true } : null; } catch (_) { return null; } }   // 自家地盘的户口照账，农商城防照推的
 const popTxt = v => v ? `${v.hh ? fmtN(v.hh) + '户' : ''}${v.hh && v.pop ? '、' : ''}${v.pop ? fmtN(v.pop) + (v.mine ? '' : '口') : ''}` : '';
 function popTodo(s) { const h = hereXY(s); let L = []; try { L = mapUnits(s).L2.filter(u => u.lat); } catch (_) { return []; } const P = s.popEst && s.popEst.k === popKey(s) ? s.popEst.m || {} : {};
   const mine = (() => { try { return myDomain(s).places.filter(n => n && !(n in P)).map(n => ({ n, p: '' })); } catch (_) { return []; } })();   // 自己治下的县、山寨排最前（县不在州府单子里也推）
@@ -10396,7 +10400,7 @@ function cityHtml(s, n) {
   const D = domainOf(s, n), can = !!(D && D.develop), u = (s.money || {}).unit || '';
   return `<div class="ccard" style="margin-top:6px"><div class="ct">城池 · ${esc(n)}${c.gov ? ' · 太守' + esc(c.gov) : ''}</div>
     ${c.pop || c.hh ? `<div class="cr"><span>户口</span><b>${esc(c.hh ? fmtN(c.hh) + '户、' : '')}${esc(fmtN(c.pop) + '口')}</b></div>
-    <div class="cr"><span>丁壮（可征）</span><b>${esc(fmtN(Math.max(0, c.ding || 0), '人'))}</b></div>` : '<div class="muted" style="font-size:12px">户口后台正照地理志推，下一回就有</div>'}
+    <div class="cr"><span>丁壮（可征）</span><b>${esc(fmtN(Math.max(0, c.ding || 0), '人'))}</b></div>` : `<div class="muted" style="font-size:12px">户口：史书没留下这里的户口数</div>`}
     ${D0 && D0.kind === 'local' && s.gov && s.gov.scope === 'local' ? `<div class="ggrid">${Object.entries(s.gov.stats).filter(([k]) => /民心|治安|吏治|积案|灾情/.test(k)).map(([k, v]) => `<div class="gcell"><div class="gk">${esc(k)}</div><div class="gbar"><i style="width:${Math.max(2, Math.min(100, v))}%" class="${(/积案|灾情/.test(k) ? 100 - v : v) < 30 ? 'bad' : (/积案|灾情/.test(k) ? 100 - v : v) < 55 ? 'warn' : 'good'}"></i></div><div class="muted" style="font-size:11px">${esc(v)}</div></div>`).join('')}</div>${s.gov.stats['存银'] != null ? `<div class="cr"><span>库银</span><b>${esc(fmtN(s.gov.stats['存银'], (s.money || {}).unit || ''))}</b></div>` : ''}${s.gov.stats['仓粮'] != null ? `<div class="cr"><span>仓粮</span><b>${esc(fmtN(s.gov.stats['仓粮'], '石'))}</b></div>` : ''}` : ''}
     ${c.troops != null ? `<div class="cr"><span>守军</span><b>${esc(fmtN(c.troops, '人'))}</b></div>` : ''}${c.grain != null ? `<div class="cr"><span>存粮</span><b>${esc(fmtN(c.grain, '石'))}</b></div>` : ''}
     <div class="ggrid">${bar('农业', c.nong)}${bar('商业', c.shang)}${bar('城防', c.cheng)}${D0 && D0.kind === 'local' && s.gov && s.gov.scope === 'local' ? '' : bar('民心', c.loyalty)}</div>
