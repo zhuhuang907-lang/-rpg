@@ -3042,8 +3042,11 @@ const govDue = s => s && s.clock && govScope(s) && (!s.gov || s.gov.scope !== go
 async function buildGov(s) {
   const scope = govScope(s), keys = scope === 'realm' ? GOV_KEYS : LOCAL_KEYS, u = (s.money || {}).unit || '两', pol = s.place.polity || '', yl = s.clock.yearLabel || s.clock.y + '年';
   const found = await searchFirst(s, scope === 'realm' ? [`${yl} ${pol} 国库 岁入 岁出`, `${yl} ${pol} 灾荒 民变`, `${yl} ${pol} 边患 军饷`, `${pol}代 社会阶层 士绅 商人`] : [`${geoCenter(s)} ${yl} 钱粮 赋额`, `${geoCenter(s)} ${yl} 灾 荒`, `${pol}代 州县 吏治 积案`]);
+  /* R-256 降本：preset 有的户口直接给 AI（不再让 AI 猜），查不到就不注入 */
+  const _pp = (() => { try { const place = geoCenter(s); const PP = presetPop(s, [place]); const hit = PP[place]; if (hit && hit.households) return `【史料里的户口（照此填「人口」，不要另猜）】${place}：${hit.households} 户、${hit.mouths || '口数无载'} 人（${hit.src || '地理志'}）`; } catch (_) {} return ''; })();
   const { text } = await callClaude(`你是严谨的史家，替一局历史游戏定${scope === 'realm' ? '主角治下这个政权' : '主角治下这一' + (s.career && s.career.office || '地')}此刻（${timeText(s.clock)}）的家底。主角：${s.protagonist.name}（${s.protagonist.role}），在${geoCenter(s)}。
 ${found}
+${_pp}
 ${factBlock(s)}
 ${realmBlock(s)}
 ${libFacts(s, ['tax', 'military', 'ranks', 'society'])}
@@ -16379,7 +16382,7 @@ async function startGame(sentence, have, havePre, custom, spec) {
         }
         PHASE = 'dossier'; render();
         try { await within(ensureDossiers(fake, (r.real ? [r.name] : []).concat(r.people)), 60000); } catch (e) { if (e && e.code === 'cancelled') throw e; }
-        try { fake.libOpen = await libEvidence(fake, [(r.real ? r.name + '*2' : ''), histEraName(fake), String(r.place || '').replace(/[省府州县郡].*$/, '') + '*1.5'].concat(arr(r.people).slice(0, 3).map(n => n + '*1.5')).filter(x => x && x.length >= 2), String(r.role || ''), 6, 40000); } catch (e) { if (e && e.code === 'cancelled') throw e; }   /* 开局先照原文库立人立事（R-194：第一次就写对） */
+        try { fake.libOpen = await libEvidence(fake, [(r.real ? r.name + '*2' : ''), histEraName(fake), String(r.place || '').replace(/[省府州县郡].*$/, '') + '*1.5'].concat(arr(r.people).filter(n => { try { return ERA_FIGS && ERA_FIGS.some(f => f.name === n); } catch (_) { return false; } }).slice(0, 3).map(n => n + '*1.5')).filter(x => x && x.length >= 2), String(r.role || ''), 6, 40000); } catch (e) { if (e && e.code === 'cancelled') throw e; }   /* 开局先照原文库立人立事（R-194）；R-256 降本：只搜真人（名臣包里有的），NPC 不搜（搜了也查不到） */
         pre = Object.assign(pre || {}, { research: fake.research, almanac: fake.almanac, wikiDone: fake.wikiDone, setting: r, fake });
       }
     }
