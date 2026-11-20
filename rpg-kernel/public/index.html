@@ -1457,7 +1457,8 @@ const CAL = (() => {
   const label = (m, d, leap) => (leap ? '闰' : '') + (MC[m] || m + '月') + (d ? dayName(d) : '');
   /** 两个日子之间跨了几个月（闰月也算一个月） */
   function monthsBetween(a, b) { const i = idx(a.y, a.m, a.leap), j = idx(b.y, b.m, b.leap); return i >= 0 && j >= 0 ? j - i : (b.y * 12 + b.m) - (a.y * 12 + a.m); }
-  return { addDays, label, monthsBetween };
+  let cum = null; function dayNo(c) { if (!c) return null; const i = idx(c.y, c.m, c.leap); if (i < 0) return null; if (!cum) { cum = [0]; for (let k = 0; k < months.length; k++) cum.push(cum[k] + months[k].days); } if (dayNo.base == null) { const j = idx(1000, 1, false); dayNo.base = j < 0 ? 0 : Math.round((1000 * 12 + 1) * 29.53) - cum[j]; } return dayNo.base + cum[i] + ((c.d || 15) - 1); }   // 对齐旧算法（1000 年正月），旧存档里存的日子接得上   // 照历表数日子（闰月是整整一个月，不是半个）
+  return { addDays, label, monthsBetween, dayNo };
 })();
 const yearText = y => (y < 0 ? '公元前' + -y + '年' : '公元' + y + '年');
 const SHICHEN = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
@@ -1708,7 +1709,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120164859';
+const BUILD = '20261120170452';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2232,6 +2233,7 @@ function shrink(s) {
 }
 /** 第一版存档（按回合记的 log）转成对话 */
 function migrate(s) {
+  if (s && s.clock && s.dayScale !== 2) { const old = c => Math.round((c.y * 12 + (c.m || 6) + (c.leap ? 0.5 : 0)) * 29.53 + ((c.d || 15) - 1)), dlt = dayIdx(s.clock) - old(s.clock); for (const e of arr(s.edicts)) if (num(e.day0) != null) e.day0 += dlt; s.dayScale = 2; }   // 日子改照历表数（闰月算整月）：旧存档里下令的日子挪到新算法上
   try { tidyState(s); } catch (_) { /* 旧档缺字段 */ }
   try { eraPurge(s); } catch (_) { /* 旧档没档案 */ }   // R-209：旧档里混进来的古人（李白之流）打开就清掉
   if (s && typeof s === 'object') s.gameVer = VERSIONS.game;
@@ -15084,7 +15086,7 @@ function applyBattle(s, r) {
 }
 
 /* ========== 消息传到此地：外地的事按路程先成风闻、后有确报；没传到的，书中人不知道 ========== */
-const dayIdx = c => Math.round((c.y * 12 + (c.m || 6) + (c.leap ? 0.5 : 0)) * 29.53 + ((c.d || 15) - 1));
+const dayIdx = c => { const n = c && c.y != null ? CAL.dayNo(c) : null; return n != null ? n : Math.round((c.y * 12 + (c.m || 6) + (c.leap ? 0.5 : 0)) * 29.53 + ((c.d || 15) - 1)); };   // R-261：闰正月三十算得比二月初十还晚，跨闰月的回合过了零天（围城、行军全停）
 const geoStem = x => { const t = String(x || '').trim(); return t.length > 2 ? t.replace(/[省府州郡县縣城镇鎮军]$/, '') : t; };
 function placeXY(s, name, y) {
   const t = String(name || ''); if (!t) return null;

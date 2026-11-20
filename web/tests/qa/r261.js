@@ -58,6 +58,8 @@ const path = require('path');
   if (kl !== '王思同') bad.push('记账把统帅王思同改成了生人：' + kl);
   const pc = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '皇帝', gregorianYear: 934, month: 2, day: 8, place: '洛阳', polity: '后唐' }); s.idm = 'emperor'; s.territory = [{ place: '凤翔府' }, { place: '太原府' }]; s.powers = [{ name: '凤翔', seat: '凤翔', land: '凤翔府', leader: '李从珂' }, { name: '河东', seat: '太原', land: '太原府', leader: '石敬瑭' }]; s.wars = [{ with: '凤翔军', state: '交战' }]; const M = mapUnits(s), f = n => { const u = M.L2.find(x => x.n === n); return u ? (M.reg(u) || {}).name : '?'; }; return [f('凤翔府'), f('太原府')]; });
   if (pc.join() !== '凤翔,后唐') bad.push('交战的凤翔没另上色、听命的河东却另上色：' + pc.join());
+  const lp = await p.evaluate(() => dayIdx({ y: 934, m: 2, d: 10 }) - dayIdx({ y: 934, m: 1, d: 30, leap: true }));
+  if (lp !== 10) bad.push('闰正月三十到二月初十不是十天：' + lp);
   // 别国的地方记账记不成自己的地盘
   const fl = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '皇帝', gregorianYear: 933, month: 12, day: 8, place: '洛阳', polity: '后唐' }); return [foreignLand(s, '扬州（淮南）'), foreignLand(s, '河南府洛阳县（京畿）')]; });
   if (fl.join() !== 'true,false') bad.push('扬州（吴）认成后唐的地盘，或洛阳认成别国：' + fl.join());
