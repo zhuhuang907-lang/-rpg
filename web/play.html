@@ -18,6 +18,13 @@
   --paper:#131819; --sheet:#1b2224; --ink:#e4e8e3; --ink2:#b9c1bc; --mute:#86908b; --rule:#2e3739;
   --qing:#86b6d4; --qing-soft:#1f3340; --zhu:#e2725f; --zhu-soft:#3a2420; --ochre:#d2b15e; --ochre-soft:#332b17;
   --good:#7cc195; --good-soft:#1c3125; --shadow:0 1px 2px rgba(0,0,0,.3);color-scheme:dark}}
+:root[data-theme="candle"]{   /* 秉烛夜读（R-266）：暖黄的字、竹简似的底纹 */
+  --paper:#1c170f; --sheet:#262016; --ink:#f0deb3; --ink2:#d7c290; --mute:#a59169; --rule:#45392a;
+  --qing:#9fc2c6; --qing-soft:#23302f; --zhu:#e27d55; --zhu-soft:#3a2418; --ochre:#e3b562; --ochre-soft:#3a2e18;
+  --good:#9ccf8a; --good-soft:#203020; --shadow:0 1px 2px rgba(0,0,0,.4);color-scheme:dark}
+:root[data-theme="candle"] body{background:repeating-linear-gradient(90deg,#1c170f 0 46px,#211a11 46px 48px)}
+:root[data-theme="candle"] .msg.gm{text-shadow:0 0 1px rgba(240,200,120,.15)}
+.findHit{background:var(--ochre-soft);outline:2px solid var(--ochre);border-radius:3px}.ent{border-bottom:1px dotted var(--qing);cursor:help}#entCard{position:fixed;z-index:80;max-width:280px;background:var(--sheet);border:1px solid var(--rule);border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.6;box-shadow:var(--shadow)}
 :root[data-theme="dark"]{
   --paper:#131819; --sheet:#1b2224; --ink:#e4e8e3; --ink2:#b9c1bc; --mute:#86908b; --rule:#2e3739;
   --qing:#86b6d4; --qing-soft:#1f3340; --zhu:#e2725f; --zhu-soft:#3a2420; --ochre:#d2b15e; --ochre-soft:#332b17;
@@ -1471,6 +1478,7 @@ let SETTINGS = { len: 'normal', tier: 'default', check: true };
 // 影响剧情真不真、主线在不在的环节一律开着：旧版本存下的「关」也不再生效（玩家能调的只剩篇幅和网页版的 AI 档位）
 const FORCE_SETTINGS = x => Object.assign(x, { check: true, showWork: false, ruling: true, hsync: true, critic: true, world: true, search: true, deep: true });
 try { Object.assign(SETTINGS, JSON.parse(lsGet('hrpg:settings') || '{}')); } catch (_) { /* 默认 */ }
+const applyTheme = () => { try { const t = SETTINGS.theme || ''; if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; } catch (_) { /* 无 */ } }; applyTheme();
 FORCE_SETTINGS(SETTINGS);   // 核实永远开着、幕后永远不给玩家看
 const LEN = { short: '三四百字', normal: '六百到一千字', long: '一千二到一千八百字' };
 const IDM = {
@@ -1709,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120233946';
+const BUILD = '20261120235355';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2211,7 +2219,7 @@ function archiveBlock(s, text) {
 const GEO_OUT = (k, v) => k === 'geo' && v && v.src === 'local' ? undefined : v;
 const saveJSON = s => JSON.stringify(s, GEO_OUT);
 function shrink(s) {
-  const slim = (x, keep) => { if (!x || !x.chat) return; x.chat.forEach((c, i) => { if (i < x.chat.length - keep && c.text) { if (x === s) s.memoryCore = arr(s.memoryCore).concat([`${c.when || ''}${c.who ? c.who + '：' : ''}${cut(c.text, 140)}`]).slice(-60); c.text = ''; c.extra = null; } }); if (x.chat.length > 400) x.chat = x.chat.slice(-400); };
+  const slim = (x, keep) => { if (!x || !x.chat) return; x.chat.forEach((c, i) => { if (i < x.chat.length - keep && c.text && !(x === s && num(c.turn) != null && c.turn >= (s.turn || 0) - 7)) {   /* 近七回的原文留着：写戏窗口照回合数三回一挪，要用得上（R-266） */ if (x === s) s.memoryCore = arr(s.memoryCore).concat([`${c.when || ''}${c.who ? c.who + '：' : ''}${cut(c.text, 140)}`]).slice(-60); c.text = ''; c.extra = null; } }); if (x.chat.length > 400) x.chat = x.chat.slice(-400); };
   slim(s, 30);
   if (s.prev) { slim(s.prev, 4); s.prev.prev = null; for (const k of ['inst', 'research', 'almanac', 'locals', 'searchedQ', 'searchedYears', 'wikiDone', 'geo', 'gazetteer', 'dossiers']) delete s.prev[k]; }
   // 维基正文只给当回合用：早几回合的留个开头
@@ -2690,6 +2698,7 @@ function cacheOrder(text, s) {
   return front.join('\n') + '\n\n' + rest.join('\n');
 }
 /** 开局查齐以后算「平常回合」：这以后处处省着用（R-239） */
+const DECISIVE_RE = /攻打|攻城|强攻|出兵|发兵|进兵|迎战|决战|交战|开战|宣战|讨伐|伏击|劫营|夜袭|兵变|政变|宫变|造反|起兵|起事|谋反|篡|弑|自立|称王|称帝|登基|即位|逼宫|废立|突围|屠城/;
 const econTight = () => typeof S !== 'undefined' && !!S && S.settledAt != null && !(typeof PREP !== 'undefined' && PREP);
 /** 每回的后台活、让模型充当搜索，各有份额（R-239）：真模型第七轮一回里后台十来次调用，光评人物各项一项六回就写了三万字 */
 let ECON_Q = { turn: -1, bg: 0, ds: 0 };
@@ -2753,8 +2762,11 @@ async function callClaude(input, onReply, extra, tier) {
   // 所以开局以后平常的一步每一次调用都用快型号、不开深度思考；开局查资料照旧（玩家说过开局贵可以接受）。
   // 要紧的一步（打仗、任免、婚丧、谋划这类，话长的）裁定和写正文照旧用原型号、可以深想——项目主人后来定：平常一步往一毛靠，要紧的一步可到三毛
   // 再后来定（2026-11-15）：「不用那省钱，3毛到一毛一次交互，平均在两毛就好」——写正文、改稿一直用原型号（快型号会顺着玩家的话编出账上没有的东西），只是平常的一步不深想；裁定只在要紧的一步用原型号、深想；其余（记账、审稿、后台）都用快型号
-  if (DSM() && econTight()) { const heavy = heavyStep(S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : '');
-    if (kind === '写戏' || (kind === '改稿' && heavy)) { if (!heavy) extra = { ...extra, thinking: false }; }   // 平常一步的改稿用快型号：真模型第九轮，初稿加改稿两次都用原型号，一回就两毛多
+  // R-266（2026-11-20 玩家：「开局之后一回合平均两毛五到两毛是最高的了」；真模型李从荣五十回实测一回五毛五）：
+  //  写正文、改稿开局以后一律不深想（推演已经想过了）；推演只在打仗、政变、造反这类定生死的一步深想，上表、入宫、拜访不深想
+  if (DSM() && econTight()) { const heavy = heavyStep(S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''), decisive = DECISIVE_RE.test(typeof CUR_SAID !== 'undefined' ? CUR_SAID : '') || arr(S && S.campaigns).some(c => /交战|围城/.test(c.state || ''));
+    if (kind === '裁定' && heavy && !decisive) extra = { ...extra, light: true, thinking: false };
+    if (kind === '写戏' || (kind === '改稿' && heavy)) { extra = { ...extra, thinking: false }; }   // 平常一步的改稿用快型号：真模型第九轮，初稿加改稿两次都用原型号，一回就两毛多
     else if (!(kind === '裁定' && heavy)) extra = { ...extra, fast: true, thinking: false }; }
   if (DSM() && plain && extra && extra.temperature > 1.0) extra = { ...extra, temperature: 1.0 };
   // 分工：这一件交给 GLM 还是 DeepSeek（需求台账 R-135）；GLM 出错（不是玩家停下）自动退回 DeepSeek 再来一次
@@ -14776,11 +14788,24 @@ function autoParas(t) {
   return out;
 }
 const paras = t => autoParas(t).map(x => `<p>${esc(x)}</p>`).join('');
+/* 正文里的人名、地名点一下（鼠标停一下）就出当前的卡片（R-266）：免得翻账册；不另调模型 */
+function entNames(s) { if (!s) return []; const k = s.turn + ':' + Object.keys(s.people || {}).length; if (entNames.k === k) return entNames.v;
+  const P = Object.keys(s.people || {}).concat(arr(s.household).map(m => m && m.name)).filter(n => n && n.length >= 2 && n !== (s.protagonist || {}).name);
+  const G = arr(s.territory).map(t => String(t.place || '').replace(/[（(].*$/, '')).concat(arr(s.powers).map(p => String(p.seat || '').replace(/[（(].*$/, ''))).filter(n => n && n.length >= 2);
+  entNames.k = k; entNames.v = [...new Set(P.concat(G))].sort((a, b) => b.length - a.length).slice(0, 300); return entNames.v; }
+function parasEnt(s, t) { const N = entNames(s); if (!N.length) return paras(t); const re = new RegExp('(' + N.map(n => esc(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'g');
+  return autoParas(t).map(x => `<p>${esc(x).replace(re, m => `<span class="ent" data-ent="${m}">${m}</span>`)}</p>`).join(''); }
+function entCard(s, n) { const v = (s.people || {})[n] || arr(s.household).find(m => m && m.name === n); const L = [];
+  if (v) { L.push(`<b>${esc(n)}</b>${v.relation ? ' · ' + esc(v.relation) : ''}${v.role ? ' · ' + esc(one(v.role, 30)) : ''}`); if (v.dead) L.push('<span class="err" style="margin:0">已故</span>' + (v.status ? ' ' + esc(one(v.status, 40)) : '')); else { if (num(v.age) != null) L.push(esc(v.age) + '岁'); if (v.where) L.push('在' + esc(one(v.where, 16))); if (num(v.favor) != null) L.push('对你' + esc(dipWord ? dipWord(num(v.favor)) : v.favor)); if (v.status) L.push(esc(one(v.status, 40))); } if (v.tie || v.tie0) L.push(esc(one(v.tie || '', 30))); }
+  else { const o = (() => { try { return placeOwner(s, n); } catch (_) { return {}; } })(), pp = (() => { try { return popOf(s, n); } catch (_) { return null; } })(), T = arr(s.territory).find(t => samePlace(String(t.place).replace(/[（(].*$/, ''), n));
+    L.push(`<b>${esc(n)}</b>${o.mine || T ? ' · 你的地盘' : o.owner ? ' · 归' + esc(o.owner) : ''}`); if (pp && pp.pop) L.push('人口约' + esc(fmtN(N0(pp.pop), '口'))); if (T && T.troops) L.push('驻兵约' + esc(fmtN(N0(T.troops), '人'))); const F = arr(s.forces).filter(f => samePlace(String(f.at || ''), n) && N0(f.troops) > 0).slice(0, 3); if (F.length) L.push('兵马：' + F.map(f => esc(f.name) + esc(fmtN(N0(f.troops), '人'))).join('、')); }
+  return L.join('<br>'); }
 function recentTurns(s, head) {
   const turns = [{ role: 'user', content: head + '\n\n下面是我们这一局最近的对话。' }];
-  const R = arr(s.chat).filter(c => c.text).slice(-14);
+  // 窗口和「只留个头」的分界都按六条一档挪（R-266：以前每回往后滑一条，前缀回回不同，DeepSeek 的缓存只命中一成五，一回要花五毛多）
+  const ALL = arr(s.chat).filter(c => c.text), cur = num(s.turn) || 0, T0 = Math.max(0, Math.floor((cur - 4) / 3) * 3), R = ALL.filter(c => num(c.turn) == null || c.turn >= T0).slice(-24);   // 从第 T0 回起（三回一挪）
   R.forEach((c, i) => {
-    const near = i >= R.length - 6;   // 最近三来回原文全给（接得上语气和场面），更早的只留个头
+    const near = num(c.turn) == null || c.turn >= T0 + 2;   /* 窗口头两回只留个头、其余全给：分界跟着 T0 一起挪 */   // 近处的原文全给（接得上语气和场面），更早的只留个头
     const role = c.role === 'me' ? 'user' : 'assistant', content = c.role === 'me' ? '【玩家】' + cut(c.text, near ? 800 : 200) : (c.kind === 'talk' ? '【戏外】\n' : c.when ? `（第${c.turn}回合，写到${c.when}）\n` : '') + cut(c.text, near ? 2600 : 360);
     const last = turns[turns.length - 1];
     if (last.role === role) last.content += '\n\n' + content; else turns.push({ role, content });
@@ -15823,7 +15848,8 @@ function privateBlock(said, ruling) {
 }
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
-  const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : ''));
+  // 回回变的账册、这回查到的资料挪到对话后面（R-266）：前头只留不变的规则和对话，DeepSeek 能缓存前缀
+  const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + '（这一局的账册、这回查到的资料在对话后面）'), ledgerNow = blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : '');
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、身边人自己的事（真有才写）、结识的人、家里的变化、季节年景、传来的天下大事），其余一两句带过。` : '';
   const what = deadRealBlock(s) + aimBlock(s) + (String(said || '').trim() ? `【玩家这回说】\n${said}${privateBlock(said, ruling)}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。');
   // 制度程序只在玩家这一步本身是公事时才给写正文的人（不然它就满篇衙门文书、摊派差役）
@@ -15843,7 +15869,7 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const lookNote = EXTRA_LOOK ? `\n【你要查的账（照这个写，不要再写「查账」）】\n${EXTRA_LOOK}` : '\n【缺数先查账】材料里找不到你这一回要用的确数（兵马、军务、家宅、钱粮、国势、行动单、势力、某个人、某个地方）时，不要估、不要编：整篇只回一行「【查账：要查的几样，用顿号隔开；人写「人物:姓名」，地方写「地图:地名」】」，程序把账给你再写。材料够就直接写。';
   const noGain = !gainSanction(s, said, ruling) ? '\n【这一回账上不会有的】玩家这一步没有求官应举，行动单上也没有在办的升迁：不写主角得官、封爵、登科、得称号（写了程序会删，也不记账）；史书上此时在世的人，主角没碰他就不写他死。' : '';
   const acctNote = acctLiteOk(s, said, span, ruling) && !fix ? '\n' + acctRules(s) : '';
-  return pushUser(turns, IRON_HEAD + what + noGain + unbNote + lookNote + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文' + (acctNote ? '；正文和【幕后】写完后，最后一定另起一行写【本回事实】交账（照下面的格式，这几行玩家看不到）。' + acctNote : '。'));   // 交账的要求放最末：放在中间真模型会漏（2026-11-16 实测六回一回都没交）
+  return pushUser(turns, '【这一局的账册（此刻）】\n' + ledgerNow + '\n\n' + IRON_HEAD + what + noGain + unbNote + lookNote + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文' + (acctNote ? '；正文和【幕后】写完后，最后一定另起一行写【本回事实】交账（照下面的格式，这几行玩家看不到）。' + acctNote : '。'));   // 交账的要求放最末：放在中间真模型会漏（2026-11-16 实测六回一回都没交）
 }
 /* ========== 写戏顺手交账、程序自己记（R-243 第二步）：平常的一步不再另请模型记账——写正文的那一次在末尾交几行固定格式的事实，
  *  程序照格式落账（钱的进出、过了多久、人在哪、见了谁、行动单进展、摘要）；格式不对、缺要紧的行，照旧请模型全套记账。大事、长跨度照旧全套 ========== */
@@ -17178,6 +17204,14 @@ function tidyState(s) {
 }
 let RENDER_ERR = '';
 /** 重画出错不许把整局卡死：先把账里的坏条目清掉再画一次；还不行就在页面上明说出了什么错，按钮照样能用 */
+/* 账册搜索（R-266）：输入人名地名，跳到头一个写着它的册子、滚过去、高亮 */
+let FIND_Q = '';
+function findMark(q) { const side = document.querySelector('.side'); if (!side || !q) return; const H = [...side.querySelectorAll('b,td,div,span,summary,li,p,a,button')].filter(e => !e.closest('.tabs') && e.id !== 'sideFind' && (e.textContent || '').includes(q) && ![...e.children].some(c => (c.textContent || '').includes(q))); if (!H.length) return; for (const d of side.querySelectorAll('details')) if (d.contains(H[0])) d.open = true; H[0].classList.add('findHit'); H[0].scrollIntoView({ block: 'center' }); }
+function sideFind(q) { q = String(q || '').trim(); const again = q && q === FIND_Q; FIND_Q = q; if (!q || !S) return; const order = tabsFor(S).map(t => t[0]), start = Math.max(0, order.indexOf(TAB)) + (again ? 1 : 0);
+  for (let i = 0; i < order.length; i++) { const tk = order[(start + i) % order.length]; TAB = tk; SIDE_FOLD = false; render0(); const side = document.querySelector('.side'); if (!side) continue;
+    const hits = [...side.querySelectorAll('b,td,div,span,summary,li,p,a,button')].filter(e => !e.closest('.tabs') && e.id !== 'sideFind' && (e.textContent || '').includes(q) && ![...e.children].some(c => (c.textContent || '').includes(q)));
+    if (hits.length) { findMark(q); setTimeout(() => findMark(q), 60); ORGMSG = hits.length > 1 ? `「${q}」在${(tabsFor(S).find(t => t[0] === tk) || [])[1] || tk}里，共${hits.length}处（再按回车找下一个册子）` : ''; return tk; } }
+  ORGMSG = `账册里没有「${q}」`; render0(); return null; }
 function render() {
   /* 保持同步绘制：按钮点完、月结跑完，调用者紧接着就能读到新页（异步合帧试过，测试与「点完立刻看结果」都不稳）。
      省开销靠两处不改变行为的：大存档只 stringify 一次、后台连做多个活时三秒合存一次（R-189）。 */
@@ -17480,7 +17514,7 @@ function renderGame() {
     return `<div class="msg gm ${c.kind === 'talk' ? 'talk' : ''}">
       <div class="lab">${c.kind === 'talk' ? '<span>戏外 · 不花时间</span>' : `<span>第 ${esc(c.turn)} 回合</span><span class="tag">${esc(c.when || '')}${c.extra && c.extra.days ? ` · 过了 ${c.extra.days} 天` : ''}</span>`}</div>
       ${c.extra && c.extra.intro ? introHtml(c.extra.intro) : ''}
-      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}${c.extra && c.extra.yearCard && arr(c.extra.yearCard.lines).length ? `<div class="yearcard"><b>${esc(c.extra.yearCard.label)}年终</b>${c.extra.yearCard.lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>` : ''}${c.extra && arr(c.extra.delta).length ? `<div class="delta">这一回：${arr(c.extra.delta).map(esc).join(' · ')}</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${paras(isLast && EDITING ? c.text : markFict(s, c.text))}</div>${c.extra ? receiptHtml(c.extra.acts, c.extra.unbooked) : ''}
+      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}${c.extra && c.extra.yearCard && arr(c.extra.yearCard.lines).length ? `<div class="yearcard"><b>${esc(c.extra.yearCard.label)}年终</b>${c.extra.yearCard.lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>` : ''}${c.extra && arr(c.extra.delta).length ? `<div class="delta">这一回：${arr(c.extra.delta).map(esc).join(' · ')}</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${(isLast && EDITING ? paras(c.text) : parasEnt(s, markFict(s, c.text)))}</div>${c.extra ? receiptHtml(c.extra.acts, c.extra.unbooked) : ''}
       ${c.kind !== 'talk' ? extrasHtml(c.extra && c.extra.salvaged && !(isLast && c.unsettled) ? { ...c.extra, salvagedBtn: false } : c.extra) : ''}
       ${isLast && !BUSY ? `<div class="msgacts">${EDITING ? '<button class="main" id="bEditSave">保存修改</button><button id="bEditCancel">取消</button>'
         : `<button id="bRegen" ${s.prev ? '' : 'disabled title="开场不能重写；想换开场，回首页重开一局"'}>重写这一条</button><button id="bEdit">改这段文字</button>`}</div>${!EDITING && s.prev && c.kind !== 'talk' ? `<div class="fbrow"><span class="muted">这一回有毛病，点一下就照这个重写：</span>${Object.keys(FEEDBACK).map(k => `<button class="chip" data-fb="${esc(k)}">${esc(k)}</button>`).join('')}</div>` : ''}<div id="regenBox"></div>
@@ -17511,7 +17545,7 @@ function renderGame() {
       </div>
     </div>
     <aside class="side ${SIDE_FOLD ? 'fold' : ''}">
-      <div class="tabs">${tabsFor(s).map(([k, n]) => `<button data-tab="${k}" class="${TAB === k && (!SIDE_FOLD || !matchMedia('(max-width: 960px)').matches) ? 'on' : ''}">${n}</button>`).join('')}<button class="closeSide" id="bCloseSide">回到正文 ✕</button></div>
+      <div class="tabs">${tabsFor(s).map(([k, n]) => `<button data-tab="${k}" class="${TAB === k && (!SIDE_FOLD || !matchMedia('(max-width: 960px)').matches) ? 'on' : ''}">${n}</button>`).join('')}<button class="closeSide" id="bCloseSide">回到正文 ✕</button></div><div class="row" style="margin:4px 0"><input id="sideFind" class="oin" style="flex:1" placeholder="查账册：人名、地名、官名……（回车）" value="${esc(FIND_Q || '')}"></div>
       <div class="pane">${pane(TAB)}</div>
     </aside>
   </div>`;
@@ -17720,6 +17754,8 @@ function pane(tab) {
       <div class="list">${s.summaries.slice().reverse().map(x => `<div><span class="when">第${x.turn}回合</span>${esc(x.text)}</div>`).join('') || '<div class="muted">还没有。</div>'}</div>`;
   }
   return `<div class="h" style="margin-top:6px"><span class="seal">设</span>设置</div>
+    <label class="muted" for="sTheme">样子</label>
+    <select id="sTheme">${[['', '跟着系统（白天亮、夜里暗）'], ['light', '素纸（亮）'], ['dark', '夜间（暗）'], ['candle', '秉烛夜读（烛光竹简）']].map(([k, n]) => `<option value="${k}" ${(SETTINGS.theme || '') === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <label class="muted" for="sLen">戏里每回正文多长</label>
     <select id="sLen">${[['short', '短（三四百字）'], ['normal', '标准（六百到一千字）'], ['long', '长（一千二到一千八百字）']].map(([k, n]) => `<option value="${k}" ${SETTINGS.len === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
     ${DSM() ? glmBox() : ''}
@@ -17732,7 +17768,7 @@ function pane(tab) {
     <div class="h"><span class="seal">修</span>版本与问题报告</div>
     <p class="muted" style="font-size:13px">${esc(versionLine())}</p>
     <p class="muted" style="font-size:13px">现在的版本：${esc(/^\d{8}/.test(BUILD) ? `${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(8, 10)}:${BUILD.slice(10, 12)}` : BUILD)}${MODE === 'local' && UPDINFO ? (UPDINFO.remote && String(UPDINFO.remote) > BUILD ? `；网上有更新的版本${UPDINFO.using === 'updated' ? '，已下载好，空下来时自动换上' : ''}` : UPDINFO.why ? `；上次查更新没成：${esc(UPDINFO.why)}` : UPDINFO.checked ? '；已是最新' : '') : ''}${UPDINFO && UPDINFO.needReinstall ? '；这次改动大，要重新下载安装包' : ''}</p>
-    <div class="row">${MODE === 'local' ? `<button id="bUpdCheck" ${BUSY ? 'disabled' : ''}>检查更新</button>` : ''}<button id="bReport">导出问题报告</button>${S ? '<button id="bSaveExport" title="把这一局存成一个文件，换电脑、换浏览器、清了缓存都能导回来">导出这一局存档</button>' : ''}<label class="btnlike" style="cursor:pointer"><input type="file" id="fSaveImport" accept=".json,application/json" style="display:none">导入存档文件</label><span class="muted" id="updMsg" style="font-size:12px"></span></div>
+    <div class="row">${MODE === 'local' ? `<button id="bUpdCheck" ${BUSY ? 'disabled' : ''}>检查更新</button>` : ''}<button id="bReport">导出问题报告</button>${S ? '<button id="bUndo" title="回到这一回动笔之前（上一回结束时的样子）；这一回写的正文、记的账都不算">悔一步（回到上一回）</button>' : ''}${S ? '<button id="bSaveExport" title="把这一局存成一个文件，换电脑、换浏览器、清了缓存都能导回来">导出这一局存档</button>' : ''}<label class="btnlike" style="cursor:pointer"><input type="file" id="fSaveImport" accept=".json,application/json" style="display:none">导入存档文件</label><span class="muted" id="updMsg" style="font-size:12px"></span></div>
     <p class="muted" style="font-size:12px">玩的时候出了问题，点「导出问题报告」会下载一个文件（记着出过的错、此刻的版本和这一局最近几回，不含 Key），把它发给我就能照着查。</p>
     <div class="h"><span class="seal">枝</span>分支存档</div>
     <p class="muted" style="font-size:13px">把这一局此刻的样子另存一份，再走另一条路；原来那份不动，首页「接着玩」里两份都在。</p>
@@ -18048,6 +18084,7 @@ async function send(said, span, note, resume) {
   tidyState(S);
   EDITING = false;
   // 后台的活照做，不挡玩家；记账前只等和记账写同一处的那几件（最多十五秒）
+  if (S && S.id && !resume) { try { SDB.put('prev:' + S.id, saveJSON(S)); } catch (_) { /* 记不下悔不了 */ } }   // 悔一步：每回动笔前存一份（R-266）
   ERRMSG = ''; STREAM = ''; PHASE = ''; DRAFT_LIVE = ''; PENDING_SAID = String(said || '').trim(); CUR_SAID = String(said || ''); FEED = []; if (S && S.clock && SETTINGS.hooks !== false) { const hk = pickHook(S, said); S.hookNow = hk || null; }
   const orig = resume && resume.orig;
   LAST_ACTION = () => { if (orig) S = restorePrev(orig); send(said, span, note, resume && (resume.story || orig) ? { story: resume.story, orig, ruling: resume.ruling, fix: resume.fix } : undefined); };
@@ -18330,6 +18367,10 @@ document.addEventListener('keydown', e => {
   if (e.target.id === 'regenNote' && e.key === 'Enter') { e.preventDefault(); const b = $('#bRegenGo'); if (b) b.click(); }
   if (e.key === 'Escape' && typeof SIDE_FOLD !== 'undefined' && !SIDE_FOLD && matchMedia('(max-width: 960px)').matches) { SIDE_FOLD = true; render(); }
 });
+const entShow = (el) => { if (!S || !el) return; let c = $('#entCard'); if (!c) { c = document.createElement('div'); c.id = 'entCard'; document.body.appendChild(c); } c.innerHTML = entCard(S, el.dataset.ent); const r = el.getBoundingClientRect(); c.style.left = Math.max(8, Math.min(window.innerWidth - 290, r.left)) + 'px'; c.style.top = (r.bottom + 6 + 160 > window.innerHeight ? r.top - 6 - c.offsetHeight : r.bottom + 6) + 'px'; c.hidden = false; };
+document.addEventListener('click', e => { const el = e.target && e.target.closest && e.target.closest('.ent'); if (el) entShow(el); else if (!(e.target.closest && e.target.closest('#entCard'))) { const c = $('#entCard'); if (c) c.hidden = true; } });   // 手机上点一下出卡片
+document.addEventListener('keydown', e => { if (e.target && e.target.id === 'sideFind' && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sideFind(e.target.value); setTimeout(() => { const i = $('#sideFind'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 0); } });
+document.addEventListener('mouseover', e => { const el = e.target && e.target.closest && e.target.closest('.ent'); if (el) entShow(el); else { const c = $('#entCard'); if (c && !(e.target.closest && e.target.closest('#entCard'))) c.hidden = true; } });
 document.addEventListener('click', async e => {
   { const b = e.target.closest && e.target.closest('[data-book],[data-bookdl],[data-bookclear],#bBookStop');
     if (b) {
@@ -18616,6 +18657,7 @@ document.addEventListener('click', async e => {
     } catch (e) { KEYMSG = '没保存上：游戏服务没有回应（' + (e.message || e) + '）'; }
     KEYSAVING = ''; render(); return;
   }
+  if (t.id === 'bUndo' && S && !BUSY) { const J = await SDB.get('prev:' + S.id); const m = $('#updMsg'); if (!J) { if (m) m.textContent = '没有上一回的底子可回'; return; } try { const o = migrate(JSON.parse(J)); o.updatedAt = Date.now(); S = o; await store.save(S); await SDB.del('prev:' + S.id); VIEW = 'game'; TAB = 'board'; ERRMSG = ''; render(); } catch (e) { if (m) m.textContent = '回不去：' + (e.message || e); } return; }
   if (t.id === 'bSaveExport' && S) { const J = saveJSON(S), a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([J], { type: 'application/json' })); a.download = `历史模拟-${S.protagonist.name}-第${S.turn}回.json`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); const m = $('#updMsg'); if (m) m.textContent = '存档文件已导出（' + Math.round(J.length / 1024) + 'KB）'; return; }   // R-265：存档能导出导入，浏览器存储满了、换电脑都不丢
   if (t.id === 'bReport') { exportReport().catch(e => { const m = $('#updMsg'); if (m) m.textContent = '没导出来：' + (e.message || e); }); return; }
   if (t.id === 'bUpdCheck') {
@@ -18721,6 +18763,7 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'sLen') { SETTINGS.len = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
+  if (e.target.id === 'sTheme') { SETTINGS.theme = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); applyTheme(); }
   if (e.target.id === 'sTier') { SETTINGS.tier = e.target.value; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); }
 });
 

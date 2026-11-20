@@ -144,6 +144,7 @@ start ai.js && {
   run "第二轮审查：朝议、身份交割、兵马账实、征服记账、盟友出兵（R-263）" 120 env PLAY="$ROOT/web/play.html" node r263.js
   run "参考 Grok 报告：健儿认兵、招安接军阶、身份串、唐进士、收复、推戴（R-264）" 120 env PLAY="$ROOT/web/play.html" node r264.js
   run "存档进 IndexedDB、导出导入、已故真人出场打回、载入提示、舆图手势（R-265）" 120 env PLAY="$ROOT/web/play.html" node r265.js
+  run "省钱（写戏前缀三回一挪）、秉烛夜读主题、悔一步、人名地名卡片、账册搜索（R-266）" 120 env PLAY="$ROOT/web/play.html" node r266.js
   run "五代十国朝廷照数据排：荆南小国十几个位子，明载、推定的人坐原位，空位照用人来路补人、标虚构、不与真人重名、重开同一人；南平也认（任务七，R-227）" 150 env PLAY="$ROOT/web/play.html" node wudai_court.js
   run "家里人不许叫「某」：开局、记账带进来的「韩某」照制度起名，男丁随主角的姓，族谱页看不到「某」（试玩查出）" 120 env PLAY="$ROOT/web/play.html" node kinname.js
   run "游戏读时代世情库：主角此刻沾着的活法当写戏材料（930 牙兵认出牙兵），称呼里的某换成〔姓〕，库里没有的年代、自编的行当照旧走不拦（任务十二）" 120 env PLAY="$ROOT/web/play.html" node ways.js
