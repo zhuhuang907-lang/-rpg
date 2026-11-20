@@ -295,6 +295,7 @@ textarea{resize:vertical}
 <script type="application/json" id="presetlib">__PRESETLIB__</script>
 <script type="application/json" id="placenames">__PLACENAMES__</script>
 <script type="application/json" id="tieslib">__TIES__</script>
+<script type="application/json" id="actslib">__ACTS__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -5548,11 +5549,20 @@ function placeLore(s, n, seat) {
 }
 /* ========== 人物关系（任务十，R-241）：朝中、身边这些人之间史书载明的关系（养父子、荐举、仇杀、婚姻……），到这一年已发生的，交给写戏 ========== */
 let TIESLIB = []; try { TIESLIB = JSON.parse((document.getElementById('tieslib') || {}).textContent || '[]'); if (!Array.isArray(TIESLIB)) TIESLIB = []; } catch (_) { TIESLIB = []; }
+let ACTSLIB = []; try { ACTSLIB = JSON.parse((document.getElementById('actslib') || {}).textContent || '[]'); if (!Array.isArray(ACTSLIB)) ACTSLIB = []; } catch (_) { ACTSLIB = []; }   // 史事执行条目（任务六十，R-259）：y/m/where/text/need/do/src
 function tiesNow(s, n = 6) {
   const y = s && s.clock && s.clock.y; if (y == null || !TIESLIB.length) return [];
   const names = new Set(Object.keys(s.people || {})); try { for (const nd of arr(s.org && s.org.nodes)) for (const q of arr(nd.posts)) for (const h of [q.holder].concat(arr(q.others))) if (h) names.add(h); } catch (_) {}
   return TIESLIB.filter(x => (x.year == null || x.year <= y) && (names.has(x.a) || names.has(x.b)) && (names.has(x.a) && names.has(x.b) || Math.abs((x.year || y) - y) <= 30)).sort((a, b) => (names.has(b.a) && names.has(b.b)) - (names.has(a.a) && names.has(a.b)) || (b.year || 0) - (a.year || 0)).slice(0, n);
 }
+function actsNow(s, span = 2) { const y = s && s.clock && s.clock.y; if (y == null || !ACTSLIB.length) return [];
+  const near = ACTSLIB.filter(x => Math.abs((x.y || 0) - y) <= span).sort((a, b) => Math.abs(a.y - y) - Math.abs(b.y - y) || (a.m || 12) - (b.m || 12)).slice(0, 8);
+  return near; }
+function actsNow(s, span = 2) { const y = s && s.clock && s.clock.y; if (y == null || !ACTSLIB.length) return [];
+  const near = ACTSLIB.filter(x => Math.abs((x.y || 0) - y) <= span).sort((a, b) => Math.abs(a.y - y) - Math.abs(b.y - y) || (a.m || 12) - (b.m || 12)).slice(0, 8);
+  return near; }
+function actsBlock(s) { const L = actsNow(s); if (!L.length) return '';
+  return '【史书上这几年真发生的大事（可执行条目：need 是前提，do 是结果；主角亲手改变的要照【被改写的历史】写，没改到的照此走）】\n' + L.map(x => `· ${(x.y || '')}年${x.m ? (x.m || '') + '月' : ''}${x.where ? '，' + x.where : ''}：${x.text}${Array.isArray(x.do) && x.do.length ? '（' + x.do.map(d => Object.entries(d).map(([k, v]) => k + ' ' + (v == null ? '' : v)).join(' ')).join('；') + '）' : ''}`).join('\n'); }
 function tiesBlock(s) { const L = tiesNow(s); if (!L.length) return ''; return '【史书里这些人之间的关系（写到他们照此相待，不另编）】\n' + L.map(x => `· ${x.a}与${x.b}：${x.rel}${x.year ? '（' + x.year + '年）' : ''}`).join('\n'); }
 function waysBlock(s) {
   const W = waysNow(s); if (!W.length) return ''; const k = (s.turn || 0);
@@ -13550,6 +13560,7 @@ function blocks(s, forStory) {
   { let eb = ''; try { eb = eventsBlock(s); } catch (_) {} if (eb) L.push(eb); }
   { let fb = ''; try { fb = figBlock(s); } catch (_) {} if (fb) L.push(fb); }   // R-244：名臣预制，够得着的才能出场   // R-241：世事库当材料
   { let tb = ''; try { tb = tiesBlock(s); } catch (_) {} if (tb) L.push(tb); }   // R-241：人物关系当材料
+  { let ab = ''; try { ab = actsBlock(s); } catch (_) {} if (ab) L.push(ab); }   // R-259：史事执行条目当材料（这一年前后真发生的大事，引擎照此执行）
   if (false && s.face && typeof FACE !== 'undefined') { const ft = faceText(s.face); if (ft) L.push('【主角的相貌（玩家捏的；写到主角的样子照这个，不另编）】' + ft); }
   const hh = arr(s.household);
   const fb = familyBlock(s), pb = policiesBlock(s); if (fb) L.push(fb); if (pb) L.push(pb.trim());
