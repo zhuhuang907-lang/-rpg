@@ -141,6 +141,7 @@ start ai.js && {
   run "临阵出的主意算进仗里、据城守门不再回回大败、正文胜负跟程序对不上打回重写（R-257）" 120 env PLAY="$ROOT/web/play.html" node r257.js
   run "看到的就是做好的：真人照史死、别名认真人、志向固定、军务页兵种内置（R-258）" 120 env PLAY="$ROOT/web/play.html" node r258.js
   run "制度审查：童试三关、岁考、举人大挑、冲锋要有仗、正文围城真围、别家易手改图（R-261）" 120 env PLAY="$ROOT/web/play.html" node r261.js
+  run "第二轮审查：朝议、身份交割、兵马账实、征服记账、盟友出兵（R-263）" 120 env PLAY="$ROOT/web/play.html" node r263.js
   run "五代十国朝廷照数据排：荆南小国十几个位子，明载、推定的人坐原位，空位照用人来路补人、标虚构、不与真人重名、重开同一人；南平也认（任务七，R-227）" 150 env PLAY="$ROOT/web/play.html" node wudai_court.js
   run "家里人不许叫「某」：开局、记账带进来的「韩某」照制度起名，男丁随主角的姓，族谱页看不到「某」（试玩查出）" 120 env PLAY="$ROOT/web/play.html" node kinname.js
   run "游戏读时代世情库：主角此刻沾着的活法当写戏材料（930 牙兵认出牙兵），称呼里的某换成〔姓〕，库里没有的年代、自编的行当照旧走不拦（任务十二）" 120 env PLAY="$ROOT/web/play.html" node ways.js
