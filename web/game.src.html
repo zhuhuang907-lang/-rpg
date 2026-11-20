@@ -10833,9 +10833,13 @@ function siegeWin(s, c, f, how) { const S0 = c.siege, t = c.target, ym = Math.fl
   if (!arr(s.territory).some(x => samePlace(x.place, t))) s.territory = arr(s.territory).concat([{ place: t, pop: null, troops: Math.round((N0(f.troops) || 0) * 0.1), grain: null, loyalty: 30, note: `第${s.turn}回围城${how}` }]);
   s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(t)] = { owner: '你', turn: s.turn, why: '围城' + how }; if (S0.g.owner) warNote(s, S0.g.owner, true, t, '');
   for (const g of arr(s.forces).filter(g => !myForce(s, g) && samePlace(g.at, t) && !g.march)) g.troops = 0;
+  // 攻下的是叛镇、割据的老巢，别处又没兵了：这一家就平了，主帅在城里的一并被擒、仗打完（R-261：围凤翔守军开城投降，潞王还挂着「约三万、敌对」，仗也一直在打）
+  let fin = ''; { const P = arr(s.powers).find(p => p && p.name && (p.name === S0.g.owner || String(S0.g.owner || '').includes(p.name) || p.name.includes(String(S0.g.owner || '').replace(/军$/, '')))) , seatHere = P && [P.seat, P.land].some(x => x && samePlace(String(x).replace(/[（(].*$/, ''), t));
+    if (P && seatHere && !arr(s.forces).some(g => !myForce(s, g) && N0(g.troops) > 0 && (g.owner === P.name || g.leader === P.leader))) { if (!S0.g.general && P.leader) S0.g.general = P.leader; P.stance = '已平'; P.troops = '0'; P.note = `第${s.turn}回${t}${how}，平定`; for (const w of arr(s.wars).filter(w => w && w.state === '交战' && (w.with === P.name || String(w.with).includes(P.name) || P.name.includes(w.with)))) { w.state = '胜'; w.end = ym; }
+      const v = P.leader && (s.people || {})[P.leader]; if (v && !v.dead) { v.status = `${t}${how}，被擒`; v.where = t; } fin = `，${P.name}平定`; } }
   if (S0.g.general) s.prisoners = arr(s.prisoners).filter(p => p.name !== S0.g.general).concat([{ name: S0.g.general, owner: S0.g.owner, ym, where: t }]);
   const up = genGain(s, f.leader, true, 'siege'); f.status = '驻守'; c.state = '得手'; for (const x of arr(s.campaigns).filter(x => x.joinOf === c.force && x.state === '围城')) { x.state = '得手'; const g = arr(s.forces).find(y => y.name === x.force); if (g) g.status = '驻守'; }
-  const line = `${f.name}围${t}${S0.days}日，守军${how}，拿下${t}${S0.g.general ? '，俘守将' + S0.g.general : ''}${up ? '；' + up : ''}`;
+  const line = `${f.name}围${t}${S0.days}日，守军${how}，拿下${t}${S0.g.general ? '，俘' + S0.g.general : ''}${fin}${up ? '；' + up : ''}`;
   s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: f.name, what: line }]); return line; }
 /** 强攻：城墙破得越多越好打；撤围 */
 function siegeAct(s, fname, act) {

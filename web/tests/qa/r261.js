@@ -62,6 +62,10 @@ const path = require('path');
   if (lp !== 10) bad.push('闰正月三十到二月初十不是十天：' + lp);
   const km = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '皇帝', gregorianYear: 934, month: 4, day: 8, place: '洛阳', polity: '后唐' }); s.forces = [{ name: '西面行营', leader: '王思同', troops: '13000', at: '凤翔府', status: '围城' }, { name: '凤翔军', leader: '李从珂', troops: 20000, at: '凤翔' }]; applyReply(s, { forces: [{ name: '西面行营', troops: 0, status: '溃散' }, { name: '凤翔军', troops: 0 }] }, ''); return s.forces.map(f => f.name + ':' + N0(f.troops)).join(); });
   if (!/西面行营:(11050|13000)\b/.test(km) || !/凤翔军:(17000|20000)\b/.test(km)) bad.push('没打仗，记账把整支兵马记成零：' + km);
+  const sw = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '皇帝', gregorianYear: 934, month: 4, day: 8, place: '洛阳', polity: '后唐' }); s.idm = 'emperor'; s.people = { 李从珂: { role: '凤翔节度使' } }; s.powers = [{ name: '凤翔', seat: '凤翔', land: '凤翔府', leader: '李从珂', troops: '约三万', stance: '敌对' }]; s.wars = [{ with: '凤翔军', state: '交战', won: 0, lost: 0, took: [] }];
+    s.forces = [{ name: '西面行营', leader: '王思同', troops: 12000, at: '凤翔府', status: '围城' }, { name: '凤翔军', owner: '凤翔', leader: '李从珂', troops: 20000, at: '凤翔府' }]; const c = { force: '西面行营', target: '凤翔府', state: '围城', siege: { prog: 100, days: 79, g: { troops: 20000, who: '凤翔军', owner: '凤翔', general: '' }, log: [] } }; s.campaigns = [c];
+    const line = siegeWin(s, c, s.forces[0], '开城投降'); return [line, s.powers[0].stance, s.wars[0].state, s.people.李从珂.status]; });
+  if (!/俘李从珂/.test(sw[0]) || sw[1] !== '已平' || sw[2] !== '胜' || !/被擒/.test(sw[3])) bad.push('攻下叛镇老巢没平定、没擒主帅、仗没打完：' + JSON.stringify(sw));
   // 别国的地方记账记不成自己的地盘
   const fl = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '皇帝', gregorianYear: 933, month: 12, day: 8, place: '洛阳', polity: '后唐' }); return [foreignLand(s, '扬州（淮南）'), foreignLand(s, '河南府洛阳县（京畿）')]; });
   if (fl.join() !== 'true,false') bad.push('扬州（吴）认成后唐的地盘，或洛阳认成别国：' + fl.join());
