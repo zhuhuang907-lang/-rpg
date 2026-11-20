@@ -49,7 +49,7 @@ const path = require('path');
       const m = markFict(s, '何敬真道：「周铁山押到，何敬真亲审。」何敬真起身。周铁山不答。');
       if (/周铁山（虚拟）/.test(m)) bad.push('主角也标了虚拟：' + m);
       if (/「[^」]*（虚拟）[^」]*」/.test(m)) bad.push('虚拟标进了台词里：' + m);
-      if (!/^何敬真（虚拟）道/.test(m)) bad.push('叙述里头一次出现的虚构人物没标：' + m); }
+      if (/（虚拟）|（真人）/.test(m)) bad.push("2026-11-20 起不再标虚拟、真实：" + m); }
     return bad;
   });
   // 真点：军务页看得见当面之敌

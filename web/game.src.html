@@ -1489,7 +1489,7 @@ function courtGameHtml(s) {
   const ow = n => { if (C.known[n] == null) return ''; const o = c2Outlook(s, n); return o.kind === 'fall' ? '<span class="att b-bad">风声不好</span>' : o.kind === 'move' ? '<span class="att">将有调动</span>' : o.kind === 'stay' ? '<span class="att">位子稳</span>' : ''; };
   const btn = (a, n, t) => `<button class="link" data-c2="${a}" data-n="${esc(n)}">${t}</button>`;
   const rows = F.map(f => { const fv = c2Favor(s, f.name), gap = f.w - c2Me(s);
-    return `<div class="affair"><b>${esc(f.name)}</b>${f.fict ? '<span class="vt" title="史书未载，照该国用人惯例补">虚构</span>' : ''} <span class="muted">${esc(f.office)}</span>${f.near ? ' <span class="att">你的上司</span>' : ''}${C.patron === f.name ? ' <span class="att">你的靠山</span>' : ''} ${ow(f.name)}
+    return `<div class="affair"><b>${esc(f.name)}</b> <span class="muted">${esc(f.office)}</span>${f.near ? ' <span class="att">你的上司</span>' : ''}${C.patron === f.name ? ' <span class="att">你的靠山</span>' : ''} ${ow(f.name)}
       <div class="muted" style="font-size:12px">待你：${fw(fv)}</div>
       <div class="opost">${btn('visit', f.name, '拜谒')}${btn('gift', f.name, '送礼')}${btn('ask', f.name, '打听')}${gap >= 2 && C.patron !== f.name ? btn('join', f.name, '投门下') : ''}${officer && C.patron !== f.name ? btn('accuse', f.name, '弹劾') : ''}</div></div>`; }).join('');
   const op = arr(C.cases).find(c => !c.done), lg = arr(C.log).slice(-5).reverse();
@@ -2309,7 +2309,7 @@ function courtHtml(s) {
   const CK = s.courtChk || {};
   return `<div class="h"><span class="seal">廷</span>朝堂全表<span class="note">${esc(C.y)}年 · ${esc(C.people.length)}人 · 照派系分</span></div>
     ${arr(C.factions).length ? `<div class="list">${C.factions.map(f => `<div><b>${esc(f.name)}</b>${f.leader ? ` <span class="muted">首领 ${esc(f.leader)}</span>` : ''}${f.aim ? `<div class="muted">${esc(f.aim)}</div>` : ''}</div>`).join('')}</div>` : ''}
-    ${Object.entries(byF).map(([fn, L]) => `<details class="ofold"${fn !== '（不分派）' ? ' open' : ''}><summary><b>${esc(fn)}</b> <span class="muted">${L.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>谁</th><th>官职</th><th>关系</th></tr>${L.map(x => `<tr><td>${esc(x.name)}${!x.real || FS.has(x.name) ? '<span class="vt">虚拟</span>' : CK[x.name] ? `<span class="ok" title="${esc(CK[x.name])}" style="font-size:10px;color:#3c9a4b">✓核</span>` : ''}</td><td>${esc(x.post)}${x.rank ? `<span class="muted">（${esc(x.rank)}）</span>` : ''}${x.stance ? `<div class="muted" style="font-size:11px">${esc(x.stance)}</div>` : ''}</td><td>${arr(x.ties).map(t => `${esc(t.rel)}：${esc(t.to)}`).join('；')}</td></tr>`).join('')}</table></div></details>`).join('')}`;
+    ${Object.entries(byF).map(([fn, L]) => `<details class="ofold"${fn !== '（不分派）' ? ' open' : ''}><summary><b>${esc(fn)}</b> <span class="muted">${L.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>谁</th><th>官职</th><th>关系</th></tr>${L.map(x => `<tr><td>${esc(x.name)}${CK[x.name] ? `<span class="ok" title="${esc(CK[x.name])}" style="font-size:10px;color:#3c9a4b">✓核</span>` : ''}</td><td>${esc(x.post)}${x.rank ? `<span class="muted">（${esc(x.rank)}）</span>` : ''}${x.stance ? `<div class="muted" style="font-size:11px">${esc(x.stance)}</div>` : ''}</td><td>${arr(x.ties).map(t => `${esc(t.rel)}：${esc(t.to)}`).join('；')}</td></tr>`).join('')}</table></div></details>`).join('')}`;
 }
 async function orgSeekReal(s, nodes) {
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '', byId = Object.fromEntries(nodes.map(n => [n.id, n]));
@@ -2698,7 +2698,7 @@ function courtTab(s) {
   </div>`;
   const people = [...new Set(livePeople(s).map(([k]) => k).concat(Object.keys(s.dossiers || {}).filter(k => { const d = s.dossiers[k] || {}; return d.real !== false && !d.doubt && eraPersonOk(s, k, d.born ?? null, d.died ?? null) && (d.died == null || d.died >= s.clock.y) && (d.born == null || d.born <= s.clock.y); }), arr(s.household).map(m => m.name)))].filter(n => n && n !== s.protagonist.name).slice(0, 80);
   const SC = orgScope(s), can = SC.lv === 'decree', vb = '下令';
-  const FS = fictionShow(s), CW = s.courtWho || {}, nm = h => h ? esc(h) + (CW[h] === '虚构' ? '<span class="vt" title="史书未载，照该国用人惯例补">虚构</span>' : CW[h] === '推定' ? '<span class="muted" style="font-size:11px">（照履历推定）</span>' : FS.has(h) ? '<span class="vt">虚拟</span>' : '') : '<span class="muted">空缺</span>';
+  const FS = fictionShow(s), CW = s.courtWho || {}, nm = h => h ? esc(h) : '<span class="muted">空缺</span>';   /* 不再标虚构、推定、虚拟（2026-11-20 玩家：「以后不要再写虚拟和真实」） */
   const kids = pid => O.nodes.filter(n => (n.parent || '') === pid && n.status !== '已裁撤');
   // 要紧的：君主和中枢最上两层、你这一路、你的衙门往下两层；其余照制度有，收进「其余」里，不占地方
   const MY = O ? myOrgNode(s) : null, near = n => n.id === 'root' || (n.depth || 0) <= 2 || n.path || (MY && (n.id === MY.id || n.parent === MY.id || (O.nodes.find(m => m.id === n.parent) || {}).parent === MY.id)) || n.src === '玩家';
@@ -6834,7 +6834,7 @@ function rosterTable(s) {
   const vac = L.filter(r => r.vac).length, real = L.filter(r => r.real).length;
   return `<div class="h"><span class="seal">册</span>全国官员名册<span class="note">${L.length} 个位子，真人 ${real}、空缺 ${vac}；这是吏部的册子，各地实情要看回报和查访</span></div>
     <div class="opost"><input class="oin" id="rosterQ" placeholder="搜名字、官职、派系" value="${esc(q)}"><select id="rosterG"><option value="">全部</option>${G.map(g => `<option ${g === ROSTER_G ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></div>
-    <div class="tblwrap"><table class="tbl"><tr><th>官职</th><th>谁</th><th>本事</th><th>派系</th></tr>${F.slice(0, 120).map(r => `<tr><td>${esc(r.post)}${r.rank ? `<span class="muted">（${esc(r.rank)}）</span>` : ''}<div class="muted" style="font-size:11px">${esc(r.grp)}</div></td><td>${r.vac ? '<span class="muted">空缺</span>' : `<b>${esc(r.name)}</b>${r.real ? '' : '<span class="vt">虚拟</span>'}`}</td><td style="font-size:12px">${esc(r.ab) || '<span class="muted">未评定</span>'}</td><td style="font-size:12px">${esc(r.fac)}</td></tr>`).join('')}</table></div>${F.length > 120 ? `<div class="muted">还有 ${F.length - 120} 条，搜一下</div>` : ''}`;
+    <div class="tblwrap"><table class="tbl"><tr><th>官职</th><th>谁</th><th>本事</th><th>派系</th></tr>${F.slice(0, 120).map(r => `<tr><td>${esc(r.post)}${r.rank ? `<span class="muted">（${esc(r.rank)}）</span>` : ''}<div class="muted" style="font-size:11px">${esc(r.grp)}</div></td><td>${r.vac ? '<span class="muted">空缺</span>' : `<b>${esc(r.name)}</b>`}</td><td style="font-size:12px">${esc(r.ab) || '<span class="muted">未评定</span>'}</td><td style="font-size:12px">${esc(r.fac)}</td></tr>`).join('')}</table></div>${F.length > 120 ? `<div class="muted">还有 ${F.length - 120} 条，搜一下</div>` : ''}`;
 }
 /* ========== 诏令五步：发出 → 传递（照路程、驿传日行）→ 收到 → 执行（照经手官员的本事）→ 回报；经手的人可能拖延、打折、虚报、抗命（照忠诚、操守、派系怨气）。
    回报里写的不一定是实情，实情只有查访才知道 ========== */
@@ -7405,7 +7405,7 @@ function talentHtml(s, SC) {
   return `<div class="h"><span class="seal">才</span>人选<span class="note">任用只能从这里、你身边的门客幕僚、已在官的人里挑；真人肯不肯来照他这一年的真实处境</span></div>
     <div class="muted" style="font-size:12px">${esc(selEra(s.clock.y).name)}：${esc(selEra(s.clock.y).note)}。资格不够的不能授官${ruler ? '（你可以下特旨破格，有代价）' : ''}。</div>
     <div class="opost">${btn('scout', TALENT_P ? '正在查访…' : '照史料查访可用的真人')}${recruitKinds(s, SC).map(([k, t]) => btn(k, TALENT_P === k ? '正在办…' : t)).join('')}</div>
-    ${L.length ? `<div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>出身资格</th><th>本事</th><th>处境</th><th>肯不肯</th></tr>${L.slice().reverse().slice(0, 40).map(t => { const q = t.qual || qualOf(s, t.name), st = t.stats || {}, sv = k => st[k] && st[k].v != null ? st[k].v : null, fc = t.faction || facOf(s, t.name); return `<tr${t.used || t.refused ? ' style="opacity:.55"' : ''}><td><b>${esc(t.name)}</b>${t.real ? '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>' : '<span class="vt">虚构</span>'}${t.jiguan ? `<div class="muted" style="font-size:11px">${esc(t.jiguan)}人</div>` : ''}</td><td>${esc(t.from || '')}${t.arrive != null && s.turn < t.arrive ? '<span class="muted">（下一回到）</span>' : ''}<div style="font-size:12px">${q ? esc(q.txt) + (q.max != null ? `<span class="muted">（至多${esc(rankName(s, q.max))}）</span>` : '') : '<span class="muted">出身还没核实，核实前不能授官</span>'}</div>${fc || t.tieNote ? `<div class="muted" style="font-size:11px">${esc([fc, t.tieNote].filter(Boolean).join('；'))}</div>` : ''}</td><td style="font-size:12px">${['理政', '理财', '统兵', '操守'].map(k => sv(k) != null ? `${k.slice(-1) === '政' ? '政' : k === '理财' ? '财' : k === '统兵' ? '兵' : '廉'}${statWord(sv(k))}` : '').filter(Boolean).join(' ') || '<span class="muted">未评定</span>'}${t.statSum ? `<div class="muted" style="font-size:11px">${esc(t.statSum)}</div>` : ''}</td><td class="muted" style="font-size:12px">${esc([t.where, t.situation].filter(Boolean).join('；'))}${t.basis ? '（' + esc(t.basis) + '）' : ''}</td><td>${t.used ? '已任用' : t.refused ? '<span style="color:#a33">不肯来</span>' + (t.refusedWhy ? `<div class="muted" style="font-size:11px">${esc(t.refusedWhy)}</div>` : '') : esc(t.will || '')}${t.why && !t.refused ? `<div class="muted" style="font-size:11px">${esc(t.why)}</div>` : ''}</td></tr>`; }).join('')}</table></div>` : '<div class="muted">还没有人选：开科、招贤、查访来的人会列在这里。</div>'}`;
+    ${L.length ? `<div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>出身资格</th><th>本事</th><th>处境</th><th>肯不肯</th></tr>${L.slice().reverse().slice(0, 40).map(t => { const q = t.qual || qualOf(s, t.name), st = t.stats || {}, sv = k => st[k] && st[k].v != null ? st[k].v : null, fc = t.faction || facOf(s, t.name); return `<tr${t.used || t.refused ? ' style="opacity:.55"' : ''}><td><b>${esc(t.name)}</b>${t.jiguan ? `<div class="muted" style="font-size:11px">${esc(t.jiguan)}人</div>` : ''}</td><td>${esc(t.from || '')}${t.arrive != null && s.turn < t.arrive ? '<span class="muted">（下一回到）</span>' : ''}<div style="font-size:12px">${q ? esc(q.txt) + (q.max != null ? `<span class="muted">（至多${esc(rankName(s, q.max))}）</span>` : '') : '<span class="muted">出身还没核实，核实前不能授官</span>'}</div>${fc || t.tieNote ? `<div class="muted" style="font-size:11px">${esc([fc, t.tieNote].filter(Boolean).join('；'))}</div>` : ''}</td><td style="font-size:12px">${['理政', '理财', '统兵', '操守'].map(k => sv(k) != null ? `${k.slice(-1) === '政' ? '政' : k === '理财' ? '财' : k === '统兵' ? '兵' : '廉'}${statWord(sv(k))}` : '').filter(Boolean).join(' ') || '<span class="muted">未评定</span>'}${t.statSum ? `<div class="muted" style="font-size:11px">${esc(t.statSum)}</div>` : ''}</td><td class="muted" style="font-size:12px">${esc([t.where, t.situation].filter(Boolean).join('；'))}${t.basis ? '（' + esc(t.basis) + '）' : ''}</td><td>${t.used ? '已任用' : t.refused ? '<span style="color:#a33">不肯来</span>' + (t.refusedWhy ? `<div class="muted" style="font-size:11px">${esc(t.refusedWhy)}</div>` : '') : esc(t.will || '')}${t.why && !t.refused ? `<div class="muted" style="font-size:11px">${esc(t.why)}</div>` : ''}</td></tr>`; }).join('')}</table></div>` : '<div class="muted">还没有人选：开科、招贤、查访来的人会列在这里。</div>'}`;
 }
 let TALENT_P = null;
 /** 人事树上的位子照史料填真人：天下名录、内置史料里这一年在任的人，对上衙门和官名的，换掉虚构的 */
@@ -15073,6 +15073,7 @@ ${cand0.map(n => n + (roleOf(n) ? '（' + roleOf(n) + '）' : '')).join('、')}
 const clashDue = s => s && !settled(s) && [...fictionSet(s), ...(s.protagonist && !s.protagonist.real ? arr(s.household).map(m => m && m.name) : [])].some(n => n && !(s.clashOK || {})[n] && n.length >= 2);
 /** 显示用：每段正文里，虚构人物头一次出现时后面标「（虚拟）」 */
 function markFict(s, text) {
+  return String(text || '').replace(/（(虚拟|虚构|真人|史上真人|史上真有其人)）/g, '');   // 不再标虚拟、真实（2026-11-20 玩家）
   let t = String(text || ''); if (!s) return t;
   // 主角自己不标；标在叙述里头一次出现处，不标进人物说的话（「」里）——真模型实测「周铁山（虚拟）押到」读着别扭（R-254）
   const me = (s.protagonist || {}).name, F = [...fictionShow(s)].filter(n => n && n !== me).sort((a, b) => b.length - a.length);
@@ -15959,7 +15960,7 @@ function customForm() {
       <label>具体身份<input id="cRole" value="${v('cRole')}" placeholder="如：节度使帐下小校、盐商、县学生员"></label>
       <label>性别${sel('cGender', [['', '不限'], ['男', '男'], ['女', '女']])}</label>
       <label>年龄<input id="cAge" value="${v('cAge')}" inputmode="numeric" placeholder="如：25"></label>
-      <label>人物${sel('cReal', [['', '史上真人（查不到就不开局）'], ['虚', '虚构人物（标虚拟）']])}</label>
+      <label>人物${sel('cReal', [['', '史上真人（查不到就不开局）'], ['虚', '虚构人物']])}</label>
       <label class="wide">姓名<input id="cName" value="${v('cName')}" placeholder="留空由 AI 起名；写真实人物的名字，就扮演此人（如：海瑞、李清照）"></label>
       <label class="wide">家世背景<textarea id="cFamily" rows="2" placeholder="如：父亲早亡，寡母带着弟妹，靠两亩薄田和母亲做针线过活；舅舅在县衙当书吏">${v('cFamily')}</textarea></label>
       <label class="wide">补充设定（性格、本事、处境、想做的事……）<textarea id="cMore" rows="2" placeholder="如：识字，会算账，脾气倔；想去府城考秀才，舅舅不赞成">${v('cMore')}</textarea></label>
@@ -16171,7 +16172,7 @@ function extrasHtml(x) {
 }
 function introHtml(i) {
   return `<div class="intro"><div class="ih">这一局，你是——</div>
-    <div><b>${esc(i.name)}</b>${[i.gender, i.age != null ? i.age + '岁' : '', i.role, i.native ? i.native + '人' : '', i.real ? '史上真有其人' : ''].filter(Boolean).map(esc).join('，')}</div>
+    <div><b>${esc(i.name)}</b>${[i.gender, i.age != null ? i.age + '岁' : '', i.role, i.native ? i.native + '人' : '', ''].filter(Boolean).map(esc).join('，')}</div>
     <div><b>时间</b>${esc(i.when)}　<b>地点</b>${esc(i.place)}${i.polity ? '（' + esc(i.polity) + '）' : ''}</div>
     ${i.family ? `<div><b>家里</b>${esc(i.family)}</div>` : ''}${i.cash ? `<div><b>手头</b>现钱 ${esc(i.cash)}</div>` : ''}
     ${i.overview ? `<div><b>天下</b>${esc(i.overview)}</div>` : ''}
@@ -16265,8 +16266,8 @@ function pane(tab) {
     const P = Object.entries(s.people).filter(([, v]) => v && !v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const OLD = Object.entries(s.people).filter(([, v]) => v && v.faded).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0));
     const fam = s.household.filter(m => !s.people[m.name]);
-    const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionShow(s), RS = realNameSet(s), FX = n => { const cw = (s.courtWho || {})[n]; if (cw === '虚构') return '<span class="att" style="background:#eee;color:#666">虚构</span><span class="muted" style="font-size:11px">史书未载，照该国用人惯例补</span>'; if (cw) return '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>' + (cw === '推定' ? '<span class="muted" style="font-size:11px">任职年份照履历推定</span>' : '');   /* 来路照朝廷数据（R-227） */
-      const c = chkOf(s, n); return (FS.has(n) ? '<span class="att" style="background:#eee;color:#666">虚拟</span>' : RS.has(n) || (c && c.real) ? '<span class="att" style="background:#e8f0e3;color:#3b6b2e">真人</span>' : '') + (c ? `<span class="muted" style="font-size:11px">${c.real ? '已核' : '已核：查无此人'}</span>` : n === s.protagonist.name ? '' : `<button class="link" style="font-size:11px" data-pchk="${esc(n)}">核查是否真人</button>`); };
+    const ymN = ymOf(s.clock), HH = arr(s.household), FS = fictionShow(s), RS = realNameSet(s), FX = n => { const cw = (s.courtWho || {})[n]; if (cw) return '';   /* 来路照朝廷数据（R-227） */
+      const c = chkOf(s, n); return '' + (c ? `<span class="muted" style="font-size:11px">${c.real ? '已核' : '已核：查无此人'}</span>` : n === s.protagonist.name ? '' : `<button class="link" style="font-size:11px" data-pchk="${esc(n)}">核查是否真人</button>`); };
     const ID = s.protagonist.ident, identH = ID ? `<div class="h" style="margin-top:6px"><span class="seal">身</span>身份</div><div class="list"><div>${[['字', ID.zi], ['号', ID.hao], ['籍贯', ID.jiguan], ['出身', ID.chushen], ['功名', ID.gongming], ['爵位', ID.jue]].filter(x => x[1]).map(([k, v]) => `<b>${k}</b> ${esc(v)}`).join('　')}</div>${arr(ID.career).length ? `<div class="muted" style="font-size:12px">履历：${ID.career.map(c => (c.y ? c.y + '年 ' : '') + esc(c.post)).join('；')}</div>` : ''}</div>` : '';
     // 身边和远处分开（2026-11-01 玩家：「朝廷的角色、远在很远地方的人根本就不是身边的人，但是可以给他们写信；身边的人是另外一群人」）：
     // 和你在一处的、家将近侍幕僚这类随身的算身边；人在别处的列「远处的人」，按钮是写信；真人主角戏里出场的虚构小角色收起来
@@ -17184,7 +17185,7 @@ document.addEventListener('click', async e => {
       const c = await personCheck(S, n, `${S.place.polity || ''} ${P0.role || ''}`.trim().slice(0, 30));
       S.dossiers = S.dossiers || {}; const d0 = S.dossiers[n] || {};
       S.dossiers[n] = c.real ? { ...d0, real: true, chk: c.src, identity: d0.identity || c.who || c.identity, born: d0.born ?? c.born, died: d0.died ?? c.died, src: d0.src || c.src, y: d0.y || S.clock.y, doubt: false } : { ...d0, real: false, chk: '查无此人', y: d0.y || S.clock.y, doubt: false };
-      ORGMSG = c.real ? `「${n}」史上有其人（${c.src}）${c.who ? '：' + c.who : ''}` : `「${n}」查无此人${c.why ? '（' + c.why + '）' : ''}，以后照虚构人物写（标虚拟）`;
+      ORGMSG = c.real ? `已查到「${n}」的来历（${c.src}）${c.who ? '：' + c.who : ''}` : `「${n}」的来历记下了`;
       try { await store.save(S); } catch (_) {}
     } catch (e) { if (!(e && e.code === 'cancelled')) ORGMSG = '没核查成：' + errText(e); }
     render(); return;
