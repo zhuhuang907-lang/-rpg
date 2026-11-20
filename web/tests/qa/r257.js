@@ -38,6 +38,8 @@ const path = require('path');
   const ov = await p.evaluate(() => { const s = newSave({ name: '林承海', gender: '男', age: 28, role: '宿卫', gregorianYear: 937, month: 3, day: 1, place: '福州', polity: '闽' }); s.turn = 42;
     s.acts = [{ id: 'a1', type: '请', what: '外放泉州为押衙', state: '拖着', turn: 38, touched: 41 }, { id: 'a2', type: '请', what: '借三百文', state: '部分办成', turn: 41, touched: 41 }, { id: 'a3', type: '计', what: '静候批复', state: '拖着', turn: 30, touched: 41 }];
     const b = actBlock(s); return [/a1外放泉州/.test(b.slice(b.indexOf('必须给准话'))) && b.includes('必须给准话'), /a2借三百文/.test(b.slice(b.indexOf('必须给准话'))), /a3静候/.test(b.slice(b.indexOf('必须给准话')))]; });
+  const hdr = await p.evaluate(() => splitStory('长兴四年（公元933年）十一月十一未时 · 河南府洛阳县 · 30岁\n\n周文礼出了门。').text);
+  if (/30岁|公元933/.test(hdr) || !/周文礼/.test(hdr)) bad.push('正文开头抄的页眉没去掉：' + hdr);
   const sx = await p.evaluate(() => splitStory('八月里，新主告示贴出，（史载永隆元年八月改元，正文合）。郎中（或“医生”）说夜里不再起热便无大碍。城北（今鼓楼一带）人多。此后日子，你坐（删去或改「坐镇福州」），管账、看货。康侍卫使（或康都指挥使）没亲见。').text);
   const jm = await p.evaluate(() => { const mk = () => newSave({ name: '林承海', gender: '男', age: 35, role: '海商', gregorianYear: 943, month: 2, day: 20, place: '泉州', polity: '闽' });
     const a = mk(), y0 = ymOf(a.clock); CUR_RULING = null; applyReply(a, { elapsedDays: 2, elapsedHours: 2, reply: '次日辰时，你到州衙。刺史道：「你回去想清楚，明日再来回话。」' }, '去州衙见刺史，只求让我管一营团练。练半年看这一营有多少人');
