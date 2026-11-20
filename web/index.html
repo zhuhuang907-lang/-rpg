@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120010333';
+const BUILD = '20261120022031';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -7875,7 +7875,7 @@ async function buildRoster(s) {
   s.roster = { y, pol, at: s.turn, groups: G, v: 3 }; orgFillReal(s); return s.roster;
 }
 function rosterHtml(s) {
-  if (rosterDue(s) && !BUSY && !ROSTER_P) ROSTER_P = Promise.resolve().then(() => buildRoster(s)).catch(e => { if (!(e && e.code === 'cancelled')) s.rosterFail = s.turn; }).finally(() => { ROSTER_P = null; try { store.save(s); } catch (_) {} if (TAB === 'people') render(); });
+  if (rosterDue(s) && !BUSY && !ROSTER_P) ROSTER_P = Promise.resolve().then(() => buildRoster(s)).catch(e => { if (!(e && e.code === 'cancelled')) s.rosterFail = s.turn; }).finally(() => { ROSTER_P = null; if (rosterDue(s)) s.rosterFail = s.turn; try { store.save(s); } catch (_) {} if (TAB === 'people') render(); });
   const R = s.roster, head = `<div class="h" style="margin-top:6px"><span class="seal">朝</span>天下名录<span class="note">${R ? R.y + '年' : '这一年'}全国在任、在世的要紧人物</span></div>`;
   if (!R || R.y !== s.clock.y) return head + `<div class="muted">${ROSTER_P ? '正在查这一年全国的宗室王公、中枢大臣、各地大员、将帅、世家……' : '正在查这一年全国的宗室王公、中枢大臣、各地大员、将帅、世家……'}</div>`;
   return head + `<div class="roster">${R.groups.map((g, i) => `<details class="oadd"${i < 2 ? ' open' : ''}><summary><b>${esc(g.name)}</b> <span class="muted">${g.people.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>职位</th><th></th></tr>${g.people.map(x => `<tr><td><b>${esc(x.name)}</b>${x.note ? `<div class="muted" style="font-size:11px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.post)}${x.since ? `<span class="muted">（${esc(x.since)}年起）</span>` : ''}</td><td><button class="link" data-write="${esc('设法求见' + x.name + '，')}">求见</button></td></tr>`).join('')}</table></div></details>`).join('')}</div>`;
@@ -13539,7 +13539,7 @@ function mapTab(s) {
   const myProv = provOfPlace(s, geoCenter(s));
   const zt = MAPZ.mode === 'prov' ? MAPZ.prov : MAPZ.mode === 'near' ? (MAPZ.nearName || MAPZ.sel ? (MAPZ.nearName || MAPZ.sel) + '一带' : '自选一带') + ((num(MAPZ.span) || 1.2) <= 1.6 ? '（到县）' : '') : '';
   const views = `<span class="mviews"><button class="link${MAPZ.mode === 'world' ? ' on' : ''}" id="bMapWorld">天下</button>${myProv ? `<button class="link${MAPZ.mode === 'prov' && MAPZ.prov === myProv ? ' on' : ''}" data-mapview="prov">本省</button>` : ''}<button class="link${MAPZ.mode === 'near' && MAPZ.nearName === geoCenter(s) ? ' on' : ''}" data-mapview="near">本地（到县）</button></span>`;
-  if (admDue(s) && !BUSY && !REG_P) REG_P = Promise.resolve().then(() => buildAdmin(s)).catch(() => { s.admFail = s.turn; }).finally(() => { REG_P = null; try { store.save(s); } catch (_) {} if (TAB === 'map') render(); });
+  if (admDue(s) && !BUSY && !REG_P) REG_P = Promise.resolve().then(() => buildAdmin(s)).catch(() => { s.admFail = s.turn; }).finally(() => { REG_P = null; if (admDue(s)) s.admFail = s.turn; try { store.save(s); } catch (_) {} if (TAB === 'map') render(); });   // 没查成又没报错的也记一笔，免得重画→再查死循环（R-260）
   if (!REG_P && MAPZ.mode === 'prov' && !eraLayer(s) && s.admin && !s.admin.counties[MAPZ.prov] && !BUSY && s.admin.units.some(u => u.p === MAPZ.prov)) REG_P = Promise.resolve().then(() => buildAdminProv(s, MAPZ.prov)).catch(() => {}).finally(() => { REG_P = null; if (s.admin && !s.admin.counties[MAPZ.prov]) s.admin.counties[MAPZ.prov] = []; if (TAB === 'map') render(); });
   const regMsg = REG_P ? `<div class="muted" style="font-size:12px">正在联网查${esc(s.clock.y)}年的政区${MAPZ.mode === 'prov' ? '：' + esc(MAPZ.prov) + '各府州领哪些县、驿道关隘' : '：有几家政权、各有哪些省（路、道、州）、府州'}……</div>` : '';
   return `<div class="h" style="margin-top:6px"><span class="seal">图</span>舆图<span class="note">${esc(s.clock.yearLabel || s.clock.y + '年')}${zt ? ' · ' + esc(zt) : ' · 天下'}</span> ${views}</div>
@@ -17376,8 +17376,9 @@ function pane(tab) {
     const pl = Object.entries(s.places);
     return `<div class="h" style="margin-top:6px"><span class="seal">地</span>地理册<span class="note">当时地名、今地、隶属、离你多远</span></div>
       ${(() => { const c = geoCenter(s), stale = s.geo && s.geo.place !== c;
-        if ((stale || !s.geo) && canGeo() && !BUSY && !GEO_P) { GEO_P = Promise.resolve().then(() => ensureGeo(s, s.gazetteer && s.gazetteer.counties)).catch(() => null).finally(() => { GEO_P = null; if (TAB === 'geo') render(); }); }
-        return stale ? `<div class="muted" style="font-size:12px">你到了${esc(c)}，正照${esc(s.clock.y)}年的州县换这一带的地图……</div>` : s.geo ? `<div class="h"><span class="seal">图</span>县级地图<span class="note">${esc(s.geo.here.name)} 一带 · ${esc(s.geo.y)}年的州县（不同年代州县设置、地名不同，换了年代会重画）</span></div>${geoMap(s)}` : canGeo() ? '<div class="muted" style="font-size:12px">县级地图正从历史地名库查……</div>' : ''; })()}
+        if ((stale || !s.geo) && needGeo(s) && !BUSY && !GEO_P) {   // R-260：以前不看「这一处查过没成」，查不成→重画→再查，死循环把页面卡崩
+          GEO_P = Promise.resolve().then(() => ensureGeo(s, s.gazetteer && s.gazetteer.counties)).catch(() => null).finally(() => { GEO_P = null; if (TAB === 'geo') render(); }); }
+        return stale && needGeo(s) ? `<div class="muted" style="font-size:12px">你到了${esc(c)}，正照${esc(s.clock.y)}年的州县换这一带的地图……</div>` : s.geo ? `<div class="h"><span class="seal">图</span>县级地图<span class="note">${esc(s.geo.here.name)} 一带 · ${esc(s.geo.y)}年的州县（不同年代州县设置、地名不同，换了年代会重画）</span></div>${geoMap(s)}` : canGeo() ? '<div class="muted" style="font-size:12px">县级地图正从历史地名库查……</div>' : ''; })()}
       ${s.gazetteer ? `<div class="h"><span class="seal">志</span>本地志<span class="note">${esc(s.gazetteer.place)} · ${esc(s.gazetteer.y)}年前后</span></div><dl class="kv">${[['衙署', s.gazetteer.admin], ['官员', officialsHere(s).length ? officialsHere(s).map(o => o.post + ' ' + o.name).join('；') : arr(s.gazetteer.officials).map(o => o.post + (o.name ? ' ' + o.name : '') + '').join('；')], ['经济', s.gazetteer.economy], ['士绅', s.gazetteer.families], ['地方', s.gazetteer.places], ['风俗', s.gazetteer.customs], ['时事', s.gazetteer.current]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
       <div class="row" style="margin-top:0"><span class="muted">你现在在：<b style="color:var(--ink)">${esc(geoCenter(s))}</b>${s.at ? `（出门在外；家在${esc(s.place.full)}${(() => { const a = hereXY(s), b = placeXY(s, s.place.full, s.clock.y); return a && b ? '，离家约' + liOf(hav(a, b)) + '里' : ''; })()}）` : ''}</span></div>
       ${pl.length ? `<div class="tblwrap"><table class="tbl"><tr><th>地名</th><th>今地</th><th>隶属</th><th>离你</th></tr>${pl.map(([k, v]) => `<tr><td><b>${esc(k)}</b>${v.note ? `<div class="muted">${esc(v.note)}</div>` : ''}</td><td>${esc(v.now)}</td><td>${esc(v.belong)}${v.chk ? '' : '<span class="muted">（未核）</span>'}</td><td>${(() => { const h = hereXY(s); return h && v.lat != null ? esc(geoStem(h.name) === geoStem(k) ? '就在这里' : `${dirOf(h, v)}约${liOf(hav(h, v))}里`) : esc(v.from) + (v.from ? '<span class="muted">（未核）</span>' : ''); })()}</td></tr>`).join('')}</table></div>` : '<div class="muted">开场后出现；正文里提到新地方会自动记进来。</div>'}
