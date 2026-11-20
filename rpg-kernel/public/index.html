@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120063904';
+const BUILD = '20261120064003';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -9855,9 +9855,15 @@ function realmsAt(y, m) {
 const MU_C = { k: '', s: null, v: null };
 /** 玩家造成的改变才改图（2026-11-02 玩家：「有玩家当权的话地图就不会这样，权力权限不到的话，地图该怎么样就怎么样」）：
  *  只有程序结算的仗（你打下、你丢掉的地方）记进 s.mapOwn，图上那一处照这个；其余照史书（江山时序、内置史料）画 */
-function mapUnits(s) { const M = admOverlay(s, mapUnits0(s)), MO = s && s.mapOwn; if (!M || !MO || !Object.keys(MO).length || M._mo) return M;
+/** 一家一色，照名字定、局内不变；叛军、自立的、内战分出来的各一色（R-261：别家都是灰旗，分裂内战也是一个颜色） */
+const OWN_PAL = ['#b5543b', '#3c7a9e', '#7d5aa6', '#4f8a3a', '#c08a2a', '#2f8f83', '#a8435f', '#5d6fb3', '#8c6d3f', '#3f6e5a', '#b06a9a', '#6a8c2a', '#c46a2a', '#46708f', '#9a4b3a', '#5a5a9a'];
+const ownerColor = (s, name) => { const n = String(name || '').trim(); if (!n) return '#7a6a5a'; try { const R = realmsAt(s.clock.y, s.clock.m); const r = R && R.list.find(x => x.name === n); if (r && r.col) return r.col; } catch (_) {} let h = 0; for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return OWN_PAL[h % OWN_PAL.length]; };
+function mapUnits(s) { const M0 = admOverlay(s, mapUnits0(s)); if (!M0 || M0._mo) return M0; const M = M0;
+  // 不在史书疆域里的各方（叛军、自立的藩镇、内战分出来的一支）：据地照他们画（R-261）
+  const PO = {}; try { const RL = realmsAt(s.clock.y, s.clock.m), names = new Set(arr(RL && RL.list).map(x => x.name)); for (const p of arr(s.powers)) { if (!p || !p.name || names.has(p.name) || !powerLand(s, p)) continue; for (const t of String([p.seat, p.land].filter(Boolean).join('、')).split(/[、，,；;\s]+/)) { const k = geoStem(t.replace(/[（(].*$/, '')); if (k && k.length >= 2 && !PO[k]) PO[k] = { owner: p.name, why: '据地' }; } } } catch (_) {}
+  const MO = Object.assign({}, PO, (s && s.mapOwn) || {}); if (!Object.keys(MO).length) return M;
   const r0 = M.reg, R = realmsAt(s.clock.y, s.clock.m), mine = { name: pol0(s) || '你', col: '#a63a2a', mine: true };
-  M.reg = u => { const k = u && MO[geoStem(u.lv === 3 && u.p ? u.p : u.n)]; if (!k) return r0(u); if (k.owner === '你') return (R && R.list.find(x => x.name === pol0(s))) || mine; return (R && R.list.find(x => x.name === k.owner)) || { name: k.owner, col: '#7a6a5a' }; };
+  M.reg = u => { const k = u && MO[geoStem(u.lv === 3 && u.p ? u.p : u.n)]; if (!k) return r0(u); if (k.owner === '你') return (R && R.list.find(x => x.name === pol0(s))) || mine; return (R && R.list.find(x => x.name === k.owner)) || { name: k.owner, col: ownerColor(s, k.owner) }; };
   M._mo = true; return M; }
 function mapUnits0(s) {
   const A = s.admin && Math.abs(s.admin.y - s.clock.y) <= (s.admin.split ? 1 : 15) ? s.admin : null;
@@ -10156,7 +10162,7 @@ function stratMap(s) {
     ${(() => { /* 军旗牌：像《钢铁雄心》的兵牌——旗色分敌我，下面三条是兵力、士气、组织；行军的画出去向；点牌子选中这支兵马 */
       const at = new Map(), out = [];
       for (const x of forces.filter(x => inBox(x.u))) { const k = x.u.lon.toFixed(2) + ',' + x.u.lat.toFixed(2), i = at.get(k) || 0; at.set(k, i + 1);
-        const f = x.f, mine = myForce(s, f), col = mine ? '#a63a2a' : (own.get(geoStem(f.owner || '')) || {}).col || '#555', X = px(x.u) + i * 6, Y = py(x.u) - i * 30, men = N0(f.troops) || 0, mo = num(f.morale) ?? 60, org = num(f.orgNow) ?? 70, w = Math.max(54, String(f.name).length * 10 + 46), sel = MAPZ.from === f.name;
+        const f = x.f, mine = myForce(s, f), col = mine ? '#a63a2a' : (own.get(geoStem(f.owner || '')) || {}).col || (f.owner ? ownerColor(s, String(f.owner).replace(/(守军|军|兵)$/, '')) : f.foe ? '#7a2a2a' : '#555'), X = px(x.u) + i * 6, Y = py(x.u) - i * 30, men = N0(f.troops) || 0, mo = num(f.morale) ?? 60, org = num(f.orgNow) ?? 70, w = Math.max(54, String(f.name).length * 10 + 46), sel = MAPZ.from === f.name;
         const bar = (yy, v, c) => `<rect x="${(X + 3).toFixed(0)}" y="${yy.toFixed(0)}" width="${(w - 6).toFixed(0)}" height="3" fill="#0004"/><rect x="${(X + 3).toFixed(0)}" y="${yy.toFixed(0)}" width="${((w - 6) * Math.max(0, Math.min(100, v)) / 100).toFixed(0)}" height="3" fill="${c}"/>`;
         const C = arr(s.campaigns).find(c => c.force === f.name && /行军|待发/.test(c.state)), T = C ? placeXY(s, C.target, y) : null;
         const RT = (C && C.route) || (f.march && f.march.route) || null;
@@ -14831,7 +14837,8 @@ function powerClash(s, A, B, why) {
   A.troops = String(a - dA); B.troops = String(b - dB);
   const took = R.outcome === '大胜' && B.seat ? one(B.seat, 20) : '';
   A.note = one(`${when}攻${B.name}${R.outcome}${took ? '，取' + took : ''}`, 60); B.note = one(`${when}遭${A.name}攻，${({ 大胜: '大败', 小胜: '小败', 相持: '相持', 小败: '小胜', 大败: '大胜' })[R.outcome]}`, 60);
-  if (took) { A.land = one([A.land, took].filter(Boolean).join('、'), 60); B.land = one(String(B.land || '').split(/[、，,]/).filter(x => x && !samePlace(x, took)).join('、'), 60); }
+  if (took) { s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(took)] = { owner: A.name, turn: s.turn, why: '别家攻取' };   // 别家之间易手也改图、画金圈（R-261）
+    A.land = one([A.land, took].filter(Boolean).join('、'), 60); B.land = one(String(B.land || '').split(/[、，,]/).filter(x => x && !samePlace(x, took)).join('、'), 60); }
   const text = `${A.name}攻${B.name}：${R.outcome}（照两家兵数结算，${A.name}折损${dA}、${B.name}折损${dB}${took ? '，' + A.name + '取' + took : ''}）`;
   s.clashLog = arr(s.clashLog).concat([{ turn: s.turn, when, a: A.name, b: B.name, outcome: R.outcome, dA, dB, took, why: one(why, 40) }]).slice(-30);
   return { text, settled: true };
