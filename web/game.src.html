@@ -15295,7 +15295,9 @@ function applyFixes(text, fixes) {
   for (const f of arr(fixes).slice(0, 12)) {
     const wrong = String((f && f.wrong) || '').trim(), right = String((f && f.right) || '').replace(/【(幕后|当前情况|戏外)】/g, '').trim();   // 改正的话里夹了内部标记，会把幕后露给玩家
     if (!wrong || !right || wrong === right || wrong.length < 2 || wrong.length > 40) continue;   // 单个字（两→钱）会把全文同字都改坏
-    if (fixIsNote(wrong, right)) continue;   // R-257：「国号大闽」→「国号大闽（史实如此，可保留）」——审稿把批注当改法，照替就把批注露进正文
+    if (fixIsNote(wrong, right)) continue;
+    if (/[（(]或|或[“「]/.test(right) && !/[（(]或|或[“「]/.test(wrong)) continue;   // 改法里留着「（或康都指挥使）」这种两可的话：不是改法
+    if (wrong.length <= 2 && text.split(wrong).length > 2) continue;   // 两个字的（「将军」）全文不止一处：一改全改，连「左骁卫上将军」都改坏   // R-257：「国号大闽」→「国号大闽（史实如此，可保留）」——审稿把批注当改法，照替就把批注露进正文
     if (text.includes(wrong)) text = text.split(wrong).join(right);
     else {
       // 审校摘的原文常常差一个引号、空格或标点：放宽这些再找一遍
