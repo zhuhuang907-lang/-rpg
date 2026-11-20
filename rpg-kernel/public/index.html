@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120162329';
+const BUILD = '20261120162754';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -12531,7 +12531,7 @@ function royalAct(s, act, arg) { const R = royalOf(s); if (!R) { ORGMSG = '你�
  *  起兵清君侧：打赢（胜仗比败仗多三场以上，或对方求和）就入京废立，自己登基、改元 */
 const deadNm = (s, n) => { if (!n) return false; const m = arr(s.household).find(x => x && x.name === n); if (m && m.dead) return true; const v = (s.people || {})[n]; if (v && v.dead) return true; const f = figByName(n); return !!(f && figGone(f, s.clock) && !(s.fateSaved || {})[n]); };
 const ERA_A = '建永天洪宣正弘嘉隆崇乾咸同光显绍开元', ERA_B = '和平德武兴安泰庆顺昌熙宁化康定隆';
-const newEraName = s => { const cur = String(s.eraName || ''), y = s.clock.y; for (let k = 0; k < 40; k++) { const a = ERA_A[Math.floor(seeded(y * 7 + k * 13) * ERA_A.length)], b = ERA_B[Math.floor(seeded(y * 11 + k * 17 + 5) * ERA_B.length)]; if (a !== b && a + b !== cur) return a + b; } return '永安'; };
+const newEraName = s => { const cur = String(s.eraName || ''), y = s.clock.y; try { const pol = String(pol0(s) || ''), h = rulersAt(y + 1, s, 1).find(r => r && r.era && pol && String(r.pol || r.polity || '').includes(pol) && !String(s.clock.yearLabel || '').startsWith(r.era)); if (h) return h.era; } catch (_) { /* 史书上下一年本朝的新年号（明宗崩、新君明年改元应顺）照用；没有才另起 */ } for (let k = 0; k < 40; k++) { const a = ERA_A[Math.floor(seeded(y * 7 + k * 13) * ERA_A.length)], b = ERA_B[Math.floor(seeded(y * 11 + k * 17 + 5) * ERA_B.length)]; if (a !== b && a + b !== cur) return a + b; } return '永安'; };
 function royalEnthrone(s, R, ym, why) { const old = String(s.protagonist.role || ''), nian = newEraName(s); s.protagonist.role = '皇帝'; s.idm = 'emperor'; R.kind = ''; R.rebel = null; R.lostTo = null; R.enthroned = ym;
   s.eraName = nian; s.eraFrom = s.clock.y + 1;   // 照例逾年改元：今年仍用先帝年号，明年正月起称新元
   s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: s.protagonist.name, what: `${why}，即皇帝位，定明年改元${nian}` }]); return `${why}，你即皇帝位（原${old.replace(/[（(].*$/, '') || '宗室'}），定明年改元「${nian}」`; }

@@ -50,6 +50,8 @@ const path = require('path');
   // 明宗933年十一月廿六驾崩：腊月就该死，不拖到934年
   const mz = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '秦王', gregorianYear: 933, month: 11, day: 20, place: '洛阳', polity: '后唐' }); s.household = [{ name: '李嗣源', relation: '父', age: 67 }]; const a = figDeathTick(s).length; s.clock.m = 12; s.clock.d = 5; const b = figDeathTick(s).join(); return [a, b, s.household[0].dead]; });
   if (mz[0] !== 0 || !/李嗣源/.test(mz[1]) || !mz[2]) bad.push('明宗没照卒月去世：' + JSON.stringify(mz));
+  const en = await p.evaluate(() => newEraName(newSave({ name: '李从荣', gender: '男', age: 29, role: '秦王', gregorianYear: 933, month: 12, day: 8, place: '洛阳', polity: '后唐' })));
+  if (en !== '应顺') bad.push('新君改元没照史书下一年的年号：' + en);
   // 别国的地方记账记不成自己的地盘
   const fl = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '皇帝', gregorianYear: 933, month: 12, day: 8, place: '洛阳', polity: '后唐' }); return [foreignLand(s, '扬州（淮南）'), foreignLand(s, '河南府洛阳县（京畿）')]; });
   if (fl.join() !== 'true,false') bad.push('扬州（吴）认成后唐的地盘，或洛阳认成别国：' + fl.join());
