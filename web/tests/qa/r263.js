@@ -42,6 +42,15 @@ const path = require('path');
     { const s = mk('皇帝', 1100); s.idm = 'emperor'; s.household = [{ name: '赵氏', relation: '女', age: 16 }]; const w1 = dipMarryKid(s, '辽'), w2 = dipMarryKid(s, '夏'); R.kid = [w1, w2, s.household[0].marriedTo]; }
     // 科举：一张表——宋初每年、1271 起元初停科、西晋不能绕中正举孝廉、1384 明有乡试
     { R.ex = [examSched(1000), examSched(1069), examSched(1275), examPlan(1384).sys, examPlan(300).sys]; const s = mk('读书人', 300, '晋'); s.renown = 100; R.xl = [examRecommend(s), ORGMSG]; }
+    // 身份识别：新郎官不是官、同平章事是官、太监是宦、宋节度使不管地方
+    { const f = (r, y) => { const d = identityOf(mk(r, y)); return [d.tags.join(''), d.admin]; }; R.id = [f('新郎官', 1100), f('同平章事', 1000), f('内侍省太监', 1600), f('武宁军节度使', 1000)[1], f('河东节度使', 850)[1]]; }
+    // 爵位：清全称降等、明亲王嫡长照袭、将军一代降一等；夺嫡输了收封地
+    { const q = mk('世子', 1700, '清'), m = mk('世子', 1500, '明'); R.title = [heirTitle(q, '和硕亲王'), heirTitle(q, '固山贝子'), heirTitle(m, '晋王'), heirTitle(m, '镇国将军')];
+      const z = mk('皇子', 1500, '明'); const Rr = royalOf(z) || (z.royal = { favor: 40, faction: 10, suspect: 60 }); Rr.fief = { place: '太原', at: true }; Rr.guard = 3000; royalLose(z, Rr, 18000); R.lose = [Rr.guard, !!(Rr.fief && Rr.fief.stripped)]; }
+    // 皇后不再入宫、不再另嫁
+    { const h = mk('皇后', 1500, '明'); h.protagonist.gender = '女'; R.hou = [palaceEnter(h), ORGMSG]; }
+    // 外放：汉代授太守、品级跟着改
+    { const o = mk('尚书郎', 100, '东汉'); o.career = { office: '尚书郎', rank: '四百石' }; o.org = null; let line = null; for (let k = 0; k < 30 && !/外放/.test(arr(o.careerLog).map(x => x.what).join()); k++) { o.clock.y = 100 + k; offOf(o).kc = 100; offOf(o).tfY = null; try { line = transferAct(o, 'out'); } catch (e) { line = 'err ' + e.message; } } R.tf = [o.career.office, o.career.rank]; }
     return R; });
   const bad = [];
   if (/虚拟|真人/.test(r.mark)) bad.push('正文还标虚拟、真人：' + r.mark);
@@ -65,6 +74,16 @@ const path = require('path');
   if (r.kid[0] !== '赵氏' || r.kid[1] || r.kid[2] !== '辽') bad.push('联姻没真嫁出子女、或同一个女儿嫁两家：' + JSON.stringify(r.kid));
   if (!r.ex[0] || r.ex[1] || r.ex[2] || r.ex[3] !== '明清' || r.ex[4] !== '九品中正') bad.push('科举排期不对（宋初、1069、1275、1384、300）：' + JSON.stringify(r.ex));
   if (r.xl[0] || !/中正/.test(r.xl[1])) bad.push('西晋绕过中正举孝廉：' + JSON.stringify(r.xl));
+  if (r.id[0][0] === '官' || r.id[1][0] !== '官' || r.id[2][0] !== '宦' || r.id[3] === 'realm' || r.id[3] === 'local' || !/realm|local/.test(r.id[4])) bad.push('官名认定不对：' + JSON.stringify(r.id));
+  if (r.title.join() !== '多罗郡王,奉恩镇国公,晋王,辅国将军') bad.push('爵位降等不对：' + r.title.join());
+  if (r.lose[0] !== 0 || !r.lose[1]) bad.push('夺嫡输了没收封地护卫：' + JSON.stringify(r.lose));
+  if (r.hou[0] !== null) bad.push('皇后还能应选入宫');
+  if (!/太守|县令|县长/.test(r.tf[0]) || /知州|知府/.test(r.tf[0])) bad.push('汉代外放授了知州：' + JSON.stringify(r.tf));
+  // 真点「改考明经」
+  await p.evaluate(() => { const s = newSave({ name: '李生', gender: '男', age: 20, role: '读书人', gregorianYear: 700, month: 5, day: 1, place: '长安', polity: '唐' }); s.exam = { lv: '举人', log: [] }; S = s; VIEW = 'game'; SIDE_FOLD = false; TAB = 'career'; render0(); });
+  if (!(await p.$('#bExamTrack'))) await p.evaluate(() => { for (const t of ['skill', 'board', 'estate', 'trade']) { TAB = t; render0(); if (document.querySelector('#bExamTrack')) return; } });
+  if (!(await p.$('#bExamTrack'))) bad.push('唐代举人看不到「改考明经」');
+  else { await p.click('#bExamTrack'); await p.waitForTimeout(300); const t = await p.evaluate(() => S.exam.track); if (t !== '明经') bad.push('点了改考明经没改：' + t); }
   if (errs.length) bad.push(...errs);
   console.log('ERRS', JSON.stringify(bad)); await b.close(); process.exit(bad.length ? 1 : 0);
 })();
