@@ -44,6 +44,9 @@ const path = require('path');
   if (!(fp.pw[0] > fp.pw[1])) bad.push('一个宰相的派系势力不比两个小吏大：' + fp.pw.join());
   if (!fp.tab) bad.push('看不到对付朋党的按钮');
   else { await p.click('[data-facact="贬谪"]'); await p.waitForTimeout(300); const h = await p.evaluate(() => S.org.nodes[0].posts[0].holder); if (h) bad.push('点了贬谪党首，宰相还在任：' + h); }
+  // 舆图：932 年蔡州、颍州归后唐（内置史料以前漏了，染成吴）
+  const cz = await p.evaluate(() => { const R = realmsAt(932, 5); return [114.35, 115.81].map((x, i) => (R.of(x, [33.0, 32.89][i]) || {}).name); });
+  if (cz.join() !== '后唐,后唐') bad.push('932年蔡州、颍州没归后唐：' + cz.join());
   if (errs.length) bad.push(...errs);
   console.log('ERRS', JSON.stringify(bad)); await b.close(); process.exit(bad.length ? 1 : 0);
 })();
