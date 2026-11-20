@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261119233847';
+const BUILD = '20261120230947';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -17233,7 +17233,7 @@ function renderGame() {
       ${!BUSY ? pressHtml(s) : ''}${!BUSY ? (L0 => L0.length ? `<div class="goalbar acts" title="你这个身份眼下能办的事：点一下写进框里，可以改了再发">${L0.map(([k, t]) => `<button class="goal" data-write="${esc(t)}"><b>${esc(k)}</b>${esc(t)}</button>`).join('')}</div>` : '')(roleActions(s)) : ''}${!BUSY && s.agenda && s.agenda.ym === Math.floor(ymOf(s.clock)) && arr(s.agenda.items).length ? `<div class="goalbar agenda" title="这个月手头的事：照着做也行，不理也行；点一下写进框里">${s.agenda.items.map(g => `<button class="goal" data-write="${esc(g.text)}" title="${esc((g.why || '') + (g.who ? '（' + g.who + '）' : ''))}"><b>${esc(g.kind || '')}</b>${esc(g.text)}</button>`).join('')}</div>` : ''}
       
       <div class="composer">
-        <textarea id="said" rows="${matchMedia('(max-width: 520px)').matches ? 2 : 3}" placeholder="${matchMedia('(max-width: 520px)').matches ? '你做什么、说什么；想问什么直接问' : '戏里：写你做什么、说什么、吩咐谁。戏外：直接问（这时候米价多少？去扬州要几天？）。什么都不写直接发＝照常过几天。Ctrl+回车发出。'}"></textarea>
+        <textarea id="said" rows="${matchMedia('(max-width: 520px)').matches ? 2 : 3}" placeholder="${matchMedia('(max-width: 520px)').matches ? '你做什么、说什么；想问什么直接问' : '戏里：写你做什么、说什么、吩咐谁。戏外：直接问（这时候米价多少？去扬州要几天？）。什么都不写直接发＝照常过几天。回车发出（Shift+回车换行）。'}"></textarea>
         <div class="row">
           <label class="muted" for="span">这一回过多久</label>
           <select id="span"><option value="auto">按剧情</option><option value="xun">一旬</option><option value="month">一个月</option><option value="season">一季</option><option value="year">一年</option></select>
@@ -18053,7 +18053,7 @@ document.addEventListener('change', e => { if (e.target && e.target.id === 'rost
 document.addEventListener('input', keepCustom); document.addEventListener('change', keepCustom);
 document.addEventListener('toggle', e => { if (e.target && e.target.id === 'dCustom') CUSTOM_OPEN = e.target.open; }, true);
 document.addEventListener('keydown', e => {
-  if (e.target.id === 'said' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#bSend').click(); }
+  if (e.target.id === 'said' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#bSend').click(); }   // 回车直接发出（Shift+回车才换行；2026-11-20 项目主人：玩家本能按回车，以前没反应）
   if ((e.target.id === 'kIn' || e.target.id === 'kModel') && e.key === 'Enter') { e.preventDefault(); const b = $('#bKeySave'); if (b) b.click(); }
   if ((e.target.id === 'aPw' || e.target.id === 'aName') && e.key === 'Enter') { e.preventDefault(); const b = $('#bLogin'); if (b) b.click(); }
   if (e.target.id === 'regenNote' && e.key === 'Enter') { e.preventDefault(); const b = $('#bRegenGo'); if (b) b.click(); }
@@ -18067,6 +18067,7 @@ document.addEventListener('click', async e => {
       if (b.dataset.bookdl) { try { await downloadBook(b.dataset.bookdl); } catch (er) { ERRMSG = '没下载成：' + er.message; render(); } return; }
       if (b.dataset.bookclear) { ARC.clearBook(S, b.dataset.bookclear); render(); return; }
     } }
+  const scrollMapPanel = () => { try { const n = MAPZ.sel; if (!n) return; const el = [...document.querySelectorAll('.affair')].find(x => { const b = x.querySelector('b'); return b && b.textContent === n; }); if (el) el.scrollIntoView({ block: 'nearest' }); } catch (_) {} };   // 选中一处后详情滚进视野
   { const sb = e.target.closest && e.target.closest('[data-shop]'); if (sb && S && !BUSY) { shopDo(S, sb.dataset.n, sb.dataset.shop, (($(`[data-shopamt="${CSS.escape(sb.dataset.n)}"]`) || {}).value || '')); try { await store.save(S); } catch (_) {} render(); return; } }
   { const ab = e.target.closest && e.target.closest('[data-aim]'); if (ab && S) { const v = one((($('[data-aimin]') || {}).value || '').trim(), 80); S.aim = v; S.aimAt = S.turn; if (v) aimKeep(S); else S.goals = arr(S.goals).filter(g => !g.fixed); try { await store.save(S); } catch (_) {} render(); return; } }
   { const cb = e.target.closest && e.target.closest('[data-city]');
@@ -18078,7 +18079,7 @@ document.addEventListener('click', async e => {
     if (sv && S && MAPC.box && !e.target.closest('[data-mapu],[data-mapprov],[data-mapgo],[data-mapnear],[data-mapforce],[data-mapfig],[data-mapview],.mctl,.mlayers')) { const B = MAPC.box, r = sv.getBoundingClientRect(), X = (e.clientX - r.left) / r.width * B.W, Y = (e.clientY - r.top) / r.height * B.H;
       MAPZ.pt = { lon: B.x0 + (X - 10) / (B.W - 20) * (B.x1 - B.x0), lat: B.y1 - (Y - 10) / (B.H - 20) * (B.y1 - B.y0) }; MAPZ.sel = '';
       // 点在一个府州的地面上就选中这个府州（2026-11-05 玩家：「非常难点」）：有界址的照界址，没有的取近处的治所；点在空地上照旧是「这里」
-      try { const M = mapUnits(S), P = MAPZ.pt, PL0 = M.poly, inP = PL0 ? M.L2.find(u => u.poly && polyAt(PL0, P.lon, P.lat) === u.poly) : null; let best = inP, bd = (B.x1 - B.x0) / 18; if (!best) for (const u of M.L2.concat(M.C)) { const d = Math.hypot(u.lon - P.lon, u.lat - P.lat); if (d < bd) { bd = d; best = u; } } if (best && MAPZ.mode !== 'world') { MAPZ.sel = best.n; MAPZ.pt = null; } } catch (_) { /* 照旧 */ }   // 县城也能点着选（2026-11-20 项目主人：交互补漏）
+      try { const M = mapUnits(S), P = MAPZ.pt, PL0 = M.poly, inP = PL0 ? M.L2.find(u => u.poly && polyAt(PL0, P.lon, P.lat) === u.poly) : null; let best = inP, bd = (B.x1 - B.x0) / 18; if (!best) for (const u of M.L2.concat(M.C)) { const d = Math.hypot(u.lon - P.lon, u.lat - P.lat); if (d < bd) { bd = d; best = u; } } if (best && MAPZ.mode !== 'world') { MAPZ.sel = best.n; MAPZ.pt = null; setTimeout(scrollMapPanel, 40); } } catch (_) { /* 照旧 */ }   // 县城也能点着选（2026-11-20 项目主人：交互补漏）
       render(); return; } }
   { const fm = e.target.closest && e.target.closest('[data-mapfig]'); if (fm && S && !(MAPG.drag && Date.now() - MAPG.drag < 400)) { const nm = fm.dataset.mapfig, M = mapUnits(S), p0 = placeXY(S, nm, S.clock.y); let best = null, bd = 9;
       if (p0 && p0.lat != null) for (const u of M.L2.concat(M.C)) { const d = Math.hypot(u.lon - p0.lon, u.lat - p0.lat); if (d < bd) { bd = d; best = u; } } MAPZ.sel = best ? best.n : nm; MAPZ.pt = null; render(); return; } }
@@ -18093,7 +18094,7 @@ document.addEventListener('click', async e => {
       else if (g.dataset.mapview === 'near') { const h = hereXY(S); if (h) { MAPZ.mode = 'near'; MAPZ.c = { lon: +h.lon, lat: +h.lat }; MAPZ.sel = ''; MAPZ.nearName = geoCenter(S); MAPZ.follow = true; } }
       else if (g.dataset.mapprov) { MAPZ.mode = 'prov'; MAPZ.prov = g.dataset.mapprov; MAPZ.sel = ''; }
       else if (g.dataset.mapnear) { if (g.dataset.tab) { TAB = 'map'; MAPZ.inited = true; } const M = mapUnits(S), n = g.dataset.mapnear, u = M.L2.concat(M.C, Object.values((M.A && M.A.counties) || {}).flat()).find(x => x.n === n && x.lat) || (() => { const x = geoData().find(x => x.name === n && x.lat); return x ? { lon: x.lon, lat: x.lat } : null; })(); if (u) { MAPZ.mode = 'near'; MAPZ.prov = ''; MAPZ.sel = n; MAPZ.nearName = n; MAPZ.c = { lon: u.lon, lat: u.lat }; MAPZ.follow = false; MAPZ.span = Math.min(num(MAPZ.span) || 1.2, 1.2); } }
-      else if (g.dataset.mapu) { MAPZ.sel = MAPZ.sel === g.dataset.mapu ? '' : g.dataset.mapu; MAPZ.pt = null; }
+      else if (g.dataset.mapu) { MAPZ.sel = MAPZ.sel === g.dataset.mapu ? '' : g.dataset.mapu; MAPZ.pt = null; render(); scrollMapPanel(); return; }   // 点完把详情滚进视野（小窗时面板在折叠线下，以前点了像没反应）
       else if (g.dataset.mapgoto) { const keep = MAPZ.from; MAPZ.from = ''; MAPC.rt = null; const R = selRoute(S), pid = ($('[data-mappace]') || {}).value || 'normal', o = R && R.ok ? arr(R.opts).find(x => x.id === pid && x.allowed) || arr(R.opts).find(x => x.allowed) : null; MAPZ.from = keep; MAPC.rt = null;
         const line = `动身去${MAPZ.sel}${R && R.ok ? `（约${R.li}里${R.via.length ? '，取道' + R.via.join('、') : ''}${o ? '，' + o.name + '约' + o.days + '日' : ''}）` : ''}。`; const box = $('#said'); if (box) { box.value = (box.value ? box.value.replace(/\s*$/, '') + '\n' : '') + line; try { lsSet('hrpg:draft', box.value); } catch (_) {} } ORGMSG = '已写进下一步：' + line; }
       else if (g.dataset.mapgo) { const f = ($('[data-mapf]') || {}).value || (arr(S.forces).find(x => myForce(S, x)) || {}).name; MAPZ.from = f || ''; MAPC.rt = null; const R = selRoute(S), pid = ($('[data-mappace]') || {}).value || 'normal', o = R && R.ok ? arr(R.opts).find(x => x.id === pid && x.allowed) || arr(R.opts).find(x => x.allowed) : null; if (armyAct(S, 'march', { force: f, target: MAPZ.sel, mode: g.dataset.mapgo, via: R && R.ok ? R.via : [], days: o && o.days, paceName: o && o.name, li: R && R.ok ? R.li : null })) try { await store.save(S); } catch (_) {} }
