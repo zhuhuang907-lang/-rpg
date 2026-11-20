@@ -38,6 +38,10 @@ const path = require('path');
     // 藩属叛乱：成战争、原地盘随他去
     { const s = mk('皇帝', 934, '后唐'); s.idm = 'emperor'; s.forces = [{ name: '凤翔军', leader: '李从珂', troops: 20000, at: '凤翔府' }]; s.territory = [{ place: '凤翔府' }, { place: '洛阳' }]; s.people = { 李从珂: { favor: -100, traits: ['野心'], warned: true, warnYM: Math.floor(ymOf(s.clock)) - 3 } };
       let o = []; for (let k = 0; k < 12 && !arr(s.wars).length; k++) { s.clock.m = 1 + k; o = vassalTick(s, 3); } R.rev = [arr(s.wars).map(w => w.with + w.state).join(), s.territory.map(t => t.place).join(), s.forces[0].owner]; }
+    // 外交：联姻真嫁出一个子女、再联姻没人可嫁；藩属交战不纳贡；纳币看对方家底
+    { const s = mk('皇帝', 1100); s.idm = 'emperor'; s.household = [{ name: '赵氏', relation: '女', age: 16 }]; const w1 = dipMarryKid(s, '辽'), w2 = dipMarryKid(s, '夏'); R.kid = [w1, w2, s.household[0].marriedTo]; }
+    // 科举：一张表——宋初每年、1271 起元初停科、西晋不能绕中正举孝廉、1384 明有乡试
+    { R.ex = [examSched(1000), examSched(1069), examSched(1275), examPlan(1384).sys, examPlan(300).sys]; const s = mk('读书人', 300, '晋'); s.renown = 100; R.xl = [examRecommend(s), ORGMSG]; }
     return R; });
   const bad = [];
   if (/虚拟|真人/.test(r.mark)) bad.push('正文还标虚拟、真人：' + r.mark);
@@ -58,6 +62,9 @@ const path = require('path');
   if (r.tech) bad.push('唐代玉米传进来了');
   if (r.gift) bad.push('没钱也随了份子');
   if (!/李从珂叛军交战/.test(r.rev[0]) || /凤翔/.test(r.rev[1]) || r.rev[2] !== '李从珂叛军') bad.push('怨深的部将起兵没成战争、地盘没随他去：' + JSON.stringify(r.rev));
+  if (r.kid[0] !== '赵氏' || r.kid[1] || r.kid[2] !== '辽') bad.push('联姻没真嫁出子女、或同一个女儿嫁两家：' + JSON.stringify(r.kid));
+  if (!r.ex[0] || r.ex[1] || r.ex[2] || r.ex[3] !== '明清' || r.ex[4] !== '九品中正') bad.push('科举排期不对（宋初、1069、1275、1384、300）：' + JSON.stringify(r.ex));
+  if (r.xl[0] || !/中正/.test(r.xl[1])) bad.push('西晋绕过中正举孝廉：' + JSON.stringify(r.xl));
   if (errs.length) bad.push(...errs);
   console.log('ERRS', JSON.stringify(bad)); await b.close(); process.exit(bad.length ? 1 : 0);
 })();

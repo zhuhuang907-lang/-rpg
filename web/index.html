@@ -1709,7 +1709,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120181952';
+const BUILD = '20261120192732';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -3515,11 +3515,8 @@ function histTick(s) {
   return out;
 }
 /* ---------- 科举、察举照史书的日子自己举行：到了殿试的月份，照博查查这一科真实的进士名录，记进人选和天下（查不到真人的才补虚构的） ---------- */
-function examSched(y) {
-  if (y >= 1385 && y <= 1904) return y % 3 === 2 ? (y >= 1644 ? 4 : 3) : 0;   // 明清会试、殿试在丑辰未戌年，清四月、明三月殿试
-  if (y >= 1315 && y <= 1367) return (y - 1315) % 3 === 0 ? 3 : 0;
-  if (y >= 1067 && y <= 1279) return (y - 1067) % 3 === 0 ? 3 : 0;
-  if (y >= 622 && y <= 1066) return 2;   // 唐五代宋初每年春闱
+function examSched(y) {   // 这一年京城开不开大比、几月：照 examPlan 同一张表算（R-263：两套排期，宋初、元初打架）
+  { const P = examPlan(y), top = arr(P.steps).slice().reverse().find(st => st.at && /京|大都|师/.test(st.at) && st.every(y)); if (P.steps.length) return top ? (P.sys === '明清' && y >= 1644 ? 4 : top.m) : 0; if (P.sys !== '察举') return 0; }
   if (y >= -134 && y <= 219) return 11;   // 两汉岁举孝廉，年终上计时
   return 0;
 }
@@ -5870,10 +5867,13 @@ function tradeTab(s) {
  *  隋以前没有科举，走察举：名声够了求郡守举孝廉、州举茂才。报考了到月份程序照文墨、读书的月数定中不中（中榜本来就难），中了改功名、履历、身份；进士由程序授官（明清回避本省） ========== */
 const EXAM_LV = ['童生', '生员', '举人', '贡士', '进士'];
 function examPlan(y) {
-  if (y >= 1385 && y <= 1904) return { sys: '明清', steps: [{ to: '生员', name: '院试', m: 3, every: () => true, at: '府城' }, { to: '举人', name: '乡试', m: 8, every: yy => yy % 3 === 1, at: '省城' }, { to: '贡士', name: '会试', m: y >= 1644 ? 3 : 2, every: yy => yy % 3 === 2, at: '京师' }, { to: '进士', name: '殿试', m: y >= 1644 ? 4 : 3, every: yy => yy % 3 === 2, at: '京师', sure: true }] };
+  if (y >= 1384 && y <= 1904) return { sys: '明清', steps: [{ to: '生员', name: '院试', m: 3, every: () => true, at: '府城' }, { to: '举人', name: '乡试', m: 8, every: yy => yy % 3 === 1, at: '省城' }, { to: '贡士', name: '会试', m: y >= 1644 ? 3 : 2, every: yy => yy % 3 === 2, at: '京师' }, { to: '进士', name: '殿试', m: y >= 1644 ? 4 : 3, every: yy => yy % 3 === 2, at: '京师', sure: true }] };
   if (y >= 1315 && y <= 1367) return { sys: '元', steps: [{ to: '举人', name: '乡试', m: 8, every: yy => (yy - 1314) % 3 === 0, at: '省城' }, { to: '贡士', name: '会试', m: 2, every: yy => (yy - 1315) % 3 === 0, at: '大都' }, { to: '进士', name: '殿试', m: 3, every: yy => (yy - 1315) % 3 === 0, at: '大都', sure: true }] };
-  if (y >= 960 && y <= 1279) return { sys: '宋', steps: [{ to: '举人', name: '解试', m: 8, every: yy => (yy - 1066) % 3 === 0, at: '州城' }, { to: '贡士', name: '省试', m: 2, every: yy => (yy - 1067) % 3 === 0, at: '京师' }, { to: '进士', name: '殿试', m: 3, every: yy => (yy - 1067) % 3 === 0, at: '京师', sure: true }] };
-  if (y >= 605 && y <= 959) return { sys: '隋唐五代', steps: [{ to: '举人', name: '乡贡（州县试）', m: 10, every: () => true, at: '州城' }, { to: '进士', name: '省试（礼部试）', m: 2, every: () => true, at: '京师' }] };
+  if (y >= 1271 && y <= 1314) return { sys: '元', steps: [] };   // 元初停科举（1271 起算元，1315 才开科；R-263：以前 1271—1279 还照宋制）
+  if (y >= 960 && y <= 1270) return { sys: '宋', steps: [{ to: '举人', name: '解试', m: 8, every: yy => yy < 1066 ? true : (yy - 1066) % 3 === 0, at: '州城' }, { to: '贡士', name: '省试', m: 2, every: yy => yy < 1067 ? true : (yy - 1067) % 3 === 0, at: '京师' }, { to: '进士', name: '殿试', m: 3, every: yy => yy < 1067 ? true : (yy - 1067) % 3 === 0, at: '京师', sure: true }] };
+  if (y >= 605 && y <= 959) return { sys: '隋唐五代', steps: [{ to: '举人', name: '乡贡（州县试）', m: 10, every: () => true, at: '州城' }, { to: '进士', name: '省试（礼部试）', m: 2, every: () => true, at: '京师' }], tracks: y >= 618 ? ['进士', '明经'] : ['进士'], zhiju: y >= 618 };   // 唐常科有明经、进士两科，另有天子临时开的制举（R-263）
+  if (y >= 589 && y <= 604) return { sys: '隋', steps: [] };   // 隋初还没开进士科（605 才有），也不再九品中正
+  if (y >= 220 && y <= 588) return { sys: '九品中正', steps: [] };
   return { sys: '察举', steps: [] };
 }
 const examOf = s => s.exam = s.exam || { lv: '童生', log: [], studyFrom: null };
@@ -5954,6 +5954,7 @@ function examPost(s, rank, out) {
 function examRecommend(s) {
   if (isFem(s)) { ORGMSG = '察举只举男子'; return null; }
   if (examBar(s)) { ORGMSG = examBar(s); return null; }
+  { const P0 = examPlan(s.clock.y); if (P0.sys === '九品中正') { ORGMSG = '魏晋南北朝选官照九品中正：先请中正品评定乡品，孝廉只是中正之下的旁路'; return null; } if (P0.sys === '隋') { ORGMSG = '隋已废九品中正、还没开进士科：走门荫、入幕、从军，或等大业年间开科'; return null; } }   // R-263：220—588 绕过中正举孝廉、589—604 隋制断裂
   if (examPlan(s.clock.y).steps.length) { ORGMSG = '这个年代走科举'; return null; } const E = examOf(s), ren = s.renown || 0, now = Math.floor(ymOf(s.clock));
   if (E.askYm != null && now - E.askYm < 12) { ORGMSG = '今年已经求过了，郡里一年只举一两人'; return null; } E.askYm = now;
   const ok = seeded(now * 37 + ren) < Math.min(0.6, 0.05 + ren / 200), line = ok ? '郡守举你为孝廉，入京候选' : '郡守这一回举了别人（名声还不够响，或者没有门路）';
@@ -11732,13 +11733,15 @@ function dipMonthly(s) {
     if (D.pend && ym >= D.pend.due) { const A = D.pend.act, score = D.att + Math.min(20, (num(s.renown) || 0) / 50) + (ratio >= 3 ? 25 : ratio >= 1.5 ? 10 : ratio < 0.5 ? -20 : ratio < 0.8 ? -8 : 0) + (rnd - 0.5) * 30; let ok = false, t = '';
       if (A === '修好') { ok = true; const g = Math.round(8 + Math.max(0, score) / 8); D.att = Math.min(100, D.att + g); t = `${name}收下礼物，回书致意`; }
       else if (A === '结盟') { ok = score >= 40 && !arr(s.wars).some(w => w.state === '交战' && w.allyOf === name); t = ok ? `${name}答应结盟，约为唇齿` : `${name}婉拒结盟（对你还不够信得过）`; if (ok) { D.ties = [...new Set(D.ties.concat(['盟']))]; D.att = Math.min(100, D.att + 10); } }
-      else if (A === '联姻') { ok = score >= 25; t = ok ? `${name}允婚，两家结为姻亲` : `${name}推说时机未到，婚事作罢`; if (ok) { D.ties = [...new Set(D.ties.concat(['姻']))]; D.att = Math.min(100, D.att + 20); } }
+      else if (A === '联姻') { ok = score >= 25; t = ok ? `${name}允婚，两家结为姻亲` : `${name}推说时机未到，婚事作罢`; if (ok) { const who = dipMarryKid(s, name); if (!who) { ok = false; t = '家里已没有适龄未婚的子女，婚事作罢'; } else { D.ties = [...new Set(D.ties.concat(['姻']))]; D.att = Math.min(100, D.att + 20); t += `（${who}${/女/.test(who) ? '远嫁过去' : '娶了对方的女儿'}）`; } } }
       else if (A === '称臣') { ok = (ratio >= 3 && score >= 10) || (ratio >= 5 && score >= -20); t = ok ? `${name}畏你兵威，上表称臣、岁岁纳贡` : `${name}不肯称臣，反把你的使者羞辱一番`; if (ok) { D.ties = [...new Set(D.ties.concat(['臣属']))]; } else D.att = Math.max(-100, D.att - 15); }
       else if (A === '互市') { ok = score >= 10; t = ok ? `${name}答应开边互市` : `${name}不肯互市`; if (ok) D.ties = [...new Set(D.ties.concat(['互市']))]; }
       D.log = arr(D.log).concat([{ ym, t }]).slice(-12); D.pend = null; out.push(t); }
     // 纳贡、互市：照你自己一年的进项折算——他的州数比你的州数，纳贡一成、互市百分之一（底账没推出来就不进账）
     if (rev) { const k = prefsOf(P) / myPrefs(s);
-      if (D.ties.includes('臣属')) { const g = Math.round(rev * 0.1 * Math.min(3, k) / 12 * CONTRACT[D.contract || '常'][0] * (1 + (lawsOf(s).crown - 2) * 0.1));   /* 封臣契约、王权（R-146） */ if (g > 0) { if (s.realm && N0(s.realm.treasury) != null) s.realm.treasury = N0(s.realm.treasury) + g; else cashAdd(s, g); D.gain = (D.gain || 0) + g; } }
+      if (D.ties.includes('臣属') && warOf(s, name)) { D.ties = D.ties.filter(x => x !== '臣属'); D.was = [...new Set(arr(D.was).concat(['臣属']))]; out.push(`${name}与你开战，断了朝贡，算是叛离了`); }   // 交战还纳贡（R-263）
+      else if (D.ties.includes('臣属')) { const g = Math.round(rev * 0.1 * Math.min(3, k) / 12 * CONTRACT[D.contract || '常'][0] * (1 + (lawsOf(s).crown - 2) * 0.1));   /* 封臣契约、王权（R-146） */ if (g > 0) { if (s.realm && N0(s.realm.treasury) != null) s.realm.treasury = N0(s.realm.treasury) + g; else cashAdd(s, g); D.gain = (D.gain || 0) + g;
+        if ((s.clock.m || 1) === 1 && D.envoyY !== s.clock.y) { D.envoyY = s.clock.y; const back = Math.round(g * 12 * 0.1); if (s.realm && N0(s.realm.treasury) != null) s.realm.treasury = N0(s.realm.treasury) - back; out.push(`${name}遣使来朝，贡上方物；照例回赐约${fmtN(back, (s.money || {}).unit || '')}，使者辞归`); D.log = arr(D.log).concat([{ ym, t: `${s.clock.y}年正月遣使来朝` }]).slice(-12); } } }   /* 朝贡有使团、有回赐（R-263） */
       if (D.ties.includes('互市')) { const g = Math.round(rev * 0.01 * Math.min(2, k) / 12); if (g > 0) { if (s.realm && N0(s.realm.treasury) != null) s.realm.treasury = N0(s.realm.treasury) + g; else cashAdd(s, g); D.gain = (D.gain || 0) + g; } } }
     // 态度慢慢回到常态（结了盟、姻亲的回到偏好）
     const base = D.ties.includes('盟') || D.ties.includes('姻') ? 30 : D.ties.includes('臣属') ? 10 : 0; if (!warOf(s, name)) D.att = Math.round(D.att + (base - D.att) * 0.05);
@@ -11750,6 +11753,9 @@ function dipMonthly(s) {
   return out;
 }
 /** 你宣战时，结了盟、态度友好的跟着出兵 */
+/** 联姻真把一个子女嫁过去（R-263：同一个女儿本月嫁吴、下月嫁越，子女名册里还是没嫁）：挑一个适龄未婚的，记婚配、女儿迁居对方 */
+function dipMarryKid(s, name) { const k = arr(s.household).find(m => m && /子|女/.test(m.relation || '') && !/孙/.test(m.relation || '') && !m.dead && (num(m.age) == null || (num(m.age) >= 13 && num(m.age) <= 35)) && !/妻|夫|已嫁|已娶/.test(m.note || '') && !m.marriedTo); if (!k) return '';
+  const fem = /女/.test(k.relation || ''); k.marriedTo = name; k.marriedYM = Math.floor(ymOf(s.clock)); k.note = (k.note ? k.note + '；' : '') + (fem ? `已嫁${name}` : `已娶${name}之女`); if (fem) k.where = name; return k.name || k.relation; }
 function dipAllies(s, enemy) { return Object.entries(s.diplo || {}).filter(([n, D]) => n !== enemy && D.ties.includes('盟') && D.att >= 20).map(([n]) => n); }
 function diploHtml(s) {
   const role = dipRole(s); if (role === 'outlaw') return lulinHtml(s); if (role !== 'realm') return '';
@@ -11802,7 +11808,7 @@ function warPeace(s, owner, term, agreed) {
   if (!ok) return lifeNote(s, '军国', `遣使往${owner}议和（${term === '称臣' ? '令其称臣' : term === '纳币' ? '令其纳币' : '罢兵'}），对方不肯`);
   w.state = '议和'; w.end = ym; s.truce = { ...(s.truce || {}), [owner]: ym + 24 };   /* 两年停战（R-139） */ const P = arr(s.powers).find(p => p && (p.name === owner || String(owner).includes(p.name)));
   if (P) P.stance = term === '称臣' ? '臣属' : '和'; if (s.diplo && s.diplo[owner]) { const D = s.diplo[owner]; D.att = term === '罢兵' ? -20 : -35; if (term === '称臣') D.ties = [...new Set(D.ties.concat(['臣属']))]; }
-  let ceded = ''; if (term === '割地') { const F = warFronts(s, owner); if (F.length) { ceded = F[0].b; s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(ceded)] = { owner: '你', turn: s.turn, why: '割让' }; if (!arr(s.territory).some(x => samePlace(x.place, ceded))) s.territory = arr(s.territory).concat([{ place: ceded, pop: null, troops: null, grain: null, loyalty: 30, note: `${owner}割让` }]); } } if (term === '纳币') { const g = Math.round(((s.realm && N0(s.realm.revenue)) || 100000) * 0.05); if (s.realm && N0(s.realm.treasury) != null) s.realm.treasury = N0(s.realm.treasury) + g; else cashAdd(s, g); }
+  let ceded = ''; if (term === '割地') { const F = warFronts(s, owner); if (F.length) { ceded = F[0].b; s.mapOwn = s.mapOwn || {}; s.mapOwn[geoStem(ceded)] = { owner: '你', turn: s.turn, why: '割让' }; if (!arr(s.territory).some(x => samePlace(x.place, ceded))) s.territory = arr(s.territory).concat([{ place: ceded, pop: null, troops: null, grain: null, loyalty: 30, note: `${owner}割让` }]); } } if (term === '纳币') { const Pw = arr(s.powers).find(p => p && (p.name === owner || String(owner).includes(p.name))), myRev = (s.realm && N0(s.realm.revenue)) || 0, theirs = myRev ? myRev * Math.min(3, Math.max(0.1, (N0(Pw && Pw.troops) || powTroopsGuess(s, owner)) / Math.max(1, myTroopsAll(s)))) : (N0(Pw && Pw.troops) || powTroopsGuess(s, owner)) * 3, sc = Math.max(1, warScore(w)), g = Math.round(theirs * Math.min(0.3, 0.04 * sc));   /* 赔多少看对方家底、战局（R-263：大国小国一律五千） */ if (s.realm && N0(s.realm.treasury) != null) s.realm.treasury = N0(s.realm.treasury) + g; else cashAdd(s, g); }
   return lifeNote(s, '军国', `与${owner}议和：${term === '割地' ? `${owner}割让${ceded}` : term === '称臣' ? `${owner}称臣纳贡` : term === '纳币' ? `${owner}纳币求和` : '各自罢兵'}`);
 }
 function warMonthly(s) {
@@ -12133,7 +12139,7 @@ async function parley(s, kind, tg, ask, said) {
   s.talkLog = arr(s.talkLog).concat([{ ym, turn: s.turn || 0, kind, tg, ask: ask || '', who: X.who, said: cut(said, 200), yes, reply, why }]).slice(-30);
   let res = '';
   if (yes) {
-    if (kind === 'dip') { const D = dipOf(s, tg); if (ask === '修好') D.att = Math.min(100, D.att + 15); else { D.ties = [...new Set(D.ties.concat([ask === '结盟' ? '盟' : ask === '称臣' ? '臣属' : ask === '联姻' ? '姻' : '互市']))]; D.att = Math.min(100, D.att + (ask === '联姻' ? 20 : ask === '结盟' ? 10 : 5)); } D.log = arr(D.log).concat([{ ym, t: `当面说动${tg}：${DIP_ACTS[ask]}` }]).slice(-12); res = `${tg}答应了：${DIP_ACTS[ask]}`; }
+    if (kind === 'dip') { const D = dipOf(s, tg), tie = ask === '结盟' ? '盟' : ask === '称臣' ? '臣属' : ask === '联姻' ? '姻' : '互市', had = D.ties.includes(tie); if (ask === '修好') D.att = Math.min(100, D.att + 15); else if (ask === '联姻' && !had && !dipMarryKid(s, tg)) { /* 没有可嫁娶的子女 */ } else if (!had) { D.ties = [...new Set(D.ties.concat([tie]))]; D.att = Math.min(100, D.att + (ask === '联姻' ? 20 : ask === '结盟' ? 10 : 5)); }   /* 已有这层关系的再说一遍不再加好感（R-263：当面说联姻每月+20） */ D.log = arr(D.log).concat([{ ym, t: `当面说动${tg}：${DIP_ACTS[ask]}` }]).slice(-12); res = `${tg}答应了：${DIP_ACTS[ask]}`; }
     else if (kind === 'peace') res = warPeace(s, tg, ask, true) || '';
     else if (kind === 'yield') { const f = arr(s.forces).find(x => x.name === tg); res = siegeWin(s, X.c, f, '被说动，开城归降'); }
     else if (kind === 'pris') { s.prisoners = arr(s.prisoners).filter(x => x.name !== tg); s.people = s.people || {}; s.people[tg] = { ...(s.people[tg] || {}), role: '降将', tie: '部将', favor: 20, seen: s.turn }; genOf(s, tg); res = `${tg}归顺，愿为你效力（可以派他统兵）`; }
