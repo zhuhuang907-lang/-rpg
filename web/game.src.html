@@ -15674,7 +15674,9 @@ function applyReply(s, d, said) {
   { const seen = new Map(); s.powers = arr(s.powers).filter(p => { if (!p || !p.name) return false; const k = geoStem(String(p.seat || '').replace(/[（(].*$/, '')) + '|' + String(p.leader || '').replace(/[（(].*$/, ''); if (!p.seat || !p.leader) return true; if (seen.has(k)) return false; seen.set(k, 1); return true; }); }   // 同一个人同一处治所只算一家（「两川」「两川（后蜀）」两条）
   const tr0 = new Map(arr(s.forces).map(f => [f.name, N0(f.troops)])), land0 = new Set(arr(s.territory).map(t => t.place));
   if (Array.isArray(d.territory) && d.territory.length) s.territory = mergeRows(s.territory, rows(d.territory, 40).filter(x => !foreignLand(s, x.place)).map(x => ({ ...x, src: 'AI记账' })), 'place', 60);   // 别国的地方（吴的扬州、孟知祥的成都）记账记不成你的地盘
-  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
+  // 统兵的人记账改不动（R-261：西面行营王思同被记成「王子才」，张从宾被记成「张湛」）：原来的统帅是认得的真人、新名字又是生人，照旧
+  const keepLead = x => { const f = arr(s.forces).find(f => f && f.name === (x.name || x.leader)), o = f && String(f.leader || '').replace(/[（(].*$/, ''), n = String(x.leader || '').replace(/[（(].*$/, ''); if (!o || !n || o === n) return x; const known = v => !!((s.people || {})[v] || figByName(v)); return known(o) && !figByName(n) ? { ...x, leader: f.leader } : x; };
+  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(keepLead).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
   // 兵马、地盘这一回的增减：记进账目，并摆到正文下面（不用翻册子也看得见）
   if (play) {
     const mv = [];
