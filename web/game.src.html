@@ -15678,7 +15678,9 @@ function applyReply(s, d, said) {
   if (Array.isArray(d.territory) && d.territory.length) s.territory = mergeRows(s.territory, rows(d.territory, 40).filter(x => !foreignLand(s, x.place)).map(x => ({ ...x, src: 'AI记账' })), 'place', 60);   // 别国的地方（吴的扬州、孟知祥的成都）记账记不成你的地盘
   // 统兵的人记账改不动（R-261：西面行营王思同被记成「王子才」，张从宾被记成「张湛」）：原来的统帅是认得的真人、新名字又是生人，照旧
   const keepLead = x => { const f = arr(s.forces).find(f => f && f.name === (x.name || x.leader)), o = f && String(f.leader || '').replace(/[（(].*$/, ''), n = String(x.leader || '').replace(/[（(].*$/, ''); if (!o || !n || o === n) return x; const known = v => !!((s.people || {})[v] || figByName(v)); return known(o) && !figByName(n) ? { ...x, leader: f.leader } : x; };
-  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(keepLead).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
+  // 兵马大减只认程序的战报（R-261：正文写「西面行营不战自散」，记账把两路两万多人记成零、整支删掉，凤翔守军也记成零——没有一场程序结算的仗）：没打仗，一回最多减一成五
+  const keepMen = x => { const f = arr(s.forces).find(f => f && f.name === (x.name || x.leader)), o = f && N0(f.troops), n = N0(x.troops); if (o == null || n == null || o <= 0 || n >= o * 0.85) return x; const fought = arr(s.battles).some(b => b && b.turn === s.turn); if (fought) return x; noteErr('记账兵马大减没战报', `${f.name} ${o}→${n}，照记${Math.round(o * 0.85)}`); return { ...x, troops: Math.round(o * 0.85), status: f.status }; };
+  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(keepLead).map(keepMen).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
   // 兵马、地盘这一回的增减：记进账目，并摆到正文下面（不用翻册子也看得见）
   if (play) {
     const mv = [];

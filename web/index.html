@@ -1709,7 +1709,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120170452';
+const BUILD = '20261120172244';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -16776,7 +16776,9 @@ function applyReply(s, d, said) {
   if (Array.isArray(d.territory) && d.territory.length) s.territory = mergeRows(s.territory, rows(d.territory, 40).filter(x => !foreignLand(s, x.place)).map(x => ({ ...x, src: 'AI记账' })), 'place', 60);   // 别国的地方（吴的扬州、孟知祥的成都）记账记不成你的地盘
   // 统兵的人记账改不动（R-261：西面行营王思同被记成「王子才」，张从宾被记成「张湛」）：原来的统帅是认得的真人、新名字又是生人，照旧
   const keepLead = x => { const f = arr(s.forces).find(f => f && f.name === (x.name || x.leader)), o = f && String(f.leader || '').replace(/[（(].*$/, ''), n = String(x.leader || '').replace(/[（(].*$/, ''); if (!o || !n || o === n) return x; const known = v => !!((s.people || {})[v] || figByName(v)); return known(o) && !figByName(n) ? { ...x, leader: f.leader } : x; };
-  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(keepLead).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
+  // 兵马大减只认程序的战报（R-261：正文写「西面行营不战自散」，记账把两路两万多人记成零、整支删掉，凤翔守军也记成零——没有一场程序结算的仗）：没打仗，一回最多减一成五
+  const keepMen = x => { const f = arr(s.forces).find(f => f && f.name === (x.name || x.leader)), o = f && N0(f.troops), n = N0(x.troops); if (o == null || n == null || o <= 0 || n >= o * 0.85) return x; const fought = arr(s.battles).some(b => b && b.turn === s.turn); if (fought) return x; noteErr('记账兵马大减没战报', `${f.name} ${o}→${n}，照记${Math.round(o * 0.85)}`); return { ...x, troops: Math.round(o * 0.85), status: f.status }; };
+  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(keepLead).map(keepMen).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
   // 兵马、地盘这一回的增减：记进账目，并摆到正文下面（不用翻册子也看得见）
   if (play) {
     const mv = [];
