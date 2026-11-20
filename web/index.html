@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120030143';
+const BUILD = '20261120063904';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -6960,7 +6960,7 @@ async function getRuling(s, said) {
       if (sc.offstage && !known.some(n => sc.offstage.includes(n))) sc.offstage = '';
     }
     if (sc) { const t = s.turn + 1; s.shapes = arr(s.shapes).filter(x => x.turn !== t).concat([{ turn: t, type: sc.type, where: one(sc.where, 30), cast: sc.cast.map(x => x.name).join('、') || '无', end: one(sc.end, 40) }]).slice(-6); }
-    const bt = d.battle && typeof d.battle === 'object' && /是|有|真/.test(String(d.battle.fight || '')) ? { enemy: one(d.battle.enemy, 20), enemyTroops: N0(d.battle.enemyTroops), enemyQuality: one(d.battle.enemyQuality, 2), enemySupply: one(d.battle.enemySupply, 2), place: one(d.battle.place, 16), terrain: one(d.battle.terrain, 6), attacker: /敌/.test(d.battle.attacker || '') ? '敌' : '我', surprise: /有|是/.test(d.battle.surprise || ''), ourForces: arr(d.battle.ourForces).map(x => one(x, 20)).filter(Boolean), ourTroops: N0(d.battle.ourTroops), ourSide: one(d.battle.ourSide, 20), ourQuality: one(d.battle.ourQuality, 2), basis: one(d.battle.basis, 60), plan: battlePlan(d.battle.plan) } : null;
+    const bt = d.battle && typeof d.battle === 'object' && /是|有|真/.test(String(d.battle.fight || '')) ? { enemy: one(d.battle.enemy, 20), enemyTroops: N0(d.battle.enemyTroops), enemyQuality: one(d.battle.enemyQuality, 2), enemySupply: one(d.battle.enemySupply, 2), place: one(d.battle.place, 16), terrain: one(d.battle.terrain, 6), attacker: /敌/.test(d.battle.attacker || '') ? '敌' : '我', surprise: /有|是/.test(d.battle.surprise || ''), ourForces: arr(d.battle.ourForces).map(x => one(x, 20)).filter(Boolean), ourTroops: N0(d.battle.ourTroops), ourSide: one(d.battle.ourSide, 20), ourQuality: one(d.battle.ourQuality, 2), basis: one(d.battle.basis, 60), plan: battlePlan(d.battle.plan), tactic: /围而不攻|围困|断其粮|断粮|围城/.test(String((d.battle.plan || {}).name || '') + String(d.battle.tactic || '')) ? '围城' : '' } : null;   // 主角的打法是围困断粮：照真围城走（R-261）
     const acts = arr(d.acts).filter(x => x && x.what).slice(0, 6).map((x, i) => { const t = /问/.test(x.type || '') ? '问' : /计|谋|盘算/.test(x.type || '') ? '计' : /请|申/.test(x.type || '') ? '请' : /试|越|冒/.test(x.type || '') || /越权/.test(x.ok || '') ? '试' : '令'; const o = { tmp: one(x.tmp, 4) || 't' + (i + 1), type: t, what: one(x.what, 80), who: one(x.who, 16), to: one(x.to, 16), perm: one(x.perm, 40), ok: one(x.ok, 8) };
       /* 越权不再一律办不成（R-242「不要有太多限制」）：写之前由程序掷一回——名望、手里有兵、一方之主、乱世都让越权更容易成；成了照办成记，事后多半有人参你擅权；不成照走漏风声、被底下人顶回去写 */
       if (/越权/.test(o.ok)) o.over = overRoll(s, o.what, i);
@@ -10195,7 +10195,7 @@ function armyCard(s, f) {
     <div>${st.U.length ? st.U.map(x => `${esc(x.t.name)}${esc(x.n)}${esc(x.t.unit || '营')}${x.short > 0 ? `<span class="muted">（缺额${esc(x.short)}）</span>` : ''}`).join('、') + ' · ' : ''}共 <b>${esc(troopEst(s, f, st.men || N0(f.troops) || 0).txt)}</b>${mine && ghostHidden(s, f) ? `<button class="link" data-audit="${esc(f.name)}">点验</button>` : ''}${st.days != null ? ` · 军粮够 <b>${st.days}</b> 日` : N0(f.grain) != null ? ` · 存粮${esc(fmtN(N0(f.grain), '石'))}` : ''}${f.owed ? ` · <span class="warn">欠饷${esc(fmtN(N0(f.owed)))}</span>` : ''}</div>
     <div class="ggrid">${g('攻', st.atk)}${g('守', st.def)}${g('冲击', st.shock)}${g('机动', st.mob)}${g('士气', mo)}${g('组织', org)}${g('训练', tr)}</div>
     ${W && W.txt ? `<div class="muted" style="font-size:12px">驻地天候：${esc(W.txt)}</div>` : ''}
-    ${O ? `<div class="route"><b>打${esc(tgt)}的胜算：${O.unknown ? '守军照城的等级推' : '约 ' + O.p + '%'}</b>${O.guess ? '（守军没探实，是推的）' : ''}<div class="list">${O.lines.map(l => `<div class="muted" style="font-size:12px">· ${esc(l)}</div>`).join('')}</div></div>` : mine ? '<div class="muted" style="font-size:12px">在图上点一处城池，看打那里的胜算、去那里要走几日。</div>' : ''}
+    ${O ? `<div class="route"><b>打${esc(tgt)}的胜算：${O.unknown ? '守军照城的等级推' : '约 ' + O.p + '%'}</b>${O.guess ? '（守军没探实，是推的）' : ''}<span class="muted" style="font-size:11px">（照实打的法子推演十五回，赢的回数；临阵还有运气）</span><div class="list">${O.lines.map(l => `<div class="muted" style="font-size:12px">· ${esc(l)}</div>`).join('')}</div></div>` : mine ? '<div class="muted" style="font-size:12px">在图上点一处城池，看打那里的胜算、去那里要走几日。</div>' : ''}
     ${RK.length ? `<div class="muted" style="font-size:12px">途中：${RK.map(x => esc(x)).join('；')}</div>` : ''}
     ${mine ? `<div class="opost">${tgt ? [['进攻', `令${f.name}进攻${tgt}`], ['移驻', `令${f.name}移驻${tgt}`], ['围困断粮', `令${f.name}围困${tgt}，断其粮道，不急攻`], ['夜袭', `令${f.name}夜袭${tgt}`], ['先探虚实', `令${f.name}先派哨骑探${tgt}虚实、路上有无伏兵`]].map(order).join('') : [['扎营固守', `令${f.name}就地扎营、深沟高垒`], ['整训', `令${f.name}整训`], ['就近征粮', `令${f.name}就近征粮，不得扰民`], ['择险设伏', `令${f.name}择险设伏`], ['退回休整', `令${f.name}退回驻地休整`]].map(order).join('')}</div><div class="muted" style="font-size:11px">点了写进输入框，可以接着改；也可以直接说（口述）更细的军令：哪路先行、谁押粮、遇伏怎么办、几日不下就退……</div>` : ''}</div>`;
 }
@@ -14892,7 +14892,13 @@ function battleOdds(s, f, place, mode) {
   const days = st.days, sup = days != null && days < 5 ? 0.6 : days != null && days < 15 ? 0.85 : 1, defB = T === '城池' ? 2.4 * (0.8 + (num(c.cheng) || 50) / 250) : T === '关隘' ? 2.5 : /山/.test(T) ? 1.4 : T === '河渡' ? 1.3 : T === '丘陵' ? 1.15 : 1;
   const width = T === '城池' ? 12000 : T === '关隘' ? 4000 : /山|林/.test(T) ? 8000 : T === '河渡' ? 10000 : 1e9;
   const W = warWeather(s, place), pu = Math.pow(Math.min(ours, width), 0.85) * q * sup * W.atk, pt = Math.pow(Math.min(them, width), 0.85) * qT * defB * W.def;
-  const r = pu / pt, p = Math.round(100 * r * r / (1 + r * r));
+  const r = pu / pt, p0 = Math.round(100 * r * r / (1 + r * r));
+  // 胜算和实打用同一套逐日打法（R-261：以前胜算一套公式、实打另一套，胜算高却打输）：照这一仗的兵、地形、天候模拟十五回，数赢了几回
+  const p = (() => { try { const att = mode === '攻'; let win = 0; const N = 15;
+    for (let k = 0; k < N; k++) { const us = btSide(s, { name: '我军', f, men: ours, quality: f.quality, leader: f.leader }), th = btSide(s, { name: '敌', men: them, quality: G.quality || '中' });
+      const sim = battleSim(s, att ? us : th, att ? th : us, { terrain: T === '野' ? terrainAt(u) : T, wx: W, fort: c.cheng, seed: (s.turn || 0) * 131 + k * 977 + ours % 101 });
+      if (att ? /胜/.test(sim.outcome) : /败/.test(sim.outcome)) win++; }
+    return Math.round(win / N * 100); } catch (_) { return p0; } })();
   const lines = [`我军 ${fmtN(ours, '人')}，战力系数 ${q.toFixed(2)}（兵种攻守、组织、训练、士气）`, `${owner ? owner + '的' : ''}${guess ? '守军（没探实，照户口和城防推）' : '守军（' + (G.who || '已知') + '）'}约 ${fmtN(them, '人')}，${G.quality || '中'}等`,
     T === '城池' ? `攻城：守方据城，城防${c.cheng ?? '未知'}，守军作两倍上下算；城下一次只摆得开一万余人` : T === '关隘' ? '关隘：守方据险，一次只摆得开四千人，守军作两倍半算' : /山/.test(T) ? '山地：守方占地利' : T === '河渡' ? '河渡：我军半渡而击，守方占便宜' : T === '丘陵' ? '丘陵：略利守方' : '野战', ours > width ? `战场只摆得开 ${fmtN(width, '人')}，多出的兵用不上` : '', days != null ? `军粮够 ${days} 日${days < 15 ? '，不足，战力打折' : ''}` : '军粮不详', W.txt ? '天候：' + W.txt : '', (num(f.morale) ?? 60) < 40 ? '士气低落，临阵易溃' : '', guess ? '没探实，先派人打探再定更稳' : ''].filter(Boolean);
   return { p, lines, ours, them, guess };
@@ -14905,6 +14911,12 @@ function resolveBattle(s, b) {
   // 主角名下没有兵马（随军、守城、统带的是朝廷的兵）：用推演给的我方人数结算，不扣主角的账
   if (!mine.reduce((a, f) => a + (N0(f.troops) || 0), 0) && N0(b.ourTroops)) mine.splice(0, mine.length, { name: b.ourSide || '我方', troops: N0(b.ourTroops), quality: b.ourQuality || '中', grain: null, virtual: true });
   const ours = mine.reduce((a, f) => a + N0(f.troops), 0); if (!ours) return null;
+  // 围城（R-261：以前只把我方伤亡减半，照样当一场强攻打）：主角自家兵马去围一座城，就真立围城——断粮道、按月耗守军的粮，粮尽才崩，进度在军务页
+  if (b.tactic === '围城' && b.attacker === '我' && b.place && landPlace(b.place) && !b.siegeDone) { const lead0 = mine.filter(f => !f.virtual).sort((x, y) => N0(y.troops) - N0(x.troops))[0];
+    if (lead0) { let c = arr(s.campaigns).find(x => x.force === lead0.name && x.state === '围城' && samePlace(x.target, b.place));
+      if (!c) { c = { force: lead0.name, mode: '攻', target: one(b.place, 20), from: lead0.at || geoCenter(s), turn: s.turn, state: '待发', tactic: '围城' }; s.campaigns = arr(s.campaigns).concat([c]); try { siegeStart(s, c, lead0, { troops: N0(b.enemyTroops), quality: b.enemyQuality || '中', who: b.enemy || '守军', owner: b.enemyOwner || '' }); } catch (_) { c.state = '围城'; } lead0.at = one(b.place, 20); lead0.status = '交战'; }
+      const rr = { ...b, ours, ourForces: [lead0.name], virtual: false, odds: null, outcome: '相持', deadUs: 0, deadThem: 0, take: '', lose: '', turn: s.turn + 1, tacWhy: '围而不攻：断了粮道，守军粮尽才会崩；围城进度在军务页', siege: true };
+      rr.rounds = [{ nm: '合围、断粮道', du: 0, dt: 0, us: ours, th: N0(b.enemyTroops), note: '围而不攻' }]; return rr; } }
   const Q = q => /精/.test(q || '') ? 1.3 : /弱|疲|新/.test(q || '') ? 0.7 : 1;
   // 有编成的兵马照兵种的攻、守、冲击和组织、训练、士气算；没编成的照「精、弱」三档
   const ourQ = mine.reduce((a, f) => a + N0(f.troops) * (arr(f.units).length ? (forcePower(s, f, b.attacker === '我') || Q(f.quality)) : Q(f.quality)), 0) / ours;
@@ -14921,7 +14933,7 @@ function resolveBattle(s, b) {
   const WX = warWeather(s, b.place), tired = mine.some(f => /行军|兵临城下|急行/.test(f.status || '')) ? 0.9 : 1;
   if (b.attacker === '我') { pu *= WX.atk * tired; pt *= WX.def; } else { pt *= WX.atk; pu *= WX.def * tired; }
   const TM = b.tactic ? tacticMul(b.tactic, T, mine.find(f => !f.virtual) || null, s) : [1, ''];
-  if (b.tactic === '坚守' && b.attacker !== '我') pu *= 1.3; else pu *= TM[0];
+  if (b.tactic === '坚守' && b.attacker !== '我') pu *= 1.3; else if (b.tactic === '坚守' && b.attacker === '我') pu *= 0.75; else pu *= TM[0];   // 攻方「坚守」等于不进攻，没有冲击力（R-261）
   if (b.tactic === '围城') { pu *= 1; }
   const { pWin } = clashCore(pu, pt, 0.5, ours, N0(b.enemyTroops));   // 只拿来报战前胜算；胜负伤亡照下面一天一天打出来
   // 按天打（需求台账 R-141）：我方照主力那支的编成和统帅，敌方照推演给的精粗和主将；补给、天候、疲兵折进去
