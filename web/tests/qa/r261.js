@@ -50,6 +50,9 @@ const path = require('path');
   // 明宗933年十一月廿六驾崩：腊月就该死，不拖到934年
   const mz = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '秦王', gregorianYear: 933, month: 11, day: 20, place: '洛阳', polity: '后唐' }); s.household = [{ name: '李嗣源', relation: '父', age: 67 }]; const a = figDeathTick(s).length; s.clock.m = 12; s.clock.d = 5; const b = figDeathTick(s).join(); return [a, b, s.household[0].dead]; });
   if (mz[0] !== 0 || !/李嗣源/.test(mz[1]) || !mz[2]) bad.push('明宗没照卒月去世：' + JSON.stringify(mz));
+  // 别国的地方记账记不成自己的地盘
+  const fl = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '皇帝', gregorianYear: 933, month: 12, day: 8, place: '洛阳', polity: '后唐' }); return [foreignLand(s, '扬州（淮南）'), foreignLand(s, '河南府洛阳县（京畿）')]; });
+  if (fl.join() !== 'true,false') bad.push('扬州（吴）认成后唐的地盘，或洛阳认成别国：' + fl.join());
   // 舆图：932 年蔡州、颍州归后唐（内置史料以前漏了，染成吴）
   const cz = await p.evaluate(() => { const R = realmsAt(932, 5); return [114.35, 115.81].map((x, i) => (R.of(x, [33.0, 32.89][i]) || {}).name); });
   if (cz.join() !== '后唐,后唐') bad.push('932年蔡州、颍州没归后唐：' + cz.join());

@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120161150';
+const BUILD = '20261120162329';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4621,6 +4621,9 @@ function campPace(s, f, pace) { const st = forceStats(s, f), base = st.mob != nu
 function campLi(s, from, to) { const a = placeXY(s, from, s.clock.y), b = placeXY(s, to, s.clock.y); return a && b ? Math.max(10, Math.round(liOf(hav(a, b)) * 1.3)) : null; }
 /** 那个地方的守军：已知的别家兵马、势力的据地；都不知道就要探报 */
 /** 一座城此刻归谁：你打下、割来的归你（mapOwn）；其余照地图（分立年代照内置史料的政权）——「天下各方」表上没列的城也认得出归谁（2026-11-07 查实：潮州不在表上，大军开到就当无主「占领」，一仗没打、城也不归你） */
+/** 史书上此时归别国的地方（不是你打下、割来的）：记账不许记成你的地盘 */
+function foreignLand(s, place) { const pl = String(place || '').replace(/[（(].*$/, '').trim(); if (!pl || (s.mapOwn || {})[geoStem(pl)]) return false; const o = placeOwner(s, pl); if (o.owner) return true; if (o.mine) return false;
+  try { const g = geoNear(pl, s.clock.y), R = realmsAt(s.clock.y, s.clock.m), r = g && g.lon != null && R ? R.of(g.lon, g.lat) : null, pol = String(pol0(s) || ''); return !!(r && pol && !(pol.includes(r.name) || r.name.includes(pol))); } catch (_) { return false; } }
 function placeOwner(s, place) {
   const mo = (s.mapOwn || {})[geoStem(place)]; if (mo) return { owner: mo.owner === '你' ? '' : mo.owner, mine: mo.owner === '你' };
   if (arr(s.territory).some(t => samePlace(t.place, place))) return { owner: '', mine: true };
@@ -16763,8 +16766,9 @@ function applyReply(s, d, said) {
   const rows = (a, n) => a.filter(x => x && typeof x === 'object').slice(0, n).map(x => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, one(v, 60)])));
   if (play) { const unb = ledgerGuard(s, d, CUR_RULING); if (unb.length) extra.unbooked = unb; const rc = applyActs(s, d); if (rc.length) extra.acts = rc; applyOrgs(s, d, extra); }
   if (Array.isArray(d.powers) && d.powers.length) s.powers = mergeRows(s.powers, powerGuard(s, rows(d.powers, 16), 'ledger'), 'name', 16);
+  { const seen = new Map(); s.powers = arr(s.powers).filter(p => { if (!p || !p.name) return false; const k = geoStem(String(p.seat || '').replace(/[（(].*$/, '')) + '|' + String(p.leader || '').replace(/[（(].*$/, ''); if (!p.seat || !p.leader) return true; if (seen.has(k)) return false; seen.set(k, 1); return true; }); }   // 同一个人同一处治所只算一家（「两川」「两川（后蜀）」两条）
   const tr0 = new Map(arr(s.forces).map(f => [f.name, N0(f.troops)])), land0 = new Set(arr(s.territory).map(t => t.place));
-  if (Array.isArray(d.territory) && d.territory.length) s.territory = mergeRows(s.territory, rows(d.territory, 40).map(x => ({ ...x, src: 'AI记账' })), 'place', 60);
+  if (Array.isArray(d.territory) && d.territory.length) s.territory = mergeRows(s.territory, rows(d.territory, 40).filter(x => !foreignLand(s, x.place)).map(x => ({ ...x, src: 'AI记账' })), 'place', 60);   // 别国的地方（吴的扬州、孟知祥的成都）记账记不成你的地盘
   if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
   // 兵马、地盘这一回的增减：记进账目，并摆到正文下面（不用翻册子也看得见）
   if (play) {
