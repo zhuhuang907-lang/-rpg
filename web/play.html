@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120022031';
+const BUILD = '20261120030143';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -5875,6 +5875,10 @@ function examApply(s) {
 }
 function examMonthly(s) {
   const E = s.exam, out = []; if (!E || !E.pending) return out; const now = Math.floor(ymOf(s.clock)), pd = E.pending; if (pd.ym > now) return out;
+  // R-261：误场——过了考期一个多月才结算、或主角此刻不在考场那一带（相隔三百里以上），算没赶上，不判中否
+  { const late = false, A = pd.at ? placeXY(s, pd.at, s.clock.y) : null, H = hereXY(s), far = !!(A && A.lat && H && H.lat && liOf(hav(A, H)) > 300), stuck = !!(s.jail || (s.body && s.body.sick) || arr(s.campaigns).some(c => c && /行军|交战|围城/.test(c.state || '') && arr(s.forces).some(f => f.name === c.force && myForce(s, f) && f.leader === s.protagonist.name))), away = far && stuck;
+    if (far && !stuck && pd.at) s.at = pd.at;   // 报了名就动身赴考：人到考场（R-261：以前人不在也照中）
+    if (late || away) { const when0 = timeText(s.clock), line0 = `${pd.name}误了场期（${s.jail ? '人在狱中' : s.body && s.body.sick ? '病得起不了身' : '领兵在外'}，赶不到${pd.at}），这一科没考成`; E.log = arr(E.log).concat([{ ym: now, when: when0, text: line0 }]); s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: when0, who: s.protagonist.name, what: line0 }]); actSet(s, x => x.src === '科举' && x.what.includes(pd.name), '受阻', line0); E.pending = null; out.push(line0); return out; } }
   const wm = num(((s.skills || {})['文墨'] || {}).lv) ?? 25, study = E.studyFrom != null ? Math.min(36, now - E.studyFrom) : 0;
   const base = { 生员: 0.14, 举人: 0.035, 贡士: 0.08, 进士: 1 }[pd.to] ?? 0.1, p = pd.sure ? 1 : Math.min(0.75, base + wm / ({ 生员: 220, 举人: 520, 贡士: 450 }[pd.to] || 400) + study / 300);
   const r = seeded(now * 71 + String(s.protagonist.name).length * 13 + EXAM_LV.indexOf(pd.to) * 7), ok = r < p, when = timeText(s.clock);
@@ -5895,8 +5899,9 @@ function examPost(s, rank, out) {
   let M = null; try { M = mapUnits(s); } catch (_) {}
   const home = provOfPlace(s, s.protagonist.nativePlace || geoCenter(s)) || '', C = M ? M.C.filter(c => c.lat && (!home || !(c.pp || '').includes(home.slice(0, 2)))) : [];
   const pick = C.length ? C[Math.floor(seeded(Math.floor(ymOf(s.clock)) * 17 + C.length) * C.length)] : null, y = s.clock.y;
-  const off = y >= 1368 ? (rank === '三甲' && pick ? `${pick.n}知县` : rank === '一甲' ? '翰林院修撰' : '翰林院庶吉士') : y >= 960 ? (pick ? `${pick.n}主簿` : '州县官') : (pick ? `${pick.n}县尉` : '县尉');
-  s.career = { ...(s.career || {}), office: off, rank: y >= 1368 ? (off.endsWith('知县') ? '正七品' : off === '翰林院修撰' ? '从六品' : '') : '' };
+  const off = y >= 1368 ? (rank === '三甲' ? (pick ? `${pick.n}知县` : '候选知县（观政进士）') : rank === '一甲' ? '翰林院修撰' : '翰林院庶吉士') : y >= 960 ? (pick ? `${pick.n}主簿` : '候选州县官') : (pick ? `${pick.n}县尉` : '候选县尉');   // R-261：明三甲取不到县名不再反授庶吉士
+  const rk = y >= 1368 ? (off.endsWith('知县') ? '正七品' : off === '翰林院修撰' ? '从六品' : off === '翰林院庶吉士' ? '未入流（庶常馆肄业）' : '') : y >= 1271 ? (/县尹|主簿|县尉/.test(off) ? '从七品' : '') : y >= 960 ? (/主簿|县尉/.test(off) ? '从九品' : '') : /县尉/.test(off) ? '从九品下' : '';   // R-261：宋元授官以前品级空着
+  s.career = { ...(s.career || {}), office: off, rank: rk, sinceY: s.clock.y, sinceM: s.clock.m, due: pick && off.includes(pick.n) ? Math.floor(ymOf(s.clock)) + 4 : null, dueAt: pick && off.includes(pick.n) ? pick.n : '' };   // 新职从这个月算起；限四个月内到任
   s.protagonist.role = off + '（新科进士）'; s.careerLog = arr(s.careerLog).concat([{ when: timeText(s.clock), what: `新科进士授${off}`, office: off }]);
   out.push(`授${off}${pick && off.includes(pick.n) ? '，限期赴任（' + pick.n + '）' : ''}`);
 }
@@ -10770,9 +10775,11 @@ function bandAct(s, act, arg) {
   if (act === 'rules') { B.rules = !B.rules; B.fame = Math.max(0, B.fame + (B.rules ? 3 : -3)); return note(B.rules ? '立下寨规：不劫穷人、不伤妇孺、不杀降，江湖上渐有义名' : '废了寨规，弟兄们放开手脚'); }
   if (act === 'move') { if (!B.siege) { ORGMSG = '眼下没有官军来剿，用不着拔寨'; return null; } B.siege = null; B.heat = Math.round(B.heat / 2); B.protect = []; return note('拔寨转移，另觅山头；原先收孝敬的村子丢了'); }
   if (act === 'amnesty') { if (B.fame < 10 || men < 100) { ORGMSG = `名头还不够响（义名${B.fame}）、人马不过${men}，官府犯不着招安你`; return null; } if (B.amnesty) { ORGMSG = '已经托人去说了'; return null; } B.amnesty = { ym }; return note('托人往官府递话，愿受招安'); }
-  if (act === 'accept') { const O = B.offer; if (!O) { ORGMSG = '官府还没有招安的话'; return null; }
+  if (act === 'accept') { const O = B.offer; if (!O) { ORGMSG = '官府还没有招安的话'; return null; } if (ym - (num(O.ym) || ym) > 6) { B.offer = null; ORGMSG = '官府那句招安的话已经是半年多前的事，早凉了，要再托人去说'; return null; }   // R-261：招安的话没有期限，多年前的也能接
     const old = s.protagonist.role; s.protagonist.role = `${s.place.polity || ''}招安授${O.title}`; s.career = Object.assign(s.career || {}, { office: O.title, sinceY: s.clock.y }); s.band = null; for (const o of orgsLive(s)) if (o.head === s.protagonist.name && ORG_ARMED.test(o.kind)) o.state = '受招安';
-    for (const f of arr(s.forces)) if (myForce(s, f)) { f.status = '改编官军'; f.src = '程序结算'; }
+    for (const f of arr(s.forces)) if (myForce(s, f)) { f.status = '改编官军'; f.src = '程序结算'; f.owner = s.place.polity || '官军'; f.leader = s.protagonist.name; }   // 改编成官军：名义上归朝廷，你仍统带
+    s.base = null; s.enc = null; if (['warlord', 'commoner'].includes(s.idm) && IDM.official) s.idm = 'official';   // R-261：受招安当月山寨、遇事还挂着，身份模块还是割据
+    if (s.career) s.career.rank = s.career.rank || (s.clock.y >= 1368 ? '正六品' : s.clock.y >= 960 ? '从八品' : '从九品');
     s.careerLog = arr(s.careerLog).concat([{ when: timeText(s.clock), what: `受招安，授${O.title}`, after: '' }]); return lifeNote(s, '山寨', `受了招安：由${old}授${O.title}，弟兄们改编成官军`); }
   return null;
 }
@@ -11023,12 +11030,21 @@ function rebelHtml(s) {
 /* ---------- 小兵（义军、官军都一样）：冲锋立功、照功劳升、逃散、投降对面 ---------- */
 const RANKS = { rebel: ['小兵', '伍长', '什长', '队长', '哨总', '营将'], army: ['兵卒', '伍长', '什长', '队正', '旅帅', '校尉'] };
 const rankLadder = (s, side) => side === 'rebel' ? RANKS.rebel : ARMY_LADDER(s.clock.y).L;
-function soldierOf(s) { const role = String(s.protagonist.role || '').replace(/[（(]原[^）)]*[）)]/g, '').replace(/^前任?/, '');   /* 「罢官在籍（原守备）」说的是从前的官，不算在营（R-153） */ if (s.rank) return s.rank; if (!isRuler(s) && !ROYAL_RE.test(role) && !/司隶|城门|典军校尉|锦衣卫|衣卫/.test(role)) { const L = ARMY_LADDER(s.clock.y).L; let hit = -1, len = 0; L.forEach((r, k) => { if (k > 0 && r.length > len && new RegExp(r + '(?:$|[（(，,、；])').test(role)) { hit = k; len = r.length; } }); if (hit > 0) return (s.rank = { lv: hit, merit: 0, side: 'army', army: '' }); } if (/小兵|兵卒|兵丁|喽啰|士卒|军士|戍卒|营兵|新兵/.test(role) && !isRuler(s)) return (s.rank = { lv: 0, merit: 0, side: /闯|义军|贼|流寇|天国|黄巾|红巾/.test(role) ? 'rebel' : 'army', army: '' }); return null; }
+function soldierOf(s) { const role = String(s.protagonist.role || '').replace(/[（(]原[^）)]*[）)]/g, '').replace(/^前任?/, '');   /* 「罢官在籍（原守备）」说的是从前的官，不算在营（R-153） */ if (s.rank && isRuler(s)) return null; if (s.rank) return s.rank; if (!isRuler(s) && !ROYAL_RE.test(role) && !/司隶|城门|典军校尉|锦衣卫|衣卫/.test(role)) { const L = ARMY_LADDER(s.clock.y).L; let hit = -1, len = 0; L.forEach((r, k) => { if (k > 0 && r.length > len && new RegExp(r + '(?:$|[（(，,、；])').test(role)) { hit = k; len = r.length; } }); if (hit > 0) return (s.rank = { lv: hit, merit: 0, side: 'army', army: '' }); } if (/小兵|兵卒|兵丁|喽啰|士卒|军士|戍卒|营兵|新兵/.test(role) && !isRuler(s)) return (s.rank = { lv: 0, merit: 0, side: /闯|义军|贼|流寇|天国|黄巾|红巾/.test(role) ? 'rebel' : 'army', army: '' }); return null; }
+/** 眼下真在打仗：有交战中的战事、你的部队在行军交战围城、两个月内打过仗、或附近有敌军（R-261） */
+function atWarNow(s) { const ym = Math.floor(ymOf(s.clock));
+  if (arr(s.wars).some(w => w && w.state === '交战')) return true;
+  if (arr(s.campaigns).some(c => c && /行军|交战|围城/.test(c.state || ''))) return true;
+  if (arr(s.forces).some(f => f && (f.foe || f.hunt) && N0(f.troops) > 0)) return true;
+  const lb = arr(s.battles).slice(-1)[0]; return !!(lb && lb.turn != null && s.turn - lb.turn <= 2); }
 function soldierAct(s, act) {
   const R = soldierOf(s); if (!R) { ORGMSG = '你不是营里的兵'; return null; } const L = rankLadder(s, R.side), ym = Math.floor(ymOf(s.clock)); R.done = R.done || {};
   if (R.done[act] === ym) { ORGMSG = '这个月已经办过了'; return null; } R.done[act] = ym;
   const roll = seeded((s.turn || 0) * 37 + ym % 91 + act.length * 7);
-  if (act === 'charge') { if (roll < 0.15) { s.wound = { ym, lv: roll < 0.05 ? '重' : '轻' }; return lifeNote(s, '军中', `冲锋时${s.wound.lv === '重' ? '身负重伤，抬下阵来' : '挂了彩'}，功劳没记上`); }
+  if (act === 'charge') { const wnd = s.wound && s.wound.lv === '重' && ym - (num(s.wound.ym) || 0) < 3;   // R-261：重伤三个月内上不了阵
+    if (wnd || (s.body && s.body.sick)) { R.done[act] = null; ORGMSG = wnd ? '重伤还没好，上不了阵' : '病着，上不了阵'; return null; }
+    if (!atWarNow(s)) { R.done[act] = null; ORGMSG = '眼下没有仗打——营里操练、请战，等有了战事再冲锋立功'; return null; }   // R-261：和平年月点冲锋也能一路升到顶
+    if (roll < 0.15) { s.wound = { ym, lv: roll < 0.05 ? '重' : '轻' }; return lifeNote(s, '军中', `冲锋时${s.wound.lv === '重' ? '身负重伤，抬下阵来' : '挂了彩'}，功劳没记上`); }
     const g = roll > 0.75 ? 3 : 1; R.merit += g; const need = (R.lv + 1) * 3;
     if (R.merit >= need && R.lv < L.length - 1 && R.side !== 'rebel' && R.lv + 1 >= ARMY_LADDER(s.clock.y).cut) return lifeNote(s, '军中', `阵上${g > 1 ? '斩首立了大功' : '冲杀了一阵，记了一功'}；功劳够升${L[R.lv + 1]}了，要上官保题`);
     if (R.merit >= need && R.lv < L.length - 1) { R.lv++; R.merit = 0; s.protagonist.role = String(s.protagonist.role).replace(new RegExp(L[R.lv - 1] + '$'), L[R.lv]); if (!s.protagonist.role.endsWith(L[R.lv])) s.protagonist.role += '（' + L[R.lv] + '）'; return lifeNote(s, '军中', `阵上${g > 1 ? '斩将夺旗' : '奋勇当先'}，积功升了${L[R.lv]}`); }
@@ -11047,7 +11063,7 @@ function soldierHtml(s) {
 /* ========== 入仕之路不止科举（2026-11-03 玩家：「为什么皇帝会有科举这个功能……皇族很多时候不可以考……唐朝除了科举，还有其他进入官场的方法」）：
  *  君主、起义首领不考；宗室只有宋熙宁以后、明万历二十三年以后、清嘉庆以后许应举；女子不考；
  *  别的门路照朝代：门荫（任子、恩荫、荫生，看父祖官品）、投军、入幕辟署、胥吏出职（流外入流）、捐纳（进纳、赀选）、上书自荐、征辟、中正品第 ========== */
-const ROYAL_RE = /宗室|亲王|郡王|皇子|王子|世子|贝勒|贝子|公主|郡主|驸马|镇国将军|辅国将军|奉国将军|宗女/;
+const ROYAL_RE = /宗室|亲王|郡王|皇子|王子|世子|贝勒|贝子|公主|郡主|驸马|镇国将军|辅国将军|奉国将军|宗女|王爷|^[\u4e00-\u9fff]{1,2}王(?:$|[（(，,])/;   // R-261：「楚王」「吴王」这类一两个字的王号也认宗室（一方之主另由 isRuler 认）
 function examBar(s) {
   if (isFem(s) && s.examDisguise !== true) return '这个年代女子不得应科举（女扮男装去考，每场都可能被识破）';
   const d = identityOf(s); if (d.ruler) return d.rebel ? '你是起义首领，不应朝廷的科举' : '君主不应科举（开科取士是你下诏的事）';
@@ -12046,6 +12062,7 @@ async function parley(s, kind, tg, ask, said) {
     else if (kind === 'sue') { hhOf(s).levy = null; res = '县官准了状子，免了这笔加派'; }
     else if (kind === 'impeach') { s.impeach = null; res = '参本驳回，不加追究'; }
     else if (kind === 'memo2') { const O = offOf(s), sup = shituSup(s); O.kc = Math.min(100, O.kc + 5); s.renown = (num(s.renown) || 0) + 5; if (sup && s.people && s.people[sup]) s.people[sup].favor = (num(s.people[sup].favor) ?? 0) + 5; res = '奏疏蒙嘉纳'; }
+    else if (kind === 'amnesty' && (bandOf(s).fame < 10 || bandMen(s) < 100)) { res = `官府的人听了只是冷笑：名头不响、人马不过${bandMen(s)}，犯不着招安，回去等着剿罢`; }   // R-261：当面说不再绕过义名、人马的门槛
     else if (kind === 'amnesty') { bandOf(s).offer = { title: amnestyTitle(s.clock.y), ym }; res = `官府松了口，愿招安，授你${bandOf(s).offer.title}（在山寨那一栏点「受招安」才算数）`; }
     else if (kind === 'recruit') { const v = s.people[tg]; v.tie = '门客'; v.favor = Math.max(num(v.favor) ?? 0, 30); res = `${tg}答应投到你门下`; }
   } else {
@@ -14883,7 +14900,8 @@ function battleOdds(s, f, place, mode) {
 function resolveBattle(s, b) {
   if (!b || !N0(b.enemyTroops)) return null;
   // 推演没点名自家兵马、却给了我方人数（守城、随军、被卷进来）：这一仗不动主角名下的兵；都没给，才算主角全部兵马上阵
-  const mine = arr(s.forces).filter(f => f && N0(f.troops) > 0 && !(!b.ourForces.length && N0(b.ourTroops)) && (!b.ourForces.length || b.ourForces.some(n => String(f.name || '').includes(n) || n.includes(String(f.name || '')) || String(f.leader || '').includes(n))));
+  const exactF = arr(s.forces).filter(f => f && N0(f.troops) > 0 && !f.foe && arr(b.ourForces).includes(f.name));   // R-261：点名的军名对得上就只认这几支，别把名字相近的别部算进来
+  const mine = exactF.length ? exactF : arr(s.forces).filter(f => f && N0(f.troops) > 0 && !f.foe && !(!b.ourForces.length && N0(b.ourTroops)) && (!b.ourForces.length || b.ourForces.some(n => String(f.name || '').includes(n) || n.includes(String(f.name || '')) || String(f.leader || '').includes(n))));
   // 主角名下没有兵马（随军、守城、统带的是朝廷的兵）：用推演给的我方人数结算，不扣主角的账
   if (!mine.reduce((a, f) => a + (N0(f.troops) || 0), 0) && N0(b.ourTroops)) mine.splice(0, mine.length, { name: b.ourSide || '我方', troops: N0(b.ourTroops), quality: b.ourQuality || '中', grain: null, virtual: true });
   const ours = mine.reduce((a, f) => a + N0(f.troops), 0); if (!ours) return null;
@@ -14940,7 +14958,7 @@ function applyBattle(s, r) {
   for (const w of arr(s.wars)) if (w && w.state === '交战' && String(r.enemy || '').includes(w.with)) warNote(s, w.with, r.attacker === '我' ? /胜/.test(r.outcome || '') && !/败/.test(r.outcome || '') : !/败/.test(r.outcome || '') || /敌.*败/.test(r.outcome || ''), r.take || '', r.lose || '');
   const mine = r.virtual ? [] : arr(s.forces).filter(f => r.ourForces.includes(f.name));
   for (const f of mine) {
-    const t = N0(f.troops), left = Math.max(0, t - Math.round(r.deadUs * t / r.ours)); f.status = /败/.test(r.outcome) ? '休整' : '交战';
+    const t = N0(f.troops), left = Math.max(0, t - Math.round(r.deadUs * t / Math.max(1, r.ours || t))); f.status = arr(s.campaigns).some(c => c && c.force === f.name && /围城|交战/.test(c.state || '')) ? '交战' : '休整';   // R-261：打赢了也写「交战」，组织度永远不回；我方人数为 0 时除零
     const won = /胜/.test(r.outcome) && !/败/.test(r.outcome), m0 = /大败/.test(r.outcome) ? -18 : /败/.test(r.outcome) ? -14 : /相持/.test(r.outcome) ? -3 : 8;
     // 有编成的：伤亡按营数折掉，组织度、士气跟着胜负掉；没编成的也记士气（R-176）
     if (arr(f.units).length && t) { const k = left / t; uShrink(s, f, k); f.orgNow = Math.max(0, (num(f.orgNow) ?? 70) - (/大败/.test(r.outcome) ? 60 : /败/.test(r.outcome) ? 40 : /相持/.test(r.outcome) ? 30 : 20)); f.morale = Math.max(0, Math.min(100, (num(f.morale) ?? 60) + m0)); }

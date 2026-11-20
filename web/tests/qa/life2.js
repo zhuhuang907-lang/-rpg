@@ -27,7 +27,7 @@ const path = require('path');
   if (!(c1.cash > c0) && c1.skim) bad.push('吃空饷没进钱：' + JSON.stringify([c0, c1]));
   // 3 明卫所军士：功劳够了自己升到总旗，往上要保题
   await mk('宣府前卫军士', 1450, 3, '宣府', '明', '李二');
-  const up = await p.evaluate(() => { let msg = ''; for (let i = 0; i < 40; i++) { S.clock.m = (i % 12) + 1; S.clock.y = 1450 + Math.floor(i / 12); S.turn = i; S.wound = null; const r = soldierAct(S, 'charge'); if (r) msg = r; } return { lv: S.rank.lv, role: S.protagonist.role, msg }; });
+  const up = await p.evaluate(() => { let msg = ''; S.wars = [{ with: '瓦剌', state: '交战' }]; /* 冲锋要有仗打（R-261） */ for (let i = 0; i < 40; i++) { S.clock.m = (i % 12) + 1; S.clock.y = 1450 + Math.floor(i / 12); S.turn = i; S.wound = null; const r = soldierAct(S, 'charge'); if (r) msg = r; } return { lv: S.rank.lv, role: S.protagonist.role, msg }; });
   if (up.lv !== 3 || !/保题/.test(up.msg)) bad.push('卫所军士阵上功劳该升到试百户前停下、要保题：' + JSON.stringify(up));
   // 4 商人：入会馆、走远货、赊账，几个月后回来
   await mk('扬州盐商', 1758, 3, '扬州', '清', '江春');
