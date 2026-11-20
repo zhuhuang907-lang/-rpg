@@ -5437,10 +5437,13 @@ function fateCheck(s, who, what) {
 /** 名臣包里找人：本名或别名（李倣＝李仿、王曦＝王延羲）（R-258） */
 function figByName(n) { n = String(n || '').replace(/[（(].*$/, '').trim(); if (n.length < 2) return null; for (const R of FIGLIB) for (const f of arr(R && R.people)) if (f.n === n || arr(f.al).includes(n)) return f; return null; }
 /** 真人到史载卒年照史书死（R-258：李倣 936 年已被康宗所杀，游戏里下狱「待勘」到 944 年还在；王延彬 930 年卒，944 年还当泉州刺史）：主角亲手改了命的（fateSaved）不动 */
+/** 史载已死（R-261：只认卒年，明宗933年十一月驾崩，游戏里拖到934年正月才死，正文里一直「圣躬未安」）：有卒月的照月份，卒月当月照卒日 */
+const figGone = (f, c) => { if (!f || f.d == null || !c || c.y == null) return false; if (c.y !== f.d) return c.y > f.d; if (f.dm == null) return false; const m = num(c.m) || 1; return m > f.dm || (m === f.dm && (num(c.d) || 1) >= (f.dd || 28)); };
 function figDeathTick(s) {
   const y = s && s.clock && s.clock.y, out = []; if (y == null) return out; const saved = s.fateSaved || {};
   for (const [k, v] of Object.entries(s.people || {})) { if (!v || v.dead) continue; const f = figByName(k); if (!f) continue; v.real = true;
-    if (f.d != null && y > f.d && !saved[k] && !saved[f.n]) { v.dead = true; v.status = one(f.fa || `${f.d}年卒（照史书）`, 60); v.where = ''; out.push(`${k}${f.fa ? '：' + one(f.fa, 40) : '已于' + f.d + '年去世'}`); } }
+    if (figGone(f, s.clock) && !saved[k] && !saved[f.n]) { v.dead = true; v.status = one(f.fa || `${f.d}年卒（照史书）`, 60); v.where = ''; out.push(`${k}${f.fa ? '：' + one(f.fa, 40) : '已于' + f.d + '年去世'}`); } }
+  for (const m of arr(s.household)) { if (!m || m.dead || !m.name) continue; const f = figByName(m.name); if (f && figGone(f, s.clock) && !saved[m.name] && !saved[f.n]) { m.dead = true; m.deadTurn = s.turn; if (!out.some(t => t.startsWith(m.name))) out.push(`${m.name}${f.fa ? '：' + one(f.fa, 40) : '已于' + f.d + '年去世'}`); } }   // 家里的真人（父皇）也照史书死
   if (out.length) s.chronicle = arr(s.chronicle).concat(out.map(t => ({ turn: s.turn, when: timeText(s.clock), who: '史事', what: t })));
   return out;
 }
@@ -5457,7 +5460,7 @@ function figuresNow(s) {
   const L = FIGLIB.filter(R => R && R.range).flatMap(R => { const own = y >= R.range[0] - 5 && y <= R.range[1] + 5; return (own ? arr(R.people) : arr(R.people).filter(f => figAt(f, y))).map(f => [f, own]); })
     .sort((a, b) => (b[1] ? 1 : 0) - (a[1] ? 1 : 0) || (figAt(b[0], y) ? 1 : 0) - (figAt(a[0], y) ? 1 : 0)).map(x => x[0]);   // 同一人两包都有：先取本段那一包的（930 年的安重诲照五代包，不照唐末包）
   return L.filter(f => { if (seen.has(f.n)) return false; seen.add(f.n); return true; })
-    .filter(f => f.n !== me && (f.b == null || y >= f.b + 12) && (saved[f.n] || (f.d != null ? y <= f.d : y <= Math.max(-9999, ...arr(f.w).map(x => x[1] ?? -9999), ...arr(f.po).map(x => x[2] ?? -9999)) + 5))).map(f => ({ f, r: figReach(s, f, y) }));   // 卒年不详的：最后见于记载五年后不再出
+    .filter(f => f.n !== me && (f.b == null || y >= f.b + 12) && (saved[f.n] || (f.d != null ? y <= f.d && !figGone(f, s.clock) : y <= Math.max(-9999, ...arr(f.w).map(x => x[1] ?? -9999), ...arr(f.po).map(x => x[2] ?? -9999)) + 5))).map(f => ({ f, r: figReach(s, f, y) }));   // 卒年不详的：最后见于记载五年后不再出
 }
 function figBlock(s) {
   const L = figuresNow(s); if (!L.length) return ''; const y = s.clock.y;
@@ -11425,7 +11428,7 @@ function royalAct(s, act, arg) { const R = royalOf(s); if (!R) { ORGMSG = '你�
  *  父皇驾崩：太子即位；没立太子的，照本朝继承法在皇子里定（嫡长看排行、择贤看圣眷和党羽、强者看谁手里的人多）；输了的就藩为王
  *  太子（别的兄弟）死了：储位重新空出来，可以再争
  *  起兵清君侧：打赢（胜仗比败仗多三场以上，或对方求和）就入京废立，自己登基、改元 */
-const deadNm = (s, n) => { if (!n) return false; const m = arr(s.household).find(x => x && x.name === n); if (m && m.dead) return true; const v = (s.people || {})[n]; if (v && v.dead) return true; const f = figByName(n); return !!(f && f.d != null && s.clock.y > f.d); };
+const deadNm = (s, n) => { if (!n) return false; const m = arr(s.household).find(x => x && x.name === n); if (m && m.dead) return true; const v = (s.people || {})[n]; if (v && v.dead) return true; const f = figByName(n); return !!(f && figGone(f, s.clock) && !(s.fateSaved || {})[n]); };
 const ERA_A = '建永天洪宣正弘嘉隆崇乾咸同光显绍开元', ERA_B = '和平德武兴安泰庆顺昌熙宁化康定隆';
 const newEraName = s => { const cur = String(s.eraName || ''), y = s.clock.y; for (let k = 0; k < 40; k++) { const a = ERA_A[Math.floor(seeded(y * 7 + k * 13) * ERA_A.length)], b = ERA_B[Math.floor(seeded(y * 11 + k * 17 + 5) * ERA_B.length)]; if (a !== b && a + b !== cur) return a + b; } return '永安'; };
 function royalEnthrone(s, R, ym, why) { const old = String(s.protagonist.role || ''), nian = newEraName(s); s.protagonist.role = '皇帝'; s.idm = 'emperor'; R.kind = ''; R.rebel = null; R.lostTo = null; R.enthroned = ym;

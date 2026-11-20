@@ -47,6 +47,9 @@ const path = require('path');
   // 秦王兼河南尹、父亲是在位皇帝：认皇子（能争储），主线目标照宗室给
   const qw = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 28, role: '秦王、河南尹、判六军诸卫事', gregorianYear: 932, month: 1, day: 1, place: '洛阳', polity: '后唐' }); s.household = [{ name: '李嗣源', relation: '父', age: 66 }]; const t = newSave({ name: '李甲', gender: '男', age: 28, role: '秦王、河南尹', gregorianYear: 932, month: 1, day: 1, place: '洛阳', polity: '后唐' }); return [royalKind(s), roleKey(s), royalKind(t)]; });
   if (qw.join() !== '皇子,贵,王') bad.push('秦王李从荣没认成皇子：' + qw.join());
+  // 明宗933年十一月廿六驾崩：腊月就该死，不拖到934年
+  const mz = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '秦王', gregorianYear: 933, month: 11, day: 20, place: '洛阳', polity: '后唐' }); s.household = [{ name: '李嗣源', relation: '父', age: 67 }]; const a = figDeathTick(s).length; s.clock.m = 12; s.clock.d = 5; const b = figDeathTick(s).join(); return [a, b, s.household[0].dead]; });
+  if (mz[0] !== 0 || !/李嗣源/.test(mz[1]) || !mz[2]) bad.push('明宗没照卒月去世：' + JSON.stringify(mz));
   // 舆图：932 年蔡州、颍州归后唐（内置史料以前漏了，染成吴）
   const cz = await p.evaluate(() => { const R = realmsAt(932, 5); return [114.35, 115.81].map((x, i) => (R.of(x, [33.0, 32.89][i]) || {}).name); });
   if (cz.join() !== '后唐,后唐') bad.push('932年蔡州、颍州没归后唐：' + cz.join());
