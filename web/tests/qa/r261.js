@@ -28,6 +28,22 @@ const path = require('path');
   const has = await p.$('#bTiao');
   if (!has) bad.push('举人会试落第三回，看不到「赴吏部大挑」按钮');
   else { await p.click('#bTiao'); await p.waitForTimeout(300); const after = await p.evaluate(() => ({ log: arr(S.exam.log).map(x => x.text).join('|'), ym: S.exam.tiaoYm })); if (after.ym == null || !/大挑/.test(after.log)) bad.push('点了大挑没结果：' + JSON.stringify(after)); }
+  // 宗亲继位：父皇驾崩太子即位改元；未立储照强弱定；太子薨储位空出；清君侧打赢登基
+  const sc = await p.evaluate(() => { const mk = role => { const s = newSave({ name: '朱甲', gender: '男', age: 25, role, gregorianYear: 1420, month: 5, day: 1, place: '北京', polity: '明' }); s.household = [{ name: '朱父', relation: '父', age: 60 }, { name: '朱乙', relation: '弟', age: 20 }]; return s; };
+    const a = mk('皇太子'); royalOf(a); a.household[0].dead = true; const ao = royalMonthly(a).join();
+    const b = mk('皇子'); const R = royalOf(b); R.lostTo = '朱乙'; b.household[1].dead = true; const bo = royalMonthly(b).join();
+    const c = mk('燕王'); const Rc = royalOf(c); Rc.rebel = 1; c.wars = [{ with: '明', cb: '清君侧', state: '交战', won: 7, lost: 0, took: [] }]; const co = royalMonthly(c).join();
+    return { a: [ao, a.protagonist.role, a.eraName, a.eraFrom], b: [bo, R.lostTo], c: [co, c.protagonist.role, c.wars[0].state] }; });
+  if (!/即皇帝位|即位/.test(sc.a[0]) || sc.a[1] !== '皇帝' || !sc.a[2] || sc.a[3] !== 1421) bad.push('父皇驾崩太子没即位改元：' + JSON.stringify(sc.a));
+  if (!/储位/.test(sc.b[0]) || sc.b[1]) bad.push('太子薨储位没空出：' + JSON.stringify(sc.b));
+  if (sc.c[1] !== '皇帝' || sc.c[2] !== '议和') bad.push('清君侧打赢没登基：' + JSON.stringify(sc.c));
+  // 党争：势力照官位算；真点「贬谪党首」免掉他的官
+  const fp = await p.evaluate(() => { const s = newSave({ name: '王审知', gender: '男', age: 50, role: '闽王', gregorianYear: 920, month: 5, day: 1, place: '福州', polity: '闽' }); s.org = { nodes: [{ name: '中书', depth: 1, posts: [{ title: '宰相', holder: '甲相' }, { title: '主事', holder: '乙吏' }, { title: '主事', holder: '丙吏' }] }] };
+    s.factions = [{ name: '相党', leader: '甲相', members: '', grudge: 0 }, { name: '吏党', leader: '乙吏', members: '丙吏', grudge: 0 }]; const pw = [factionPower(s, s.factions[0]), factionPower(s, s.factions[1])]; S = s; VIEW = 'game'; SIDE_FOLD = false;
+    for (const t of ['org', 'power', 'career', 'board', 'army', 'world', 'gov', 'court']) { TAB = t; render0(); if (document.querySelector('[data-facact="贬谪"]')) return { pw, tab: t }; } return { pw, tab: '' }; });
+  if (!(fp.pw[0] > fp.pw[1])) bad.push('一个宰相的派系势力不比两个小吏大：' + fp.pw.join());
+  if (!fp.tab) bad.push('看不到对付朋党的按钮');
+  else { await p.click('[data-facact="贬谪"]'); await p.waitForTimeout(300); const h = await p.evaluate(() => S.org.nodes[0].posts[0].holder); if (h) bad.push('点了贬谪党首，宰相还在任：' + h); }
   if (errs.length) bad.push(...errs);
   console.log('ERRS', JSON.stringify(bad)); await b.close(); process.exit(bad.length ? 1 : 0);
 })();
