@@ -52,6 +52,8 @@ const path = require('path');
   if (mz[0] !== 0 || !/李嗣源/.test(mz[1]) || !mz[2]) bad.push('明宗没照卒月去世：' + JSON.stringify(mz));
   const en = await p.evaluate(() => newEraName(newSave({ name: '李从荣', gender: '男', age: 29, role: '秦王', gregorianYear: 933, month: 12, day: 8, place: '洛阳', polity: '后唐' })));
   if (en !== '应顺') bad.push('新君改元没照史书下一年的年号：' + en);
+  const cb = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '皇帝', gregorianYear: 934, month: 2, day: 8, place: '洛阳', polity: '后唐' }); s.idm = 'emperor'; s.territory = [{ place: '凤翔府' }, { place: '洛阳' }]; s.powers = [{ name: '凤翔', seat: '凤翔', leader: '李从珂' }, { name: '吴', seat: '江都', leader: '杨溥' }]; return [warCBs(s, '凤翔').includes('讨逆'), warCBs(s, '吴').includes('讨逆')]; });
+  if (cb.join() !== 'true,false') bad.push('境内藩镇抗命没有「讨逆」名分（或外国也给了）：' + cb.join());
   // 别国的地方记账记不成自己的地盘
   const fl = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 29, role: '皇帝', gregorianYear: 933, month: 12, day: 8, place: '洛阳', polity: '后唐' }); return [foreignLand(s, '扬州（淮南）'), foreignLand(s, '河南府洛阳县（京畿）')]; });
   if (fl.join() !== 'true,false') bad.push('扬州（吴）认成后唐的地盘，或洛阳认成别国：' + fl.join());
