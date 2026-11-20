@@ -1708,7 +1708,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120143040';
+const BUILD = '20261120144346';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -12477,7 +12477,9 @@ function jhHtml(s) { if (!canParty(s) && !partyF(s)) return ''; const f = partyF
 const FIEF_ERA = y => y < -154 ? { fief: true, g: 10000, why: '汉初诸侯王有国，自置官属，养兵治民' } : y < 220 ? { fief: true, g: 0, why: '推恩令、左官律以后，诸侯王只食租税，不治民、不掌兵' } : y < 317 ? { fief: true, g: 5000, why: '晋宗王出镇，都督诸军' } : y < 589 ? { fief: true, g: 3000, why: '南北朝宗王出镇，常领州郡兵' }
   : y < 960 ? { fief: false, g: 0, why: '唐亲王多住京城十六王宅，遥领节度，不之藩' } : y < 1271 ? { fief: false, g: 0, why: '宋宗室不就藩，奉朝请' } : y < 1368 ? { fief: true, g: 3000, why: '元诸王有分地、投下' } : y < 1403 ? { fief: true, g: 9000, why: '明初藩王就藩，护卫三千至一万九千' } : y < 1644 ? { fief: true, g: 0, why: '靖难以后削护卫，藩王不许干政、不许擅出城' } : { fief: false, g: 0, why: '清亲王郡王住京城，不封土，领旗分佐领' };
 function royalKind(s) { if (isRuler(s)) return ''; try { if (identityOf(s).rebel && !(s.royal && s.royal.rebel)) return ''; } catch (_) { /* 无 */ } const r = (String(s.protagonist.role || '') + ' ' + String((s.career || {}).office || '')).trim(); if (/废太子|废储/.test(r)) return '皇子'; if (/皇太子|太子|储君|东宫/.test(r) && !/太子(舍人|洗马|少|太|宾客|詹事|中允|赞善)/.test(r)) return '太子';
-  if (/亲王|郡王|王爷|藩王|世子|^[^\s]{1,2}王$|就藩/.test(r) && !/王[氏家府]?的|王府的|王家/.test(r)) return '王'; if (/皇子|皇[长次一二三四五六七八九十]+子|[一二三四五六七八九十]+阿哥|阿哥|王子|皇孙/.test(r)) return '皇子'; if (/公主|郡主/.test(r)) return '主';
+  // 父亲是在位的皇帝：封了王也还是皇子，能争储（R-261：秦王李从荣「秦王、河南尹……」认不出宗室，夺嫡、监国全没有）
+  try { const y = s.clock.y, fa = lineage(s).parents.find(m => /^父$/.test(m.relation || '')), ff = fa && !fa.dead && figByName(fa.name); if (ff && ff.tag === '君主' && arr(ff.po).some(p => p[1] <= y && y <= p[2] && /帝|皇|天子/.test(p[0] || '')) && !/就藩/.test(r)) return '皇子'; } catch (_) { /* 无 */ }
+  if ((/亲王|郡王|王爷|藩王|世子|就藩/.test(r) || /(^|[、，,\s])[\u4e00-\u9fff]{1,2}王(?=$|[、，,（(\s])/.test(r)) && !/王[氏家府]?的|王府的|王家|大王/.test(r)) return '王'; if (/皇子|皇[长次一二三四五六七八九十]+子|[一二三四五六七八九十]+阿哥|阿哥|王子|皇孙/.test(r)) return '皇子'; if (/公主|郡主/.test(r)) return '主';
   if (/国公|侯爵|伯爵|勋贵|贵族|门阀|世家|士族|名门|甲族/.test(r) || /士族|门阀|世家|名门|甲族|勋贵/.test(String((s.protagonist.ident || {}).chushen || ''))) return '贵'; return ''; }
 const royalOf = s => { const k = royalKind(s); if (!k) return null; const R = (s.royal = s.royal || { favor: 40, faction: 10, suspect: 10, prestige: 30, clients: 0, guard: 0, log: [], histPending: !!s.protagonist.real }); R.kind = k; return R; };
 function royalRivals(s) { const R = s.royal; if (!R) return []; const sib = lineage(s).sibs.filter(m => !m.dead && /兄|弟/.test(m.relation || '') && m.name && !/某/.test(m.name));
@@ -14619,6 +14621,7 @@ const ymA = a => a[0] * 12 + (a[1] || 1);
 function roleKey(s) {
   const d = identityOf(s), g = d.tags;
   if (g.includes('贵') && (d.power === 'sovereign' || s.idm === 'noble' || s.idm === 'emperor')) return '贵';
+  try { if (/皇子|太子|王/.test(royalKind(s))) return '贵'; } catch (_) { /* 无 */ }   // 亲王兼着官职（秦王兼河南尹）也是宗室：主线目标给「县令升刺史」不对
   if (d.office.military || (d.power === 'independent' && d.military.troops) || (g.includes('兵') && !d.office.civil)) return '兵';
   if (d.office.held) return '官';
   if (g.includes('商')) return '商';
