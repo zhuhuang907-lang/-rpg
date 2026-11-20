@@ -11387,7 +11387,7 @@ function royalKind(s) { if (isRuler(s)) return ''; try { if (identityOf(s).rebel
   try { const y = s.clock.y, fa = lineage(s).parents.find(m => /^父$/.test(m.relation || '')), ff = fa && !fa.dead && figByName(fa.name); if (ff && ff.tag === '君主' && arr(ff.po).some(p => p[1] <= y && y <= p[2] && /帝|皇|天子/.test(p[0] || '')) && !/就藩/.test(r)) return '皇子'; } catch (_) { /* 无 */ }
   if ((/亲王|郡王|王爷|藩王|世子|就藩/.test(r) || /(^|[、，,\s])[\u4e00-\u9fff]{1,2}王(?=$|[、，,（(\s])/.test(r)) && !/王[氏家府]?的|王府的|王家|大王/.test(r)) return '王'; if (/皇子|皇[长次一二三四五六七八九十]+子|[一二三四五六七八九十]+阿哥|阿哥|王子|皇孙/.test(r)) return '皇子'; if (/公主|郡主/.test(r)) return '主';
   if (/国公|侯爵|伯爵|勋贵|贵族|门阀|世家|士族|名门|甲族/.test(r) || /士族|门阀|世家|名门|甲族|勋贵/.test(String((s.protagonist.ident || {}).chushen || ''))) return '贵'; return ''; }
-const royalOf = s => { const k = royalKind(s); if (!k) return null; const R = (s.royal = s.royal || { favor: 40, faction: 10, suspect: 10, prestige: 30, clients: 0, guard: 0, log: [], histPending: !!s.protagonist.real }); R.kind = k; return R; };
+const royalOf = s => { const k = royalKind(s); if (!k) return null; if (k === '皇子' && s.royal) s.royal.prince = true; const R = (s.royal = s.royal || { favor: 40, faction: 10, suspect: 10, prestige: 30, clients: 0, guard: 0, log: [], histPending: !!s.protagonist.real }); R.kind = k; return R; };
 function royalRivals(s) { const R = s.royal; if (!R) return []; const sib = lineage(s).sibs.filter(m => !m.dead && !deadNm(s, m.name) && /兄|弟/.test(m.relation || '') && m.name && !/某/.test(m.name));   // 史书上已死的兄弟不算争储（R-261：李从璟 926 年已死还在列）
   R.rivals = sib.map(m => { const o = arr(R.rivals).find(x => x.name === m.name); if (o) return o; const fb = figByName(m.name), ag = num(m.age) != null ? num(m.age) : fb && fb.b ? s.clock.y - fb.b : null; return { name: m.name, power: ag != null && ag < 15 ? Math.max(3, ag) : Math.round(20 + seeded(String(m.name).length * 97 + (ag || 30)) * 40) }; }); return R.rivals; }   // 襁褓里的皇子没有声势
 const royalNote = (s, t) => { const R = s.royal; if (R) R.log = arr(R.log).concat([{ when: timeText(s.clock), t }]).slice(-10); return lifeNote(s, '宗室', t); };
@@ -11442,7 +11442,7 @@ function royalSucc(s, R, ym, out) {
   // 父皇驾崩
   const fa = lineage(s).parents.find(m => /^父$/.test(m.relation || '')); if (!fa || !deadNm(s, fa.name) || R.mourned) return; R.mourned = ym;
   if (R.kind === '太子') { out.push(royalEnthrone(s, R, ym, `父皇${fa.name}驾崩，你以皇太子奉遗诏`)); return; }
-  if (R.kind !== '皇子') return;
+  if (R.kind !== '皇子' && !R.prince) return;   // 父皇一死 royalKind 就认成「王」，原来是皇子的照样争
   const law = String((lawsOf(s) || {}).succ || ''), riv = royalRivals(s).filter(x => !deadNm(s, x.name)).sort((a, b) => b.power - a.power), top = riv[0];
   if (R.lostTo) { out.push(`父皇${fa.name}驾崩，太子${R.lostTo}即位；你以皇弟（兄）就藩为王`); s.protagonist.role = '亲王'; R.suspect = cl(R.suspect + 15); return; }
   const elder = lineage(s).sibs.filter(m => !m.dead && /兄/.test(m.relation || '')).length, mine = R.favor * 0.5 + R.faction * 0.5 + (R.guard || 0) / 200;
@@ -11450,8 +11450,8 @@ function royalSucc(s, R, ym, out) {
   if (win) out.push(royalEnthrone(s, R, ym, `父皇${fa.name}驾崩未立储，${top ? (/嫡长/.test(law) ? '照嫡长之制' : '群臣推戴、宗室拥立') : '诸皇子中只剩你'}`));
   else { out.push(`父皇${fa.name}驾崩未立储，群臣拥立${top.name}即位；你以宗王就藩`); R.lostTo = top.name; s.protagonist.role = '亲王'; R.suspect = cl(R.suspect + 20); } }
 /** 每月：皇子够格立太子、猜忌重了圈禁；兄弟也在争；太子猜忌到头被废；藩王猜忌重了朝廷削藩；王爷有岁禄 */
-function royalMonthly(s) { const R = royalOf(s); if (!R) return []; const ym = Math.floor(ymOf(s.clock)); if (R.ym === ym) return []; R.ym = ym; const out = [], E = econOf(s), u = (s.money || {}).unit || '';
-  royalSucc(s, R, ym, out); if (!royalOf(s)) return out;
+function royalMonthly(s) { const R = royalOf(s); if (!R) return []; const ym = Math.floor(ymOf(s.clock)), out = [], E = econOf(s), u = (s.money || {}).unit || '';
+  royalSucc(s, R, ym, out); if (!royalOf(s) || R.ym === ym) return out; R.ym = ym;   // 继位每回都看（驾崩当天就要定，不等下个月）
   R.suspect = cl(R.suspect - 1); for (const r of royalRivals(s)) r.power = cl(r.power + (seeded(ym * 13 + r.name.length) < 0.5 ? 2 : 0));
   if (R.kind === '皇子' && !(R.lockTill >= ym)) { const top = arr(R.rivals).sort((a, b) => b.power - a.power)[0];
     if (top && top.power > R.faction + 25 && seeded(ym * 31 + top.power) < 0.25) { R.suspect = cl(R.suspect + 10); out.push(`${top.name}的人在御前说你的坏话`); }
