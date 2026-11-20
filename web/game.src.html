@@ -4756,6 +4756,9 @@ function examPlan(y) {
 const examOf = s => s.exam = s.exam || { lv: '童生', log: [], studyFrom: null };
 function examNext(s) {   // 下一场能考的：照现有功名找下一级，照年份月份找最近的一场
   const E = examOf(s), P = examPlan(s.clock.y); if (!P.steps.length) return null;
+  // 明清童试三关（R-261：以前白身直接考院试）：县试（二月，县城）→ 府试（四月，府城）→ 院试成生员
+  if (P.sys === '明清' && E.lv === '童生' && (E.tong || 0) < 2) { const st0 = (E.tong || 0) === 0 ? { to: '童生', stage: '县试', name: '县试', m: 2, every: () => true, at: '县城' } : { to: '童生', stage: '府试', name: '府试', m: 4, every: () => true, at: '府城' };
+    for (let k = 0; k < 24; k++) { const ym = Math.floor(ymOf(s.clock)) + k, yy = Math.floor((ym - 1) / 12), mm = ((ym - 1) % 12) + 1; if (mm === st0.m) return { ...st0, ym, y: yy }; } }
   const i = EXAM_LV.indexOf(E.lv), st = P.steps.find(x => EXAM_LV.indexOf(x.to) > i && (P.sys !== '隋唐五代' && P.sys !== '宋' && P.sys !== '元' ? EXAM_LV.indexOf(x.to) === i + 1 : true)); if (!st) return null;
   for (let k = 0; k < 48; k++) { const ym = Math.floor(ymOf(s.clock)) + k, yy = Math.floor((ym - 1) / 12), mm = ((ym - 1) % 12) + 1; if (mm === st.m && st.every(yy)) return { ...st, ym, y: yy }; }
   return null;
@@ -4768,19 +4771,36 @@ function examApply(s) {
   const E = examOf(s), nx = examNext(s), u = (s.money || {}).unit || '';
   if (!nx) { ORGMSG = examPlan(s.clock.y).steps.length ? '眼下没有你能考的那一场' : '这个年代没有科举，要走察举（名声够了求举孝廉、茂才）'; return null; }
   if (E.pending && E.pending.ym >= Math.floor(ymOf(s.clock))) { ORGMSG = `已经报了${E.pending.name}，${E.pending.ym - Math.floor(ymOf(s.clock))}个月后入场`; return null; }
-  const cost = Math.round(({ 生员: 3, 举人: 12, 贡士: 30, 进士: 10 }[nx.to] || 10) * techMul(s)), P = milPurse(s);
+  const cost = Math.round((nx.stage ? 1 : ({ 生员: 3, 举人: 12, 贡士: 30, 进士: 10 }[nx.to] || 10)) * techMul(s)), P = milPurse(s);
   if (P && P.have() < cost) { ORGMSG = `应考的盘费、卷费要${fmtN(cost, u)}，${P.name}只有${fmtN(P.have(), u)}`; return null; } if (P) P.take(cost);
-  E.pending = { name: nx.name, to: nx.to, ym: nx.ym, at: nx.at, sure: !!nx.sure };
+  E.pending = { name: nx.name, to: nx.to, ym: nx.ym, at: nx.at, sure: !!nx.sure, stage: nx.stage || '' };
   const left = nx.ym - Math.floor(ymOf(s.clock)), line = `报考${nx.y}年${nx.m}月的${nx.name}（在${nx.at}${left ? '，还有' + left + '个月' : '，就在这个月'}；盘费${fmtN(cost, u)}）`;
   actNew(s, { type: '令', what: line, who: '自己', src: '科举', perm: '自己', ok: '能', state: '在办' });
   ORGMSG = '已报考：' + line + '。到时候要人在' + nx.at + '，正文会写你赶考'; return line;
 }
+/** 生员岁考（明清，三年一次、三月）：文墨差的停廪、黜革，好的补廪（R-261：生员以前一考定终身） */
+function examSuikao(s) { const E = s.exam, out = []; if (!E || E.lv !== '生员' || examPlan(s.clock.y).sys !== '明清') return out; const now = Math.floor(ymOf(s.clock)), y = s.clock.y;
+  if (s.clock.m !== 3 || y % 3 !== 0 || E.suiYm === now) return out; E.suiYm = now; const wm = num(((s.skills || {})['文墨'] || {}).lv) ?? 25, r = seeded(now * 41 + 17), when = timeText(s.clock);
+  const line = wm < 30 && r < 0.5 ? '岁考列在劣等，被学政黜革，革去生员' : wm < 45 && r < 0.4 ? '岁考列在下等，停了廪饩，挨了申饬' : wm >= 70 && r < 0.5 ? '岁考列一等，补了廪膳生' : '岁考过了，照旧是生员';
+  if (/黜革/.test(line)) { E.lv = '童生'; E.tong = 2; if (s.career) s.career.titles = arr(s.career.titles).filter(t => t !== '生员'); }
+  if (/补了廪/.test(line)) E.lin = true; E.log = arr(E.log).concat([{ ym: now, when, text: line }]); s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when, who: s.protagonist.name, what: line }]); out.push(line); return out; }
+/** 举人大挑、拣选（明清：会试屡不中的举人，挑知县、教职）（R-261：以前举人会试不中就没有做官的路） */
+function examTiao(s) { const E = examOf(s), y = s.clock.y; if (E.lv !== '举人' || examPlan(y).sys !== '明清') { ORGMSG = '只有明清的举人能去大挑、拣选'; return null; } if ((E.huiFail || 0) < 2) { ORGMSG = '会试落第两回以上才去挑、去拣'; return null; }
+  const now = Math.floor(ymOf(s.clock)); if (E.tiaoYm != null && now - E.tiaoYm < 36) { ORGMSG = '上回挑过了，三年后再来'; return null; } E.tiaoYm = now;
+  const r = seeded(now * 23 + String(s.protagonist.name).length * 5), when = timeText(s.clock), name = y >= 1752 ? '大挑' : '拣选';
+  const off = r < 0.2 ? '知县（候补）' : r < 0.7 ? '县学教谕' : '';
+  const line = off ? `赴吏部${name}，挑了${off}` : `赴吏部${name}，没挑上，回去再等会试`; E.log = arr(E.log).concat([{ ym: now, when, text: line }]);
+  if (off) { s.career = { ...(s.career || {}), office: off, rank: /知县/.test(off) ? '正七品' : '未入流', sinceY: y, sinceM: s.clock.m }; s.protagonist.role = off + '（举人' + name + '）'; s.careerLog = arr(s.careerLog).concat([{ when, what: line, office: off }]); }
+  s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when, who: s.protagonist.name, what: line }]); return lifeNote(s, '科举', line); }
 function examMonthly(s) {
-  const E = s.exam, out = []; if (!E || !E.pending) return out; const now = Math.floor(ymOf(s.clock)), pd = E.pending; if (pd.ym > now) return out;
+  const E = s.exam, out = []; try { out.push(...examSuikao(s)); } catch (_) {} if (!E || !E.pending) return out; const now = Math.floor(ymOf(s.clock)), pd = E.pending; if (pd.ym > now) return out;
   // R-261：误场——过了考期一个多月才结算、或主角此刻不在考场那一带（相隔三百里以上），算没赶上，不判中否
   { const late = false, A = pd.at ? placeXY(s, pd.at, s.clock.y) : null, H = hereXY(s), far = !!(A && A.lat && H && H.lat && liOf(hav(A, H)) > 300), stuck = !!(s.jail || (s.body && s.body.sick) || arr(s.campaigns).some(c => c && /行军|交战|围城/.test(c.state || '') && arr(s.forces).some(f => f.name === c.force && myForce(s, f) && f.leader === s.protagonist.name))), away = far && stuck;
     if (far && !stuck && pd.at) s.at = pd.at;   // 报了名就动身赴考：人到考场（R-261：以前人不在也照中）
     if (late || away) { const when0 = timeText(s.clock), line0 = `${pd.name}误了场期（${s.jail ? '人在狱中' : s.body && s.body.sick ? '病得起不了身' : '领兵在外'}，赶不到${pd.at}），这一科没考成`; E.log = arr(E.log).concat([{ ym: now, when: when0, text: line0 }]); s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: when0, who: s.protagonist.name, what: line0 }]); actSet(s, x => x.src === '科举' && x.what.includes(pd.name), '受阻', line0); E.pending = null; out.push(line0); return out; } }
+  if (pd.stage) { const wm0 = num(((s.skills || {})['文墨'] || {}).lv) ?? 25, ok0 = seeded(now * 59 + String(s.protagonist.name).length * 7 + (pd.stage === '府试' ? 3 : 1)) < Math.min(0.85, 0.35 + wm0 / 200), when0 = timeText(s.clock);
+    const line0 = ok0 ? `${pd.stage}取中${pd.stage === '府试' ? '，可以去考院试了' : '，接着考府试'}` : `${pd.stage}没取中，明年再考`; if (ok0) E.tong = (E.tong || 0) + 1;
+    E.log = arr(E.log).concat([{ ym: now, when: when0, text: line0 }]); s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: when0, who: s.protagonist.name, what: line0 }]); actSet(s, x => x.src === '科举' && x.what.includes(pd.name), ok0 ? '办成' : '受阻', line0); E.pending = null; out.push(line0); return out; }
   const wm = num(((s.skills || {})['文墨'] || {}).lv) ?? 25, study = E.studyFrom != null ? Math.min(36, now - E.studyFrom) : 0;
   const base = { 生员: 0.14, 举人: 0.035, 贡士: 0.08, 进士: 1 }[pd.to] ?? 0.1, p = pd.sure ? 1 : Math.min(0.75, base + wm / ({ 生员: 220, 举人: 520, 贡士: 450 }[pd.to] || 400) + study / 300);
   const r = seeded(now * 71 + String(s.protagonist.name).length * 13 + EXAM_LV.indexOf(pd.to) * 7), ok = r < p, when = timeText(s.clock);
@@ -4791,7 +4811,7 @@ function examMonthly(s) {
     if (!/官|知|令|守|使|丞|尉/.test(String(s.career.office || ''))) s.protagonist.role = (pd.to === '进士' ? rank + '进士' : pd.to) + (s.protagonist.role && !EXAM_LV.some(t => s.protagonist.role.includes(t)) ? '，' + one(s.protagonist.role, 20) : '');
     s.renown = (s.renown || 0) + ({ 生员: 3, 举人: 15, 贡士: 25, 进士: 40 }[pd.to] || 5);
     if (pd.to === '进士') examPost(s, rank, out); }
-  else { line = `${pd.name}落第（${pd.to}这一关本来就难，下一场再考）`; E.log = arr(E.log).concat([{ ym: now, when, text: line }]); }
+  else { if (pd.to === '贡士') E.huiFail = (E.huiFail || 0) + 1; line = `${pd.name}落第（${pd.to}这一关本来就难，下一场再考）`; E.log = arr(E.log).concat([{ ym: now, when, text: line }]); }
   s.careerLog = arr(s.careerLog).concat([{ when, what: line, office: (s.career || {}).office || E.lv }]);
   s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when, who: s.protagonist.name, what: line }]);
   actSet(s, x => x.src === '科举' && x.what.includes(pd.name), ok ? '办成' : '受阻', line); E.pending = null; out.push(line); return out;
@@ -4861,9 +4881,9 @@ function examHtml(s) {
   if (isFem(s) && s.examDisguise !== true) return `<div class="h" style="margin-top:6px"><span class="seal">科</span>功名与科举</div><div class="muted">这个年代女子不得应科举、做官（真要考，只能女扮男装冒名进场，每场都可能被搜检看破，那是欺罔之罪）；女子的出路在家里（主中馈、教子、经营体己）、在宫中（位分晋升），或者走江湖。</div>${examBar({ ...s, examDisguise: true }) && !/女子/.test(examBar({ ...s, examDisguise: true })) ? '' : '<div class="opost"><button class="link" id="bExam">女扮男装去应考</button></div>'}`;
   const E = examOf(s), P = examPlan(s.clock.y), nx = examNext(s), now = Math.floor(ymOf(s.clock)), wm = num(((s.skills || {})['文墨'] || {}).lv);
   return `<div class="h"><span class="seal">试</span>功名与科举<span class="note">${esc(P.sys === '察举' ? '这个年代没有科举，走察举' : P.sys + '的科举：' + P.steps.map(x => x.name).join(' → '))}</span></div>
-    <div class="pl" style="font-size:13px"><span>功名</span><b>${esc(E.lv)}</b>${wm != null ? `<span class="muted">　文墨 ${wm}</span>` : ''}${E.studyFrom != null ? `<span class="muted">　闭门读书 ${Math.max(0, now - E.studyFrom)} 个月</span>` : ''}</div>
+    <div class="pl" style="font-size:13px"><span>功名</span><b>${esc(E.lv === '童生' && E.tong ? (E.tong >= 2 ? '童生（县试府试都过了）' : '童生（过了县试）') : E.lv)}${E.lin ? '（廪生）' : ''}</b>${wm != null ? `<span class="muted">　文墨 ${wm}</span>` : ''}${E.studyFrom != null ? `<span class="muted">　闭门读书 ${Math.max(0, now - E.studyFrom)} 个月</span>` : ''}</div>
     ${E.pending ? `<div class="pl" style="font-size:13px"><span>已报考</span>${esc(E.pending.name)}，在${esc(E.pending.at)}，${E.pending.ym - now > 0 ? esc(E.pending.ym - now) + '个月后入场' : '这个月入场'}</div>` : nx ? `<div class="pl" style="font-size:13px"><span>下一场</span>${esc(nx.y)}年${esc(nx.m)}月${esc(nx.name)}（在${esc(nx.at)}，还有${esc(nx.ym - now)}个月）→ ${esc(nx.to)}</div>` : ''}
-    <div class="opost">${nx && !E.pending ? '<button class="link" id="bExam">报考</button>' : ''}${P.sys === '察举' ? '<button class="link" id="bXiao">求郡守举孝廉</button>' + (s.clock.y < 220 ? '<button class="link" id="bMao" title="名望要六十以上">求州刺史举茂才</button>' : '') : ''}<button class="link" id="bStudy">${E.studyFrom != null ? '不再闭门读书' : '闭门读书（文墨长得快、中的把握大）'}</button></div>
+    <div class="opost">${nx && !E.pending ? '<button class="link" id="bExam">报考</button>' : ''}${E.lv === '举人' && P.sys === '明清' && (E.huiFail || 0) >= 2 ? `<button class="link" id="bTiao">赴吏部${s.clock.y >= 1752 ? '大挑' : '拣选'}</button>` : ''}${P.sys === '察举' ? '<button class="link" id="bXiao">求郡守举孝廉</button>' + (s.clock.y < 220 ? '<button class="link" id="bMao" title="名望要六十以上">求州刺史举茂才</button>' : '') : ''}<button class="link" id="bStudy">${E.studyFrom != null ? '不再闭门读书' : '闭门读书（文墨长得快、中的把握大）'}</button></div>
     ${arr(E.log).length ? `<div class="list">${E.log.slice(-6).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.text)}</div>`).join('')}</div>` : ''}`;
 }
 /* ========== 经营：开铺子、置田产、做买卖由程序当场办——DeepSeek 照这个年代、这个地方判开得成开不成、要多少本钱、一个月大致赚多少、有什么风险（写依据），
@@ -16991,6 +17011,7 @@ document.addEventListener('click', async e => {
   if (S && t.dataset.libfind) { await libFind(S, ($('#libQ') || {}).value); render(); return; }   // 翻史书（R-192）
   if (S && !BUSY && t.dataset.ms) { msAct(S, t.dataset.ms, ($('#msQty') || {}).value); try { await store.save(S); } catch (_) {} render(); return; }   // 市面与民生（R-168）
   if (S && !BUSY && (t.dataset.zz || t.id === 'bMao')) { if (t.id === 'bMao') maocaiAsk(S); else zhongzhengAct(S, t.dataset.zz); try { await store.save(S); } catch (_) {} render(); return; }   // 九品中正、举茂才（R-156）
+  if (S && !BUSY && t.id === 'bTiao') { examTiao(S); try { await store.save(S); } catch (_) {} render(); return; }   // 举人大挑、拣选（R-261）
   if (S && !BUSY && (t.id === 'bExam' || t.id === 'bXiao' || t.id === 'bStudy')) { if (t.id === 'bExam') examApply(S); else if (t.id === 'bXiao') examRecommend(S); else { const E = examOf(S); if (E.studyFrom != null) { E.studyFrom = null; S.focus = ''; ORGMSG = '不再闭门读书'; } else { E.studyFrom = Math.floor(ymOf(S.clock)); S.focus = '读书'; ORGMSG = '开始闭门读书：每过一个月文墨长一些，应考把握大一些'; } } try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.id === 'bReform' && !REFORM_P) { ORGMSG = '正在拟定章程……'; REFORM_P = 1; render(); try { await reformStart(S, ($('#refName') || {}).value || '', ($('#refBody') || {}).value || ''); } catch (er) { ORGMSG = '没推行成：' + errText(er); } REFORM_P = null; try { await store.save(S); } catch (_) {} render(); return; }
   if (S && !BUSY && t.dataset.threat) { threatAct(S, t.dataset.threat); try { await store.save(S); } catch (_) {} render(); return; }

@@ -9,7 +9,7 @@ const path = require('path');
   const out = await p.evaluate(async () => {
     const bad = [], mk = (y, m) => { const s = newSave({ name: '甲乙丙', gender: '男', age: 20, role: '耕读人家的读书人', gregorianYear: y, month: m, day: 1, place: '扬州府江都县', polity: '清', nativePlace: '扬州府江都县' }); s.chat = [{ role: 'gm', text: '开场。' }]; s.money = { cash: 5000, unit: '两', hist: [] }; s.skills = { 文墨: { lv: 95 } }; S = s; VIEW = 'game'; return s; };
     // 1 清代：童生先考院试，日子照制度（每年三月），报考扣盘费
-    let s = mk(1747, 1); let nx = examNext(s); if (!nx || nx.name !== '院试' || nx.m !== 3) bad.push('童生下一场不是三月的院试：' + JSON.stringify(nx));
+    let s = mk(1747, 1); let nx = examNext(s); if (!nx || nx.name !== '县试' || nx.m !== 2) bad.push('白身的童生下一场不是二月的县试：' + JSON.stringify(nx)); examOf(s).tong = 2; /* 县试府试都过了（R-261 童试三关） */ nx = examNext(s); if (!nx || nx.name !== '院试' || nx.m !== 3) bad.push('童生下一场不是三月的院试：' + JSON.stringify(nx));
     const c0 = s.money.cash; examApply(s); if (!s.exam.pending || !(s.money.cash < c0)) bad.push('报考没记下、没扣盘费');
     // 到月份程序定中不中；文墨好、闭门读书久的十有八九中；中了改功名、履历
     s.exam.studyFrom = Math.floor(ymOf(s.clock)) - 36; s.clock.m = 3; let r = examMonthly(s); if (!r.length) bad.push('到了院试的月份没结算');
