@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121050723';
+const BUILD = '20261121051445';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -16402,7 +16402,7 @@ async function fictionClash(s) {
    *  凡是真人名单里有的（内置史料、名录、核过的、档案里的）一概不动——以前「拟」字号的位子上坐着真人，查重名一查「史书有此人」反倒把真人改了名 */
   const yNow = num((s.clock || {}).y), otherEra = n => { const L = []; for (const h of HALL(s)) for (const f of arr(h.figures)) if (f && f.name === n) L.push([num(f.born), num(f.died)]); const g = figByName(n); if (g) L.push([num(g.b), num(g.d)]);
     return L.length > 0 && L.every(([b, d]) => (b != null || d != null) && (yNow < (b != null ? b : d - 80) - 5 || yNow > (d != null ? d : b + 90) + 5)); };
-  const F = [...new Set([...[...fictionShow(s), ...FS].filter(n => !RN.has(n)), ...famF])].filter(n => !RN.has(n) && (!R.has(n) || otherEra(n))).filter(n => !(s.protagonist && s.protagonist.userNamed && n === s.protagonist.name)).filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 120), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
+  const F = [...new Set([...[...fictionShow(s), ...FS].filter(n => !RN.has(n)), ...famF])].filter(n => famF.includes(n) || (!RN.has(n) && (!R.has(n) || otherEra(n))))   /* 虚构主角的家里人一定是虚构的，撞了名人照改 */.filter(n => !(s.protagonist && s.protagonist.userNamed && n === s.protagonist.name)).filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 120), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
   // 一批二十四个名字一起查（每个名字直接搜，看有没有同名的史书人物）
   const NB = {}, cand0 = F.filter(n => !R.has(n)).slice(0, 96);   // 一次最多查九十六个，没轮到的下回接着查
   // 先让 DeepSeek 认：明确是史书名人的直接改名，明确不是的放过，拿不准的才上博查
@@ -16419,7 +16419,7 @@ ${cand0.map(n => n + (roleOf(n) ? '（' + roleOf(n) + '）' : '')).join('、')}
   for (const n of SAME) { markRealPerson(s, n); s.clashOK[n] = 1; }
   for (const n of F) {
     if (SAME.has(n)) continue;
-    let why = R.has(n) && otherEra(n) ? `${n}是别朝的史书人物（内置史料）` : null;
+    let why = R.has(n) && (otherEra(n) || famF.includes(n)) ? `${n}是别朝的史书人物（内置史料）` : null;
     let looked = n in NB; if (!why && looked) why = NB[n] || null;
     if (!why) { if (!looked && canSearch()) continue; s.clashOK[n] = 1; continue; }   // 这回没轮到联网查的，下回再查
     const m = arr(s.household).find(x => x.name === n), p = (s.people || {})[n] || {};
