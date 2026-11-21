@@ -3791,6 +3791,7 @@ function campaignTick(s, days) {
     const G = garrisonAt(s, c.target);
     if (c.mode === '攻' && !G.known && G.owner && c.pre) { f.at = c.target; f.status = '兵临城下'; out.push(`${f.name}兵临${c.target}，探马早已探明守军虚实`); out.push(...campResolve(s, c, c.pre)); continue; }   /* 行军路上探马先行（R-171）：到了城下当回就打，不再等一回 */
     if (c.mode === '攻' && !G.known && G.owner) { c.state = '待探报'; f.at = c.target; f.status = '兵临城下'; out.push(`${f.name}兵临${c.target}，正派探马打探${G.owner}守军虚实`); continue; }
+    f.at = c.target;   /* 到了就在地头（R-270 真玩：张敬达围了太原，账上还写着「怀州至潞州行军途中」） */
     out.push(...campResolve(s, c, null));
   }
   out.push(...SM('foeMarchTick', () => foeMarchTick(s, days)));   // 敌军照路程往前走（R-145）
@@ -15714,7 +15715,7 @@ function ledgerGate(s, d, said) {
     if (o && o.role && n.role && postCore(n.role) !== postCore(o.role) && !String(o.role).includes(String(n.role)) && !(appt && String(d.reply || '').includes(String(n.role).replace(/[（(].*$/, '').slice(-4)))) { stop.push(`${k}的官「${one(o.role, 12)}」不随记账改成「${one(n.role, 12)}」`); n.role = o.role; } }
   if (Array.isArray(d.presentNpcs)) d.presentNpcs = d.presentNpcs.filter(n => !(n && n._drop));
   /* 在途的兵：在哪、什么状态只归程序 */
-  for (const x of arr(d.forces)) { if (!x) continue; const nm = x.name || x.leader, c = arr(s.campaigns).find(c => c.force === nm && /待发|行军|围城/.test(c.state)); if (c && (x.at || x.status)) { stop.push(`${nm}在途，位置照程序`); delete x.at; delete x.status; } }
+  for (const x of arr(d.forces)) { if (!x) continue; const nm = x.name || x.leader, c = arr(s.campaigns).find(c => c.force === nm && /待发|行军|围城/.test(c.state)); if (c && (x.at || x.status || x.troops != null)) { stop.push(`${nm}在途，位置、兵数照程序`); delete x.at; delete x.status; delete x.troops; } }
   /* 死人不升官、不领兵 */
   for (const x of arr(d.forces)) if (x && x.leader && dead(String(x.leader).replace(/[（(].*$/, ''))) { stop.push(`${x.leader}已故，不改统兵`); delete x.leader; }
   if (stop.length) { GATE_LOG.push({ turn: s.turn, stop }); GATE_LOG.splice(0, Math.max(0, GATE_LOG.length - 30)); noteErr('账房门', stop.slice(0, 8).join(' / ')); }

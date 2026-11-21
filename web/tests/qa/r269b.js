@@ -21,7 +21,7 @@ const path = require('path');
     R.F = arr(s.forces).map(f => f.name + '|' + f.leader + '|' + N0(f.troops)); R.C = arr(s.campaigns).map(c => c.force + '|' + c.mode + '|' + c.target); return R; });
   const bad = [];
   if (!r.c1.some(x => /^张敬达.*\|守\|晋州/.test(x))) bad.push('「命张敬达率禁军三万北上屯驻晋州」账上没立行军：' + JSON.stringify(r.c1));
-  if (!r.F.some(x => /张敬达\|30000$/.test(x))) bad.push('没从禁军分出三万归张敬达：' + JSON.stringify(r.F));
+  if (!r.F.some(x => /张敬达\|(29[0-9]{3}|30000)$/.test(x))) bad.push('没从禁军分出三万归张敬达：' + JSON.stringify(r.F));
   if (r.b.length || r.c2 !== 1) bad.push('带「若」的有条件的令也调了兵');
   if (!r.C.some(x => /^杨光远.*\|攻\|太原/.test(x)) || !r.F.some(x => /杨光远\|(9[5-9]\d\d|10000)$/.test(x))) bad.push('增派杨光远一万赴太原没立：' + JSON.stringify(r));
   if (r.F.some(x => /^张敬达.*\|20000$/.test(x))) bad.push('增派的兵从已经出征的张敬达那里分');
