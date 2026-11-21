@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121162619';
+const BUILD = '20261121162902';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -8143,10 +8143,18 @@ const ACT_OPEN = /在办|待批|拖着|部分/;
 /** 行动单上给玩家看的话：去掉「玩家盘算：」「主角打算」这类内部说法，「玩家」「主角」改称「你」（R-254，真模型实测查出） */
 const actPlain = w => String(w || '').replace(/^\s*(玩家|主角)(的)?(盘算|打算|想法|心里想|计划|意图)[：:，,]?\s*/, '').replace(/^\s*(盘算|打算)[：:]\s*/, '').replace(/玩家|主角/g, '你');
 function actNew(s, a) {
+  /* 同一件事不开两张单（R-269 真玩：「接见吴越来朝使者，照例回赐」开了两张，回执里回回列两遍） */
+  { const k = actKey(a.what); if (k.length >= 4) { const dup = arr(s.acts).find(x => ACT_OPEN.test(x.state) && actKey(x.what) === k); if (dup) return dup; } }
   const x = { id: 'a' + ((s.actSeq = (num(s.actSeq) || 0) + 1)), type: ACT_T[a.type] ? a.type : '令', what: one(actPlain(a.what), 80), who: one(a.who, 16), to: one(a.to, 16), perm: one(a.perm, 40), ok: one(a.ok, 8), src: a.src || '输入框', turn: s.turn, ym: Math.floor(ymOf(s.clock)), state: a.state || (a.type === '请' ? '待批' : '在办'), log: arr(a.log), ref: a.ref || null };
   s.acts = arr(s.acts).concat([x]).slice(-80); return x;
 }
+const actKey = w => String(actPlain(w) || '').replace(/^(下令|询问|请令|问计|试)[：:]?/, '').replace(/[，,。；;：:、\s「」]/g, '').slice(0, 14);
 const actOpen = s => arr(s.acts).filter(x => ACT_OPEN.test(x.state));
+/** 拖了八回以上没新进展的单子收起来（R-269 真玩：「照常理政」「元会」这类家常事回回挂在回执里「部分办成」）；同一件事的重复单合成一张 */
+function actTidy(s) { const seen = new Set();
+  for (const x of arr(s.acts)) { if (!ACT_OPEN.test(x.state)) continue; const k = actKey(x.what);
+    if (k.length >= 4 && seen.has(k)) { x.state = '搁下'; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state: '搁下', why: '和另一张是同一件事，合并' }]).slice(-8); continue; } seen.add(k);
+    if ((s.turn || 0) - Math.max(num(x.turn) || 0, num(x.touched) || 0) > 8 || (/部分/.test(x.state) && x.src !== '军务' && !/围|攻|征|讨|修|筑|建|垦|练|造/.test(x.what || '') && (s.turn || 0) - (num(x.turn) || 0) > 8)) { x.state = '搁下'; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state: '搁下', why: '多回没有新的进展，先收起' }]).slice(-8); } } }
 function actSet(s, pred, state, why) { for (const x of arr(s.acts)) if (ACT_OPEN.test(x.state) && pred(x)) { x.state = state; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state, why: one(actPlain(why), 60) }]).slice(-8); x.touched = s.turn; } }
 /** 推演、写正文、记账都看得到的行动单 */
 /** 犯禁的事做得成，后果看人看时局（R-242「少限制」）：pr 的可能被人揪住，下个月起临门；同一桩没了结前不重复 */
@@ -8204,7 +8212,7 @@ function actsHtml(s, mini) {
 }
 /** 回执：这一回各张单子怎样了、正文说了却没落账的 */
 function receiptHtml(r, unb) {
-  r = arr(r).filter(x => x && !/^办成$/.test(x.state || ''));   // 办成了正文里已经写着，回执只提没办成、受阻、拖着的
+  { const seen = new Set(); r = arr(r).filter(x => { if (!x || /^办成$/.test(x.state || '')) return false; const k = actKey(x.what); if (k && seen.has(k)) return false; seen.add(k); return true; }); }   // 办成了正文里已经写着，回执只提没办成、受阻、拖着的
   if (!arr(r).length) return '';
   return `<div class="receipt"><b>没办成的、还拖着的</b>${arr(r).map(x => `<div>· <span class="att ${/受阻|驳回|没有下文/.test(x.state) ? 'b-bad' : ''}">${esc(x.state)}</span> ${esc(ACT_T[x.type] || '')}：${esc(x.what)}${x.why ? `<span class="muted">——${esc(x.why)}</span>` : ''}</div>`).join('')}</div>`;   // 玩家只管扮演：没认的账不摆出来，由对账改稿在后台把正文改到和账一致（R-236）
 }
@@ -17297,6 +17305,7 @@ function tidyState(s) {
   if (!s || typeof s !== 'object') return s;
   try { for (const [k, v] of Object.entries(s.people || {})) if (v && v.role && BIO_ROLE.test(String(v.role))) v.role = cleanRole(s, k, v.role); } catch (_) { /* 人物现任清不了不耽误 */ }
   try { orgSync(s); } catch (_) { /* 人事树对不齐不耽误 */ }
+  try { actTidy(s); } catch (_) { /* 行动单理不了不耽误 */ }
   try { for (const [k, d] of Object.entries(s.dossiers || {})) if (d && d.real === false && figByName(k)) { d.real = true; d.chk = '内置史料'; if (/查无此人/.test(d.identity || '')) d.identity = ''; } } catch (_) { /* 旧档案修不了不耽误 */ }   /* 旧存档：名臣包里有的人被判成查无此人的改回真人（R-269） */
   try { if (s.protagonist && Array.isArray(s.household)) s.household = s.household.filter(m => !(m && isSelfKin(s, m.name, m.relation))); } catch (_) { /* 主角还没定 */ }
   // 旧存档：丙等位子（书吏衙役兵丁、八九品杂职）上程序起的虚构名字清掉，只写员额（2026-11-05 玩家：虚构人物太多）
