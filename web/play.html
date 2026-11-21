@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121161527';
+const BUILD = '20261121161928';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4294,6 +4294,21 @@ async function buildOfficers(s) {
   for (const c of C) { const p = findPost(s, c.name); if (p && !p.attr) p.attr = { faction: '' }; }
   return C.length;
 }
+/** 人物的现任和人事树对齐（R-269 真玩：范延光现任枢密使、树上枢密使空着；李崧记成枢密副使、树上还空着；已故的刘赞还挂在位上）：
+ *  每回整理一遍——人物现任和树上某个位子的官名一字不差、这人在世，位子空着或原来的人已经不在这个官上，就把他填上；位子上的人死了，空出来 */
+const postCore = t => String(t || '').replace(/[（(][^）)]*[）)]/g, '').replace(/^(后唐|后梁|后晋|后汉|后周|大唐|唐|宋|明|清|本朝|朝廷|兼|守|权|判|知)/, '').trim();
+function orgSync(s) {
+  const N = arr(s && s.org && s.org.nodes); if (!N.length) return []; const P = s.people || {}, out = [], me = (s.protagonist || {}).name;
+  const posts = []; for (const n of N) for (const q of arr(n && n.posts)) if (q && q.title) posts.push(q);
+  for (const q of posts) { const h = q.holder && P[q.holder]; if (h && h.dead) { out.push(`${q.title}：${q.holder}已故，空出`); q.holder = ''; q.src = ''; } }
+  const byCore = new Map(); for (const q of posts) { const c = postCore(q.title); if (c.length >= 2) { if (!byCore.has(c)) byCore.set(c, []); byCore.get(c).push(q); } }
+  for (const [name, v] of Object.entries(P)) { if (!v || v.dead || name === me || !v.role) continue; const L = byCore.get(postCore(v.role)); if (!L || L.length !== 1) continue; const q = L[0];
+    if (q.holder === name || arr(q.others).includes(name)) continue;
+    const cur = q.holder && P[q.holder], curStill = cur && !cur.dead && postCore(cur.role) === postCore(q.title);
+    if (!q.holder || !curStill) { if (q.holder) out.push(`${q.title}：${q.holder}→${name}`); else out.push(`${q.title}：补上${name}`); q.holder = name; q.src = q.src && q.src !== '拟' ? q.src : '账'; }
+    else if (!arr(q.others).includes(name)) { q.others = arr(q.others).concat([name]); out.push(`${q.title}：添${name}`); } }
+  return out;
+}
 function findPost(s, name) { for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.holder === name) return p; return null; }
 /* ---------- R-203 原文库核实：人事树上的人不只靠博查——照朝代挑正史，在原文库里检索这个名字；
    命中即「已核·原文《书名》」，一条就把真人钉死（正史列传里查得到名字，铁证）；核不上再走博查，还核不上就不配占大位子 ---------- */
@@ -6582,7 +6597,22 @@ function eventsBlock(s) {
  *  够得着的交给写戏当可以出场的真人，够不着的只当「听说过」——不再请模型现场推这些人在哪、做什么官。次要人物照旧现场虚构 ========== */
 let FIGLIB = []; try { FIGLIB = JSON.parse((document.getElementById('figlib') || {}).textContent || '[]'); if (!Array.isArray(FIGLIB)) FIGLIB = []; } catch (_) { FIGLIB = []; }
 function figAt(f, y) { const w = arr(f.w).find(x => (x[0] == null || y >= x[0]) && (x[1] == null || y <= x[1])); return w ? { place: w[2], why: w[3] } : null; }
-function figPost(f, y) { const p = arr(f.po).filter(x => (x[1] == null || y >= x[1]) && (x[2] == null || y <= x[2])); return p.length ? p[p.length - 1][0] : ''; }
+/** 名臣包里一段任职常是一串履历带批注（「厅直军使；河东马步军都指挥使领钦州刺史，累迁彰国、大同军节度使」「……（围太原……为杨光远所杀）」）：
+ *  只取这一年的那一个官——去掉括号批注（里头常有日后的事），按年份在这段起止里落到第几个，去掉「改」「授」「累迁」这类字（R-269 真玩：人物现任写成一生履历、剧透死法） */
+function postNow(t, y, from, to) {
+  const segs = String(t || '').replace(/（[^（）]*）|\([^()]*\)/g, '').replace(/（[^）]*$|……/g, '').split(/[；;]/).map(x => x.trim()).filter(Boolean); if (!segs.length) return '';
+  const OFF = /使|将军|刺史|尚书|侍郎|学士|节度|指挥|令$|令[，、]|丞|卿|御史|参军|判官|推官|书记|招讨|留守|尹|王$|相$|宰相|平章|统军|都督|都监|总管|部署|大夫|侍中|司空|司徒|太保|太傅|太尉|拾遗|补阙|舍人|郎中|员外/;
+  const n = segs.length, k0 = n === 1 || from == null || to == null || to <= from || y == null ? n - 1 : Math.max(0, Math.min(n - 1, Math.floor((y - from) / (to - from + 1) * n)));
+  let k = k0; if (!OFF.test(segs[k])) { for (let i = k0; i >= 0; i--) if (OFF.test(segs[i])) { k = i; break; } if (k === k0) for (let i = k0; i < n; i++) if (OFF.test(segs[i])) { k = i; break; } }
+  let x = segs[k].replace(/^(长兴|天成|同光|清泰|应顺|天福|开平|乾化|贞明|龙德|天祐)?[^，,]{0,3}?(中|初|末|年间)(?=[一-鿿])/, '').replace(/^(累迁|累官|入为|出为|改授|又|改|授|拜|迁|徙|除|历|加|擢|转|寻|旋|后)/, '').replace(/^[^，,]*?年(为|任|授|拜)/, '').trim();
+  const ps = x.split(/[，,]/); let last = 0; ps.forEach((q, i) => { if (OFF.test(q)) last = i; }); x = ps.slice(0, last + 1).join('，');
+  if (x.length > 24) { const c = x.split(/[，,、]/).find(q => OFF.test(q)) || x; x = c.slice(0, 24); }
+  return x === '相' ? '宰相' : x;
+}
+function figPost(f, y) { const p = arr(f.po).filter(x => (x[1] == null || y >= x[1]) && (x[2] == null || y <= x[2])); return p.length ? postNow(p[p.length - 1][0], y, p[p.length - 1][1], p[p.length - 1][2]) : ''; }
+/** 人物的「现任」是一串履历的，换成这一年的那一个官（名臣包里有年份照年份，没有就取最后一段） */
+const BIO_ROLE = /[；;]|（[^）]{12,}|……|累迁|[一-鿿]{2}元年为/;
+function cleanRole(s, name, role) { const r = String(role || ''); if (!BIO_ROLE.test(r)) return r; const y = s && s.clock ? s.clock.y : null, f = figByName(name); if (f) { const q = figPost(f, y); if (q) return q; } return postNow(r, y, null, null) || r; }
 /** 主角够不够得着：同地可见；对方在都城，主角是一方之主可遣使相召，外任的官只能写信托人；其余只是听说 */
 function figReach(s, f, y) {
   const at = figAt(f, y); if (!at) return { lv: '不知下落' }; const here = geoCenter(s) || (s.place || {}).full || '';
@@ -17233,6 +17263,8 @@ let PERF = null, CUR_RULING = null, EXTRA_LOOK = '';
 /** 账里的列表只留像样的条目：AI 记账偶尔留下 null、一个字、缺名字的条目，一条坏的就能让整页画不出来、按钮全失灵（2026-10-30 玩家：第二回合说一句就没反应了） */
 function tidyState(s) {
   if (!s || typeof s !== 'object') return s;
+  try { for (const [k, v] of Object.entries(s.people || {})) if (v && v.role && BIO_ROLE.test(String(v.role))) v.role = cleanRole(s, k, v.role); } catch (_) { /* 人物现任清不了不耽误 */ }
+  try { orgSync(s); } catch (_) { /* 人事树对不齐不耽误 */ }
   try { if (s.protagonist && Array.isArray(s.household)) s.household = s.household.filter(m => !(m && isSelfKin(s, m.name, m.relation))); } catch (_) { /* 主角还没定 */ }
   // 旧存档：丙等位子（书吏衙役兵丁、八九品杂职）上程序起的虚构名字清掉，只写员额（2026-11-05 玩家：虚构人物太多）
   try { for (const n of arr(s.org && s.org.nodes)) for (const q of arr(n && n.posts)) if (q && q.src === '拟' && !q.byPlayer && seatTier(n, q) === '丙') { q.holder = ''; q.src = ''; q.others = []; q.othersFake = false; q.status = '照额'; } } catch (_) { /* 树坏了下面清 */ }
