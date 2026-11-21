@@ -138,6 +138,7 @@ start ai.js && {
   run "南北朝、隋唐前期君主年号：君主照正史、年号照哈佛库年号表，换君改元同年归对人；只有君主年号的表不挡联网自建史事；东魏开局年号是武定（R-226）" 120 env PLAY="$ROOT/web/play.html" node rulers2.js
   run "真玩查出的五处：心里的盘算不写成说出口、「过半年」让时间走、一仗几日过几日、敌情看得见交过手的敌军、楚照中原正朔、行动单不露内部说法、主角不标虚拟（R-254）" 120 env PLAY="$ROOT/web/play.html" node r254.js
   run "AI 调度省钱第一阶段：要紧的一步只认真大事、块名长的也裁得到、每次调用记花费账、设置页看得到（R-255）" 120 env PLAY="$ROOT/web/play.html" node r255.js
+  run "开局物价照底账：纺织月收入不丢、别区的价不当本地载值、底账另折本位不把 AI 给的再除一千（R-256 补、R-273）" 120 env PLAY="$ROOT/web/play.html" node r256.js
   run "临阵出的主意算进仗里、据城守门不再回回大败、正文胜负跟程序对不上打回重写（R-257）" 120 env PLAY="$ROOT/web/play.html" node r257.js
   run "看到的就是做好的：真人照史死、别名认真人、志向固定、军务页兵种内置（R-258）" 120 env PLAY="$ROOT/web/play.html" node r258.js
   run "制度审查：童试三关、岁考、举人大挑、冲锋要有仗、正文围城真围、别家易手改图（R-261）" 120 env PLAY="$ROOT/web/play.html" node r261.js
@@ -151,7 +152,7 @@ start ai.js && {
   run "打字下的军令也真调兵：分兵、立行军、增派、有条件的令不动（R-269）" 120 env PLAY="$ROOT/web/play.html" node r269b.js
   run "长跳月结一个月一个月地过、商铺利不重复、军粮不双扣、到年底照几月算、押牢字段齐、赈济一月一回（R-271）" 120 env PLAY="$ROOT/web/play.html" node r271.js
   run "画界面不跑重的整理、迟到的错照记、卡住放开掐断旧请求、重画不丢字（R-272）" 120 env PLAY="$ROOT/web/play.html" node r272.js
-  run "可执行史事不照史硬发：主角之国的任免改元、主角的城、救下的人不动（R-273）" 120 env PLAY="$ROOT/web/play.html" node r273.js
+  run "可执行史事不照史硬发：主角之国的任免改元、主角的城、救下的人不动（R-274）" 120 env PLAY="$ROOT/web/play.html" node r274.js
   run "五代十国朝廷照数据排：荆南小国十几个位子，明载、推定的人坐原位，空位照用人来路补人、标虚构、不与真人重名、重开同一人；南平也认（任务七，R-227）" 150 env PLAY="$ROOT/web/play.html" node wudai_court.js
   run "家里人不许叫「某」：开局、记账带进来的「韩某」照制度起名，男丁随主角的姓，族谱页看不到「某」（试玩查出）" 120 env PLAY="$ROOT/web/play.html" node kinname.js
   run "游戏读时代世情库：主角此刻沾着的活法当写戏材料（930 牙兵认出牙兵），称呼里的某换成〔姓〕，库里没有的年代、自编的行当照旧走不拦（任务十二）" 120 env PLAY="$ROOT/web/play.html" node ways.js

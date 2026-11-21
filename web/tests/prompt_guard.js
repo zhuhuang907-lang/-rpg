@@ -331,6 +331,7 @@ const checks = [
   ['少查史料（R-256）：开局不问礼俗称谓；有内置制度库的不问官制军制币制；内置史料有这一年的不问大事年表；要紧的一步认告状打官司', !/礼俗 称谓 馈赠/.test(src) && /\.\.\.\(hasInst \? \[\] : \[/.test(src) && /\.\.\.\(hasH \? \[\] : \[/.test(src) && /告状\|状告\|打官司/.test(src)],
   ['大功必赏（R-257）：推演照当时惯例论功行赏，护驾擒首恶之类当场或几日内升等给实职，拖要有缘由和兑现时日', /论功行赏照当时的惯例来/.test(src) && /并写明大约何时兑现，到时照兑/.test(src)],
   ['公私分账（R-257）：入股钱、公账、柜上底钱不进主角现钱；按月结过的生意利不在盘账时重报', /股东入股的钱、公账（海损、公积）、柜上压的底钱记在 orgs 的 cash 或 business 里，不进 ledger/.test(src)],
+  ['zcode 不许直推（R-273）：提交检查拦 zcode 身份在 claude/…、main 上提交；推送前检查拦推 claude/…、main；命令单里没有「直推预备分支」；开局物价只认本区载值、纺织月收入照问、底账另折本位', (() => { const ck = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'check.sh'), 'utf8'), pp = (() => { try { return fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'hooks', 'pre-push'), 'utf8'); } catch (_) { return ''; } })(); const docs = fs.readdirSync(path.join(__dirname, '..', '..', '中书省')).filter(f => /^任务.*\.md$/.test(f)).map(f => fs.readFileSync(path.join(__dirname, '..', '..', '中书省', f), 'utf8')).join('\n'); return /zcode 不许在 \$br 上提交/.test(ck) && /refs\/heads\/claude\/\*/.test(pp) && !/直推预备分支/.test(docs) && /x\.mine && x\[k\] != null/.test(src) && /'protect','cloth','interest'/.test(src); })()],
 ];
 let bad = 0; for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '通过  ' : '不合格  ') + name); }
 console.log(`提示词护栏：${checks.length} 项，不合格 ${bad} 项`); process.exit(bad ? 1 : 0);
