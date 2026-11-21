@@ -234,3 +234,26 @@ index d6bfcd3..f85bc24 100644
      { const sm = spanAsked(d.span, said); if (sm >= 1 && (!rep2.trim() || /(数|几|两|三|四|五|六|七|八|九|十|半|一)(个)?(月|年|载)|月余|一晃|转眼|此后|这半年|这一年|过了|入冬|入秋|开春|转过年|到了年底|年底/.test(rep2))) days = Math.max(days, Math.min(capDays, Math.round(sm * 30.5 * 0.9))); }   // R-257：玩家说「练半年看」，正文停在第二天的一场对话，钟却过了半年——正文真写了日子过去才照玩家说的推
      { const tg = storyDate(s, rep2); if (tg) { const want = dayIdx(tg) - dayIdx(s.clock); if (want > 0 && Math.abs(days - want) > 45) days = Math.min(2200, want); else if (want <= 0 && want > -40 && days > 60) days = Math.max(1, want + 30); } }   // R-257：正文写到「长兴二年四月」，钟照账房报的天数走，少了停在上一年腊月、多了跳到第二年九月：以正文明写的最后一个年月为准
      { const br = CUR_RULING && CUR_RULING.battleResult, bd = br ? arr(br.rounds).length : 0; if (bd > 1) days = Math.max(days, bd); }   // 一仗打了几日，时间就至少过几日（R-254：七日的仗，钟上只过了几个时辰）   // 玩家说了过多久，账房报得少也照玩家说的过（R-254：「过半年」账上只过了几个钟头）   // 玩家说过两年、过五年：照他说的推，最多五年多
+diff --git a/web/tests/qa/wudai_court.js b/web/tests/qa/wudai_court.js
+index 5edeb9b..7e6cfbb 100644
+--- a/web/tests/qa/wudai_court.js
++++ b/web/tests/qa/wudai_court.js
+@@ -117,14 +117,13 @@ const path = require('path');
+   errs.push(...out);
+   await p.evaluate(() => { VIEW = 'game'; TAB = 'court'; SIDE_FOLD = false; render0(); });
+   const h = await p.evaluate(() => document.body.innerText);
+-  if (!/照履历推定/.test(h)) errs.push('朝局页看不到「照履历推定」');
+-  if (!/虚构/.test(h)) errs.push('朝局页看不到补的人标「虚构」');
++  // R-264 起人物/人事树不再标「虚构／照履历推定」（玩家要求一律当真人），这里只查人摆没摆出来
+   if (!/高季兴/.test(h)) errs.push('朝局页没摆出高季兴');
+-  // 真点：点「人物」标签，补的人写明来路，照履历推定的写明推定
++  // 真点：点「人物」标签，人物页要能打开、列出这一朝的人
+   await p.evaluate(() => { TAB = 'board'; render0(); });
+   const tb = await p.$$('[data-tab="people"]'); if (!tb.length) errs.push('找不到人物页标签'); else { await tb[0].click(); await p.waitForTimeout(150); }
+   const hp = await p.evaluate(() => document.body.innerText);
+-  if (!/史书未载，照该国用人惯例补/.test(hp)) errs.push('人物页上补的人没写来路');
+-  if (!/任职年份照履历推定/.test(hp)) errs.push('人物页上高从诲没写照履历推定');
++  if (hp.length < 10) errs.push('人物页是空的');
++  if (!/高从诲/.test(hp)) errs.push('人物页上没列出高从诲');
+   console.log('ERRS', JSON.stringify(errs)); await b.close();
+ })();
