@@ -13,9 +13,9 @@ print('我说：',sys.argv[1]); print('兵',v.get('forces')); print('err',v.get(
 print(v.get('text','')); print('--回执--\n'+v.get('receipt','')[:800])
 P
   t=$(python3 -c "import json;print(json.load(open('last.json')).get('v',{}).get('turn','x'))")
-  curl -s -X POST --data-binary "shots/t${t}-board.png" localhost:8798/shot >/dev/null
+  curl -s -X POST --data-binary "$EXAM_DIR/shots/t${t}-board.png" localhost:8798/shot >/dev/null
   curl -s -X POST --data-binary "(()=>{const e=document.querySelector('[data-tab=map]');if(e)e.click();return 1})()" localhost:8798/eval >/dev/null; sleep 2
-  curl -s -X POST --data-binary "shots/t${t}-map.png" localhost:8798/shot >/dev/null
+  curl -s -X POST --data-binary "$EXAM_DIR/shots/t${t}-map.png" localhost:8798/shot >/dev/null
   curl -s -X POST --data-binary "(()=>{const e=document.querySelector('[data-tab=board]');if(e)e.click();return 1})()" localhost:8798/eval >/dev/null
   curl -s -X POST --data-binary 'JSON.stringify(Object.fromEntries(Object.keys(localStorage).map(k=>[k,localStorage.getItem(k)])))' localhost:8798/eval | python3 -c "import json,sys;open('lcr$t.json','w').write(json.loads(sys.stdin.read()))" 2>/dev/null
   curl -s -X POST --data-binary "JSON.stringify({turn:S.turn,clock:S.clock,when:timeText(S.clock),age:S.protagonist.age,career:S.career,people:Object.fromEntries(Object.entries(S.people||{}).map(([k,v])=>[k,{role:v.role,where:v.where,dead:v.dead,age:v.age}])),org:arr(S.org&&S.org.nodes).map(n=>[n.name,arr(n.posts).map(p=>[p.title,p.holder,p.src])]),forces:arr(S.forces).map(f=>({name:f.name,leader:f.leader,owner:f.owner,troops:f.troops,at:f.at,status:f.status})),camps:S.campaigns,wars:S.wars,orders:arr(S.orders).slice(-8),acts:arr(S.acts).slice(-8),hc:healthCheck(S),errs:JSON.parse(localStorage.getItem(ERRLOG_KEY)||\"[]\").slice(-15)})" localhost:8798/eval | python3 -c "import json,sys;open(\"st$t.json\",\"w\").write(json.loads(sys.stdin.read()))" 2>/dev/null

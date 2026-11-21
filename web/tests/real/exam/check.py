@@ -3,7 +3,7 @@ import json, sys, glob, os, re
 d0 = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('EXAM_DIR', '/tmp/rpg-exam')
 bad = []
 prev = None
-for f in sorted(glob.glob(os.path.join(d0, 'st*.json')), key=lambda x: int(re.sub(r'\D', '', os.path.basename(x)) or 0)):
+for f in sorted(glob.glob(os.path.join(d0, 'st[0-9]*.json')), key=lambda x: int(re.sub(r'\D', '', os.path.basename(x)) or 0)):
     try: d = json.load(open(f))
     except Exception: continue
     t = d.get('turn')
@@ -26,7 +26,7 @@ for f in sorted(glob.glob(os.path.join(d0, 'st*.json')), key=lambda x: int(re.su
 # 问题报告里的几类：页面出错、月结出错、一直重写，单列
 kinds = {}
 seen = set()
-for f in glob.glob(os.path.join(d0, 'st*.json')):
+for f in glob.glob(os.path.join(d0, 'st[0-9]*.json')):
     try: d = json.load(open(f))
     except Exception: continue
     for e in d.get('errs') or []:
