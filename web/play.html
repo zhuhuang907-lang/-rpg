@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121173550';
+const BUILD = '20261121173748';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4312,14 +4312,16 @@ function orgSync(s) {
 /** 任免照诏书落账（R-269 真玩：玩家「照拟下诏任命」，正文诏书写了「崔棁可守右散骑常侍，韩昭裔可守枢密承旨……」，账上一个没记）：
  *  玩家这一步是任免的，正文里「某可守／可／除／授／拜／为／兼／判 某官」，人是账上在世的、官名像官名的，记成他的现任，人事树随后对齐 */
 const APPT_SAID = /任命|任用|除授|授官|拜官|下诏.{0,6}(任|除|授|拜|补)|补齐|补缺|补上|擢|迁转|升任|调任|罢免|免去|照拟/;
-const APPT_OFF = /(部|使|郎|侍郎|舍人|大夫|学士|尚书|丞|令|尹|卿|监|将军|指挥使|常侍|侍中|御史|拾遗|补阙|给事中|承旨|判官|推官|参军|刺史|节度使|留守|统军|都督|总管|招讨使|平章事|宰相)$/;
+const APPT_OFF = /(府事|州事|军事|部|使|郎|侍郎|舍人|大夫|学士|尚书|丞|令|尹|卿|监|将军|指挥使|常侍|侍中|御史|拾遗|补阙|给事中|承旨|判官|推官|参军|刺史|节度使|留守|统军|都督|总管|招讨使|平章事|宰相)$/;
 function textAppoint(s, said, text) {
   if (!s || !APPT_SAID.test(String(said || ''))) return []; const P = s.people || {}, out = [], me = (s.protagonist || {}).name;
-  const T0 = String(text || '').replace(/([一-鿿]{2,3}?)以([一-鿿]{2,10}?)兼(?:判)?([一-鿿]{2,12}?)(?=[，,；;。」]|$)/g, '$1为$2兼$3');
-  const re = /([一-鿿]{2,3}?)(可守|可充|可兼|可判|可|除|授|拜|为|兼|判|充|守)([一-鿿、]{2,16}?)(?=[，,；;。、」]|$)/g; let m; text = T0;
+  const approve = /照拟|照(他们|所|卿)拟|准奏|依议|照准|依卿|就照这样|照这么办/.test(String(said || ''));
+  const T0 = String(text || '').replace(/(?:请以|以)([一-鿿]{2,3}?)(权知|知|判)([一-鿿]{2,6}?(?:府|州|军))事/g, '$1为$2$3事').replace(/([一-鿿]{2,3}?)以([一-鿿]{2,10}?)兼(?:判)?([一-鿿]{2,12}?)(?=[，,；;。」]|$)/g, '$1为$2兼$3');
+  const re = /([一-鿿]{2,3}?)(可守|可充|可兼|可判|可为|可|除|授|拜|为|兼|判|充|守)([一-鿿、]{2,16}?)(?=[，,；;。、」]|$)/g; let m; text = T0;
   while ((m = re.exec(String(text || '')))) { const who = m[1], verb = m[2], post0 = m[3].replace(/^(本官|本职)/, ''), post = /兼|判/.test(verb) && P[who] && P[who].role && !String(P[who].role).includes(post0) ? postCore(P[who].role) + '兼' + post0 : post0;
+    if (!P[who] && figByName(who) && APPT_OFF.test(post0)) { P[who] = { role: figPost(figByName(who), s.clock.y) || '', seen: s.turn, real: true }; s.people = P; }   /* 名臣包里有、账上还没有的真人，照诏书添上 */
     if (!P[who] || P[who].dead || who === me || !APPT_OFF.test(post0) || post0.length < 2 || /^(何|什么|谁)/.test(post)) continue;
-    const pre = String(text).slice(Math.max(0, m.index - 12), m.index); if (/举荐|荐|请以|拟|可否|若|如|不如|何不/.test(pre + String(text).slice(m.index + m[0].length, m.index + m[0].length + 6)) || /^(何|什么|谁)/.test(post0)) continue;   /* 举荐、拟议的不算，诏书里的才算 */
+    const pre = String(text).slice(Math.max(0, m.index - 12), m.index); if ((approve ? /举荐|荐一|可否|若|如果|不如|何不/ : /举荐|荐|请以|拟|可否|若|如|不如|何不/).test(pre + String(text).slice(m.index + m[0].length, m.index + m[0].length + 6)) || /^(何|什么|谁)/.test(post0)) continue;   /* 玩家说「照拟」「准奏」：大臣请的就是要办的 */   /* 举荐、拟议的不算，诏书里的才算 */
     const was = P[who].role; if (was === post) continue; P[who].role = post; P[who].roleLog = arr(P[who].roleLog).concat([{ when: timeText(s.clock), from: was, to: post, why: '诏书任命' }]).slice(-8); out.push(`${who}：${was || '？'}→${post}`); }
   return out;
 }
