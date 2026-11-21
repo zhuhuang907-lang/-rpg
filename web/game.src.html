@@ -5533,7 +5533,7 @@ function figAt(f, y) { const w = arr(f.w).find(x => (x[0] == null || y >= x[0]) 
 function postNow(t, y, from, to) {
   const segs = String(t || '').replace(/（[^（）]*）|\([^()]*\)/g, '').replace(/（[^）]*$|……/g, '').split(/[；;]/).map(x => x.trim()).filter(Boolean); if (!segs.length) return '';
   const OFF = /使|将军|刺史|尚书|侍郎|学士|节度|指挥|令$|令[，、]|丞|卿|御史|参军|判官|推官|书记|招讨|留守|尹|王$|相$|宰相|平章|统军|都督|都监|总管|部署|大夫|侍中|司空|司徒|太保|太傅|太尉|拾遗|补阙|舍人|郎中|员外/;
-  const n = segs.length, k0 = n === 1 || from == null || to == null || to <= from || y == null ? n - 1 : Math.max(0, Math.min(n - 1, Math.floor((y - from) / (to - from + 1) * n)));
+  const n = segs.length, k0 = n === 1 || from == null || to == null || to <= from || y == null ? n - 1 : Math.max(0, Math.min(n - 1, Math.floor((y - from) / (to - from + 1) * (n - 1))));   /* 宁早勿晚：一段的最后一个官常是这一段末了（多半是临终、败亡前）才得的，不提前露 */
   let k = k0; if (!OFF.test(segs[k])) { for (let i = k0; i >= 0; i--) if (OFF.test(segs[i])) { k = i; break; } if (k === k0) for (let i = k0; i < n; i++) if (OFF.test(segs[i])) { k = i; break; } }
   let x = segs[k].replace(/^(长兴|天成|同光|清泰|应顺|天福|开平|乾化|贞明|龙德|天祐)?[^，,]{0,3}?(中|初|末|年间)(?=[一-鿿])/, '').replace(/^(累迁|累官|入为|出为|改授|又|改|授|拜|迁|徙|除|历|加|擢|转|寻|旋|后)/, '').replace(/^[^，,]*?年(为|任|授|拜)/, '').trim();
   const ps = x.split(/[，,]/); let last = 0; ps.forEach((q, i) => { if (OFF.test(q)) last = i; }); x = ps.slice(0, last + 1).join('，');
@@ -14604,7 +14604,8 @@ function stripOwnLines(said, text) {
   const S0 = String(said || '').replace(/[\s，,。；;：:、「」“”"！!？?]/g, ''); if (!text) return text; let cut = 0;
   const t = String(text).replace(/([^。！？\n」]*?)你[^「」。！？\n，：:]{0,5}?(?:说|道|答|应|问|回|喊|叫|嚷|吼|开口|吩咐)[^「。\n]{0,8}[：:]?\s*「([^」]{2,400})」([。！？]?)/g, (all, pre, q) => {
     const Q = q.replace(/[\s，,。；;：:、！!？?]/g, ''); if (!Q) return all; let hit = 0; for (const ch of Q) if (S0.includes(ch)) hit++;
-    if (hit / Q.length >= 0.6) return all; cut++; return pre && pre.trim().length > 4 ? pre.replace(/[，,]\s*$/, '。') : ''; });
+    const nums = q.match(/[零〇一二两三四五六七八九十百千万\d]{2,}/g) || [], badNum = nums.some(x => /[十百千万\d]/.test(x) && !String(said || '').includes(x));   /* 主角台词里改了玩家说的数目（三万写成一万五千） */
+    if (hit / Q.length >= 0.6 && !badNum) return all; cut++; return pre && pre.trim().length > 4 ? pre.replace(/[，,]\s*$/, '。') : ''; });
   return cut ? t.replace(/\n{3,}/g, '\n\n').replace(/^\s*\n/, '') : text;
 }
 function draftFaults(s, said, text, span) {
@@ -14873,7 +14874,8 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const stableTxt = Object.keys(MEMO).map(Number).sort((a, b) => a - b).map(k => MEMO[k]).join(''), liveTxt = STB.map(x => x[1]).filter(Boolean).join('\n') + LED.filter(x => !STABLE.test(x)).map(capP).join('');   // 少变的几块照固定次序，不随条件跳来跳去
   const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + '【这一局少变的底子】' + stableTxt + '\n\n（回回变的账册、这回查到的资料在对话后面）'), ledgerNow = liveTxt + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : '');
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、身边人自己的事（真有才写）、结识的人、家里的变化、季节年景、传来的天下大事），其余一两句带过。` : '';
-  const what = deadRealBlock(s) + aimBlock(s) + (String(said || '').trim() ? `【玩家这回说】\n${said}${privateBlock(said, ruling)}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。');
+  const armyNow = arr(s.armyPending).filter(x => x && x.done && x.turn === s.turn).map(x => '· ' + String(x.line || '').replace(/^下令：/, '')).filter(Boolean);
+  const what = (armyNow.length ? `【这一步程序已经照账办了的军令（正文照这个写：多少兵、谁统领、从哪支分出、开往哪里，一字不改；主角说的话照玩家原话，不改数目；什么时候到、打得怎样由程序照日子算，正文不写到）】\n${armyNow.join('\n')}\n` : '') + deadRealBlock(s) + aimBlock(s) + (String(said || '').trim() ? `【玩家这回说】\n${said}${privateBlock(said, ruling)}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。');
   // 制度程序只在玩家这一步本身是公事时才给写正文的人（不然它就满篇衙门文书、摊派差役）
   const adm = /衙|官|公文|奏|疏|审|案|税|赋|兵|军|朝|任|升|调|考|吏|差事|公事/.test(String(said || ''));
   const BN = { institutions: '衙门与程序', people: '相关的人', terms: '当时的说法', interests: '各方利害', details: '可写的细节' };
