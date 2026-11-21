@@ -23,5 +23,21 @@ for f in sorted(glob.glob(os.path.join(d0, 'st*.json')), key=lambda x: int(re.su
         ck = lambda x: (x['clock']['y'], x['clock']['m'], x['clock']['d'], x['clock'].get('h') or 0)
         if ck(d) < ck(prev): bad.append(f'第{t}回 日子倒退：{prev.get("when")} → {d.get("when")}')
     prev = d
+# 问题报告里的几类：页面出错、月结出错、一直重写，单列
+kinds = {}
+seen = set()
+for f in glob.glob(os.path.join(d0, 'st*.json')):
+    try: d = json.load(open(f))
+    except Exception: continue
+    for e in d.get('errs') or []:
+        k = (e.get('kind'), e.get('msg'), e.get('turn'))
+        if k in seen: continue
+        seen.add(k); kinds[e.get('kind')] = kinds.get(e.get('kind'), 0) + 1
+        if e.get('kind') in ('页面错误', '未接住的异步错误', '月结出错') or 'stuck' == e.get('kind'): bad.append(f"第{e.get('turn')}回 程序出错（{e.get('kind')}）：{str(e.get('msg'))[:120]}")
+log = os.path.join(d0, 'play.log')
+if os.path.exists(log):
+    for ln in open(log, encoding='utf-8'):
+        if ln.startswith('ERROR'): bad.append('驱动报错：' + ln.strip()[:160])
 print('\n'.join(bad) if bad else '对账全过')
+print('问题报告各类条数：' + '，'.join(f'{k} {v}' for k, v in sorted(kinds.items(), key=lambda x: -x[1])))
 sys.exit(1 if bad else 0)

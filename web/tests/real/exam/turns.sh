@@ -1,6 +1,6 @@
 # bash turns.sh 文件  —— 文件每行一句话；每回存摘要到 play.log、截正文和地图
 EXAM_DIR=${EXAM_DIR:-/tmp/rpg-exam}; mkdir -p "$EXAM_DIR/shots"; cd "$EXAM_DIR"
-while IFS= read -r line; do [ -z "$line" ] && continue
+while IFS= read -r line; do [ -z "$line" ] && continue; case "$line" in \#*) continue;; esac
   for k in $(seq 1 400); do rd=$(curl -s -m 10 -X POST --data-binary "(()=>!BUSY&&!document.querySelector('#bSend').disabled)()" localhost:8798/eval); [ "$rd" = "true" ] && break; sleep 5; done
   sp=auto; case "$line" in xun\|*|month\|*|season\|*|year\|*) sp=${line%%|*}; line=${line#*|};; esac
   curl -s -X POST --data-binary "(()=>{const e=document.querySelector('#span');if(e){e.value='$sp';e.dispatchEvent(new Event('change',{bubbles:true}))}return 1})()" localhost:8798/eval >/dev/null
