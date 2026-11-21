@@ -16989,7 +16989,7 @@ function bgJobs(s0, d, g) {
   ];
 }
 let BG_CTX = null, BG_AGAIN = false;
-const BG_RUN = new Map();
+const BG_RUN = new Map(), BG_LAST = {};
 const bgExWait = () => { const L = [...BG_RUN.values()].filter(x => x.ex).map(x => x.p); return L.length ? within(Promise.all(L), 15000) : Promise.resolve(); };
 const bgMsgNow = () => { BGMSG = [...BG_RUN.values()].map(x => x.msg).join('；'); BG_STEP = BGMSG; };
 let BG_LIVE = null;
@@ -17009,7 +17009,10 @@ async function afterTurnPool(s0) {
   // 省着用（R-239）：开局查齐以后，后台每回合只做一件（和记账写同一处的不限）；天下大势隔四回才看一次；排不上的下回再做
   const tight = s0.settledAt != null;
   const okEcon = j => !tight || j.ex || j.free || (j.id === 'world' ? (s0.turn || 0) - (num(s0.econWorldAt) || -9) >= 4 : true);
-  const pick = () => { const L = bgJobs(s0, BG_CTX.d, BG_CTX.g); const j = L.find(j => !tried.has(j.id) && !BG_RUN.has(j.id) && due(j) && !blocked(j, L) && okEcon(j)); if (!j) return null; if (tight && !j.ex && !j.free && !econQuota(s0, 'bg', 1)) return L.find(x => (x.ex || x.free) && !tried.has(x.id) && !BG_RUN.has(x.id) && due(x) && !blocked(x, L)) || null; if (j.id === 'world') s0.econWorldAt = s0.turn || 0; return j; };
+  /* 轮流来（R-269，2026-11-21 真玩查出：每回只做一件、又总从单子头上挑，排在后面的「国计民生」「本地价钱」「你的兵马」八十多回一次没轮上，界面一直挂着「正在推」）：
+   *  该做的里头，先挑从没做过的，再挑隔得最久的；花费不变（每回还是一件） */
+  const LAST = (BG_LAST[s0.id] = BG_LAST[s0.id] || {}), age = j => LAST[j.id] == null ? -1e9 : LAST[j.id];
+  const pick = () => { const L = bgJobs(s0, BG_CTX.d, BG_CTX.g); const C = L.filter(j => !tried.has(j.id) && !BG_RUN.has(j.id) && due(j) && !blocked(j, L) && okEcon(j)); const j = tight ? C.slice().sort((a, b) => age(a) - age(b))[0] : C[0]; if (!j) return null; if (tight && !j.ex && !j.free && !econQuota(s0, 'bg', 1)) return L.find(x => (x.ex || x.free) && !tried.has(x.id) && !BG_RUN.has(x.id) && due(x) && !blocked(x, L)) || null; if (j.id === 'world') s0.econWorldAt = s0.turn || 0; LAST[j.id] = Date.now(); return j; };
 const worker = async () => {
     let lastSave = 0;
     for (;;) {
