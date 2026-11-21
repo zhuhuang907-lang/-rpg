@@ -15,6 +15,7 @@ const path = require('path');
     R.chg = actApply(s, { y: 934, m: 4, status: '已变', act: [{ kill: '冯道' }] }); R.fdDead = !!s.people.冯道.dead;
     R.other = actApply(s, { y: 934, m: 4, act: [{ kill: '马希声', how: '卒' }] }); R.ma = !!(s.people.马希声 || {}).dead;
     { const t = newSave({ name: '李从荣', gender: '男', age: 29, role: '秦王', gregorianYear: 934, month: 1, day: 10, place: '洛阳', polity: '后唐' }); t.actEras = [{ era: '清泰', polity: '后唐', from: 934 }]; R.jan = eraLabel(t, 934); }
+    { const L = (y, m) => arr((realmsAt(y, m) || {}).list).map(x => x.name); R.r3 = L(936, 3); R.r12 = L(936, 12); }
     return R; });
   const bad = [];
   if (r.feng !== '宰相') bad.push('主角是后唐皇帝，史书的任免还是改了冯道的官：' + r.feng);
@@ -24,6 +25,8 @@ const path = require('path');
   if (r.fdDead) bad.push('被本局改写的史事照样发了');
   if (!r.ma) bad.push('别国的人照史书该死的没死（可执行史事整个不发了）');
   if (/清泰/.test(r.jan)) bad.push('934 年正月年号成了清泰（照史是闵帝应顺）：' + r.jan);
+  if (r.r3.includes('后晋') || !r.r3.includes('后唐')) bad.push('936 年三月地图上已经有后晋（史载十一月才立）：' + r.r3.slice(0, 6).join('、'));
+  if (!r.r12.includes('后晋') || r.r12.includes('后唐')) bad.push('936 年腊月后唐还在、后晋没有：' + r.r12.slice(0, 6).join('、'));
   if (errs.length) bad.push(...errs);
   console.log('ERRS', JSON.stringify(bad)); await b.close(); process.exit(bad.length ? 1 : 0);
 })();
