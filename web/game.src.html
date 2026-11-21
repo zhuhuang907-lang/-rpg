@@ -3776,7 +3776,7 @@ function campaignTick(s, days) {
   const out = [], ym = Math.floor(ymOf(s.clock));
   for (const c of arr(s.campaigns)) {
     const f = arr(s.forces).find(x => x.name === c.force); if (!f) { if (/行军|待发/.test(c.state)) c.state = '散了'; continue; }
-    if (c.state === '待发' && c.turn < s.turn) { if (/不成|没去|受阻|拒/.test(String(f.status || ''))) { c.state = '没发'; continue; } c.from = c.from || f.at || geoCenter(s); let R = SH(() => warRoute(s, c.from, c.target, { men: N0(f.troops) }), 'warRoute') || null;   /* 照舆图上的路走（R-154） */
+    if (c.state === '待发' && c.turn < s.turn) { if (/不成|没去|受阻|拒/.test(String(f.status || ''))) { c.state = '没发'; continue; } c.from = c.from || f.at || geoCenter(s); let R = c.preRoute || SH(() => warRoute(s, c.from, c.target, { men: N0(f.troops) }), 'warRoute') || null;   /* 照舆图上的路走（R-154） */
       if (R && R.legs && c.mode !== '攻') { const blk = wrBlockers(s, R, c.target); if (blk.length) { const R2 = SH(() => warRoute(s, c.from, c.target, { men: N0(f.troops), avoid: nd => blk.some(b => liOf(hav(b.u, nd)) <= 35) }), 'warRoute'); if (R2 && R2.legs && R2.eff <= R.eff * 1.8) { out.push(`${f.name}避开${blk.map(b => b.g.name).join('、')}把守的路，改道走${R2.gates.length ? R2.gates.join('、') : R2.pts.filter(p => p.n).slice(1, 3).map(p => p.n).join('、')}（多走约${R2.li - R.li}里）`); R = R2; } } }   /* 移驻不硬闯：绕得过去就绕（R-154 尾项） */
       if (R && R.blocked) { c.state = '没发'; f.status = '驻扎'; out.push(`${f.name}去不了${c.target}：${R.why}`); continue; }
       c.state = '行军'; c.done = 0; c.route = R && R.legs ? R : null; c.li = c.route ? R.eff : (c.li || campLi(s, c.from, c.target) || 300); c.pace = campPace(s, f, c.paceTxt); f.status = '行军';
@@ -4033,10 +4033,11 @@ function textMarch(s, said) {
     if (f && arr(s.campaigns).some(c => c.force === f.name && /待发|行军|围城/.test(c.state) && samePlace(c.target, tgt))) continue;
     if (!f || (n && N0(f.troops) > n * 1.3)) { const city = (/([一-鿿]{2})[县州府]?$/.exec(String(geoCenter(s)).replace(/（.*$/, '')) || [])[1] || '', here = x => samePlace(x.at || '', geoCenter(s)) || samePlace(x.at || '', s.place.full || '') || (city && String(x.at || '').includes(city));
       const idle = mine.filter(x => !busy(x)), src = f || idle.filter(x => here(x) && N0(x.troops) > n).sort((a, b) => N0(b.troops) - N0(a.troops))[0] || idle.filter(here).sort((a, b) => N0(b.troops) - N0(a.troops))[0] || idle.sort((a, b) => N0(b.troops) - N0(a.troops))[0];
-      if (!src || !n) continue; const ORG0 = ORGMSG; const r = milDo(s, 'split', { n: Math.min(n, N0(src.troops) - 1), leader: who, name: who + '所部' }, src, null); if (!r) { ORGMSG = ORG0; continue; } f = arr(s.forces).find(x => x.name === r.force); out.push(r.line); }
+      if (!src || !n) continue; const ORG0 = ORGMSG; const r = milDo(s, 'split', { n: Math.min(n, N0(src.troops) - 1), leader: who, name: who + '所部' }, src, null); if (!r) { ORGMSG = ORG0; continue; } f = arr(s.forces).find(x => x.name === r.force); out.push(r.line); const got = N0(f && f.troops) || 0; if (got < n * 0.9) out.push(`要${fmtN(n, '人')}凑不齐：近处没出征的兵只抽得出${fmtN(got, '人')}`); }
     if (!f) continue; const line = armyAct(s, 'march', { force: f.name, target: tgt, mode, tactic: mode === '攻' && /围/.test(rest) ? '围城' : '' }); if (line) out.push(line);
+    if (line) { try { const R = warRoute(s, f.at || geoCenter(s), tgt, { men: N0(f.troops) }); { const c = arr(s.campaigns).find(c => c.force === f.name && c.state === '待发'); if (c && R) { c.preRoute = R; c.from = c.from || f.at || geoCenter(s); } } const via = R && arr(R.pts).map(x => x && x.n).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i); if (via && via.length >= 2) out.push(`${f.name}行军路线：${via.slice(0, 8).join('→')}，约${Math.round(R.li || 0)}里`); } catch (_) { /* 路线算不出就不写 */ } }   /* 正文照程序的路线写（R-271：正文写过天井关，地图画的是函谷关） */
   }
-  if (out.length) noteErr('打字军令', out.join(' / '));
+  if (out.length) { noteErr('打字军令', out.join(' / ')); const seen = new Set(arr(s.armyPending).map(x => x.line)); s.armyPending = arr(s.armyPending).concat(out.filter(l => !/^下令/.test(l) && !seen.has(l)).map(l => ({ act: 'text', line: l, turn: s.turn, done: true }))).slice(-12); }   /* 分了多少兵、凑没凑齐也写进写戏材料 */
   return out;
 }
 function armyAct(s, act, a) {
