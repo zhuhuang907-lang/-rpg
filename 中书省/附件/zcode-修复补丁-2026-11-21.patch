@@ -17,7 +17,7 @@ index 9bcb3ce..7d762b2 100644
          print('skip', f.name, e)
  hist_js = json.dumps(hist, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 diff --git a/web/game.src.html b/web/game.src.html
-index d6bfcd3..6458956 100644
+index d6bfcd3..214c444 100644
 --- a/web/game.src.html
 +++ b/web/game.src.html
 @@ -837,9 +837,15 @@ async function directSample(input, opts = {}) {
@@ -174,7 +174,29 @@ index d6bfcd3..6458956 100644
  const aimBlock = s => s && s.aim ? `【玩家定的志向（一直作数，眼下、今年的打算都要朝这个去，推演和写戏不许替他换目标）】${one(s.aim, 80)}\n` : '';
  function figuresNow(s) {
    const y = s && s.clock && s.clock.y; if (y == null || !FIGLIB.length) return [];
-@@ -5625,7 +5694,13 @@ function histEvents(s, fromYM, toYM) {
+@@ -5621,11 +5690,36 @@ const evKey = e => e.y + ':' + String(e.text).slice(0, 14);
+ /** 覆盖本局年份的史料（可能两段交界都要） */
+ function histFor(y, s) { return HALL(s).filter(h => y >= h.range[0] && y <= h.range[1]); }
+ const hasHist = s => !!(s && histFor(s.clock.y, s).some(h => !h.sync && !h.rulersOnly));   // 只有君主年号表（南北朝、隋唐前期）的不算整套史料，史事真人照常联网自建   // 只有同步来的零散史事不算有整套史料
++/** 可执行史事的先决条件（acts 的 need[]）：判得了的照判，判不了的（「晋军与梁军相持」这类）照旧放行。
++ *  判得了的两类：「某人在世」「某国在／立」。2026-11-22：玩家把李克用提前杀了，「李克用卒」就不该照发。 */
++function actNeedOk(s, need) {
++  for (const raw of arr(need)) {
++    const w = String(raw || '').trim(); if (!w) continue;
++    let m = w.match(/^(.+?)在世$/);
++    if (m) { const p = s.people && s.people[m[1]]; if (p && p.dead) return false; continue; }
++    m = w.match(/^(.+?)(?:在|立)$/);
++    if (m) {
++      const pol = m[1], ap = s.actPol && s.actPol[pol];
++      if (ap && ap.to) return false;                                  // 记着已经亡了
++      if (ap && ap.from) continue;                                    // 记着立过
++      try { const R = realmsAt(s.clock.y, s.clock.m); const name = x => String((x && x.name) || ''); if (R && arr(R.list).some(x => name(x).includes(pol) || pol.includes(name(x)))) continue; } catch (_) { /* 查不到图就放过 */ }
++      continue;                                                       // 史册上这一年有没有它：不硬判，放过
++    }
++  }
++  return true;
++}
+ function histEvents(s, fromYM, toYM) {
    const out = [], seen = new Set();
    for (const h of HALL(s)) {
      if (h.range[1] * 12 + 12 < fromYM || h.range[0] * 12 > toYM) continue;
@@ -183,13 +205,14 @@ index d6bfcd3..6458956 100644
 +    /* 可执行史事（acts-wudai.json，任务六十）：到点当作史事进「将要发生」，带 where/src；do 的落账另定（立国/亡国/改元/易主） */
 +    for (const a of arr(h.acts)) {
 +      if (!a || !a.y) continue;
++      if (!actNeedOk(s, a.need)) continue;                            // 前提不在了（人已死、国已亡）：这条不再照发
 +      const ym = a.y * 12 + (num(a.m) || 6), k = 'act:' + (h.id || '') + ':' + a.y + ':' + (a.m || 0) + ':' + one(a.text, 10);
 +      if (ym > fromYM && ym <= toYM && !seen.has(k) && a.text) { seen.add(k); out.push({ y: a.y, m: num(a.m) || 0, d: 0, text: a.text, where: a.where || '', src: a.src || '', key: k, act: arr(a.do) }); }
 +    }
    }
    return out.sort((a, b) => evYM(a) - evYM(b));
  }
-@@ -5814,6 +5889,8 @@ function storyDate(s, text) {
+@@ -5814,6 +5908,8 @@ function storyDate(s, text) {
  }
  function eraLabel(s, y) {
    const pol = String(s.place.polity || '');
@@ -198,7 +221,7 @@ index d6bfcd3..6458956 100644
    const all = rulersAt(y, s).filter(r => r.era);
    // 先认同名的政权，再认包含关系（「汉」不能匹配到成汉）
    let rs = pol ? all.filter(r => r.polity === pol) : all.filter(r => HIST.some(h => arr(h.polities)[0] === r.polity));
-@@ -8857,7 +8934,13 @@ const MU_C = { k: '', s: null, v: null };
+@@ -8857,7 +8953,13 @@ const MU_C = { k: '', s: null, v: null };
  /** 一家一色，照名字定、局内不变；叛军、自立的、内战分出来的各一色（R-261：别家都是灰旗，分裂内战也是一个颜色） */
  const OWN_PAL = ['#b5543b', '#3c7a9e', '#7d5aa6', '#4f8a3a', '#c08a2a', '#2f8f83', '#a8435f', '#5d6fb3', '#8c6d3f', '#3f6e5a', '#b06a9a', '#6a8c2a', '#c46a2a', '#46708f', '#9a4b3a', '#5a5a9a'];
  const ownerColor = (s, name) => { const n = String(name || '').trim(); if (!n) return '#7a6a5a'; try { const R = realmsAt(s.clock.y, s.clock.m); const r = R && R.list.find(x => x.name === n); if (r && r.col) return r.col; } catch (_) {} let h = 0; for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return OWN_PAL[h % OWN_PAL.length]; };
@@ -213,7 +236,7 @@ index d6bfcd3..6458956 100644
    // 不在史书疆域里的各方（叛军、自立的藩镇、内战分出来的一支）：据地照他们画（R-261）
    const PO = {}; try { const RL = realmsAt(s.clock.y, s.clock.m), names = new Set(arr(RL && RL.list).map(x => x.name)); for (const p of arr(s.powers)) { const atW = !!p && arr(s.wars).some(w => w && w.state === '交战' && w.with && p.name && (w.with === p.name || String(w.with).includes(p.name) || p.name.includes(w.with))); if (!p || !p.name || names.has(p.name) || !(atW || powerLand(s, p))) continue; if (!atW && !/叛|自立|僭|伪|割据|不臣|起兵/.test([p.kind, p.status, p.stance, p.note].join(' ')) && !foreignLand(s, p.seat)) continue; /* 本朝还听命的藩镇（934 年的河东石敬瑭）不另上色；打起来、自立了才算一家 */ for (const t of String([p.seat, p.land].filter(Boolean).join('、')).split(/[、，,；;\s]+/)) { const k = geoStem(t.replace(/[（(].*$/, '')); if (k && k.length >= 2 && !PO[k]) PO[k] = { owner: p.name, why: '据地' }; } } } catch (_) {}
    const MO = Object.assign({}, PO, (s && s.mapOwn) || {}); if (!Object.keys(MO).length) return M;
-@@ -9327,7 +9410,7 @@ function popOf(s, n) { const t = arr(s.territory).find(x => geoStem(x.place) ===
+@@ -9327,7 +9429,7 @@ function popOf(s, n) { const t = arr(s.territory).find(x => geoStem(x.place) ===
  /** 预制政区表里的治所（R-260：泉州写「附郭县没对上」） */
  function presetSeat(s, n) { try { const y = s.clock.y, NM = placeAka(n); for (const R of PRESETLIB) { if (!R.range || y < R.range[0] - 30 || y > R.range[1] + 30) continue; const p = arr(R.places).find(x => x && x.seat && NM.some(k => samePlace(x.name, k))); if (p) return one(p.seat, 8); } } catch (_) {} return ''; }
  /** 史料里最近的一次户口著录（前后三百年内），写明哪年哪部书 */
@@ -222,7 +245,7 @@ index d6bfcd3..6458956 100644
  const popTxt = v => v ? `${v.hh ? fmtN(v.hh) + '户' : ''}${v.hh && v.pop ? '、' : ''}${v.pop ? fmtN(v.pop) + (v.mine ? '' : '口') : ''}` : '';
  function popTodo(s) { const h = hereXY(s); let L = []; try { L = mapUnits(s).L2.filter(u => u.lat); } catch (_) { return []; } const P = s.popEst && s.popEst.k === popKey(s) ? s.popEst.m || {} : {};
    const mine = (() => { try { return myDomain(s).places.filter(n => n && !(n in P)).map(n => ({ n, p: '' })); } catch (_) { return []; } })();   // 自己治下的县、山寨排最前（县不在州府单子里也推）
-@@ -9600,6 +9683,10 @@ async function econDS(s) {
+@@ -9600,6 +9702,10 @@ async function econDS(s) {
    const PK = ['rice','wage','landPrice','yield','rentRate'];   /* 注意：preset 的 cloth 是绢价（一匹多少文），游戏的 cloth 是纺织月收入——不同东西，不从 preset 取 */
    const fromPreset = {}; let presetN = 0;
    for (const k of PK) { const hit = PP.find(x => x[k] != null); if (hit) { fromPreset[k] = hit[k]; presetN++; } }
@@ -233,7 +256,7 @@ index d6bfcd3..6458956 100644
    const needAI = ['caravan','ransom','protect','interest','myLand','juan','pay','payOff','feast','opera','incense','doctor'];
    const ppTxt = PP.length ? `\n【史料里记下的价目（以此为准折算；单位是文，折成「${u}」时照本朝钱法）】\n` + PP.map(x => `· ${x.from}—${x.to}年${x.region}：${x.rice != null ? '米一石' + x.rice + '文' : ''}${x.cloth != null ? '，绢一匹' + x.cloth + '文' : ''}${x.landPrice != null ? '，田一亩' + x.landPrice + '文' : ''}（${x.src || ''}）`).join('\n') : '';
    if (presetN >= 4) {
-@@ -9608,7 +9695,7 @@ async function econDS(s) {
+@@ -9608,7 +9714,7 @@ async function econDS(s) {
      const askJson = askKeys.map(k => `"${k}":null`).join(',');
      const { text } = await callClaude(`你是精通历代民间生计的经济史家。替一局历史游戏给${timeText(s.clock)}${pl}（${pol}）推几项民间行情，钱一律折成「${u}」。${ppTxt}\n米价、工钱、田价、租率、绢价已有史料载值，不用推。只推下面这几项：\n- caravan 一队过路客商一趟随身的财货大约值多少；ransom 本地一个殷实富户能出的赎金；protect 一个村子一个月被山寨勒交的「孝敬」；\n- interest 民间借贷的月息（写零到一之间的小数）；\n- myLand 主角${p.name || ''}（${p.role || ''}）此刻名下大约有多少亩田（照身份推，没有田写 0）；\n- juan 这一朝捐一个最低的出身要多少钱；pay 本朝一个普通兵丁一个月的饷；payOff 本朝最低一级带兵武官一个月的俸饷；\n- feast 本地办一桌像样的酒席的钱；opera 听一回曲的钱；incense 去寺观进一回香的钱；doctor 请一回郎中连药的钱。\n只输出一个 JSON 对象：{${askJson},"basis":""}`, null, { maxTokens: 800, temperature: 0.1, kind: '研读', detached: true, thinking: false });
      const d = parseJSON(text); if (!d) { s.ecFail = s.turn; throw { code: 'bad_json' }; }
@@ -242,7 +265,7 @@ index d6bfcd3..6458956 100644
      for (const k of PK) if (fromPreset[k] != null) E[k] = fromPreset[k];
      for (const k of needAI) { const v = num(d[k]); if (v != null && v >= 0) E[k] = v; }
      if (E.rentRate > 1) E.rentRate = E.rentRate / 10; if (E.interest > 1) E.interest = E.interest / 100;
-@@ -11540,12 +11627,12 @@ const FIEF_ERA = y => y < -154 ? { fief: true, g: 10000, why: '汉初诸侯王
+@@ -11540,12 +11646,12 @@ const FIEF_ERA = y => y < -154 ? { fief: true, g: 10000, why: '汉初诸侯王
    : y < 907 ? { fief: false, g: 0, why: '唐亲王多住京城十六王宅，遥领节度，不之藩' } : y < 960 ? { fief: false, g: 1000, why: '五代皇子多实领京尹、方镇，判六军、置牙兵，出镇的照节度使掌兵' } : y < 1271 ? { fief: false, g: 0, why: '宋宗室不就藩，奉朝请' } : y < 1368 ? { fief: true, g: 3000, why: '元诸王有分地、投下' } : y < 1403 ? { fief: true, g: 9000, why: '明初藩王就藩，护卫三千至一万九千' } : y < 1644 ? { fief: true, g: 0, why: '靖难以后削护卫，藩王不许干政、不许擅出城' } : { fief: false, g: 0, why: '清亲王郡王住京城，不封土，领旗分佐领' };
  function royalKind(s) { if (isRuler(s)) return ''; try { if (identityOf(s).rebel && !(s.royal && s.royal.rebel)) return ''; } catch (_) { /* 无 */ } const r = (String(s.protagonist.role || '') + ' ' + String((s.career || {}).office || '')).trim(); if (/废太子|废储/.test(r)) return '皇子'; if (/皇太子|太子|储君|东宫/.test(r) && !/太子(舍人|洗马|少|太|宾客|詹事|中允|赞善)/.test(r)) return '太子';
    // 父亲是在位的皇帝：封了王也还是皇子，能争储（R-261：秦王李从荣「秦王、河南尹……」认不出宗室，夺嫡、监国全没有）
@@ -257,7 +280,7 @@ index d6bfcd3..6458956 100644
  const royalNote = (s, t) => { const R = s.royal; if (R) R.log = arr(R.log).concat([{ when: timeText(s.clock), t }]).slice(-10); return lifeNote(s, '宗室', t); };
  const cl = v => Math.max(0, Math.min(100, Math.round(v)));
  function royalAct(s, act, arg) { const R = royalOf(s); if (!R) { ORGMSG = '你不是宗室、贵族'; return null; } const ym = Math.floor(ymOf(s.clock)), E = econOf(s), u = (s.money || {}).unit || '', y = s.clock.y, FE = FIEF_ERA(y);
-@@ -11584,7 +11671,7 @@ function royalAct(s, act, arg) { const R = royalOf(s); if (!R) { ORGMSG = '你
+@@ -11584,7 +11690,7 @@ function royalAct(s, act, arg) { const R = royalOf(s); if (!R) { ORGMSG = '你
   *  父皇驾崩：太子即位；没立太子的，照本朝继承法在皇子里定（嫡长看排行、择贤看圣眷和党羽、强者看谁手里的人多）；输了的就藩为王
   *  太子（别的兄弟）死了：储位重新空出来，可以再争
   *  起兵清君侧：打赢（胜仗比败仗多三场以上，或对方求和）就入京废立，自己登基、改元 */
@@ -266,7 +289,7 @@ index d6bfcd3..6458956 100644
  const ERA_A = '建永天洪宣正弘嘉隆崇乾咸同光显绍开元', ERA_B = '和平德武兴安泰庆顺昌熙宁化康定隆';
  const newEraName = s => { const cur = String(s.eraName || ''), y = s.clock.y; try { const pol = String(pol0(s) || ''), h = rulersAt(y + 1, s, 1).find(r => r && r.era && pol && String(r.pol || r.polity || '').includes(pol) && !String(s.clock.yearLabel || '').startsWith(r.era)); if (h) return h.era; } catch (_) { /* 史书上下一年本朝的新年号（明宗崩、新君明年改元应顺）照用；没有才另起 */ } for (let k = 0; k < 40; k++) { const a = ERA_A[Math.floor(seeded(y * 7 + k * 13) * ERA_A.length)], b = ERA_B[Math.floor(seeded(y * 11 + k * 17 + 5) * ERA_B.length)]; if (a !== b && a + b !== cur) return a + b; } return '永安'; };
  function royalEnthrone(s, R, ym, why) { const old = String(s.protagonist.role || ''), nian = newEraName(s); s.protagonist.role = '皇帝'; s.idm = 'emperor'; R.kind = ''; R.rebel = null; R.lostTo = null; R.enthroned = ym;
-@@ -14333,7 +14420,7 @@ ${text}
+@@ -14333,7 +14439,7 @@ ${text}
  /** AI 腔：大模型写小说最爱用、一看就假的套话 */
  const SLOP = /眼[中里底]闪过一[丝抹道]|闪过一丝|嘴角(微微)?(上扬|勾起|扬起|一勾|抽动|浮起)|勾起一抹|一抹(笑|苦笑|冷笑|弧度)|不禁|不由得|不由自主|深吸(了)?一口气|倒吸一口凉气|心中一[凛动震紧沉]|心头一[震紧沉凛]|暗[自暗]?(思忖|忖道|道：)|意味深长|若有所思|一字一[顿句]|目光如炬|掷地有声|空气(仿佛|似乎)?(凝固|凝滞)|时间(仿佛|似乎)?(静止|凝固)|仿佛|宛如|犹如|一股[^，。]{0,6}(涌上|涌起|袭来|油然而生)|命运的齿轮|历史的车轮|注定(是|要)?(不平凡|不寻常)|这一刻|(声音|语气)不大[，,]?却|透着一股|带着几分|似笑非笑|眸[中子光]|瞳孔(骤然)?(一缩|收缩|骤缩)|心[中里]五味杂陈|百感交集|久久不能平静|一切(才刚刚|都将)/g;
  /** 改稿之后还剩的几个最机械的虚词：直接删（「他不禁笑了」→「他笑了」），不动意思 */
@@ -275,7 +298,7 @@ index d6bfcd3..6458956 100644
  /** 戏外问答的客服腔：开头的「好的」「当然」「这是个好问题」，结尾的「希望对你有帮助」「如有需要」、总结套话，都剥掉 */
  const TALK_OPEN = /^\s*(好的|当然(可以|了)?|没问题|这是一个(很|非常)?好的问题|这个问题(问得)?很好|好问题|明白了?|了解)[！!，,。：:\s]*/;
  const cleanTalk = t => { let x = String(t || ''); for (let i = 0; i < 3 && TALK_OPEN.test(x); i++) x = x.replace(TALK_OPEN, ''); return deslop(x
-@@ -14529,6 +14616,10 @@ function deadOnStage(s, text) { const t = String(text || ''), out = [], seen = n
+@@ -14529,6 +14635,10 @@ function deadOnStage(s, text) { const t = String(text || ''), out = [], seen = n
  function draftFaults(s, said, text, span) {
    const out = [], asks = countIn(text, BORING[3][1]);
    { const D = deadOnStage(s, text); if (D.length) out.push(`已故的人在正文里说话办事：${D.join('、')}已经死了（照史书或本局），不许再出场；提到他只能是追忆、祭奠、遗命`); }
@@ -286,7 +309,7 @@ index d6bfcd3..6458956 100644
    // 字数（2026-11-05 玩家：「字数不对，表达相当拖延」）：没让过一段日子的，超出约定一半以上打回去
    { const [lo, hi] = LEN_N[SETTINGS.len] || LEN_N.normal, n = String(text || '').replace(/\s/g, '').length;
      if (!SPANS[span] && n > hi * 1.5) out.push(`正文${n}字，约定${lo}到${hi}字：只留跟玩家这一步直接相干的经过和结果，删掉铺垫、旁枝、景物和重复的话，压到${hi}字以内`); }   // 只管写长了：对话停在对方说完的那种回合本来就短
-@@ -14582,8 +14673,8 @@ function spanMonths(span, said) {
+@@ -14582,8 +14692,8 @@ function spanMonths(span, said) {
    if (SP[span]) return SP[span];
    const zh = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 半: 0.5 };
    // 只认真叫日子往前走的说法（R-257：借钱「一年还本」，钟一下过了一年）：「过一年」「一年后」「当差两年」「这一年照常……」
@@ -297,7 +320,7 @@ index d6bfcd3..6458956 100644
    let m = null;
    if (/到年底|到年终|过年|到明年|开春|入冬|到秋|整年/.test(t)) return 6;
    return 0;
-@@ -15148,7 +15239,7 @@ function realNameSet(s) {
+@@ -15148,7 +15258,7 @@ function realNameSet(s) {
    for (const x of arr(s.locals)) if (x && x.name) R.add(x.name);
    for (const o of arr(s.offices)) if (o && o.name && o.src !== '拟') R.add(o.name);
    for (const [k, v] of Object.entries(s.people || {})) if (v && v.real === true) R.add(k);
@@ -306,7 +329,7 @@ index d6bfcd3..6458956 100644
    for (const m of arr(s.household)) if (m && m.rec && m.name) R.add(m.name);
    for (const t of arr(s.talent && s.talent.list)) if (t && t.real && t.name) R.add(t.name);
    for (const g of arr(s.roster && s.roster.groups)) for (const x of arr(g.people)) if (x && x.name) R.add(x.name);
-@@ -15649,7 +15740,7 @@ function applyReply(s, d, said) {
+@@ -15649,7 +15759,7 @@ function applyReply(s, d, said) {
      for (const n of arr(d.presentNpcs)) {
        if (!n || !n.name || n.name === s.protagonist.name) continue;
        const k = one(n.name, 12), o = s.people[k] || {};
@@ -315,7 +338,7 @@ index d6bfcd3..6458956 100644
        const pick = f => one(n[f] || o[f], f === 'want' || f === 'status' ? 60 : 30);
        const fv = N0(n.favor); const ofv = N0(o.favor); const favWhy = one(n.favorWhy || n.attitude, 30);
        s.people[k] = { ...o, faded: false, favor: fv != null ? Math.max(-100, Math.min(100, fv)) : o.favor, favorDelta: fv != null && ofv != null ? fv - ofv : 0, role: pick('role'), tie: pick('tie'), personality: pick('personality'), ability: one(n.ability || o.ability, 2), attitude: one(n.attitude || o.attitude, 8), want: pick('want'), status: pick('status'), where: pick('where'), goal: one(n.goal || o.goal, 50), plan: one(n.plan || o.plan, 60), knows: one(n.knows || o.knows, 80), seen: turn, age: o.age };   // 岁数头一回记下，以后程序照年份加；旧账上的本事、口吻、编号、年岁依据照留（以前整条重写，DeepSeek 推的年岁依据一出场就丢）
-@@ -15722,7 +15813,7 @@ function applyReply(s, d, said) {
+@@ -15722,7 +15832,7 @@ function applyReply(s, d, said) {
      const said2 = String(said || ''), rep2 = String(d.reply || ''), asked = SPANS[d.span] || spanMonths(d.span, said2) || /过|等|歇|熬|守|赶路|上路|动身|出发|启程|前往|回乡|进京|赶考|赴任/.test(said2) || travelSaid(s, said2);
      const tw = /(数|几|两|三|四|五|六|七|八|九|十|半|一)(日|天|旬|月|个月|年|载)|次日|翌日|第二天|隔日|转眼|一晃|月余|旬日|半月|入夜|天明|次晨/;
      const capDays = asked ? 1900 : !tw.test(rep2) ? 1 : /(数|几|两|三|四|五|六|七|八|九|十|半)(个)?(月|年|载)|月余|一晃|转眼/.test(rep2) ? 400 : 45;
@@ -324,7 +347,7 @@ index d6bfcd3..6458956 100644
      { const sm = spanAsked(d.span, said); if (sm >= 1 && (!rep2.trim() || /(数|几|两|三|四|五|六|七|八|九|十|半|一)(个)?(月|年|载)|月余|一晃|转眼|此后|这半年|这一年|过了|入冬|入秋|开春|转过年|到了年底|年底/.test(rep2))) days = Math.max(days, Math.min(capDays, Math.round(sm * 30.5 * 0.9))); }   // R-257：玩家说「练半年看」，正文停在第二天的一场对话，钟却过了半年——正文真写了日子过去才照玩家说的推
      { const tg = storyDate(s, rep2); if (tg) { const want = dayIdx(tg) - dayIdx(s.clock); if (want > 0 && Math.abs(days - want) > 45) days = Math.min(2200, want); else if (want <= 0 && want > -40 && days > 60) days = Math.max(1, want + 30); } }   // R-257：正文写到「长兴二年四月」，钟照账房报的天数走，少了停在上一年腊月、多了跳到第二年九月：以正文明写的最后一个年月为准
      { const br = CUR_RULING && CUR_RULING.battleResult, bd = br ? arr(br.rounds).length : 0; if (bd > 1) days = Math.max(days, bd); }   // 一仗打了几日，时间就至少过几日（R-254：七日的仗，钟上只过了几个时辰）   // 玩家说了过多久，账房报得少也照玩家说的过（R-254：「过半年」账上只过了几个钟头）   // 玩家说过两年、过五年：照他说的推，最多五年多
-@@ -15763,6 +15854,7 @@ function applyReply(s, d, said) {
+@@ -15763,6 +15873,7 @@ function applyReply(s, d, said) {
        for (const u of due) {
          if (s.world.events.some(e => (u.key && e.key === u.key) || one(e.text, 8) === one(u.text, 8))) continue;
          const r = { y: u.y, m: u.m, text: u.text, changed: !!(u.status && u.status !== '照史'), key: u.key || '' };
