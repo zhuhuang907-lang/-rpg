@@ -3989,6 +3989,35 @@ async function techInvent(s, name, desc) {
   s.tech.custom = arr(s.tech.custom).concat([{ id, name, area: '军', y0: s.clock.y, y1: 9999, months, cost: cost / techMul(s), fx, desc: one(d.why, 60), need: [], mine: true }]);
   ORGMSG = `「${name}」做得出来：${one(d.why, 50)}；${months}个月，约${fmtN(cost, (s.money || {}).unit || '')}。点「研究」开始`; return id;
 }
+/** 打字下的军令也真调兵（R-269 真玩：「命张敬达率禁军三万北上屯驻晋州」，正文写前军开拔、过了天井关，账上一个兵没动、地图上没有行军）：
+ *  认出「命／令／遣／派某人 率／领 若干兵 往／赴／屯驻／进围 某地」，照军务页的办法分兵、立行军，程序照日子走；带「若、如果」的有条件的令不动 */
+const MARCH_VERB = /(进围|围攻|围|进攻|攻打|攻|讨伐|讨|助攻|增援|驰援|屯驻|驻扎|移驻|进驻|驻|镇守|防守|北上|南下|西进|东进|开赴|赶赴|前往|奔赴|赴|往|至)/;
+function textMarch(s, said) {
+  if (!s || !s.protagonist || !(isRuler(s) || arr(s.forces).some(f => myForce(s, f)))) return [];
+  const out = [];
+  for (const cl of String(said || '').split(/[。；;！!\n]/)) {
+    if (/^\s*(若|如果|倘|万一|假如|要是|等到|待)/.test(cl) || /[，,](若|如果|倘)/.test(cl.split(/命|令|遣|派/)[0])) continue;
+    const m = /(?:增派|调派|命|令|遣|派|着|差)([一-鿿]{2,3}?)(?:率领|统领|进兵|引兵|移兵|移师|发兵|进军|回师|率|领|带|统|将)/.exec(cl); if (!m) continue;
+    const who = m[1]; if (/兵|军|将士|人马/.test(who)) continue;
+    const rest = cl.slice(m.index + m[0].length), nm = /([零〇一二两三四五六七八九十百千万\d]+)(?:余)?(?:人|兵|骑|众|名)?/.exec(rest.replace(/[一-鿿]{0,6}?(?=[零〇一二两三四五六七八九十百千万\d]+(?:人|兵|骑|众|名|$|[，,北南西东往赴进屯驻]))/, ''));
+    const n = nm ? zhNum(nm[1]) : null;
+    /* 地点：最后一个行军动词后面的地名，「城下」「一带」「防备…」截掉 */
+    const vs = [...rest.matchAll(new RegExp(MARCH_VERB.source, 'g'))]; if (!vs.length) continue;
+    const tOf = v => rest.slice(v.index + v[0].length).replace(/^[于到在]/, '').split(/[，,、]|城下|城外|一带|附近|防备|助攻|增援|屯驻|驻扎|以|去/)[0].trim().slice(0, 10);
+    const okT = t => t.length >= 2 && !/^(北|南|西|东|前线|那里|此处|阵前)$/.test(t) && !MARCH_VERB.test(t.slice(0, 2));
+    const v = vs.slice().reverse().find(x => okT(tOf(x))); if (!v) continue; const tgt = tOf(v);
+    const mode = /围|攻|讨/.test(v[0]) || /助攻|进兵|围|攻/.test(rest) ? '攻' : '守';
+    const P = s.people || {}; if (who !== s.protagonist.name && !P[who]) { const f0 = figByName(who); if (!f0) continue; P[who] = { role: figPost(f0, s.clock.y) || '将领', seen: s.turn }; s.people = P; }
+    const busy = f => arr(s.campaigns).some(c => c.force === f.name && /待发|行军|围城/.test(c.state)), mine = arr(s.forces).filter(f => f && myForce(s, f) && !f.foe && N0(f.troops) > 0);
+    let f = mine.find(f => String(f.leader || '').replace(/[（(].*$/, '') === who);
+    if (f && arr(s.campaigns).some(c => c.force === f.name && /待发|行军|围城/.test(c.state) && samePlace(c.target, tgt))) continue;
+    if (!f || (n && N0(f.troops) > n * 1.3)) { const idle = mine.filter(x => !busy(x)), src = f || idle.filter(x => samePlace(x.at || '', geoCenter(s)) || samePlace(x.at || '', s.place.full || '')).sort((a, b) => N0(b.troops) - N0(a.troops))[0] || idle.sort((a, b) => N0(b.troops) - N0(a.troops))[0];
+      if (!src || !n) continue; const ORG0 = ORGMSG; const r = milDo(s, 'split', { n: Math.min(n, N0(src.troops) - 1), leader: who, name: who + '所部' }, src, null); if (!r) { ORGMSG = ORG0; continue; } f = arr(s.forces).find(x => x.name === r.force); out.push(r.line); }
+    if (!f) continue; const line = armyAct(s, 'march', { force: f.name, target: tgt, mode, tactic: mode === '攻' && /围/.test(rest) ? '围城' : '' }); if (line) out.push(line);
+  }
+  if (out.length) noteErr('打字军令', out.join(' / '));
+  return out;
+}
 function armyAct(s, act, a) {
   const D = myDomain(s), perm = isRuler(s) || arr(s.forces).some(f => myForce(s, f)) || (act === 'raise' && D.recruitCap);
   if (!perm) { ORGMSG = '你这个身份手下没有兵，也招不了兵'; return null; }
@@ -17073,6 +17102,7 @@ async function send(said, span, note, resume) {
   if (!S) return;
   if (BUSY) { if (!TURN && Date.now() - (THINK_T0 || 0) > 20000) { BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已放开'); } else { ERRMSG = '上一步还在写（可以点「停下」再写这一步）'; try { render(); } catch (_) { } setTimeout(() => { if (ERRMSG.startsWith('上一步还在写')) { ERRMSG = ''; try { render(); } catch (_) { } } }, 4000); return; } }   // 以前这里一声不响就返回，玩家以为卡死了
   tidyState(S);
+  if (!resume) { try { textMarch(S, said); } catch (_) { /* 认不出军令就照常写 */ } }
   EDITING = false;
   // 后台的活照做，不挡玩家；记账前只等和记账写同一处的那几件（最多十五秒）
   if (S && S.id && !resume) { try { SDB.put('prev:' + S.id, saveJSON(S)); } catch (_) { /* 记不下悔不了 */ } }   // 悔一步：每回动笔前存一份（R-266）

@@ -1,0 +1,25 @@
+// R-269：打字下的军令也真调兵——「命张敬达率禁军三万北上屯驻晋州」分兵、立行军；增派的从没出征的兵里分；「命某进兵围某城」用他现成的兵；带「若」的有条件的令不动
+const { chromium } = require('playwright');
+const path = require('path');
+(async () => {
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage();
+  const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
+  await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof armyAct === 'function');
+  const r = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 33, role: '后唐皇帝', gregorianYear: 936, month: 2, day: 2, place: '洛阳', polity: '后唐' }); s.idm = 'emperor'; S = s;
+    s.people = { 张敬达: { role: '北面副总管' }, 张湛: { role: '侍卫亲军都指挥使' }, 石敬瑭: { role: '河东节度使' } };
+    s.forces = [{ name: '侍卫亲军', leader: '张湛', troops: 40000, at: '洛阳', status: '整训' }, { name: '六军诸卫', leader: '张湛', troops: 18000, at: '洛阳', status: '整训' }];
+    const go = t => { if (typeof textMarch !== 'function') return []; try { return textMarch(s, t); } catch (e) { return ['ERR ' + e.message]; } };
+    const R = {}; R.a = go('命张敬达率禁军三万北上屯驻晋州，防备河东。'); R.c1 = arr(s.campaigns).map(c => c.force + '|' + c.mode + '|' + c.target);
+    R.b = go('若石敬瑭抗命不受诏，即命张敬达进兵围太原。'); R.c2 = arr(s.campaigns).length;
+    R.d = go('增派杨光远领兵一万赴太原城下助攻。'); R.e = go('命张敬达进兵围太原。');
+    R.F = arr(s.forces).map(f => f.name + '|' + f.leader + '|' + N0(f.troops)); R.C = arr(s.campaigns).map(c => c.force + '|' + c.mode + '|' + c.target); return R; });
+  const bad = [];
+  if (!r.c1.some(x => /^张敬达.*\|守\|晋州/.test(x))) bad.push('「命张敬达率禁军三万北上屯驻晋州」账上没立行军：' + JSON.stringify(r.c1));
+  if (!r.F.some(x => /张敬达\|30000$/.test(x))) bad.push('没从禁军分出三万归张敬达：' + JSON.stringify(r.F));
+  if (r.b.length || r.c2 !== 1) bad.push('带「若」的有条件的令也调了兵');
+  if (!r.C.some(x => /^杨光远.*\|攻\|太原/.test(x)) || !r.F.some(x => /杨光远\|10000$/.test(x))) bad.push('增派杨光远一万赴太原没立：' + JSON.stringify(r));
+  if (r.F.some(x => /^张敬达.*\|20000$/.test(x))) bad.push('增派的兵从已经出征的张敬达那里分');
+  if (!r.C.some(x => /^张敬达.*\|攻\|太原/.test(x))) bad.push('「命张敬达进兵围太原」没改成攻太原：' + JSON.stringify(r.C));
+  if (errs.length) bad.push(...errs);
+  console.log('ERRS', JSON.stringify(bad)); await b.close(); process.exit(bad.length ? 1 : 0);
+})();
