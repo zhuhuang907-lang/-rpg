@@ -459,13 +459,20 @@ const ATLAS = (function () {
 
     const aNode = NIDX.has(pA.i) ? NIDX.get(pA.i) : -1;
     const bNode = NIDX.has(pB.i) ? NIDX.get(pB.i) : -1;
-    const a = aNode >= 0 ? aNode : nearestNode(pA);
-    const b = bNode >= 0 ? bNode : nearestNode(pB);
-    if (a < 0 || b < 0) return { ok: false, why: '起讫点不在路网三百公里内' };
+    /* 接进路网的那一小段不许穿山越海（2026-11-21 审查：最近的路点在山那边，照样一条直线接过去）：近处几个路点挨个试，
+     *  先挑地形走得通的，地形不明的次之；全是山海阻隔就说不通 */
+    const link = (pt, out) => { const L = []; NODES.forEach((nd, i) => { const d = havDeg(pt, nd); if (d < 0.6) L.push([d, i]); }); L.sort((x, z) => x[0] - z[0]);
+      let unk = -1; for (const [, i] of L.slice(0, 10)) { const pr = out ? profile(NODES[i], pt, y) : profile(pt, NODES[i], y); if (pr && pr.k !== 4) return { i, k: pr.k }; if (!pr && unk < 0) unk = i; }
+      return unk >= 0 ? { i: unk, k: 4, unknown: true } : L.length ? { i: -2 } : { i: -1 }; };
+    const la = aNode >= 0 ? { i: aNode } : link(pA, false), lb = bNode >= 0 ? { i: bNode } : link(pB, true);
+    if (la.i === -1 || lb.i === -1) return { ok: false, why: '起讫点不在路网三百公里内' };
+    if (la.i === -2) return { ok: false, why: '出发地四面山海阻隔，接不上路网' };
+    if (lb.i === -2) return { ok: false, why: '目的地四面山海阻隔，接不上路网' };
+    const a = la.i, b = lb.i;
 
-    // 两端不在路网节点上的，各接一段直连
-    const pre = aNode < 0 ? [{ from: pA, to: NODES[a], k: (profile(pA, NODES[a], y) || { k: 4 }).k, km: hav(pA, NODES[a]) }] : [];
-    const post = bNode < 0 ? [{ from: NODES[b], to: pB, k: (profile(NODES[b], pB, y) || { k: 4 }).k, km: hav(NODES[b], pB) }] : [];
+    // 两端不在路网节点上的，各接一段直连（地形不明的照旧当难走的一段）
+    const pre = aNode < 0 ? [{ from: pA, to: NODES[a], k: la.k, km: hav(pA, NODES[a]) }] : [];
+    const post = bNode < 0 ? [{ from: NODES[b], to: pB, k: lb.k, km: hav(NODES[b], pB) }] : [];
 
     const n = NODES.length;
     const dist = new Float64Array(n).fill(Infinity);

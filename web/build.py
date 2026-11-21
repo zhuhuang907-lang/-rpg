@@ -15,13 +15,25 @@ cal = json.load(open(here.parent / 'rpg-kernel/data/calendar.json', encoding='ut
 compact = json.dumps([[y, lens, leap] for y, _jd, lens, leap in cal], separators=(',', ':'))
 # 内置史料：web/history/*.json（史事、君主年号、真人生卒官职）
 hist = []
+acts_pending = []
 for f in sorted((here / 'history').glob('*.json')):
     if f.name in ('polities.json', 'acts-wudai.json', 'wudai-houses.json'): continue   # 政权总表、史事执行条目、王室世系单独嵌（下面 pollist、acts、houses）
     try:
         h = json.load(open(f, encoding='utf8'))
-        hist.append({k: h.get(k) for k in ('id', 'title', 'range', 'polities', 'rulers', 'events', 'figures', 'rulersOnly')})
+        if isinstance(h, list):
+            # 裸数组（acts-wudai.json 这类「史事到点执行」的可执行条目）：当只有 acts 的史料包嵌进去，不再 skip；id/title 从文件名推
+            # 不另立一段（另立一段会把同年的正式史料包挤掉，934 年认不出闵帝应顺、末帝清泰的先后），挂到年代相合的正式包上
+            acts_pending.append((f, h))
+        else:
+            hist.append({k: h.get(k) for k in ('id', 'title', 'range', 'polities', 'rulers', 'events', 'figures', 'rulersOnly')})
     except Exception as e:
         print('skip', f.name, e)
+for f, h in acts_pending:
+    for a in h:
+        y = a.get('y') if isinstance(a, dict) else None
+        if not isinstance(y, int): continue
+        tgt = next((x for x in hist if x.get('rulers') and x.get('range') and x['range'][0] <= y <= x['range'][1] and (f.stem.split('-')[-1] in str(x.get('id', '')) or True)), None)
+        if tgt is not None: tgt.setdefault('acts', []).append(a)
 hist_js = json.dumps(hist, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 # 大小政权总表：web/history/polities.json（任务五，62 国；是列表不是史料包，上面那段读不进，单独嵌：别称、都城、君主年号补内置史料没有的国，R-241）
 try: pollist_js = json.dumps(json.load(open(here / 'history' / 'polities.json', encoding='utf8')), ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')

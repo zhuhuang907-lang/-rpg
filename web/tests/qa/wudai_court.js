@@ -117,14 +117,13 @@ const path = require('path');
   errs.push(...out);
   await p.evaluate(() => { VIEW = 'game'; TAB = 'court'; SIDE_FOLD = false; render0(); });
   const h = await p.evaluate(() => document.body.innerText);
-  if (!/照履历推定/.test(h)) errs.push('朝局页看不到「照履历推定」');
-  if (!/虚构/.test(h)) errs.push('朝局页看不到补的人标「虚构」');
+  // R-264 起人物/人事树不再标「虚构／照履历推定」（玩家要求一律当真人），这里只查人摆没摆出来
   if (!/高季兴/.test(h)) errs.push('朝局页没摆出高季兴');
-  // 真点：点「人物」标签，补的人写明来路，照履历推定的写明推定
+  // 真点：点「人物」标签，人物页要能打开、列出这一朝的人
   await p.evaluate(() => { TAB = 'board'; render0(); });
   const tb = await p.$$('[data-tab="people"]'); if (!tb.length) errs.push('找不到人物页标签'); else { await tb[0].click(); await p.waitForTimeout(150); }
   const hp = await p.evaluate(() => document.body.innerText);
-  if (!/史书未载，照该国用人惯例补/.test(hp)) errs.push('人物页上补的人没写来路');
-  if (!/任职年份照履历推定/.test(hp)) errs.push('人物页上高从诲没写照履历推定');
+  if (hp.length < 10) errs.push('人物页是空的');
+  if (!/高从诲/.test(hp)) errs.push('人物页上没列出高从诲');
   console.log('ERRS', JSON.stringify(errs)); await b.close();
 })();

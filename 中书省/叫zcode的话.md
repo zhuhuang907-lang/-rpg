@@ -1,5 +1,19 @@
 # 叫 zcode 的话（2026-11-16 两档，复制整段贴给对应那一档）
 
+## 2026-11-21 真玩考卷（两档都贴这一段）
+```
+你是 zcode。这件排在所有旧活前面。先做：
+git fetch origin && git checkout -B zcode/task-六十一 origin/claude/staging
+然后打开 中书省/任务六十一.md 照做：用真 DeepSeek 照 web/tests/real/exam/ 的考卷玩，对账，只报错、不改游戏代码。
+档甲跑 1、2 号卷，档乙跑 3、4 号卷，先跑完的接对方没开的那张。
+1. （上面已切到 zcode/task-六十一 分支）
+2. DeepSeek Key 放环境变量 DEEPSEEK_API_KEY（本机已有那个），绝不写进文件、不提交、不打印
+3. 一张卷：EXAM_ROOT=$HOME/rpg-exam bash web/tests/real/exam/exam.sh <卷名>.txt（约一小时）
+4. 跑完逐回读 play.log、看 shots/ 截图，照任务六十一「要报什么」七类，一条一行写进 中书省/考卷回报/<卷名>-<日期>.md（先抄 对账.txt 全文）
+5. 只提交回报的 md，git push -u origin HEAD；严禁推发布分支
+6. 有问题写进 中书省/问答/zcode.md，照自己理解接着做，不停下来问
+```
+
 ## 档甲（2026-11-18 起）
 ```
 你是 zcode·档甲。先 git fetch origin && git checkout claude/staging && git pull。

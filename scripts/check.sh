@@ -5,6 +5,9 @@ say() { echo "【提交前检查】$*"; }
 # 完整测试放到最后（R-218，2026-11-12 玩家：「最后时刻在最后排版的时候再跑测试」）：
 #   发布分支（claude/gallant-davinci-l8pni0、main）照旧必须全过；预备分支和工作分支（claude/staging、opencode/…、zcode/…、court/…）只提醒，合并进发布分支时再跑
 br=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); release=0; case "$br" in claude/gallant-davinci-l8pni0|main) release=1;; esac   # 预备分支 claude/staging 平时合活，只提醒；请玩家拍板发布前在它上面跑完整测试（R-218、R-220）
+# 0. zcode 不许在 claude/… 和 main 上提交（2026-11-21 项目主人查出 zcode 把东西直接放进了预备分支；AGENTS.md：只推 zcode/… 自己的分支，Claude 审过再合）
+ZNAME='^(宣武军节度使|xuanwujunjiedushi|zcode)$'; me=$(git config user.name 2>/dev/null); [ -n "${GIT_AUTHOR_NAME:-}" ] && me="$GIT_AUTHOR_NAME"
+case "$br" in claude/*|main) if echo "$me" | grep -qE "$ZNAME"; then say "zcode 不许在 $br 上提交：只在 zcode/… 自己的分支上做，交了在问答里说一声，Claude 审过再合（AGENTS.md）"; exit 1; fi;; esac
 # 1. 完整测试（全按钮真点、地图、人物……）全过以后源码没再改过
 fp=$(bash scripts/fingerprint.sh); pass=$(cat .qa-pass 2>/dev/null)
 if [ "$fp" != "$pass" ]; then
