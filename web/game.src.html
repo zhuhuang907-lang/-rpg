@@ -17093,7 +17093,7 @@ async function afterTurnPool(s0) {
   const okEcon = j => !tight || j.ex || j.free || (j.id === 'world' ? (s0.turn || 0) - (num(s0.econWorldAt) || -9) >= 4 : true);
   /* 轮流来（R-269，2026-11-21 真玩查出：每回只做一件、又总从单子头上挑，排在后面的「国计民生」「本地价钱」「你的兵马」八十多回一次没轮上，界面一直挂着「正在推」）：
    *  该做的里头，先挑从没做过的，再挑隔得最久的；花费不变（每回还是一件） */
-  const LAST = (BG_LAST[s0.id] = BG_LAST[s0.id] || {}), age = j => LAST[j.id] == null ? -1e9 : LAST[j.id];
+  const LAST = (BG_LAST[s0.id] = BG_LAST[s0.id] || {}), SEEN = new Set(['fisc', 'econ', 'cmd', 'realmfix', 'gov', 'estate', 'skills']), age = j => LAST[j.id] == null ? (SEEN.has(j.id) ? -2e9 : -1e9) : LAST[j.id];   /* 界面上挂着「正在推」的几样先做 */
   const pick = () => { const L = bgJobs(s0, BG_CTX.d, BG_CTX.g); const C = L.filter(j => !tried.has(j.id) && !BG_RUN.has(j.id) && due(j) && !blocked(j, L) && okEcon(j)); const j = tight ? C.slice().sort((a, b) => age(a) - age(b))[0] : C[0]; if (!j) return null; if (tight && !j.ex && !j.free && !econQuota(s0, 'bg', 1)) return L.find(x => (x.ex || x.free) && !tried.has(x.id) && !BG_RUN.has(x.id) && due(x) && !blocked(x, L)) || null; if (j.id === 'world') s0.econWorldAt = s0.turn || 0; LAST[j.id] = Date.now(); return j; };
 const worker = async () => {
     let lastSave = 0;
