@@ -11579,7 +11579,7 @@ function summonAct(s, way) { const G = s.liege, f = partyF(s); if (!G || !G.summ
 function leaveLord(s) { const G = s.liege; if (!G) return null; s.liege = null; if ((G.favor || 0) < 30) { bandOf(s).heat = (num(bandOf(s).heat) || 0) + 8; return ptNote(s, `不辞而别离了${G.lord}帐下，他传话各处拿你`); } return ptNote(s, `向${G.lord}辞了行，带着弟兄自立门户${G.fief ? '（赐的田庄交了回去）' : ''}`); }
 /** 被俘：大败时可能被拿住 */
 function jailCheck(s, r, by, place) { const f = partyF(s); if (!r || s.jail) return false; const bad = /大败|溃/.test(r.outcome) || (f && ptMen(f.party) < 8); if (!bad || seeded(Math.floor(ymOf(s.clock)) * 83 + (r.deadUs || 0)) > 0.55) return false;
-  try { shedIdentity(s, '被擒', { land: 'keep', biz: 'keep', office: false }); } catch (_) { /* 无 */ }   // 兵败被擒：兵马交不出去也带不走（R-263）
+  try { shedIdentity(s, '被擒', { land: 'keep', biz: 'keep', office: false, forces: 'keepParty' }); } catch (_) { /* 无 */ }   // 兵败被擒：兵马交不出去也带不走（R-263）
   const E = econOf(s) || {}; s.jail = { by, place, where: place + '（' + by + '营中）', charge: '兵败被擒', since: timeText(s.clock), cost: 0, ym: Math.floor(ymOf(s.clock)), ransom: Math.max(jailFloor(s), Math.round((num(E.wage) || 0) * (by === '官军' ? 200 : 80) * 100) / 100), tries: 0 }; jhNote(s, `兵败，在${place}被${by}拿住了`); return true; }
 function jailAct(s, act) { const J = s.jail; if (!J) return null; const ym = Math.floor(ymOf(s.clock)), u = (s.money || {}).unit || '', f = partyF(s);
   if (act === 'pay') { if ((N0(s.money && s.money.cash) || 0) < J.ransom) { ORGMSG = `赎身要${fmtN(J.ransom, u)}，弟兄们凑不出来`; return null; } cashAdd(s, -J.ransom); s.jail = null; return jhNote(s, `弟兄们凑了${fmtN(J.ransom, u)}把你赎了出来`); }
@@ -11753,7 +11753,8 @@ function royalHistKick(s) { const R = s.royal; if (!R || !R.histPending || ROYAL
  *  o.land：'sell' 贱卖（三成价）、'temple' 施入寺观、'keep' 留着（托人看管、记「离乡」）；o.biz：铺子同理 */
 function shedIdentity(s, why, o = {}) { const out = [], u = (s.money || {}).unit || '', E = econOf(s);
   const mine = arr(s.forces).filter(f => { try { return myForce(s, f); } catch (_) { return false; } });
-  if (o.forces !== false && mine.length && !isRuler(s)) { s.forces = arr(s.forces).filter(f => !mine.includes(f)); s.campaigns = arr(s.campaigns).filter(c => !mine.some(f => f.name === c.force)); out.push(`手下${mine.map(f => f.name).join('、')}交了出去`); }
+  const give = o.forces === 'keepParty' ? mine.filter(f => !f.party) : mine;   /* 兵败被擒：自家拉起的弟兄还在外头（等着赎人、劫牢），朝廷的兵交出去 */
+  if (o.forces !== false && give.length && !isRuler(s)) { const mine2 = give; s.forces = arr(s.forces).filter(f => !mine2.includes(f)); s.campaigns = arr(s.campaigns).filter(c => !mine2.some(f => f.name === c.force)); out.push(`手下${mine2.map(f => f.name).join('、')}交了出去`); }
   if (o.office !== false && s.career && s.career.office) { out.push(`辞去${one(s.career.office, 20)}`); s.career = { ...s.career, office: '', post: '', powers: '', subordinates: '', left: s.career.office, leftWhy: why }; if (!isRuler(s)) { s.org = null; s.gov = null; } }
   if (o.base !== false && s.base) { out.push(`${s.base.place || ''}的山寨散了`); s.base = null; }
   if (o.terr !== false && arr(s.territory).length && !isRuler(s)) { s.territory = []; }
