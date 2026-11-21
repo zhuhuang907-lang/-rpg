@@ -14599,6 +14599,14 @@ function deadOnStage(s, text) { const t = String(text || ''), out = [], seen = n
       if (!/故|亡|先|已死|身死|遗|灵|墓|坟|祭|追念|想起|想到|当年|生前|死前|在世时|若是|倘若|假如|如果|梦/.test(pre) && /^(?:[，,]?)(道|说|笑|问|答|应|喝|骂|叹|来了|进来|走进|起身|上前|拱手|叉手|点头|摇头|皱眉|拱|抬手|伸手|领兵|带兵|下令|吩咐|献计|入殿|出殿)/.test(post)) { out.push(n); break; }
       i = t.indexOf(n, i + n.length); } }
   return out; }
+/** 最后一道（R-269 真玩：一月一过，正文开头替主角说了一大段玩家没说的吩咐，审稿打回了、改稿还在）：主角的台词跟玩家原话对不上一半的，整句删掉；玩家原话里的照留 */
+function stripOwnLines(said, text) {
+  const S0 = String(said || '').replace(/[\s，,。；;：:、「」“”"！!？?]/g, ''); if (!text) return text; let cut = 0;
+  const t = String(text).replace(/([^。！？\n」]*?)你[^「」。！？\n，：:]{0,5}?(?:说|道|答|应|问|回|喊|叫|嚷|吼|开口|吩咐)[^「。\n]{0,8}[：:]?\s*「([^」]{2,400})」([。！？]?)/g, (all, pre, q) => {
+    const Q = q.replace(/[\s，,。；;：:、！!？?]/g, ''); if (!Q) return all; let hit = 0; for (const ch of Q) if (S0.includes(ch)) hit++;
+    if (hit / Q.length >= 0.6) return all; cut++; return pre && pre.trim().length > 4 ? pre.replace(/[，,]\s*$/, '。') : ''; });
+  return cut ? t.replace(/\n{3,}/g, '\n\n').replace(/^\s*\n/, '') : text;
+}
 function draftFaults(s, said, text, span) {
   const out = [], asks = countIn(text, BORING[3][1]);
   { const D = deadOnStage(s, text); if (D.length) out.push(`已故的人在正文里说话办事：${D.join('、')}已经死了（照史书或本局），不许再出场；提到他只能是追忆、祭奠、遗命`); }
@@ -17244,6 +17252,7 @@ async function send(said, span, note, resume) {
           }
         } catch (e) { if (e && e.code === 'cancelled') throw e; }
       }
+      if (!next.talk) { const t0 = next.text, t1 = stripOwnLines(said, t0); if (t1 !== t0 && t1.length > t0.length * 0.6) { next = { ...next, text: t1, audit: arr(next.audit).concat([{ wrong: '（主角台词）', right: '（删去）', why: '替主角说了玩家没说的话' }]) }; } }
       if (!next.talk) { const sf = stripFacts(S, said, next.text, ruling); if (sf.cut.length) { next = { ...next, text: sf.text, audit: arr(next.audit).concat(sf.cut.map(c => ({ wrong: one(c.sent, 40), right: '（删去）', why: c.kind === 'gain' ? '没有凭据的官爵功名' : '此人这一年还在世' }))) }; noteErr('正文里没凭据的大事已删', sf.cut.map(c => c.kind + ':' + c.who).join(' / '), { said: cut(said, 60) }); } }
       st = next;
       if (!st.talk) pend({ story: st, ruling });
