@@ -296,6 +296,7 @@ textarea{resize:vertical}
 <script type="application/json" id="placenames">__PLACENAMES__</script>
 <script type="application/json" id="tieslib">__TIES__</script>
 <script type="application/json" id="actslib">__ACTS__</script>
+<script type="application/json" id="houses">__HOUSES__</script>
 <script type="application/json" id="vocab">__VOCAB__</script>
 <script type="application/json" id="instlib">__INSTLIB__</script>
 <script type="application/json" id="arcs">__ARCS__</script>
@@ -3544,7 +3545,7 @@ function campLi(s, from, to) { const a = placeXY(s, from, s.clock.y), b = placeX
 /** 那个地方的守军：已知的别家兵马、势力的据地；都不知道就要探报 */
 /** 史书上此时归别国的地方（不是你打下、割来的）：记账不许记成你的地盘 */
 function foreignLand(s, place) { const pl = String(place || '').replace(/[（(].*$/, '').trim(); if (!pl || (s.mapOwn || {})[geoStem(pl)]) return false; const o = placeOwner(s, pl); if (o.owner) return true; if (o.mine) return false;
-  try { const g = geoNear(pl, s.clock.y), R = realmsAt(s.clock.y, s.clock.m), r = g && g.lon != null && R ? R.of(g.lon, g.lat) : null, pol = String(pol0(s) || ''); return !!(r && pol && !(pol.includes(r.name) || r.name.includes(pol))); } catch (_) { return false; } }
+  try { const g = geoNear(pl, s.clock.y), R = realmsAt(s.clock.y, s.clock.m), r = g && g.lon != null && R ? R.of(g.lon, g.lat, pl) : null, pol = String(pol0(s) || ''); return !!(r && pol && !(pol.includes(r.name) || r.name.includes(pol))); } catch (_) { return false; } }
 /** 城池的五种状态（2026-11-20 项目主人）：得＝你攻占的，失＝你丢给别人的，叛＝叛军据了，
  *  空＝无人占领（谁家账上、地图上都查不到归属），毁＝城破残毁（户口离散、赋税断绝，要修葺才能再用）。
  *  旧存档的 mapOwn 没有 st，照 why、owner 推一个 */
@@ -5396,6 +5397,23 @@ const polNorm = x => String(x || '').trim().replace(/^大(?=..)/, '').replace(/(
 /* ========== 五代十国朝廷数据（任务七，R-227）：开在有朝廷数据的政权，人事树照数据搭（位子照该国官制、小国照小国的规模）；
  *  史书明载、照履历推定的人先坐；史书没留名的位子照该国用人来路补人——种子＝政权＋位子＋起年，同一位子谁开局都补出同一个人，补了记进存档永不再变，不与真人重名，标虚构 ========== */
 let COURTDATA = []; try { COURTDATA = JSON.parse((document.getElementById('courtdata') || {}).textContent || '[]'); if (!Array.isArray(COURTDATA)) COURTDATA = []; } catch (_) { COURTDATA = []; }
+/* 王室世系（2026-11-22 项目主人：闽国连皇帝都不全、没有族谱）：各国君主、宗室、勋臣，父、母、兄弟、子、后照史书 */
+let HOUSES = []; try { const h = JSON.parse((document.getElementById('houses') || {}).textContent || '{}'); HOUSES = Array.isArray(h.houses) ? h.houses : []; } catch (_) { HOUSES = []; }
+function houseOf(s) { const pol = polNorm(s && s.place && s.place.polity); if (!pol || !HOUSES.length) return null;
+  const hit = HOUSES.find(h => polNorm(h.polity) === pol); if (hit) return hit;
+  return HOUSES.find(h => arr(h && h.alias).some(a => { const q = polNorm(a); return q && q.length >= 2 && (q === pol || pol.includes(q) || q.includes(pol)); })) || null; }
+function houseHtml(s) { const H = houseOf(s); if (!H || !arr(H.rulers).length) return '';
+  const nm = (x) => Array.isArray(x) ? x.filter(Boolean).join('、') : (x || '');
+  const row = r => { const life = (r.born || r.died) ? `（${r.born || '?'}—${r.died || '?'}）` : '';
+    const kin = [r.father ? '父 ' + nm([r.father]) : '', r.mother ? '母 ' + nm([r.mother]) : '', arr(r.brothers).length ? '兄弟 ' + nm(r.brothers) : '',
+      arr(r.sons).length ? '子 ' + nm(r.sons) : '', arr(r.adopted).length ? '养子 ' + nm(r.adopted) : '', arr(r.wives).length ? '后 ' + nm(r.wives) : '',
+      arr(r.concubines).length ? '妃 ' + nm(r.concubines) : '', arr(r.nephews).length ? '从子 ' + nm(r.nephews) : ''].filter(Boolean).join('；');
+    return `<div class="affair"><b>${esc(r.name)}</b> <span class="muted">${esc(r.title || '')} ${r.from}—${r.to == null ? '' : r.to}${esc(life)}</span>${kin ? `<div class="muted" style="font-size:12px">${esc(kin)}</div>` : ''}</div>`; };
+  const list = (L, f) => `<details class="ofold"><summary><b>${f.title}</b> <span class="muted">${L.length} 人</span></summary><div class="list">${L.map(x => `<div><b>${esc(x.name)}</b>${x.rel ? ` <span class="muted">${esc(x.rel)}</span>` : ''}${x.post ? ` <span class="muted">${esc(x.post)}</span>` : ''}${x.note ? `<div class="muted" style="font-size:12px">${esc(x.note)}</div>` : ''}</div>`).join('')}</div></details>`;
+  return `<div class="h" style="margin-top:6px"><span class="seal">系</span>${esc(H.polity)}王室世系<span class="note">照史书：君主的父、母、兄弟、子、后，宗室与勋臣</span></div>`
+    + H.rulers.map(row).join('')
+    + (arr(H.clans).length ? list(arr(H.clans), { title: '宗室' }) : '')
+    + (arr(H.ministers).length ? list(arr(H.ministers), { title: '勋臣' }) : ''); }
 function courtDataFor(s, y) { const pol = polNorm(s && s.place && s.place.polity); if (!pol) return null;
   for (const D of COURTDATA) { if (!D || !D.range || y < D.range[0] || y > D.range[1]) continue; const P = arr(D.polities).find(p => polNorm(p.name) === pol || arr(POL_ALIAS[p.name]).includes(pol)); if (P) return { D, P }; } return null; }
 function fictName(seed, fam, taken) { for (let k = 0; k < 40; k++) { const r = seeded(seed + k * 101), r2 = seeded(seed + k * 101 + 7); const sur = fam[Math.floor(r * fam.length) % fam.length]; const nm = sur + GIVEN[Math.floor(r2 * GIVEN.length) % GIVEN.length]; /* 名字照已有的士人名表取 */ if (!taken.has(nm)) return nm; } return ''; }
@@ -5759,6 +5777,14 @@ function rulersAt(y, s, m) {
       { let R = arr(P.rulers).filter(r => r.from <= y && r.to >= y);
         if (R.length > 1) { R.sort((a, b) => a.from - b.from); R = [mm < 7 ? R[0] : R[R.length - 1]]; }   // 总表不记月份：这一年换君的，上半年算旧君、下半年算新君（马殷 930 年冬卒）
         for (const r of R) if (!seen.has(k + r.name)) { seen.add(k + r.name); all.push({ polity: k, name: String(r.name).replace(/（.*$/, ''), title: r.title || '', from: r.from, to: r.to, reigns: arr(r.eras).map(e => [e.name, e.from]), src: r.src, fromList: true }); } } } }
+  /* 王室世系里的君主也补进来（2026-11-22：王潮、卓岩明、李仁达、留从效、陈洪进这些不在政权总表里的，玩闽国时皇帝要全） */
+  for (const HH of HOUSES) { if (!HH || !HH.range || y < HH.range[0] || y > HH.range[1]) continue;
+    for (const r of arr(HH.rulers)) {
+      if (r.from > y || r.to < y) continue;
+      if (seen.has(HH.polity + r.name)) continue;
+      if (all.some(x => x.polity === HH.polity && String(x.name).replace(/（.*$/, '') === String(r.name).replace(/（.*$/, ''))) continue;
+      seen.add(HH.polity + r.name); all.push({ polity: HH.polity, name: r.name, title: r.title || '', from: r.from, to: r.to, reigns: [], src: r.src });
+    } }
   /* 同一国这一年两位君主、都没有年号可分月份的（马殷 930 冬卒、马希声嗣位）：上半年算旧君、下半年算新君 */
   { const byP = {}; for (const r of all) (byP[r.polity] = byP[r.polity] || []).push(r);
     for (const L of Object.values(byP)) { if (L.length < 2 || L.some(r => arr(r.reigns).length)) continue; L.sort((a, b) => a.from - b.from); const keep = mm < 7 ? L[0] : L[L.length - 1]; for (const r of L) if (r !== keep) all.splice(all.indexOf(r), 1); } }
@@ -7997,7 +8023,7 @@ function regRuler(s, r) {
   if (!r || !r.name || !s || !s.clock) return '';
   { const t = realmRuler(r.name, s.clock.y + ((num(s.clock.m) || 1) - 1) / 12); if (t) return t; if (r.builtin && s.clock.y >= 907 && s.clock.y <= 979) return ''; }
   // 只认内置、核对过的史料包里的君主（2026-11-01 玩家拿开皇九年的图：高句丽写成高元、西突厥写成都蓝可汗——是 DeepSeek 临时整理的史料包给的，没核对就上了图）
-  const HB = new Set(HIST.flatMap(h => arr(h.rulers).map(x => x.polity + '|' + x.name)));
+  const HB = new Set(HIST.flatMap(h => arr(h.rulers).map(x => x.polity + '|' + x.name)).concat(HOUSES.flatMap(h => arr(h.rulers).map(x => h.polity + '|' + x.name))));   // 世系里的君主也认（2026-11-22）
   let L = []; try { L = rulersAt(s.clock.y, s).filter(x => HB.has(x.polity + '|' + x.name)); } catch (_) { return ''; }
   const k = polNames(r.name); if (!k.length) return '';
   let m = L.filter(x => polNames(x.polity).some(p => k.includes(p)));
@@ -8556,6 +8582,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 吴越|907|977||120.17,30.29 120.58,30.0 120.1,30.86 120.62,31.31 121.54,29.87 121.12,28.84 120.65,28.02 119.91,28.45 119.65,29.1 118.87,28.96 119.5,29.54 120.75,30.75
 吴越|947|977||119.3,26.08
 闽|907|945||119.3,26.08 118.32,27.04 118.59,24.91 117.65,24.51 116.35,25.83
+殷|943|945|0.6|118.32,27.04
 清源军（留从效）|946|977|1.2|118.59,24.91 117.65,24.51
 朔方军（韩逊）|907|929|1.0|106.29,38.02
 朔方军|930|1002|1.0|106.29,38.02
@@ -8743,6 +8770,356 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 女国、羌诸部（西山）|600|900|2|101.8,30.0 102.5,31.5
 土司诸部（湖广西南）|1253|1726|1.6|109.5,28.3 108.2,27.7 107.0,26.6 104.6,26.6 100.2,26.9
 各省军政府（辛亥）|1911.75|1911|1.4|114.31,30.57 112.98,28.2 108.94,34.27 112.55,37.87 102.71,25.05 115.9,28.67 121.47,31.23 120.62,31.31 120.17,30.29 106.71,26.58 117.05,30.52 113.26,23.13 119.3,26.08 110.29,25.28 104.07,30.66`;
+/* 五代十国州府归属校订（2026-11-22 项目主人：荆南、马楚画错）：州名|起年|止年|政权，逐年照史书；未列的照锚点 */
+const REALM_FIX_TXT = `江都府|907|936|吴
+金陵府|907|936|吴
+润州|907|936|吴
+常州|907|936|吴
+宣州|907|936|吴
+歙州|907|936|吴
+池州|907|936|吴
+洪州|907|936|吴
+江州|907|936|吴
+饶州|907|936|吴
+信州|907|936|吴
+抚州|907|936|吴
+吉州|907|936|吴
+袁州|907|936|吴
+鄂州|907|936|吴
+和州|907|936|吴
+滁州|907|936|吴
+濠州|907|936|吴
+楚州|907|936|吴
+泗州|907|936|吴
+海州|907|936|吴
+泰州|907|936|吴
+光州|907|936|吴
+寿州|907|936|吴
+庐州|907|936|吴
+舒州|907|936|吴
+蕲州|907|936|吴
+黄州|907|936|吴
+安州|907|936|吴
+复州|907|936|吴
+虔州|907|936|吴
+江宁府|937|957|南唐
+润州|937|957|南唐
+常州|937|957|南唐
+宣州|937|957|南唐
+歙州|937|957|南唐
+池州|937|957|南唐
+洪州|937|957|南唐
+江州|937|957|南唐
+饶州|937|957|南唐
+信州|937|957|南唐
+抚州|937|957|南唐
+吉州|937|957|南唐
+袁州|937|957|南唐
+鄂州|937|957|南唐
+和州|937|957|南唐
+滁州|937|957|南唐
+濠州|937|957|南唐
+楚州|937|957|南唐
+泗州|937|957|南唐
+海州|937|957|南唐
+泰州|937|957|南唐
+光州|937|957|南唐
+寿州|937|957|南唐
+庐州|937|957|南唐
+舒州|937|957|南唐
+蕲州|937|957|南唐
+黄州|937|957|南唐
+安州|937|957|南唐
+复州|937|957|南唐
+虔州|937|957|南唐
+建州|937|957|南唐
+汀州|937|957|南唐
+江宁府|958|975|南唐
+润州|958|975|南唐
+常州|958|975|南唐
+宣州|958|975|南唐
+歙州|958|975|南唐
+池州|958|975|南唐
+洪州|958|975|南唐
+江州|958|975|南唐
+饶州|958|975|南唐
+信州|958|975|南唐
+抚州|958|975|南唐
+吉州|958|975|南唐
+袁州|958|975|南唐
+鄂州|958|975|南唐
+虔州|958|975|南唐
+建州|958|975|南唐
+汀州|958|975|南唐
+杭州|907|978|吴越
+越州|907|978|吴越
+湖州|907|978|吴越
+苏州|907|978|吴越
+秀州|907|978|吴越
+睦州|907|978|吴越
+衢州|907|978|吴越
+婺州|907|978|吴越
+处州|907|978|吴越
+温州|907|978|吴越
+台州|907|978|吴越
+明州|907|978|吴越
+潭州|907|951|楚
+衡州|907|951|楚
+邵州|907|951|楚
+永州|907|951|楚
+道州|907|951|楚
+郴州|907|951|楚
+连州|907|951|楚
+朗州|907|951|楚
+澧州|907|951|楚
+岳州|907|951|楚
+辰州|907|951|楚
+溪州|907|951|楚
+桂州|907|951|楚
+昭州|907|951|楚
+贺州|907|951|楚
+梧州|907|951|楚
+蒙州|907|951|楚
+龚州|907|951|楚
+富州|907|951|楚
+思唐州|907|951|楚
+象州|907|951|楚
+柳州|907|951|楚
+宜州|907|951|楚
+融州|907|951|楚
+环州|907|951|楚
+严州|907|951|楚
+全州|907|951|楚
+广州|917|971|南汉
+韶州|917|971|南汉
+循州|917|971|南汉
+潮州|917|971|南汉
+端州|917|971|南汉
+康州|917|971|南汉
+封州|917|971|南汉
+新州|917|971|南汉
+恩州|917|971|南汉
+春州|917|971|南汉
+潘州|917|971|南汉
+罗州|917|971|南汉
+高州|917|971|南汉
+窦州|917|971|南汉
+雷州|917|971|南汉
+廉州|917|971|南汉
+钦州|917|971|南汉
+琼州|917|971|南汉
+崖州|917|971|南汉
+儋州|917|971|南汉
+振州|917|971|南汉
+万安州|917|971|南汉
+邕州|917|971|南汉
+容州|917|971|南汉
+藤州|917|971|南汉
+宾州|917|971|南汉
+横州|917|971|南汉
+贵州|917|971|南汉
+浔州|917|971|南汉
+郁林州|917|971|南汉
+白州|917|971|南汉
+桂州|951|971|南汉
+昭州|951|971|南汉
+贺州|951|971|南汉
+梧州|951|971|南汉
+蒙州|951|971|南汉
+龚州|951|971|南汉
+富州|951|971|南汉
+思唐州|951|971|南汉
+象州|951|971|南汉
+柳州|951|971|南汉
+宜州|951|971|南汉
+融州|951|971|南汉
+环州|951|971|南汉
+严州|951|971|南汉
+连州|951|971|南汉
+江陵府|907|963|荆南
+峡州|907|963|荆南
+归州|907|963|荆南
+福州|909|945|闽
+建州|909|945|闽
+泉州|909|945|闽
+漳州|909|945|闽
+汀州|909|945|闽
+福州|945|947|闽
+福州|947|978|吴越
+建州|943|945|殷
+泉州|946|978|清源军
+漳州|946|978|清源军
+潭州|951|963|武平军
+衡州|951|963|武平军
+邵州|951|963|武平军
+永州|951|963|武平军
+道州|951|963|武平军
+郴州|951|963|武平军
+朗州|951|963|武平军
+澧州|951|963|武平军
+岳州|951|963|武平军
+辰州|951|963|武平军
+溪州|951|963|武平军
+全州|951|963|武平军
+成都府|907|925|前蜀
+汉州|907|925|前蜀
+彭州|907|925|前蜀
+蜀州|907|925|前蜀
+眉州|907|925|前蜀
+嘉州|907|925|前蜀
+邛州|907|925|前蜀
+简州|907|925|前蜀
+资州|907|925|前蜀
+梓州|907|925|前蜀
+绵州|907|925|前蜀
+遂州|907|925|前蜀
+果州|907|925|前蜀
+阆州|907|925|前蜀
+普州|907|925|前蜀
+陵州|907|925|前蜀
+荣州|907|925|前蜀
+泸州|907|925|前蜀
+戎州|907|925|前蜀
+渝州|907|925|前蜀
+合州|907|925|前蜀
+昌州|907|925|前蜀
+渠州|907|925|前蜀
+蓬州|907|925|前蜀
+集州|907|925|前蜀
+壁州|907|925|前蜀
+开州|907|925|前蜀
+万州|907|925|前蜀
+忠州|907|925|前蜀
+夔州|907|925|前蜀
+黔州|907|925|前蜀
+施州|907|925|前蜀
+利州|907|925|前蜀
+兴元府|907|925|前蜀
+洋州|907|925|前蜀
+兴州|907|925|前蜀
+成都府|934|965|后蜀
+汉州|934|965|后蜀
+彭州|934|965|后蜀
+蜀州|934|965|后蜀
+眉州|934|965|后蜀
+嘉州|934|965|后蜀
+邛州|934|965|后蜀
+简州|934|965|后蜀
+资州|934|965|后蜀
+梓州|934|965|后蜀
+绵州|934|965|后蜀
+遂州|934|965|后蜀
+果州|934|965|后蜀
+阆州|934|965|后蜀
+普州|934|965|后蜀
+陵州|934|965|后蜀
+荣州|934|965|后蜀
+泸州|934|965|后蜀
+戎州|934|965|后蜀
+渝州|934|965|后蜀
+合州|934|965|后蜀
+昌州|934|965|后蜀
+渠州|934|965|后蜀
+蓬州|934|965|后蜀
+集州|934|965|后蜀
+壁州|934|965|后蜀
+开州|934|965|后蜀
+万州|934|965|后蜀
+忠州|934|965|后蜀
+夔州|934|965|后蜀
+黔州|934|965|后蜀
+施州|934|965|后蜀
+利州|934|965|后蜀
+兴元府|934|965|后蜀
+洋州|934|965|后蜀
+兴州|934|965|后蜀
+太原府|951|979|北汉
+代州|951|979|北汉
+忻州|951|979|北汉
+岚州|951|979|北汉
+宪州|951|979|北汉
+石州|951|979|北汉
+汾州|951|979|北汉
+沁州|951|979|北汉
+辽州|951|979|北汉
+凤翔府|907|924|岐
+陇州|907|924|岐
+泾州|907|924|岐
+原州|907|924|岐
+渭州|907|924|岐
+武州|907|924|岐
+秦州|907|924|岐
+成州|907|924|岐
+阶州|907|924|岐
+凤州|907|924|岐
+鄜州|907|924|岐
+坊州|907|924|岐
+丹州|907|924|岐
+庆州|907|924|岐
+宁州|907|924|岐
+幽州|907|913|燕
+涿州|907|913|燕
+蓟州|907|913|燕
+檀州|907|913|燕
+顺州|907|913|燕
+营州|907|913|燕
+平州|907|913|燕
+莫州|907|913|燕
+瀛州|907|913|燕
+镇州|907|921|赵
+冀州|907|921|赵
+深州|907|921|赵
+赵州|907|921|赵
+魏州|907|913|魏博
+博州|907|913|魏博
+相州|907|913|魏博
+卫州|907|913|魏博
+澶州|907|913|魏博
+夏州|907|979|定难军
+绥州|907|979|定难军
+银州|907|979|定难军
+宥州|907|979|定难军
+盐州|907|979|定难军
+沙州|907|974|归义军
+瓜州|907|974|归义军
+灵州|907|953|朔方军
+蔡州|907|923|后梁
+蔡州|923|936|后唐
+蔡州|936|947|后晋
+蔡州|947|950|后汉
+蔡州|951|960|后周
+蔡州|960|979|宋
+申州|907|923|后梁
+申州|923|936|后唐
+申州|936|947|后晋
+申州|947|950|后汉
+申州|951|960|后周
+申州|960|979|宋
+颍州|907|923|后梁
+颍州|923|936|后唐
+颍州|936|947|后晋
+颍州|947|950|后汉
+颍州|951|960|后周
+颍州|960|979|宋
+延州|923|936|后唐
+延州|936|947|后晋
+延州|947|950|后汉
+延州|951|960|后周
+延州|960|979|宋
+石州|923|936|后唐
+石州|936|947|后晋
+石州|947|950|后汉
+石州|951|979|北汉
+雄州|937|955|南唐|118.84|32.35
+雄州|946|970|南汉|114.3|25.12
+齐州|917|971|南汉|111.95|24.07
+巴州|907|951|楚|113.1|29.37
+巴州|951|963|武平军|113.1|29.37
+剑州|946|975|南唐|118.17|26.64`;
+let REALM_FIX = null;
+function realmFixMap() { if (REALM_FIX) return REALM_FIX; REALM_FIX = new Map();
+  for (const l of REALM_FIX_TXT.split(String.fromCharCode(10))) { const q = l.split('|'); const [n, a, b, pol] = q; if (!n || !pol) continue; if (!REALM_FIX.has(n)) REALM_FIX.set(n, []); REALM_FIX.get(n).push(q.length >= 6 ? [+a, +b, pol, +q[4], +q[5]] : [+a, +b, pol]); }
+  return REALM_FIX; }
 let REALM_ROWS = null;
 const REALM_COL = ['#b33a3a', '#2f6db5', '#3f9b4a', '#8a52b0', '#e08a1e', '#1f9fae', '#a0522d', '#c2408a', '#6b8e23', '#4b5bb5', '#d4a017', '#2e8b6e', '#9b3b5a', '#5a7a9a', '#7f5f00', '#c0632d', '#3d8fd1', '#8fb339', '#d0527a', '#6a3d9a', '#b8860b', '#008b8b', '#cd5c5c', '#556b2f'];
 function realmRows() {
@@ -8803,7 +9180,7 @@ function jsmapLoad() {
 }
 
 function realmsAt(y, m) {
-  const yv = y + ((num(m) || 1) - 1) / 12, rows = realmRows().filter(r => r.y0 <= yv && yv < (Number.isInteger(r.y1) ? r.y1 + 1 : r.y1));   // 止年带小数的到那个月为止
+  const yv = y + ((num(m) || 1) - 1) / 12, FIX = realmFixMap(), rows = realmRows().filter(r => r.y0 <= yv && yv < (Number.isInteger(r.y1) ? r.y1 + 1 : r.y1));   // 止年带小数的到那个月为止
   // 江山时序下好了：这一年各家照它的版图（多边形）认；它没画到的地方（更远的周边各族）照内置史料
   const JS = JSMAP ? jsSnapAt(JSMAP, Math.floor(yv)) : null, ren = {}, cov = new Set();
   // 内置史料里的一家，治所落在江山时序的哪个多边形里，就是同一家：割据、地方政权照游戏里一贯的叫法（剧情、身份都用这个名字），正统王朝照江山时序（武周这类改号照它）；
@@ -8829,7 +9206,9 @@ function realmsAt(y, m) {
     col[n] = best || `hsl(${Math.round((i * 137.5) % 360)},52%,${44 + (i % 3) * 8}%)`; if (best) used.add(best); });   // 并立的多过色板（十六国、西域诸国同时在），往后的照黄金角取色相，不撞色   // 并立的各家照次序取色板（色板红蓝绿紫橙……相邻的色相差得开），同一年不会撞色、也不会两家都是褐色
   const list = names.map(n => { const r0 = rows.find(r => r.n === n), f0 = JS && JS.polities.find(f => nmOf(f) === n), at = r0 ? r0.pts[0] : f0 && f0.anchor ? f0.anchor : [null, null]; return { name: n, col: col[n], lon: at[0], lat: at[1], basis: f0 ? '江山时序' : '内置史料', builtin: true, main: !!(f0 && f0.role === 'main') }; });
   const cache = new Map();
-  const of = (lon, lat) => { if (lon == null || lat == null) return null; const k = lon.toFixed(2) + ',' + lat.toFixed(2); if (cache.has(k)) return cache.get(k);
+  const of = (lon, lat, nm) => { if (lon == null || lat == null) return null;
+    if (nm) { const segs = FIX.get(nm); if (segs) { const hit = segs.filter(x => x[0] <= yv && yv <= x[1] + 0.999 && (x.length < 5 || Math.hypot((x[3] - lon) * Math.cos(lat * Math.PI / 180), x[4] - lat) < 0.7)).pop(); if (hit) { const v = list.find(x => x.name === hit[2]); if (v) return v; } } }   // 校订表优先（州名＋年）
+    const k = lon.toFixed(2) + ',' + lat.toFixed(2); if (cache.has(k)) return cache.get(k);
     if (JS) { let eb = null, ed = 1e9; for (const r of encl) for (const [x, y2] of r.pts) { const e = Math.hypot((x - lon) * Math.cos(lat * Math.PI / 180), y2 - lat); if (e < ed && e <= r.r) { ed = e; eb = r; } } if (eb) { const v = list.find(x => x.name === eb.n) || null; cache.set(k, v); return v; } }
     if (JS) for (const f of JS.polities) if (jsInFeat(f, lon, lat)) { const v = list.find(x => x.name === nmOf(f)) || null; cache.set(k, v); return v; }
     let best = null, bd = 1e9, bi = -1;
@@ -8874,7 +9253,7 @@ function mapUnits0(s) {
     // 谭图的府州照名字对上核定的政区，对不上的取最近的已核定府州（分裂之时以前一律返回空，政权着色全失灵）
     const reg = u => { if (!A) return null; if (R.length === 1) return R[0]; if (rOf.has(u)) return rOf.get(u); let r = byN.get(geoStem(u.n)); if (!r && u.lat) { let bd = 1.6; for (const a of AU) { const d = Math.hypot(a.lon - u.lon, a.lat - u.lat); if (d < bd) { bd = d; r = a.r; } } } const v = R.find(x => x.name === r) || null; rOf.set(u, v); return v; };
     const BRe = realmsAt(s.clock.y, s.clock.m);
-    if (BRe) { const by = new Map(); for (const u of EL.L2) { const v = BRe.of(u.lon, u.lat); by.set(u.n, v); } const regB = u => u.lv === 3 && u.p && by.has(u.p) ? by.get(u.p) : by.has(u.n) && u.lv !== 3 ? by.get(u.n) : BRe.of(u.lon, u.lat);
+    if (BRe) { const by = new Map(); for (const u of EL.L2) { const v = BRe.of(u.lon, u.lat, u.n); by.set(u.n, v); } const regB = u => u.lv === 3 && u.p && by.has(u.p) ? by.get(u.p) : by.has(u.n) && u.lv !== 3 ? by.get(u.n) : BRe.of(u.lon, u.lat);
       const AA = Object.assign({ units: [], counties: {}, roads: [], passes: [], ferries: [], at: 'b' }, A || {}, { split: true, regimes: BRe.list });
       return { A: AA, L1: [], L2: EL.L2.map(u => ({ ...u, r: (by.get(u.n) || {}).name || '' })), C: MAPZ.mode === 'world' ? [] : EL.C, prov: u => u.lv === 3 ? u.pp || '' : u.p || '', reg: regB, ok: true, era: EL, poly: EL.poly, builtin: true }; }
     return { A, L1: [], L2: EL.L2, C: MAPZ.mode === 'world' ? [] : EL.C, prov: u => u.lv === 3 ? u.pp || '' : u.p || '', reg, ok: !!A, era: EL, poly: EL.poly }; }
@@ -8889,9 +9268,9 @@ function mapUnits0(s) {
   // DeepSeek 核定的州府只收地名库里这一年真有、地方也对得上的（2026-11-01 玩家拿开皇九年的图：隋开皇三年已罢郡，图上还有陈的南海郡、义安郡，湖南境内冒出个寿州）
   const okA = u => prefs.some(g => geoStem(g.name) === geoStem(u.n) && Math.hypot(g.lon - u.lon, g.lat - u.lat) < 0.6);
   if (BR) { const sn = new Set(), L2 = fillGap(A ? A.units.filter(u => u.lv === 2 && u.lat && okA(u) && !sn.has(u.p + '|' + u.n) && sn.add(u.p + '|' + u.n)).map(u => ({ ...u })) : []);
-    for (const u of L2) u.r = (BR.of(u.lon, u.lat) || {}).name || '';
+    for (const u of L2) u.r = (BR.of(u.lon, u.lat, u.n) || {}).name || '';
     const byN = new Map(L2.map(u => [u.n, u])), C = withCounties(L2), P = attachTs(s, L2, C);
-    const regB = u => { if (u.lv === 3 && u.p && byN.has(u.p)) { const r = byN.get(u.p).r; return BR.list.find(x => x.name === r) || null; } if (u.r != null && u.lv === 2) return BR.list.find(x => x.name === u.r) || null; return BR.of(u.lon, u.lat); };
+    const regB = u => { if (u.lv === 3 && u.p && byN.has(u.p)) { const r = byN.get(u.p).r; return BR.list.find(x => x.name === r) || null; } if (u.r != null && u.lv === 2) return BR.list.find(x => x.name === u.r) || null; return BR.of(u.lon, u.lat, u.lv === 3 ? (u.p || u.n) : u.n); };
     const AA = Object.assign({ units: [], counties: {}, roads: [], passes: [], ferries: [], at: 'b' }, A || {}, { split: true, regimes: BR.list });
     return keep({ A: AA, L1: A ? A.units.filter(u => u.lv === 1) : [], L2, C, prov: u => u.lv === 3 ? u.pp || '' : u.p || '', reg: regB, ok: true, poly: P, builtin: true }); }
   if (A) { const sn = new Set(), L2 = fillGap(A.units.filter(u => u.lv === 2 && u.lat && !sn.has(u.p + '|' + u.n) && sn.add(u.p + '|' + u.n)).map(u => ({ ...u }))), L1 = A.units.filter(u => u.lv === 1);
@@ -16474,7 +16853,7 @@ function pane(tab) {
       if (!(H && H.harmony != null) && !hs.length) return '';
       return `<div class="pl" style="font-size:13px">${H && H.harmony != null ? `<span>家宅和睦</span><b>${esc(H.harmony)}</b>${H.why ? `<small class="muted">（${esc(H.why)}）</small>` : ''}` : ''}${hs.length ? `<div class="muted" style="font-size:12px">看得出的情分：${hs.map(([k, v]) => `${esc(k)}${seeThrough(s, { who: k, tell: 50 }) ? `对${esc(v.feel.toward)}${esc(v.feel.feel)}` : `——${esc(v.feel.shows || '看不透')}`}`).join('；')}</div>` : ''}</div>`; })();
     const famTbl = identH + famBtn + homeH + (HH.length || s.preg ? `<div class="h" style="margin-top:6px"><span class="seal">家</span>家室<span class="note">名分、年岁、生母${arr(s.famPlan).length ? `；史载还有${s.famPlan.length}个子女在日后出生，到时照记` : ''}</span></div><div class="tblwrap"><table class="tbl"><tr><th>名分</th><th>名字</th><th>年岁</th><th>生母</th><th>眼下</th></tr>${HH.slice().sort((a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0)).map(m => `<tr${m.dead ? ' style="opacity:.55"' : ''}><td>${esc(m.relation || '')}</td><td><b>${esc(m.name)}</b>${m.basis ? `<div class="gb"><span class="gr ${m.inferred || m.unver ? 'inf' : 'rec'}">${m.inferred ? '推算' : m.unver ? '史载·网上没核到' : '史载'}</span>${esc(String(m.basis).replace(/^推算[：:]/, ''))}</div>` : ''}</td><td>${m.age != null ? esc(m.age) + '岁' + (m.ageWhy ? `<div class="muted" style="font-size:11px">${esc(m.ageWhy)}</div>` : '') : (ageGuessOf(s, m) != null ? `<span title="照和你的关系先推的，正照经历细推">约${ageGuessOf(s, m)}岁</span>` : '<span class="muted">正在推</span>')}</td><td>${esc(m.mother || '')}</td><td>${m.dead ? '已故' : m.pregnant ? `<span class="badge b-doing">有孕${Math.max(1, ymN - m.pregnant.at)}个月</span>` : m.away ? '不在家' : esc(String(m.note || '').replace(/（推算）$/, ''))}</td></tr>`).join('')}${s.preg ? `<tr><td>本人</td><td><b>${esc(s.protagonist.name)}</b></td><td></td><td></td><td><span class="badge b-doing">有孕${Math.max(1, ymN - s.preg.at)}个月</span></td></tr>` : ''}</table></div>${arr(s.familyLog).length ? `<div class="list" style="margin-top:6px">${s.familyLog.slice(-5).reverse().map(x => `<div><span class="muted">${esc(x.when)}</span> ${esc(x.t)}</div>`).join('')}</div>` : ''}` : '');
-    return (ORGMSG && /核查|查无此人|有其人|评定/.test(ORGMSG) ? `<div class="muted" style="margin:4px 0">${esc(ORGMSG)}</div>` : '') + (arr(s.clashLog).some(x => s.turn - x.turn <= 3 && !/已改回原名/.test(x.t || '')) ? `<div class="muted" style="margin:4px 0">程序起的名字和史书人物重了，已换名：${esc(arr(s.clashLog).filter(x => s.turn - x.turn <= 3 && !/已改回原名/.test(x.t || '')).map(x => String(x.t).replace(/（.*$/, '')).join('；'))}</div>` : '') + clanHtml(s) + famTbl + courtHtml(s) + rosterHtml(s) + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
+    return (ORGMSG && /核查|查无此人|有其人|评定/.test(ORGMSG) ? `<div class="muted" style="margin:4px 0">${esc(ORGMSG)}</div>` : '') + (arr(s.clashLog).some(x => s.turn - x.turn <= 3 && !/已改回原名/.test(x.t || '')) ? `<div class="muted" style="margin:4px 0">程序起的名字和史书人物重了，已换名：${esc(arr(s.clashLog).filter(x => s.turn - x.turn <= 3 && !/已改回原名/.test(x.t || '')).map(x => String(x.t).replace(/（.*$/, '')).join('；'))}</div>` : '') + clanHtml(s) + houseHtml(s) + famTbl + courtHtml(s) + rosterHtml(s) + `<div class="h" style="margin-top:6px"><span class="seal">人</span>身边的人<span class="note">点「找他」「找她」把话写进框里</span></div><div class="pcs">
       ${fam.map(m => `<div class="pc"><div class="pn"><b>${esc(m.name)}</b>${m.alias ? `<span class="muted">（${esc(m.alias)}）</span>` : ''}${FX(m.name)}<span class="att">${esc(m.relation)}</span></div><div class="pr">${ageTxt(m, s)}${m.dead ? ' · 已故' : m.away ? ' · 不在家' : ''}${m.note ? ' · ' + esc(m.note) : ''}</div>${m.dead ? '' : `<button class="link" data-write="${esc('我去找' + m.name + '，')}">${/母|妻|女|姐|妹|妾|婶|姑|姨|嫂|媳|娘|氏/.test(m.relation + m.name) ? '找她' : '找他'}</button>`}</div>`).join('')}
       ${NEAR.length ? NEAR.map(CARD).join('') : ''}
       ${FAR.length ? `<div class="h" style="margin-top:8px"><span class="seal">远</span>远处的人<span class="note">不在你跟前：只能写信、遣使、下诏往来</span></div>${FAR.map(CARD).join('')}` : ''}${figHtml(s)}
@@ -16507,7 +16886,7 @@ function pane(tab) {
   if ((tab === 'court' || tab === 'army') && !tabsFor(s).some(([k]) => k === tab)) tab = 'board';   // 身份变了，这个面板不开了
   if (tab === 'skill') return skillTab(s);
   if (tab === 'trade') return tradeTab(s);
-  if (tab === 'court') return SH(() => courtGameHtml(s), 'courtGameHtml') + courtTab(s) + courtHtml(s);
+  if (tab === 'court') return SH(() => courtGameHtml(s), 'courtGameHtml') + houseHtml(s) + courtTab(s) + courtHtml(s);   // 王室世系放在朝局页头里
   if (tab === 'army') return armyTab(s);
   if (tab === 'power') {
     try { ownLandFromMap(s); } catch (_) { /* 地图没载好，下回再列 */ }

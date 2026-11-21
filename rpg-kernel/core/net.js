@@ -47,6 +47,7 @@ function directAgent() {
 }
 /** fetch 包一层：网络层失败时给出中文原因 */
 async function fetchX(url, opts, { noFastFail = false } = {}) {
+  try { const u0 = new URL(url); if (u0.protocol !== 'http:' && u0.protocol !== 'https:') throw new Error('x'); } catch (_) { throw new Error('地址不合法（只许 http/https）'); }   // 只许 http/https：接口地址是配置来的，堵住 file/ftp 等旁路（2026-11-21 安全复核）
   let host = ''; try { host = new URL(url).host; } catch (_) { /* 忽略 */ }
   const d = DOWN.get(host);
   if (!noFastFail && d && d.n >= 2 && d.until > Date.now()) { const err = new Error(d.msg + '（刚才接连连不上，一分钟后再试）'); err.netError = true; err.fastFail = true; throw err; }

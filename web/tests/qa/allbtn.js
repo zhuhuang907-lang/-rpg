@@ -32,7 +32,10 @@ const path = require('path');
     ORGMSG = ''; ERRMSG = ''; callClaude = async () => ({ text: '{}' }); VIEW = 'game'; SIDE_FOLD = false; }, [id, ECON]);
   await p.evaluate(src => { window.__IDS = eval('(' + src + ')'); }, '{' + Object.entries(IDS).map(([k, f]) => `${JSON.stringify(k)}: ${f.toString()}`).join(',') + '}');
   const res = {}, bad = [], SKIP = /^(＋|－|⛶|跟着我|大图|收回|回到正文|关闭|展开|收起|×|✕)$|^(本地（到县）|天下)$/;
-  for (const id of Object.keys(IDS)) { await setup(id); const tabs = (await p.evaluate(() => tabsFor(S).map(x => x[0]))).filter(t => /^(board|people|estate|trade|power|court|army|career|skill)$/.test(t));
+  for (const id of Object.keys(IDS)) {
+    // 每个身份换新页面：连续几百次建档/渲染会把渲染器磨崩（2026-11-21 崩点实测），真实玩家也不会一页建八百个档
+    if (process.env.ALLBTN_FRESH) { await p.reload(); await p.waitForFunction(() => typeof partyStart === 'function'); }
+    await setup(id); const tabs = (await p.evaluate(() => tabsFor(S).map(x => x[0]))).filter(t => /^(board|people|estate|trade|power|court|army|career|skill)$/.test(t));
     for (const tab of tabs) { await setup(id); await p.evaluate(t => { TAB = t; render0(); }, tab); const n = await p.$$eval('.side .pane button', xs => xs.length);
       { const tb = await p.evaluate(() => { const T = (document.querySelector('.side .pane') || {}).innerText || ''; const m = T.replace(/牒某某/g, '').replace(/“[^”]*”/g, '“例”').match(/undefined|NaN|\bnull\b|\[object|（）|「」|某某|某人|某地|主角|议事会|最后通牒|国债|封臣|军团/); return m ? m[0] + '：' + T.slice(Math.max(0, m.index - 30), m.index + 20).replace(/\s+/g, ' ') : ''; }); if (tb) bad.push(`${id}·${tab}页面有错字：${tb}`); }
       for (let i = 0; i < n; i++) { await setup(id); await p.evaluate(t => { TAB = t; render0(); }, tab);
