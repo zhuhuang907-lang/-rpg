@@ -1728,7 +1728,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121223445';
+const BUILD = '20261121233006';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4697,7 +4697,7 @@ function armyMonthly(s, months) {
       if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); f.orgNow = Math.max(0, (num(f.orgNow) ?? 70) - 10 * m); out.push(`${f.name}缺粮`); }
     }
     if (/整训|操练|练兵/.test(f.status || '')) f.train = Math.min(100, (num(f.train) ?? 40) + Math.round(100 / Math.max(1, Math.max(...st.U.map(x => x.t.months || 3))) * (myForce(s, f) ? techFx(s).train : 1)) * m);
-    if (myForce(s, f) && f.owed && (num(f.morale) ?? 60) < 25) { const k = Math.min(0.3, 0.05 * m), lost = Math.round(st.men * k); if (lost > 0) { uShrink(s, f, 1 - k); f.troops = forceStats(s, f).men; out.push(`${f.name}欠饷、士气低，逃散约${fmtN(lost, '人')}`); f.src = '程序结算'; } }
+    if (myForce(s, f) && f.owed && (num(f.morale) ?? 60) < 25) { const k = Math.min(0.3, 0.05 * m), lost = Math.round(st.men * k); if (lost > 0) { const hid = ghostHidden(s, f); uShrink(s, f, 1 - k); f.troops = forceStats(s, f).men; if (hid) f.ghost = (N0(f.ghost) || 0) + lost; out.push(hid ? `${f.name}欠饷、士气低（统兵的照名册报，逃了的人还挂在册上）` : `${f.name}欠饷、士气低，逃散约${fmtN(lost, '人')}`); f.src = '程序结算'; } }   /* 别人替你统、没点验的：逃的人不报、名字留在册上成空额（R-273 完整测试查出：名册对不上） */
     moraleWatch(f, m);
     if (!/交战/.test(f.status || '')) f.orgNow = Math.min(st.org0 || 70, (num(f.orgNow) ?? 50) + 15 * m);
     f.troops = st.men;
@@ -11404,6 +11404,7 @@ const rankLadder = (s, side) => side === 'rebel' ? RANKS.rebel : ARMY_LADDER(s.c
 function soldierOf(s) { const role = String(s.protagonist.role || '').replace(/[（(]原[^）)]*[）)]/g, '').replace(/^前任?/, '');   /* 「罢官在籍（原守备）」说的是从前的官，不算在营（R-153） */ if (s.rank && isRuler(s)) return null; if (s.rank) return s.rank; if (!isRuler(s) && !ROYAL_RE.test(role) && !/司隶|城门|典军校尉|锦衣卫|衣卫/.test(role)) { const L = ARMY_LADDER(s.clock.y).L; let hit = -1, len = 0; L.forEach((r, k) => { if (r.length > len && new RegExp(r + '(?:$|[（(，,、；])').test(role)) { hit = k; len = r.length; } }); if (hit >= 0) return (s.rank = { lv: hit, merit: 0, side: 'army', army: '' }); } if (/小兵|兵卒|兵丁|喽啰|士卒|军士|戍卒|营兵|新兵/.test(role) && !isRuler(s)) return (s.rank = { lv: 0, merit: 0, side: /闯|义军|贼|流寇|天国|黄巾|红巾/.test(role) ? 'rebel' : 'army', army: '' }); return null; }
 /** 眼下真在打仗：有交战中的战事、你的部队在行军交战围城、两个月内打过仗、或附近有敌军（R-261） */
 function atWarNow(s) { const ym = Math.floor(ymOf(s.clock));
+  try { if (identityOf(s).rebel) return true; } catch (_) { /* 身份认不出照下面 */ }   // 在义军里的：义军年年转战，营里一直有仗打（R-273 完整测试查出：李自成营中的小兵冲锋被说「眼下没有仗打」，升不上去）
   if (arr(s.wars).some(w => w && w.state === '交战')) return true;
   if (arr(s.campaigns).some(c => c && /行军|交战|围城/.test(c.state || ''))) return true;
   if (arr(s.forces).some(f => f && (f.foe || f.hunt) && N0(f.troops) > 0)) return true;
@@ -12215,7 +12216,8 @@ function logiHtml(s) { if (!logiOK(s)) return ''; const D = depotsOf(s), F = arr
 function supplyLine(s, f) {
   if (!f || !f.at) return { k: 1, li: 0, from: '' };
   /* 驻在自家地盘上的兵就地取给（R-271：幽州的卢龙军、魏州的天雄军被算成「远离京城补给不继」，一年按月逃散；跨月逐月结算后掉得更多） */
-  if (!/行军|交战|围城|出征/.test(f.status || '') && !arr(s.campaigns).some(c => c.force === f.name && /待发|行军|围城/.test(c.state))) { const mine = ((() => { try { return myDomain(s).places || []; } catch (_) { return []; } })()).concat(arr(s.territory).map(x => x.place)); const at0 = String(f.at).replace(/[（(].*$/, ''); if (mine.some(p => samePlace(p, at0) || String(p).includes(at0.slice(0, 2)))) return { k: 1, li: 0, from: at0 }; }
+  // 敌军截在路上的不算（R-273 完整测试查出：潼关有郑军、洛阳的兵照旧当「就地取给」，粮道断了也不打折）
+  if (!/行军|交战|围城|出征/.test(f.status || '') && !arr(s.campaigns).some(c => c.force === f.name && /待发|行军|围城/.test(c.state)) && !((() => { try { return supCalc(s, f) || {}; } catch (_) { return {}; } })().cut)) { const mine = ((() => { try { return myDomain(s).places || []; } catch (_) { return []; } })()).concat(arr(s.territory).map(x => x.place)); const at0 = String(f.at).replace(/[（(].*$/, ''); if (mine.some(p => samePlace(p, at0) || String(p).includes(at0.slice(0, 2)))) return { k: 1, li: 0, from: at0 }; }
   if (depotsOf(s).length && myForce(s, f)) { const sp = supCalc(s, f); if (sp) { const ym0 = Math.floor(ymOf(s.clock)), k = (f.cutTill != null && f.cutTill >= ym0 ? 0.7 : 1) * sp.k; return { k: Math.round(k * 100) / 100, li: sp.li, from: sp.from || '仓', cut: sp.cut || k < sp.k, foe: sp.foe, water: sp.water }; } }   /* 有仓的照运粮的路算（R-155） */ const at = placeXY(s, f.at, s.clock.y); if (!at || !at.lat) return { k: 1, li: 0, from: '' };
   const own = [...new Set(((() => { try { return myDomain(s).places || []; } catch (_) { return []; } })()).concat(arr(s.territory).map(x => x.place)))].map(n => [n, placeXY(s, n, s.clock.y)]).filter(([, u]) => u && u.lat);
   if (!own.length) return { k: 1, li: 0, from: '' };
@@ -15367,7 +15369,7 @@ function armyHazards(s, months) {
     for (let k = 0; k < m && n < 2; k++) {
       const mon = (((num(s.clock.m) || 6) - 1 - k + 12) % 12) + 1, R = i => seeded((s.turn || 0) * 7919 + hash * 13 + k * 101 + i * 37);
       const hit = (p, i) => R(i) < p;
-      const lose = (a, b, i) => { const q = a + (b - a) * R(i + 50), d = Math.round(men * q); if (d <= 0) return 0; if (arr(f.units).length) { uShrink(s, f, 1 - q); f.troops = forceStats(s, f).men; } else f.troops = Math.max(0, (N0(f.troops) || men) - d); f.src = '程序结算'; return d; };
+      const lose = (a, b, i) => { const q = a + (b - a) * R(i + 50), d = Math.round(men * q); if (d <= 0) return 0; if (arr(f.units).length) { uShrink(s, f, 1 - q); f.troops = forceStats(s, f).men; } else f.troops = Math.max(0, (N0(f.troops) || men) - d); if (ghostHidden(s, f)) f.ghost = (N0(f.ghost) || 0) + d; f.src = '程序结算'; return d; };   /* 别人替你统、没点验的：逃的不报，名字挂在册上成空额（R-273） */
       const at = f.at ? '在' + f.at : '';
       const pPlague = 0.015 + (mon >= 5 && mon <= 8 && lat < 33 ? 0.05 : 0) + (men > 20000 ? 0.03 : 0) + (/交战|休整/.test(f.status || '') ? 0.02 : 0) + ((N0(f.grain) ?? 1) <= 0 ? 0.03 : 0);
       if (hit(pPlague, 1)) { const d = lose(0.03, 0.09, 1); f.morale = Math.max(0, mo - 10); f.orgNow = Math.max(0, (num(f.orgNow) ?? 60) - 15); out.push(`${f.name}${at}营中起疫，病死约${fmtN(d, '人')}，余众惶惶`); n++; continue; }
