@@ -11,7 +11,7 @@ const path = require('path');
     S = newSave({ name: '杨坚', gender: '男', age: 60, role: '隋文帝', real: true, gregorianYear: 600, month: 6, day: 1, place: '大兴', polity: '隋' }); S.idm = 'emperor'; S.chat = [{ role: 'gm', text: '开场。' }]; S.polPts = 20;
     S.people = { 杨勇: { role: '皇太子', tie: '长子', seen: 1 }, 王小二: { role: '宫门杂役', seen: 1 }, 李虚子: { role: '门客', seen: 1, fic: true } };
     // 1 开局没核过的真人不标虚拟；标了虚构的才标
-    const t = markFict(S, '杨勇入宫谒见，李虚子随侍。'); if (/杨勇（虚拟）/.test(t)) bad.push('没核过的杨勇被标了虚拟'); if (!/李虚子（虚拟）/.test(t)) bad.push('标了虚构的人没标虚拟');
+    const t = markFict(S, '杨勇入宫谒见，李虚子随侍。'); if (/（虚拟）|（虚构）|（真人）/.test(t)) bad.push('正文里还标虚拟、真实（2026-11-20 项目主人：「以后不要再写虚拟和真实了」，R-263）：' + t);
     // 2 一张表核真假
     const oc = callClaude; callClaude = async pr => { if (/是不是史书上真有其人/.test(pr)) { const rows = []; pr.split('\n').forEach(l => { const m = /^(\d+)\. (.+?)（/.exec(l); if (m) rows.push({ i: +m[1], real: m[2] === '杨勇' ? '真' : m[2] === '王小二' ? '假' : '不详', who: m[2] === '杨勇' ? '隋皇太子' : '' }); }); return { text: JSON.stringify({ rows }) }; } return { text: '{}' }; };
     try { await pplChkDS(S); } finally { callClaude = oc; }
