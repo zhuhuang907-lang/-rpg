@@ -23,6 +23,9 @@ const path = require('path');
   await p.keyboard.type('问事');
   const v = await p.evaluate(() => ({ v: document.querySelector('#said').value, f: document.activeElement && document.activeElement.id }));
   if (v.v !== '召冯道到便殿问事' || v.f !== 'said') bad.push('重画时输入框丢字或丢光标：' + JSON.stringify(v));
+  /* 删光了的框，后台重画后旧字不跑回来（真删） */
+  for (const t of ['board', 'news', 'world', 'chron', 'arc', 'set', 'geo', 'guide']) { await p.evaluate(t => { LIBFIND.q = '冯道'; TAB = t; render(); }, t); if (await p.$('#libQ')) break; }
+  if (await p.$('#libQ')) { await p.click('#libQ'); await p.keyboard.press('End'); for (let i = 0; i < 4; i++) await p.keyboard.press('Backspace'); await p.evaluate(() => render()); const q = await p.evaluate(() => document.querySelector('#libQ').value); if (q !== '') bad.push('删光了的搜索框，后台一重画旧字又回来：' + q); } else bad.push('没找到翻史书的搜索框');
   if (errs.length) bad.push(...errs);
   console.log('ERRS', JSON.stringify(bad)); await b.close(); process.exit(bad.length ? 1 : 0);
 })();

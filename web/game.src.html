@@ -16343,7 +16343,7 @@ function render0() {
   // 页面重画时，玩家正在填的字（Key、型号、要做的事……）和光标不丢
   const keep = {}, ae = document.activeElement, foc = ae && ae.id && /^(INPUT|TEXTAREA)$/.test(ae.tagName) ? ae.id : '';
   let selr = null; if (foc) try { selr = [ae.selectionStart, ae.selectionEnd]; } catch (_) { /* 有的输入框没有光标位置 */ }
-  document.querySelectorAll('#app input[id], #app textarea[id]').forEach(el => { if (!/checkbox|radio|file/.test(el.type) && el.value) keep[el.id] = el.value; });
+  document.querySelectorAll('#app input[id], #app textarea[id]').forEach(el => { if (!/checkbox|radio|file/.test(el.type) && (el.value || el.defaultValue || el === ae)) keep[el.id] = [el.value, el.defaultValue]; });   /* 玩家删光了的也记（R-272：清空的框重画后旧字又跑回来） */
   // 当面说的说辞、谈什么、开着的框、编路勾的兵（没 id 的，照 data- 记）：后台重画不丢（R-148）
   const keepD = [], DK = ['psay', 'pask', 'fopf', 'gpf', 'cseat', 'ctask']; let focD = null;
   document.querySelectorAll('#app [data-psay], #app [data-pask], #app [data-fopf], #app [data-gpf], #app [data-cseat], #app [data-ctask]').forEach(el => { const k = DK.find(x => el.dataset[x] != null); const v = el.type === 'checkbox' ? el.checked : el.value; const open = !!(el.closest('details') && el.closest('details').open); keepD.push([k, el.dataset[k], v, open]); if (el === ae) focD = [k, el.dataset[k], (() => { try { return [ae.selectionStart, ae.selectionEnd]; } catch (_) { return null; } })()]; });
@@ -16356,7 +16356,7 @@ function render0() {
     if (Math.abs(window.scrollY - sv.y) > 2) window.scrollTo(0, sv.y);
     if (sv.tab === (typeof TAB !== 'undefined' ? TAB : '')) { const sd = document.querySelector('.side'); if (sd && sv.side) sd.scrollTop = sv.side; const pn = document.querySelector('.side .pane'); if (pn && sv.pane) pn.scrollTop = sv.pane; }
   }
-  for (const [id, v] of Object.entries(keep)) { const el = document.getElementById(id); if (el && !el.value && !/checkbox|radio|file/.test(el.type)) el.value = v; }
+  for (const [id, [v, d0]] of Object.entries(keep)) { const el = document.getElementById(id); if (!el || /checkbox|radio|file/.test(el.type)) continue; if (!el.value && v) el.value = v; else if (v === '' && el.value && el.defaultValue === d0) el.value = ''; }   /* 玩家删光的：页面照原样又填回同一个旧字的，照玩家删光的 */
   for (const [k, key, v, open] of keepD) { const el = [...document.querySelectorAll(`#app [data-${k}]`)].find(x => x.dataset[k] === key); if (!el) continue; if (el.type === 'checkbox') el.checked = v; else if (v && el.value !== v) el.value = v; if (open && el.closest('details')) el.closest('details').open = true; }
   if (focD) { const el = [...document.querySelectorAll(`#app [data-${focD[0]}]`)].find(x => x.dataset[focD[0]] === focD[1]); if (el && document.activeElement !== el) { try { el.focus({ preventScroll: true }); if (focD[2]) el.setSelectionRange(focD[2][0], focD[2][1]); } catch (_) { /* 不要紧 */ } } }
   if (foc) { const el = document.getElementById(foc); if (el && document.activeElement !== el) { try { el.focus({ preventScroll: true }); if (selr) el.setSelectionRange(selr[0], selr[1]); } catch (_) { /* 不要紧 */ } } }
@@ -17494,6 +17494,7 @@ document.addEventListener('click', e => { const el = e.target && e.target.closes
 document.addEventListener('keydown', e => { if (e.target && e.target.id === 'sideFind' && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sideFind(e.target.value); setTimeout(() => { const i = $('#sideFind'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 0); } });
 document.addEventListener('mouseover', e => { const el = e.target && e.target.closest && e.target.closest('.ent'); if (el) entShow(el); else { const c = $('#entCard'); if (c && !(e.target.closest && e.target.closest('#entCard'))) c.hidden = true; } });
 document.addEventListener('click', async e => {
+  { const bt = e.target && e.target.closest && e.target.closest('button,[role=button]'); if (bt && (bt.disabled || bt.getAttribute('aria-disabled') === 'true')) return; }   /* 点在禁用的按钮里（含按钮里的字、图标）一律不办（R-272：防连点重复扣钱、出兵） */
   { const b = e.target.closest && e.target.closest('[data-book],[data-bookdl],[data-bookclear],#bBookStop');
     if (b) {
       if (b.id === 'bBookStop') { if (BOOK) BOOK.stop = true; return; }
