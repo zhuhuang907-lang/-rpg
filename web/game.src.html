@@ -367,7 +367,9 @@ const CAL = (() => {
   /** 两个日子之间跨了几个月（闰月也算一个月） */
   function monthsBetween(a, b) { const i = idx(a.y, a.m, a.leap), j = idx(b.y, b.m, b.leap); return i >= 0 && j >= 0 ? j - i : (b.y * 12 + b.m) - (a.y * 12 + a.m); }
   let cum = null; function dayNo(c) { if (!c) return null; const i = idx(c.y, c.m, c.leap); if (i < 0) return null; if (!cum) { cum = [0]; for (let k = 0; k < months.length; k++) cum.push(cum[k] + months[k].days); } if (dayNo.base == null) { const j = idx(1000, 1, false); dayNo.base = j < 0 ? 0 : Math.round((1000 * 12 + 1) * 29.53) - cum[j]; } return dayNo.base + cum[i] + ((c.d || 15) - 1); }   // 对齐旧算法（1000 年正月），旧存档里存的日子接得上   // 照历表数日子（闰月是整整一个月，不是半个）
-  return { addDays, label, monthsBetween, dayNo };
+  /** 从 a 起往后第 k 个月（闰月也算一个月） */
+  function monthAt(a, k) { const i = idx(a.y, a.m, a.leap); if (i >= 0 && months[i + k]) { const x = months[i + k]; return { y: fromA(x.y), m: x.m, leap: x.leap }; } let y = a.y, m = a.m + k; while (m > 12) { m -= 12; y++; if (y === 0) y = 1; } return { y, m, leap: false }; }
+  return { addDays, label, monthsBetween, dayNo, monthAt };
 })();
 const yearText = y => (y < 0 ? '公元前' + -y + '年' : '公元' + y + '年');
 const SHICHEN = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
@@ -461,6 +463,7 @@ function realmUpkeep(s, days, acc) {
   if (!days || days <= 0) return;
   for (const f of arr(s.forces)) {
     if (arr(f.units).length) continue;   // 有编成的兵马照兵种按月结算粮饷（armyMonthly），这里不再重复扣
+    if (myForce(s, f) && !f.party) continue;   /* 自家没编成营的兵，粮由 armyMonthly 按月扣（R-271 查实：这里按天又扣一遍，一年多扣一倍） */
     const t = N0(f.troops), g = N0(f.grain);
     if (t > 0 && g != null) { const use = Math.round(t * 0.02 * days); if (use > 0) { const ng = Math.max(0, g - use); acc.push({ k: `${f.name || f.leader}军粮`, from: g + '石', to: ng + '石', why: `${t}人×${days}天，日食二升` }); f.grain = String(ng); } }
   }
@@ -5053,7 +5056,7 @@ function shopMonthly(s, months) {
       const ev = seeded(now * 97 + i * 5 + b.capital % 101); if (ev < 0.02) { const loss = Math.round(b.capital * (0.05 + ev * 5)); pf -= loss; b.log = arr(b.log).concat([{ ym: now, text: `遭了窃盗，损${fmtN(loss, u)}` }]).slice(-8); } else if (ev > 0.985) { const loss = Math.round(b.capital * 0.04); pf -= loss; b.log = arr(b.log).concat([{ ym: now, text: `官府摊派、衙役勒索，花了${fmtN(loss, u)}` }]).slice(-8); }
       else if (ev > 0.955 && !lic) { const bad = Math.round(b.capital * (0.03 + (ev - 0.955) * 1.5)); pf -= bad; b.log = arr(b.log).concat([{ ym: now, text: `老主顾赊的账黄了，收不回${fmtN(bad, u)}` }]).slice(-8); }   /* R-185 没牙帖的小铺，赊账收不回 */
       tot += pf; }
-    tot -= clerks * Math.max(1, Math.round((econOf(s) ? econOf(s).wage : 3) * 100) / 100 * months);   /* 伙计月钱 */
+    tot -= clerks * Math.max(1, Math.round((econOf(s) ? econOf(s).wage : 3) * 100) / 100 * Math.min(months, 24));   /* 伙计月钱 */
     tot = Math.round(tot); s.money.cash = Math.round((s.money.cash + tot) * 100) / 100; b.revenue = tot; b.last = now; out.push(`${b.name}这${months > 1 ? months + '个月' : '个月'}${tot >= 0 ? '赚' : '亏'}${fmtN(Math.abs(tot), u)}`); }
   return out;
 }
@@ -9490,8 +9493,9 @@ function cityDo(s, n, act, arg) {
   let line = '';
   if (CITY_ACT[act]) { const [nm, k, add, cost] = CITY_ACT[act]; if (c0[k] == null) { if (S) delete S.popFail; return kickJob('pop', `${c0.n || '这座城'}的户口、农商、城防还没推好`, () => popInfer(S), '户口、农商、城防推好了，可以办了'); } if (c0[k] >= 100) { ORGMSG = nm + '已到头了'; return null; }
     const P = domainPurse(s), cc = Math.round(cost * techMul(s)); if (!P || P.have() < cc) { ORGMSG = `钱不够：要${fmtN(cc, (s.money || {}).unit || '')}${P ? '，' + P.name + '只有' + fmtN(P.have(), (s.money || {}).unit || '') : ''}`; return null; } P.take(cc); const paid = `从${P.name}支${fmtN(cc, (s.money || {}).unit || '')}`; C.pend = arr(C.pend).concat([{ k, add, at: Math.floor(ymOf(s.clock)) + 1 }]); line = `${n}${D.kind === 'stronghold' && k === 'cheng' ? '加固寨墙' : nm}（${paid}，下个月见效）`; }
-  else if (act === 'relief') { const q = Math.max(100, Math.round((c0.pop || 10000) * 0.01)); const R0 = s.realm; if (R0 && N0(R0.granary) >= q) { R0.granary = N0(R0.granary) - q; } else { const paid = milPay(s, Math.round(q * 1 * techMul(s))); if (paid == null) return null; }
-    t.loyalty = Math.min(100, (N0(t.loyalty) ?? 50) + 8); if (s.gov && s.gov.scope === 'local' && s.gov.stats['民心'] != null) s.gov.stats['民心'] = Math.min(100, s.gov.stats['民心'] + 6); C.relief = Math.floor(ymOf(s.clock)); line = `开仓赈济${n}（${fmtN(q, '石')}）`; }
+  else if (act === 'relief') { if (C.relief === Math.floor(ymOf(s.clock))) { ORGMSG = `${n}这个月已经开过仓了，下个月再看灾情`; return null; }   /* 一月一回（R-271：连点能把忠诚刷满） */
+    const q = Math.max(100, Math.round((c0.pop || 10000) * 0.01)); const R0 = s.realm; if (R0 && N0(R0.granary) >= q) { R0.granary = N0(R0.granary) - q; } else { const paid = milPay(s, Math.round(q * 1 * techMul(s))); if (paid == null) return null; }
+    t.loyalty = Math.min(100, (N0(t.loyalty) ?? 50) + 8); if (!t0) C.loyalty = t.loyalty;   /* 地方官没有地盘条目：忠诚记在城池上，月结照这个算（R-271） */ if (s.gov && s.gov.scope === 'local' && s.gov.stats['民心'] != null) s.gov.stats['民心'] = Math.min(100, s.gov.stats['民心'] + 6); C.relief = Math.floor(ymOf(s.clock)); line = `开仓赈济${n}（${fmtN(q, '石')}）`; }
   else if (act === 'tax') { const v = /轻/.test(arg) ? '轻' : /重/.test(arg) ? '重' : '常'; C.tax = v; line = `${n}赋税定为${v === '轻' ? '轻徭薄赋' : v === '重' ? '加征' : '照常'}`; }
   else if (act === 'gov') { const w = one(arg, 12); if (!milWho(s, w)) { ORGMSG = `账上没有「${w || '（没填）'}」这个人`; return null; } C.gov = w; line = `以${w}守${n}`; }
   else if (act === 'rebuild') { if (!mo0 || mo0.st !== '毁') { ORGMSG = '这座城不是残破的，不用修葺'; return null; } const P2 = domainPurse(s), cc2 = Math.round(4000 * techMul(s)); if (!P2 || P2.have() < cc2) { ORGMSG = `钱不够：修葺要${fmtN(cc2, (s.money || {}).unit || '')}`; return null; } P2.take(cc2); C.pend = arr(C.pend).concat([{ k: 'rebuild', add: 0, at: Math.floor(ymOf(s.clock)) + 6 }]); line = `修葺重建${n}（从${P2.name}支${fmtN(cc2, (s.money || {}).unit || '')}，六个月完工）`; }
@@ -9510,7 +9514,7 @@ function cityMonthly(s, months) {
   let M; try { M = mapUnits(s); } catch (_) { return []; }
   const recentWar = n => arr(s.battles).some(b => b.place && samePlace(b.place, n) && s.turn - (b.turn || 0) <= 3) || arr(s.clashLog).some(c => c.took && samePlace(c.took, n) && s.turn - c.turn <= 3);
   for (const u of M.L2) { const v = s.popEst.m[u.n]; if (!v || !(v.pop || v.hh)) continue; const C = (s.cities = s.cities || {})[u.n] = (s.cities || {})[u.n] || {}, t = arr(s.territory).find(x => geoStem(x.place) === geoStem(u.n));
-    const nong = C.nong ?? v.nong ?? 50, loy = t ? (N0(t.loyalty) ?? 50) : 55, tax = C.tax || '常';
+    const nong = C.nong ?? v.nong ?? 50, loy = t ? (N0(t.loyalty) ?? 50) : (N0(C.loyalty) ?? ((s.gov && s.gov.scope === 'local' && N0(s.gov.stats && s.gov.stats['民心'])) || 55)), tax = C.tax || '常';
     // 年增长：太平年景千分之五上下，地力好、民心高的多些，加征的少些，打过仗的掉
     const moS = mapStateOf(s, geoStem(u.n)), ruined = moS && moS.st === '毁', rebel = moS && moS.st === '叛';
     let rate = 0.005 + (nong - 50) / 10000 + (loy - 50) / 8000 + (tax === '轻' ? 0.002 : tax === '重' ? -0.004 : 0) - (recentWar(u.n) ? 0.03 : 0) - (ruined ? 0.05 : rebel ? 0.012 : 0);   // 残城户口大散，叛乱之地民生日蹙（2026-11-20 项目主人）
@@ -11574,7 +11578,7 @@ function leaveLord(s) { const G = s.liege; if (!G) return null; s.liege = null; 
 /** 被俘：大败时可能被拿住 */
 function jailCheck(s, r, by, place) { const f = partyF(s); if (!r || s.jail) return false; const bad = /大败|溃/.test(r.outcome) || (f && ptMen(f.party) < 8); if (!bad || seeded(Math.floor(ymOf(s.clock)) * 83 + (r.deadUs || 0)) > 0.55) return false;
   try { shedIdentity(s, '被擒', { land: 'keep', biz: 'keep', office: false }); } catch (_) { /* 无 */ }   // 兵败被擒：兵马交不出去也带不走（R-263）
-  const E = econOf(s) || {}; s.jail = { by, place, ym: Math.floor(ymOf(s.clock)), ransom: Math.round((num(E.wage) || 0) * (by === '官军' ? 200 : 80) * 100) / 100, tries: 0 }; jhNote(s, `兵败，在${place}被${by}拿住了`); return true; }
+  const E = econOf(s) || {}; s.jail = { by, place, where: place + '（' + by + '营中）', charge: '兵败被擒', since: timeText(s.clock), cost: 0, ym: Math.floor(ymOf(s.clock)), ransom: Math.max(jailFloor(s), Math.round((num(E.wage) || 0) * (by === '官军' ? 200 : 80) * 100) / 100), tries: 0 }; jhNote(s, `兵败，在${place}被${by}拿住了`); return true; }
 function jailAct(s, act) { const J = s.jail; if (!J) return null; const ym = Math.floor(ymOf(s.clock)), u = (s.money || {}).unit || '', f = partyF(s);
   if (act === 'pay') { if ((N0(s.money && s.money.cash) || 0) < J.ransom) { ORGMSG = `赎身要${fmtN(J.ransom, u)}，弟兄们凑不出来`; return null; } cashAdd(s, -J.ransom); s.jail = null; return jhNote(s, `弟兄们凑了${fmtN(J.ransom, u)}把你赎了出来`); }
   if (J.tryYM === ym) { ORGMSG = '这个月已经试过了，看守盯得紧'; return null; } J.tryYM = ym; J.tries++;
@@ -11605,7 +11609,7 @@ function wishHit(s, k, place) { const f = partyF(s); if (!f || !f.party.wish) re
 function wishPay(s) { const f = partyF(s); if (!f || !f.party.wish || f.party.wish.k !== '赏钱') return null; const E = econOf(s); if (!E || !E.wage) return needEcon(); const g = Math.round(E.wage * 20 * 100) / 100; if ((N0(s.money && s.money.cash) || 0) < g) { ORGMSG = `赏钱要${fmtN(g, (s.money || {}).unit || '')}，现钱不够`; return null; } cashAdd(s, -g); return wishHit(s, '赏钱'); }
 function wishGo(s) { const f = partyF(s); if (!f || !f.party.wish || f.party.wish.k !== '回乡') return null; const W = f.party.wish; if (samePlace(ptHere(s, f), W.place)) return wishHit(s, '回乡', W.place); return armyAct(s, 'march', { force: f.name, target: W.place, mode: '守' }) ? ptNote(s, `陪${W.hero}回${W.place}`) : null; }
 /** 江湖一栏（放在队伍下面；没队伍的平民也能打擂、置办兵甲、听闲话） */
-function jhHtml(s) { if (!canParty(s) && !partyF(s)) return ''; const f = partyF(s), E = econOf(s), u = (s.money || {}).unit || '', g = gearOf(s), here = jhHere(s), J = s.jail;
+function jhHtml(s) { if (!canParty(s) && !partyF(s) && !(s.jail && s.jail.by)) return '';   /* 孤身被擒也要有脱逃、赎身、说话的按钮（R-271） */ const f = partyF(s), E = econOf(s), u = (s.money || {}).unit || '', g = gearOf(s), here = jhHere(s), J = s.jail;
   if (J) return `<div class="h"><span class="seal">囚</span>被${esc(J.by)}关在${esc(J.place)}<span class="note">关着的时候队伍人心浮动、头领寒心；越拖赎金越难凑</span></div>
     <div class="opost"><button class="link" data-jh="escape">设法脱逃</button><button class="link" data-jh="ransom">让弟兄拿钱赎（${esc(fmtN(J.ransom, u))}）</button></div>
     <details class="oadd"><summary class="muted">跟看守当面说…</summary><textarea class="oin" data-psay="jail" rows="2" style="width:100%" placeholder="对看守说什么：许好处、攀交情、讲道理……"></textarea><button class="link" data-jh="talk">去说</button></details>`;
@@ -13968,7 +13972,7 @@ function familyTick(s, years, extra) {
     const boy = r1 < 0.51, lives = r2 > (y < 1500 ? 0.22 : y < 1800 ? 0.18 : 0.15), momDies = r3 < 0.02;
     const rel = (boy ? '' : '') + (/正室|妻/.test(mother.relation || '') || mother === s.protagonist ? (boy ? '嫡子' : '嫡女') : (boy ? '庶子' : '庶女'));
     const mname = mother === s.protagonist ? s.protagonist.name : mother.name;
-    if (lives) { s.household.push({ relation: male || mother === s.protagonist ? rel : (boy ? '子' : '女'), name: (() => { const P = s.protagonist.name || '', sur = male ? (SURNAMES.includes(P.slice(0, 2)) && P.length > 2 ? P.slice(0, 2) : P.slice(0, 1)) : String((s.household.find(m => /夫/.test(m.relation || '')) || {}).name || P).slice(0, 1); const used = new Set(arr(s.household).map(m => m.name)); s.nameMap = s.nameMap || {}; return pickName(s, sur, boy ? GIVEN : GIVEN_F, used); })(), age: 1, mother: mname, bornYM: due, note: `新生（${s.clock.m}月生，名字是家里起的）`, autoName: true }); ev.push(`${mname}生下一个${boy ? '儿子' : '女儿'}${momDies ? '，产后血崩，没能救回来' : '，母子平安'}`); }
+    if (lives) { s.household.push({ relation: male || mother === s.protagonist ? rel : (boy ? '子' : '女'), name: (() => { const P = s.protagonist.name || '', sur = male ? (SURNAMES.includes(P.slice(0, 2)) && P.length > 2 ? P.slice(0, 2) : P.slice(0, 1)) : String((s.household.find(m => /夫/.test(m.relation || '')) || {}).name || P).slice(0, 1); const used = new Set(arr(s.household).map(m => m.name)); s.nameMap = s.nameMap || {}; return pickName(s, sur, boy ? GIVEN : GIVEN_F, used); })(), age: 1 + Math.max(0, Math.floor((ymOf(s.clock) - due) / 12)), mother: mname, bornYM: due, note: `新生（${CAL.label(((Math.floor(due) - 1) % 12 + 12) % 12 + 1, 0, false)}生，名字是家里起的）`, autoName: true }); ev.push(`${mname}生下一个${boy ? '儿子' : '女儿'}${momDies ? '，产后血崩，没能救回来' : '，母子平安'}`); }
     else ev.push(`${mname}生产，孩子没保住${momDies ? '，大人也没救回来' : '，大人保住了'}`);
     if (momDies && mother !== s.protagonist) { mother.dead = true; mother.deadTurn = s.turn; }
     s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when, who: mname, what: ev[ev.length - 1] }]);
@@ -13978,7 +13982,7 @@ function familyTick(s, years, extra) {
   // 过了年：年老的家人照那个年代的寿数，有一定的机会病故（不是凭空的祸事，是那个年代的常事）
   if (years > 0) for (const m of arr(s.household)) {
     if (m.dead || m.age == null || m.age < 56 || !FAMILY_REL.test(m.relation || '')) continue;
-    const pDie = Math.min(0.5, 0.03 + (m.age - 56) * 0.012) * Math.min(3, years);
+    const p1 = Math.min(0.5, 0.03 + (m.age - 56) * 0.012), pDie = 1 - Math.pow(1 - p1, Math.max(0, years));   /* 几年一跳按年复算（R-271：以前封顶三年，越老跳得越久越不死） */
     if (seeded(ym * 3 + m.name.length * 101 + m.age) < pDie) { m.dead = true; m.deadTurn = s.turn; ev.push(`${m.relation}${m.name}病故，享年${m.age}`); s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when, who: m.name, what: `病故，享年${m.age}` }]); }
   }
   // 子女到了年纪：开蒙、议亲、成年，记一笔（只是事实，不派事）
@@ -14687,7 +14691,8 @@ function spanMonths(span, said) {
   const N = '(半|[一两二三四五六七八九十]|\\d+)', SPAN_RE = new RegExp(`(?:过|等|守|熬|住|待|歇|当差|当直|操练|经营|干|做|跑|练|混)\\s*(?:了|上|满)?\\s*${N}\\s*(年|个?月)|${N}\\s*(年|个?月)\\s*(?:以后|之后|后|过去|光景|下来|再看|再说|里|中|间)|这${N}?\\s*(年|个?月)(?:里|中|间|下来)?[^。；]{0,12}(?:照常|照旧|当差|当直|操练|经营|攒|练|守)`);
   const mm = t.match(SPAN_RE); if (mm) { const n = mm[1] || mm[3] || mm[5] || '一', u = mm[2] || mm[4] || mm[6]; const v = zh[n] ?? +n; return /年/.test(u) ? Math.min(60, v * 12) : Math.min(24, v); }
   let m = null;
-  if (/到年底|到年终|过年|到明年|开春|入冬|到秋|整年/.test(t)) return 6;
+  { const cm = (typeof S !== 'undefined' && S && S.clock && S.clock.m) || 6, upto = to => ((to - cm + 12) % 12) || 12;   /* 照此刻几月算（R-271：一律给六个月，正月说「到年底」该十一个月，十一月说只一两个月） */
+    if (/整年/.test(t)) return 12; if (/到年底|到年终/.test(t)) return Math.max(0.5, 12 - cm + 0.5); if (/过年|到明年/.test(t)) return upto(1); if (/开春/.test(t)) return upto(2); if (/入冬/.test(t)) return upto(10); if (/到秋/.test(t)) return upto(7); }
   return 0;
 }
 /** 玩家要日子往前走（「过半年」「过一年」「这三个月照常……」）：那是给游戏的话，不是主角嘴里说的（R-254 真模型实测：审讯堂上玩家写「过半年，打听……」，正文写成主角对都监说「过半年」，时间一天没动） */
@@ -15723,6 +15728,20 @@ function ledgerGate(s, d, said) {
   if (stop.length) { GATE_LOG.push({ turn: s.turn, stop }); GATE_LOG.splice(0, Math.max(0, GATE_LOG.length - 30)); noteErr('账房门', stop.slice(0, 8).join(' / ')); }
   return stop;
 }
+/** 月结一个月一个月地过（R-271：以前一回合跨了几个月，五十多项月结只在到达的那个月结一次——夏秋两税看落在几月、俸禄利息只给一个月、
+ *  军饷封顶二十四个月、商铺收入二十四个月工钱全额……各算各的口径）。现在跨了几个月就把每个月依次当作「这个月」结一遍（最多十年），
+ *  到达月照旧；同一句话（「欠饷」「断粮」……）几个月里重复的只留最后一回，最多四十条 */
+function monthLoop(s, from, mg, run) {
+  if (!(mg > 1)) return arr(run(mg));
+  const save = { ...s.clock }, N = Math.min(mg, 120), all = [];
+  try { for (let k = 1; k <= N; k++) { if (k < N) { const c = CAL.monthAt(from, k); s.clock = { ...save, y: c.y, m: c.m, leap: c.leap, d: 15, h: 12 }; } else s.clock = { ...save }; try { all.push(...arr(run(1))); } catch (e) { noteErr('月结出错', String((e && e.message) || e).slice(0, 120)); } } }
+  finally { s.clock = save; }
+  const key = t => String(t).replace(/[\d,，.]+/g, '#'), last = new Map(); all.forEach((t, i) => last.set(key(t), i));
+  const keep = all.filter((t, i) => last.get(key(t)) === i);
+  return keep.length > 40 ? keep.slice(-40) : keep;
+}
+/** 赎金保底（R-271：本地价钱还没推出来时工钱是零，赎身零文钱就出来了）：照现钱的本位单位给个底数 */
+const jailFloor = s => { const u = (s.money || {}).unit || ''; return /两/.test(u) ? 30 : /贯|缗/.test(u) ? 30 : /文/.test(u) ? 30000 : 30; };
 function applyReply(s, d, said) {
   try { for (const v of Object.values(s.people || {})) if (v && !v.pid) v.pid = 'p' + (s.pidSeq = (num(s.pidSeq) || 0) + 1); } catch (_) {}
   // 「严某」这类占位称呼：正文、人物、家人、大事记、账里一律换成起好的名字（不止正文）
@@ -15875,11 +15894,13 @@ function applyReply(s, d, said) {
     }
     s.world.events = s.world.events.slice(-120);
     const beforeYM = { y: s.clock.y, m: s.clock.m, leap: !!s.clock.leap }, beforeDay = dayIdx(s.clock);
+    if (!s.yearSnap) { try { s.yearSnap = yearSnap(s); } catch (_) { /* 年终卡底子记不上不耽误 */ } }   /* 钟往前走之前先记年初的底子（R-271：第一回就跨年，第一年的年终卡丢了） */
     // 玩家没说要过日子、正文里也没写时间过去：账房报的天数再多也只推一天（一场谈话、一件事）；写了「次日」「数日后」的最多一个半月；写到几个月、几年的照写的
     const said2 = String(said || ''), rep2 = String(d.reply || ''), asked = SPANS[d.span] || spanMonths(d.span, said2) || /过|等|歇|熬|守|赶路|上路|动身|出发|启程|前往|回乡|进京|赶考|赴任/.test(said2) || travelSaid(s, said2);
     const tw = /(数|几|两|三|四|五|六|七|八|九|十|半|一)(日|天|旬|月|个月|年|载)|次日|翌日|第二天|隔日|转眼|一晃|月余|旬日|半月|入夜|天明|次晨/;
     const capDays = asked ? 1900 : !tw.test(rep2) ? 1 : /(数|几|两|三|四|五|六|七|八|九|十|半)(个)?(月|年|载)|月余|一晃|转眼/.test(rep2) ? 400 : 45;
     let days = Math.max(0, Math.min(capDays, Math.max(400, Math.round(spanMonths(d.span, said) * 30.5)), 1900, Math.round(Number(d.elapsedDays) || 0)));
+    { const sm = spanMonths(d.span, said); if (sm >= 1 && days < sm * 30.5 * 0.7 && (SPANS[d.span] || /(半|数|几|两|三|四|五|六|七|八|九|十)(个)?(月|年|载)|此后|一晃|转眼|光阴|寒来暑往|日复一日/.test(String(d.reply || '')))) { noteErr('日子照玩家说的过', `玩家说要过约${sm}个月，记账只报${days}天，照${Math.round(sm * 30.5)}天`); days = Math.min(1900, Math.round(sm * 30.5)); } }   /* 玩家明说「三年后」「过两个月」，记账报少了照玩家的（R-271） */
     { const sm = spanAsked(d.span, said); if (sm >= 1 && (!rep2.trim() || /(数|几|两|三|四|五|六|七|八|九|十|半|一)(个)?(月|年|载)|月余|一晃|转眼|此后|这半年|这一年|过了|入冬|入秋|开春|转过年|到了年底|年底/.test(rep2))) days = Math.max(days, Math.min(capDays, Math.round(sm * 30.5 * 0.9))); }   // R-257：玩家说「练半年看」，正文停在第二天的一场对话，钟却过了半年——正文真写了日子过去才照玩家说的推
     { const tg = storyDate(s, rep2); if (tg) { const want = dayIdx(tg) - dayIdx(s.clock); if (want > 0 && Math.abs(days - want) > 45) days = Math.min(2200, want); else if (want <= 0 && want > -40 && days > 60) days = Math.max(1, want + 30); } }   // R-257：正文写到「长兴二年四月」，钟照账房报的天数走，少了停在上一年腊月、多了跳到第二年九月：以正文明写的最后一个年月为准
     { const br = CUR_RULING && CUR_RULING.battleResult, bd = br ? arr(br.rounds).length : 0; if (bd > 1) days = Math.max(days, bd); }   // 一仗打了几日，时间就至少过几日（R-254：七日的仗，钟上只过了几个时辰）   // 玩家说了过多久，账房报得少也照玩家说的过（R-254：「过半年」账上只过了几个钟头）   // 玩家说过两年、过五年：照他说的推，最多五年多
@@ -15983,7 +16004,7 @@ function applyReply(s, d, said) {
     const months = Math.max(0, CAL.monthsBetween(beforeYM, s.clock));
     const inc = arr(s.estate.income).reduce((a, x) => a + (N0(x.amount) || 0), 0), exp = arr(s.estate.expense).reduce((a, x) => a + (N0(x.amount) || 0), 0);
     if (months && (inc || exp)) ledger.push({ item: `月结 ${months} 个月（进项 ${fmtN(inc)} − 开销 ${fmtN(exp)}）`, amount: months * (inc - exp), note: '' });
-    if (months) for (const b2 of arr(s.business)) { const net = (N0(b2.revenue) || 0) - (N0(b2.cost) || 0); if (net) ledger.push({ item: `生意：${b2.name}（${months} 个月，进 ${fmtN(N0(b2.revenue) || 0)} 出 ${fmtN(N0(b2.cost) || 0)}）`, amount: months * net, note: '' }); }
+    if (months) for (const b2 of arr(s.business).filter(x => !x.prog)) { const net = (N0(b2.revenue) || 0) - (N0(b2.cost) || 0); if (net) ledger.push({ item: `生意：${b2.name}（${months} 个月，进 ${fmtN(N0(b2.revenue) || 0)} 出 ${fmtN(N0(b2.cost) || 0)}）`, amount: months * net, note: '' }); }
     if (months && s.jail && N0(s.jail.cost)) ledger.push({ item: `在押打点饭食（${months} 个月）`, amount: -months * N0(s.jail.cost), note: s.jail.where });
     if (months) for (const p of arr(s.policies)) if (N0(p.perMonth)) ledger.push({ item: `政令：${p.name}（${months} 个月）`, amount: months * N0(p.perMonth), note: one(p.onYou, 30) });
     if (mo.cash != null) {
@@ -16022,7 +16043,7 @@ function applyReply(s, d, said) {
     // 朝局：人事、国策的结果落到人事树上；过了几个月涨国策点；久不来往的人照关系淡出
     { const og = applyOrgResults(s, d); if (og.length) extra.org = og; }
     // 朝政：国势增减、阶层、时政结果、军令结果；过了几个月的军饷军粮和国势趋势
-    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = armyMonthly(s, mg).concat(techMonthly(s, mg), admMonthly(s), cityMonthly(s, mg), examMonthly(s), shopMonthly(s, mg), shituMonthly(s), bandMonthly(s, mg), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), newsTick(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), SM('warMonthly2', () => warMonthly2(s)), SM('logiMonthly', () => logiMonthly(s)), SM('rushiMonthly', () => rushiMonthly(s)), SM('royalMonthly', () => royalMonthly(s)), SM('idSync', () => idSync(s)), SM('mpMonthly', () => mpMonthly(s)), SM('armsMonthly', () => armsMonthly(s)), SM('levyMonthly', () => levyMonthly(s)), SM('groupTick', () => groupTick(s)), SM('partyMonthly', () => partyMonthly(s)), SM('lairMonthly', () => lairMonthly(s)), SM('liegeMonthly', () => liegeMonthly(s)), SM('jailMonthly', () => jailMonthly(s)), SM('wishMonthly', () => wishMonthly(s)), SM('baseMonthly', () => baseMonthly(s)), SM('huntMonthly', () => huntMonthly(s)), SM('offMonthly', () => offMonthly(s)), SM('court2Monthly', () => court2Monthly(s)), SM('hhMonthly', () => hhMonthly(s)), SM('loanMonthly', () => loanMonthly(s)), SM('routeMonthly', () => routeMonthly(s)), SM('councilMonthly', () => councilMonthly(s)), SM('contractMonthly', () => contractMonthly(s)), SM('factionMonthly', () => factionMonthly(s)), SM('innerMonthly', () => innerMonthly(s)), SM('haremMonthly', () => haremMonthly(s)), SM('farmMonthly', () => farmMonthly(s)), SM('refugeMonthly', () => refugeMonthly(s)), SM('studyMonthly', () => studyMonthly(s)), SM('strifeMonthly', () => strifeMonthly(s)), SM('repMonthly', () => { const R = repOf(s); R.guan = Math.max(0, Math.min(100, R.guan + Math.sign(50 - R.guan) * 0.5)); R.jun = Math.max(0, Math.min(100, R.jun + Math.sign(50 - R.jun) * 0.5)); }), SM('trackMonthly', () => trackMonthly(s)), SM('bluffMonthly', () => bluffMonthly(s)), SM('dipMonthly', () => dipMonthly(s))), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
+    { const mg = Math.max(0, CAL.monthsBetween(beforeYM, s.clock)); s.schemeNews = []; const g8 = schemeMonthly(s, mg).concat(planMonthly(s, mg)), g9 = focusMonthly(s, mg); const g1 = applyGov(s, d, mg), g2 = applyAffairs(s, d), g3 = applyArmy(s, d), g4 = monthLoop(s, beforeYM, mg, mm => armyMonthly(s, mm).concat(techMonthly(s, mm), admMonthly(s), cityMonthly(s, mm), examMonthly(s), shopMonthly(s, mm), shituMonthly(s), bandMonthly(s, mm), landMonthly(s), palMonthly(s), entryMonthly(s), campMonthly(s), mercMonthly(s), privMonthly(s), reformMonthly(s), fiscalMonthly(s), warMonthly(s), SM('warMonthly2', () => warMonthly2(s)), SM('logiMonthly', () => logiMonthly(s)), SM('rushiMonthly', () => rushiMonthly(s)), SM('royalMonthly', () => royalMonthly(s)), SM('mpMonthly', () => mpMonthly(s)), SM('armsMonthly', () => armsMonthly(s)), SM('levyMonthly', () => levyMonthly(s)), SM('groupTick', () => groupTick(s)), SM('partyMonthly', () => partyMonthly(s)), SM('lairMonthly', () => lairMonthly(s)), SM('liegeMonthly', () => liegeMonthly(s)), SM('jailMonthly', () => jailMonthly(s)), SM('wishMonthly', () => wishMonthly(s)), SM('baseMonthly', () => baseMonthly(s)), SM('huntMonthly', () => huntMonthly(s)), SM('offMonthly', () => offMonthly(s)), SM('court2Monthly', () => court2Monthly(s)), SM('hhMonthly', () => hhMonthly(s)), SM('loanMonthly', () => loanMonthly(s)), SM('routeMonthly', () => routeMonthly(s)), SM('councilMonthly', () => councilMonthly(s)), SM('contractMonthly', () => contractMonthly(s)), SM('factionMonthly', () => factionMonthly(s)), SM('innerMonthly', () => innerMonthly(s)), SM('haremMonthly', () => haremMonthly(s)), SM('farmMonthly', () => farmMonthly(s)), SM('refugeMonthly', () => refugeMonthly(s)), SM('studyMonthly', () => studyMonthly(s)), SM('strifeMonthly', () => strifeMonthly(s)), SM('repMonthly', () => { const R = repOf(s); R.guan = Math.max(0, Math.min(100, R.guan + Math.sign(50 - R.guan) * 0.5)); R.jun = Math.max(0, Math.min(100, R.jun + Math.sign(50 - R.jun) * 0.5)); }), SM('trackMonthly', () => trackMonthly(s)), SM('bluffMonthly', () => bluffMonthly(s)), SM('dipMonthly', () => dipMonthly(s)))).concat(newsTick(s), SM('idSync', () => idSync(s))), g5 = applySkills(s, d), g6 = applyQuests(s, d).concat(applyPress(s, d, said), histTick(s), officeMonthly(s, mg), campaignTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), edictTick(s, Math.max(0, dayIdx(s.clock) - beforeDay)), vassalTick(s, mg)), g7 = companionMonthly(s, mg); const g10 = ambitionCheck(s); const all = g8.concat(g10, g5, g9, g6, g7, g1, g2, g3, g4);
       if (!s.yearSnap) s.yearSnap = yearSnap(s);
       if (s.clock.y > beforeYM.y) { const yc = yearEnd(s, beforeYM.y); if (yc) extra.yearCard = yc; } if (all.length) extra.gov = all; }
     fadePeople(s);
@@ -16264,6 +16285,7 @@ function tidyState(s) {
   if (!s || typeof s !== 'object') return s;
   try { for (const [k, v] of Object.entries(s.people || {})) if (v && v.role && BIO_ROLE.test(String(v.role))) v.role = cleanRole(s, k, v.role); } catch (_) { /* 人物现任清不了不耽误 */ }
   try { orgSync(s); } catch (_) { /* 人事树对不齐不耽误 */ }
+  try { if (s.jail && typeof s.jail === 'object') { const j = s.jail; if (!j.where) j.where = j.place ? j.place + (j.by ? '（' + j.by + '营中）' : '') : '牢中'; if (!j.charge) j.charge = j.by ? '兵败被擒' : '未定'; if (!j.since) j.since = j.ym != null ? '被擒那月' : timeText(s.clock); } } catch (_) { /* 牢里的账补不齐不耽误 */ }   /* 两套押牢字段对齐（R-271） */
   try { const seen = new Set(); s.campaigns = arr(s.campaigns).filter(c => { if (!c || !/待发|行军|围城/.test(c.state || '')) return true; if (seen.has(c.force)) return false; seen.add(c.force); return true; }); } catch (_) { /* 行军单理不了不耽误 */ }   /* 一支兵同时只走一条路（R-269：张敬达同时「行军攻太原」「围城河东太原府」） */
   try { actTidy(s); } catch (_) { /* 行动单理不了不耽误 */ }
   try { for (const [k, d] of Object.entries(s.dossiers || {})) if (d && d.real === false && figByName(k)) { d.real = true; d.chk = '内置史料'; if (/查无此人/.test(d.identity || '')) d.identity = ''; } } catch (_) { /* 旧档案修不了不耽误 */ }   /* 旧存档：名臣包里有的人被判成查无此人的改回真人（R-269） */
