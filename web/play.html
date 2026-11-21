@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121004012';
+const BUILD = '20261121025234';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2039,6 +2039,7 @@ const store = {
   },
   async save(s) {
     try { lifeScan(s); } catch (_) { /* 人生纪事记不上不耽误存档 */ }
+    try { if (HC_SEEN[s.id] !== s.turn) { HC_SEEN[s.id] = s.turn; const h = healthCheck(s); if (h.length) noteErr('体检', h.join(' / ')); } } catch (_) { /* 体检出错不耽误存档 */ }
     s.updatedAt = Date.now();
     s.sub = `${s.clock.yearLabel || ''} · ${s.place.full || ''} · 第${s.turn}回合`;
     shrink(s);
@@ -3957,12 +3958,13 @@ const ID_INDEP = /可汗|单于|赞普|大汗|汗王|部落首领|部族首领|�
 const ID_FANZHEN = /节度使|留后|观察使/;   // 唐中叶到五代（756—979）才是割据一方的藩镇，别的年代是朝廷命官
 const ID_BANDIT = /土匪|山寨|寨主|山大王|大当家|绿林|响马|落草|盗魁|贼首|匪首|海盗|水寇|马贼|流寇|强人|瓢把子/;
 const ID_BANDIT_HEAD = /寨主|山大王|大当家|盗魁|贼首|匪首|瓢把子|首领|头领|当家/;
+const ID_KIN = /第[一二三四五六七八九十]+(子|女)|(长|次|三|四|五|幼|庶|嫡|独|养|义)(子|女)$|(王|帝|主|公|侯|使|帅)[一-鿿]{0,4}(之|的)?(长|次|三|四|五|幼|庶|嫡|独|养|义)?(子|女|弟|孙|侄|婿)$|世子$/;
 const ID_REL = /之(子|女|妻|妾|弟|兄|侄|孙|婿|媳|母|父)|的(儿子|女儿|妻|夫人|妾|幕|师爷|家|仆|丫鬟|随从|亲兵|门生|学生)|夫人|幕友|幕宾|师爷|家丁|家仆|长随|门生|候补|候选|前任|已故|曾任|革职|罢官|致仕|退伍|落第/;
 const ID_LOCAL = /知县|知州|知府|县令|县长|太守|刺史|巡抚|总督|布政|按察|道台|节度|观察|府尹|县尹|郡守|县宰|州牧|牧守/;
 const ID_MIL = /总兵|参将|游击|守备|千总|把总|都司|提督|将军|都督|指挥|卫所|统领|都统|参领|佐领|节度|镇守|兵备|校尉|都尉|司马|军侯|百户|千户|偏将|裨将|副将|部将|牙将|统制|都头|十将/;
 const ID_CIVIL = /(?<!新郎|新郎倌|不是|非|做不成)官(?!人|家|府|兵|军|差|道|窑)|(?<!胥)吏(?!人)|胥吏|仆射|平章|同平章事|枢密|三司使|转运|发运|提举|提点|提刑|安抚使|经略|宣徽|侍中|中书令|左丞|右丞|知制诰|舍人|拾遗|补阙|起居|长史|参军|录事|判官|推官|掌书记|(?<!茶|酒)博士|祭酒|[太少]?卿$|少卿|太常|光禄|鸿胪|大理|太仆|宗正|司农|少府|将作|国子|秘书|知县|知府|县令|主簿|刺史|同知|通判|御史|学士|尚书|侍郎|郎中|员外郎|宰相|太守|县丞|参知政事|丞|令$|监察|给事中|翰林|编修|主事|典史|巡检|教谕|训导/;
 const ID_IDLE = /^(无|没有|未任|罢|革|致仕|去职|解职|候补|候选|闲居|在籍)/;
-const ID_TAGS = [['贵', /皇帝|天子|君主|宗室|亲王|郡王|王爷|王子|世子|贝勒|贝子|国公|公主|郡主|皇后|太后|贵妃|妃|嫔|驸马|贵族|勋贵|侯爵|伯爵/], ['兵', /士兵|兵卒|军士|军卒|戍卒|府兵|营兵|绿营|旗兵|亲兵|乡勇|团练|武官|军中|从军|投军|行伍/], ['商', /商|贾|盐|行商|铺|掌柜|东家|船主|镖|牙行|票号|钱庄|当铺|货郎|小贩|贩/], ['士', /士子|士人|生员|举人|秀才|书生|读书|太学|监生|进士|贡生|童生|儒|学子|塾师|教书/], ['匪', ID_BANDIT], ['僧', /僧|尼|和尚|方丈|住持|道士|道长|道姑|喇嘛|出家|修行|居士/], ['工', /工匠|匠人|木匠|铁匠|石匠|瓦匠|织工|窑工|船工|手艺/], ['地主', /地主|田主|庄主|乡绅|绅士|员外|富户|财主|大户/], ['宦', /宦官|太监|内侍|宦者|中官|内官|黄门|中常侍|小黄门|掌印|秉笔|阉/], ['农', /农|佃|耕|流民|难民|饥民|百姓|村民|庄户|樵|渔|猎户|牧|雇工|长工|短工|乞|奴|婢|仆|丫鬟|家丁/]];
+const ID_TAGS = [['贵', /(王|帝)[一-鿿]{0,4}(第[一二三四五六七八九十]+|长|次|幼|庶|嫡)子|皇帝|天子|君主|宗室|亲王|郡王|王爷|王子|世子|贝勒|贝子|国公|公主|郡主|皇后|太后|贵妃|妃|嫔|驸马|贵族|勋贵|侯爵|伯爵/], ['兵', /士兵|兵卒|军士|军卒|戍卒|府兵|营兵|绿营|旗兵|亲兵|乡勇|团练|武官|军中|从军|投军|行伍/], ['商', /商|贾|盐|行商|铺|掌柜|东家|船主|镖|牙行|票号|钱庄|当铺|货郎|小贩|贩/], ['士', /士子|士人|生员|举人|秀才|书生|读书|太学|监生|进士|贡生|童生|儒|学子|塾师|教书/], ['匪', ID_BANDIT], ['僧', /僧|尼|和尚|方丈|住持|道士|道长|道姑|喇嘛|出家|修行|居士/], ['工', /工匠|匠人|木匠|铁匠|石匠|瓦匠|织工|窑工|船工|手艺/], ['地主', /地主|田主|庄主|乡绅|绅士|员外|富户|财主|大户/], ['宦', /宦官|太监|内侍|宦者|中官|内官|黄门|中常侍|小黄门|掌印|秉笔|阉/], ['农', /农|佃|耕|流民|难民|饥民|百姓|村民|庄户|樵|渔|猎户|牧|雇工|长工|短工|乞|奴|婢|仆|丫鬟|家丁/]];
 /** 自家势力的几类：山寨、绿林、地方武装、商号、商队、宗族、乡勇、亲随、别的；带兵的几类才有兵权 */
 const ORG_KINDS = ['山寨', '绿林', '地方武装', '商号', '商队', '宗族', '乡勇', '亲随', '帮会', '寺观', '其他'];
 const ORG_TAG = { 山寨: '匪', 绿林: '匪', 地方武装: '兵', 商号: '商', 商队: '商', 宗族: '', 乡勇: '兵', 亲随: '', 帮会: '', 寺观: '僧', 其他: '' };
@@ -3975,7 +3977,8 @@ function identityOf(s) {
   const key = [role, office0, rank, s && s.idm, y, me, F.map(f => [f.leader, f.owner, f.troops, f.status].join('/')).join('|'), T.length, O.map(o => [o.id, o.head, o.kind, o.count].join('/')).join('|')].join('#');
   if (ID_MEMO && ID_MEMO.s === s && ID_MEMO.key === key) return ID_MEMO.v;
   // 身份那句话里「知县之子」「总兵的幕友」「前任知府」说的是别人的官，不算自己的
-  const roleOwn = ID_REL.test(role) ? '' : role;
+  /* 一句里分几段，只去掉说别人的那段：「楚王马殷第四子，武安军节度判官」——前半是父亲的王位，后半是自己的官（真模型实测：马希范被当成楚王，全楚兵马归他、能定都改政区） */
+  const roleOwn = role.split(/[，,；;。]/).filter(x => x.trim() && !ID_REL.test(x) && !ID_KIN.test(x)).join('，');
   const officeHeld = office0 && !ID_IDLE.test(office0) && !ID_BANDIT.test(office0) ? office0 : '';   // 「山寨寨主」不是朝廷的官（真模型实测：被当成朝廷命官）
   const offTxt = officeHeld || (ID_LOCAL.test(roleOwn) || ID_MIL.test(roleOwn) || (ID_CIVIL.test(roleOwn) && !/江湖郎中|郎中先生|行医|大夫|商|贾/.test(roleOwn)) ? roleOwn : '');
   const civil = !!offTxt && (ID_LOCAL.test(offTxt) || (ID_CIVIL.test(offTxt) && !ID_MIL.test(offTxt))), milOff = !!offTxt && ID_MIL.test(offTxt);
@@ -14698,7 +14701,7 @@ function blocks(s, forStory) {
   if (!forStory && arr(s.prices).length && (TP.has('经济') || identityOf(s).tags.includes('商'))) L.push('【本地行情（以此为准，有变化在 prices 里给出）】' + s.prices.map(x => `${x.item} ${fmtN(x.price, u)}/${x.per || ''}`).join('；'));
   // 「家资」「现钱」这类数值条以程序结算的现钱为准（账房当初写下的数会过时）
   const cashNow = mo.cash != null ? fmtN(mo.cash, u) : null;
-  const ms = Object.entries(s.meters || {}).map(([k, v]) => cashNow && /^(家资|现钱|现银|钱财|银钱|积蓄|家财)/.test(k) ? [k === '家资' ? '现钱' : k, { ...v, value: cashNow }] : [k, v]), gs = Object.entries(s.groups || {});
+  const ms = Object.entries(s.meters || {}).map(([k, v]) => cashNow && isCashMeter(k) ? [k === '家资' ? '现钱' : k, { ...v, value: cashNow }] : [k, v]), gs = Object.entries(s.groups || {});
   if (!forStory) L.push(ms.length ? '【数值条】' + ms.map(([k, v]) => `${k}：${v.value}`).join('；') + (gs.length ? '\n人群：' + gs.map(([k, v]) => `${k} ${v.value}`).join('；') : '')
     : `【数值条（本回合在 meters、groups 里给出初值）】这个身份看：${id.meters}；人群：${id.groups}。`);
   const [NEAR, FAR] = splitPeople(s, livePeople(s).sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0)).slice(0, 24)), P = forStory ? NEAR.slice(0, 14) : NEAR.concat(FAR).slice(0, 18);   // 写正文只拿眼前的人，远处的只给名字
@@ -15852,6 +15855,30 @@ function privateBlock(said, ruling) {
 /** 写戏材料里越攒越长的几块截短、同名的块只留一份（R-266：一回四万多 token，原型号一回一毛五以上） */
 const CAP_ALL = { 大势主线: 1200, 本地志: 800, 派系与利益集团: 1200, 官员办事: 1000, 前情提要: 1800, 差事: 1200, 早年旧事: 900, 家宅与人情: 1000, 家底: 800, 史线: 900, 时间在走: 800, 家里: 1200, 人物底: 2200, 场景简报: 1400, 这一年此地的史实梳理: 450, 史书原文: 450, 主角在这世上留下: 900, 本地官员名册: 1100, 国势账: 800, 本朝升迁之制: 600, 年代志: 450, 这一年代这类人: 400, 县级地理: 300 };
 function capAll(t) { const parts = String(t).split(/(?=\n【)/), seen = new Set(); return parts.map(x => { const m = /^\s*【([^】（]{1,14})/.exec(x); if (!m) return x; const key = Object.keys(CAP_ALL).find(k => m[1].startsWith(k)); if (key) { if (seen.has(key)) return ''; seen.add(key); if (x.length > CAP_ALL[key]) { const nl = x.indexOf('\n', CAP_ALL[key]); return x.slice(0, nl > 0 && nl < CAP_ALL[key] + 200 ? nl : CAP_ALL[key]) + '……\n'; } } return x; }).join(''); }
+/** 体检（R-267，2026-11-21 玩家：「游戏千疮百孔，我根本玩不下」）：每回存档时照常理扫一遍界面上会露出来的荒唐处，记进「导出问题报告」，真玩巡查也照这个找毛病。
+ *  只查程序能确定的：钱粮田单位错、几条数值一模一样、王子被当成君主、一直挂着「正在推」、已故的人还在各方里、数值成负数 */
+const HC_SEEN = {};
+function healthCheck(s) {
+  const out = []; if (!s || !s.protagonist) return out;
+  const M = Object.entries(s.meters || {}), val = v => String((v && typeof v === 'object' ? v.value : v) || '');
+  for (const [k, v] of M) { const t = val(v);
+    if (/粮|米|谷/.test(k) && !/钱|银/.test(k) && /^[\d.,，万千百]+\s*(贯|两|文|缗|钱)$/.test(t)) out.push(`「${k}」写成了钱数（${t}）`);
+    if (/田|地亩/.test(k) && /^[\d.,，万千百]+\s*(贯|两|文|缗)$/.test(t)) out.push(`「${k}」写成了钱数（${t}）`);
+    if (/^-\d/.test(t)) out.push(`「${k}」成了负数（${t}）`); }
+  const nums = M.map(([k, v]) => [k, val(v)]).filter(([, t]) => /\d/.test(t) && t.length >= 2), same = {};
+  for (const [k, t] of nums) (same[t] = same[t] || []).push(k);
+  for (const [t, ks] of Object.entries(same)) if (ks.length >= 3) out.push(`${ks.join('、')}都是「${t}」`);
+  const role = String(s.protagonist.role || ''), id = identityOf(s);
+  if (id.ruler && role.split(/[，,；;。]/).some(x => ID_KIN.test(x) || ID_REL.test(x)) && !role.split(/[，,；;。]/).some(x => !ID_KIN.test(x) && !ID_REL.test(x) && (ID_SOV.test(x) || ID_INDEP.test(x)))) out.push(`身份「${one(role, 30)}」说的是别人的亲属，却被当成一方之主`);
+  if ((s.turn || 0) >= 4) { if (typeof fiscDue === 'function' && fiscDue(s) && !s.fisc) out.push('「国计民生」挂了三回以上还在推');
+    if (typeof econDue === 'function' && !econOf(s)) out.push('本地价钱三回以上还没推好');
+    if (typeof cmdDue === 'function' && cmdDue(s)) out.push('「你的兵马」三回以上还在查'); }
+  const P = s.people || {}; for (const g of Object.keys(s.groups || {})) { const n = g.replace(/^(父王|母后|兄长|长兄|二兄|弟弟|姐姐|妹妹|叔父|伯父|岳父|老师)/, ''); if (P[n] && P[n].dead) out.push(`已故的${n}还列在「各方对你」`); }
+  if (s.money && num(s.money.cash) < 0) out.push('现钱成了负数');
+  return out;
+}
+/* 数值条里哪一条就是现钱（以程序结算的现钱为准）：「家资（粮）」「家资（田）」不是钱（玩家截图三条都写成三十贯）；「私财」是钱（开局 500 贯、现钱 5000 贯两处对不上） */
+const isCashMeter = k => /^(家资|现钱|现银|钱财|银钱|积蓄|家财|私财|私蓄)/.test(k) && !/[粮田地宅屋产房米谷麦帛绢布]/.test(k);
 const STABLE_MEMO = {};
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
@@ -17586,7 +17613,7 @@ function pane(tab) {
     const p = s.protagonist, gs = Object.entries(s.groups), ACTS = actsHtml(s, true);
     const cashNow = s.money && s.money.cash != null ? fmtN(s.money.cash, s.money.unit || '两') : null;
     // 「家资」「现钱」这类数值条以程序结算的现钱为准，不显示账房当初写下的旧数
-    const ms = Object.entries(s.meters).map(([k, v]) => cashNow && /^(家资|现钱|现银|钱财|银钱|积蓄|家财)/.test(k) ? [k === '家资' ? '现钱' : k, { ...v, value: cashNow, delta: '', why: '' }] : [k, v]);
+    const ms = Object.entries(s.meters).map(([k, v]) => cashNow && isCashMeter(k) ? [k === '家资' ? '现钱' : k, { ...v, value: cashNow, delta: '', why: '' }] : [k, v]);
     const gl = `<div class="h"><span class="seal">志</span>目标<span class="note">眼下、今年随处境更新；长远照你定的志向</span></div>${arr(s.goals).length ? `<div class="list">${s.goals.map(g => `<div><span class="when">${esc(g.term)}</span>${esc(g.text)}${g.why ? `<div class="muted" style="font-size:12px">${esc(g.why)}</div>` : ''}</div>`).join('')}</div>` : ''}<div class="opost"><input class="oin" style="width:16em" data-aimin placeholder="你的志向（如：爬上节度使，击败南唐，称王）" value="${esc(s.aim || '')}"><button class="link" data-aim="1">定志向</button></div>`;
     const jailH = s.jail ? `<div class="err" style="margin:6px 0"><b>在押</b>：${esc(s.jail.where)}，罪名 ${esc(s.jail.charge || '未定')}，自${esc(s.jail.since)}${N0(s.jail.cost) ? `；每月打点饭食约 ${esc(fmtN(N0(s.jail.cost), (s.money || {}).unit || '两'))}` : ''}</div>` : '';
     const caseH = arr(s.cases).length ? `<div class="h"><span class="seal">案</span>牵涉的案子</div><div class="list">${s.cases.map(c => `<div><span class="badge ${/结案/.test(c.stage) ? 'b-done' : /悬/.test(c.stage) ? 'b-bad' : 'b-doing'}">${esc(c.stage || '？')}</span> <b>${esc(c.name)}</b>（${esc(c.kind || '')}，你是${esc(c.role || '？')}）${c.facts ? `<div class="muted">已知：${esc(c.facts)}</div>` : ''}${c.suspects ? `<div class="muted">疑点：${esc(c.suspects)}</div>` : ''}${c.deadline ? `<div class="muted">限期：${esc(c.deadline)}</div>` : ''}</div>`).join('')}</div>` : '';
