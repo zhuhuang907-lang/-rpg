@@ -12,12 +12,14 @@ const path = require('path');
     s.personChk = { '周彦|': { real: false, at: 1 } };
     let out = []; try { out = await fictionClash(s); } catch (e) { out = ['ERR ' + e.message]; }
     const fx = applyFixes('天策府学士高郁进见，拓跋恒随后。', [{ wrong: '高郁进见', right: '廖匡图进见' }, { wrong: '随后。', right: '随后入内。' }]);
-    return { out, names: Object.keys(s.people), fx: fx.text }; });
+    s.dossiers.刘赞 = { real: false, chk: '查无此人', identity: '查无此人：维基百科、维基数据、博查均无' }; tidyState(s); const pc = await personCheck(s, '刘赞');
+    return { out, names: Object.keys(s.people), fx: fx.text, lz: s.dossiers.刘赞.real, pc: pc.real, inSet: realNameSet(s).has('刘赞') }; });
   const bad = [];
   if (r.out.length) bad.push('真人被改了名：' + r.out.join('；'));
   if (!['高郁', '拓跋恒'].every(n => r.names.includes(n))) bad.push('人物表里的真人名字没了：' + r.names.join('、'));
   if (!/高郁进见/.test(r.fx)) bad.push('审稿把真人高郁改成了别人：' + r.fx);
   if (!/随后入内/.test(r.fx)) bad.push('不涉及真人名字的改字也不照改了：' + r.fx);
+  if (!r.lz || !r.pc) bad.push('名臣包里有的刘赞被判成查无此人：' + JSON.stringify({ 档案: r.lz, 核查: r.pc }));
   if (errs.length) bad.push(...errs);
   console.log('ERRS', JSON.stringify(bad)); await b.close(); process.exit(bad.length ? 1 : 0);
 })();

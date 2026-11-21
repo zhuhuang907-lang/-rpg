@@ -6413,7 +6413,10 @@ async function bochaDeep(s, qs, cap = 50, opt) {
 /** 返回 { real, src, who, born, died, identity, evidence, why }；real 由程序照证据定，不由 AI 随口说 */
 async function personCheck(s, name, hint) {
   name = one(String(name || '').replace(/[（(].*$/, ''), 12); if (name.length < 2) return { real: false, why: '名字太短' };
-  const key = name + '|' + (hint || ''); if (PCHK[key]) return PCHK[key];
+  const key = name + '|' + (hint || '');
+  /* 内置名臣包、史料包里有的就是真人，不再上网判（R-269 真玩：刘赞在名臣包里、清泰二年病卒，网上没搜着，档案判成「查无此人」） */
+  { const f = figByName(name); if (f || realAll(s).has(name)) { const o = { real: true, src: '内置史料', who: f ? one(f.tag || '', 20) : '', born: f ? num(f.b) ?? null : null, died: f ? num(f.d) ?? null : null, identity: f ? one(figPost(f, s && s.clock ? s.clock.y : null), 40) : '', evidence: [], at: Date.now() }; if (s) { s.personChk = s.personChk || {}; s.personChk[key] = o; } return (PCHK[key] = o); } }
+  if (PCHK[key]) return PCHK[key];
   if (s && s.personChk && s.personChk[key]) return (PCHK[key] = s.personChk[key]);
   const y = s && s.clock ? s.clock.y : null, pol = s && s.place ? s.place.polity || '' : '';
   // 维基只查天下大势：人物一律大量博查（同一个人换十来种问法），没有博查用 DeepSeek 检索，再由 DeepSeek 判
@@ -15151,7 +15154,7 @@ ${ev ? '【查到的资料（维基、博查、CBDB：维基与博查说法矛�
     const state = born && Y < born ? '未生' : died && Y > died ? '已故' : born || died ? '在世' : one(p.state, 10);
     const seen = ev.includes(k) || (cbx && true);
     const nowNote = cbx && arr(cbx.now).length && p.post && !cbx.now.some(x => x.includes(String(p.post).slice(0, 2))) ? `（CBDB 任官年份推算此刻是：${cbx.now.join('；')}）` : '';
-    const c0 = CK.get(k), realK = c0 ? c0.real : p.real !== false;
+    const c0 = CK.get(k), realK = figByName(k) || realAll(s).has(k) ? true : c0 ? c0.real : p.real !== false;   /* 内置史料里有的一律真人（R-269） */
     s.dossiers[k] = { real: realK, chk: c0 ? (c0.real ? c0.src : '查无此人') : '', born, died, native: one((cbx && cbx.native) || p.native, 20), identity: one(p.identity, 80), state, age: born ? Y - born + 1 : num(p.age), post: one(p.post, 50) + nowNote, where: one(p.where, 30), doing: one(p.doing, 100), ties: one(p.ties, 100), reach: one(p.reach, 140), y: s.clock.y,
       zi: one(p.zi, 20), origin: one(p.origin, 40), career: arr(p.career).filter(x => x && x.post).slice(0, 8).map(x => ({ y: num(x.y), post: one(x.post, 30) })).concat(cbx && !arr(p.career).length ? cbx.posts.slice(0, 6).map(x => ({ y: x.f || null, post: x.o + (x.a ? '（' + x.a + '）' : '') })) : []), family: one(p.family, 80), character: one(p.character, 80), stance: one(p.stance, 60), sources: one(p.sources, 80), doubt: realK && !seen && !(c0 && c0.real), src: ev ? (cb.length ? 'CBDB + 博查 + 维基' : '博查 + 维基')  : '史书（AI 据史识整理，未联网）' };
     got.push(k);
@@ -15210,7 +15213,7 @@ function realNameSet(s) {
   for (const t of arr(s.talent && s.talent.list)) if (t && t.real && t.name) R.add(t.name);
   for (const g of arr(s.roster && s.roster.groups)) for (const x of arr(g.people)) if (x && x.name) R.add(x.name);
   // 核查过查无此人的，不管别处怎么记，都不算真人
-  for (const k of Object.keys((s && s.personChk) || {})) { const n = k.split('|')[0], c = chkOf(s, n); if (c && !c.real && !arr(HALL(s)).some(h => arr(h.figures).some(f => f.name === n))) R.delete(n); }
+  for (const k of Object.keys((s && s.personChk) || {})) { const n = k.split('|')[0], c = chkOf(s, n); if (c && !c.real && !figByName(n) && !arr(HALL(s)).some(h => arr(h.figures).some(f => f.name === n))) R.delete(n); }
   if (s.protagonist && s.protagonist.real && s.protagonist.name) R.add(s.protagonist.name);
   return R;
 }
@@ -16167,6 +16170,7 @@ function tidyState(s) {
   if (!s || typeof s !== 'object') return s;
   try { for (const [k, v] of Object.entries(s.people || {})) if (v && v.role && BIO_ROLE.test(String(v.role))) v.role = cleanRole(s, k, v.role); } catch (_) { /* 人物现任清不了不耽误 */ }
   try { orgSync(s); } catch (_) { /* 人事树对不齐不耽误 */ }
+  try { for (const [k, d] of Object.entries(s.dossiers || {})) if (d && d.real === false && figByName(k)) { d.real = true; d.chk = '内置史料'; if (/查无此人/.test(d.identity || '')) d.identity = ''; } } catch (_) { /* 旧档案修不了不耽误 */ }   /* 旧存档：名臣包里有的人被判成查无此人的改回真人（R-269） */
   try { if (s.protagonist && Array.isArray(s.household)) s.household = s.household.filter(m => !(m && isSelfKin(s, m.name, m.relation))); } catch (_) { /* 主角还没定 */ }
   // 旧存档：丙等位子（书吏衙役兵丁、八九品杂职）上程序起的虚构名字清掉，只写员额（2026-11-05 玩家：虚构人物太多）
   try { for (const n of arr(s.org && s.org.nodes)) for (const q of arr(n && n.posts)) if (q && q.src === '拟' && !q.byPlayer && seatTier(n, q) === '丙') { q.holder = ''; q.src = ''; q.others = []; q.othersFake = false; q.status = '照额'; } } catch (_) { /* 树坏了下面清 */ }
