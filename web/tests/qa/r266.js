@@ -14,6 +14,11 @@ const path = require('path');
     return { same: k, total: ja.length, ledgerLast: msgs.length ? /这一局的账册（此刻）/.test(msgs[msgs.length - 1].content) && !/账册（此刻）/.test(msgs[0].content) : null }; });
   if (pf.same < pf.total * 0.6) bad.push(`多一回以后写戏材料的开头只有 ${pf.same}/${pf.total} 字一样，缓存不中`);
   if (pf.ledgerLast === false) bad.push('回回变的账册还在材料开头');
+  const dz = await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 31, role: '皇帝', gregorianYear: 935, month: 1, day: 1, place: '洛阳', polity: '后唐' });
+    s.people = { 李重吉: { role: '左卫将军（解兵权）', where: '洛阳城东旧宅' }, 李嗣源: { age: 71, dead: true }, 曹氏: { age: 79 } }; s.dossiers = { 李重吉: { real: true, identity: '后唐明宗李嗣源第五子（一说），被闵帝囚于宋州，不久即被杀；李从荣此时已死'.repeat(4), state: '在世', y: 934, where: '宋州' } };
+    const d = dossierBlock(s, '李重吉来了'); const tb = timeBlock(s); return { d, tb }; });
+  if (!/本局（以此为准）.*洛阳城东旧宅/.test(dz.d) || dz.d.length > 900) bad.push('真人档案没先写本局、或太长：' + dz.d.slice(0, 200));
+  if (/李嗣源/.test(dz.tb)) bad.push('驾崩的李嗣源还列在「身边上了年纪的」');
   await p.evaluate(() => { const s = newSave({ name: '李从荣', gender: '男', age: 30, role: '皇帝', gregorianYear: 934, month: 5, day: 1, place: '洛阳', polity: '后唐' }); s.people = { 冯道: { role: '宰相', age: 52, favor: 30 } }; s.territory = [{ place: '洛阳', troops: 3000 }];
     s.chat = [{ role: 'gm', text: '冯道在洛阳城里上朝，奏请减税。', turn: 1, when: 'x' }]; S = s; VIEW = 'game'; SIDE_FOLD = false; TAB = 'set'; render0(); });
   // 主题

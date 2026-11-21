@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121001235';
+const BUILD = '20261121002142';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -5396,7 +5396,7 @@ function applyLogicFixes(s, fixes) {
     else if (/people/.test(t)) { const m = (s.people || {})[nm]; if (m && /^(age|role|tie|where|status)$/.test(f)) { m[f] = f === 'age' ? (N != null && N >= 0 && N < 110 ? N : m.age) : str; ok = true; } }
     else if (/protagonist/.test(t)) { if (f === 'age' && N != null && N > 0 && N < 110) { p.age = N; ok = true; introDirty = true; } else if (f === 'role' && str) { p.role = str; ok = true; introDirty = true; } }
     else if (/career/.test(t)) { if (/^(office|rank|post)$/.test(f)) { s.career = s.career || {}; s.career[f] = str; ok = true; } }
-    else if (/money/.test(t)) { if (N != null && N >= 0 && s.money) { s.money.cash = N; ok = true; } }
+    else if (/money/.test(t)) { if (N != null && N >= 0 && s.money && !(N0(s.money.cash) < 0 && Math.abs(N + N0(s.money.cash)) < 1)) { s.money.cash = N; ok = true; } }   // 负数不许被「改正」成同数的正数（R-266：-28727 一回后变 +28727）
     else if (/forces/.test(t)) { const m = arr(s.forces).find(z => z.name === nm); if (m && /^(troops|grain|at|leader)$/.test(f)) { m[f] = /troops|grain/.test(f) ? (N != null && N >= 0 ? N : m[f]) : str; ok = true; } }
     else if (/gov/.test(t)) { if (s.gov && s.gov.keys.includes(nm) && N != null && N >= 0) { s.gov.stats[nm] = N; s.gov.basis = s.gov.basis || {}; s.gov.basis[nm] = '推算：常理审查更正——' + why; ok = true; } }
     if (/canon/.test(t) || ok) { const txt = /canon/.test(t) ? one(v, 80) : `${nm || (t === 'protagonist' ? p.name : t === 'money' ? '现钱' : '')}${f ? '的' + f : ''}改为${str}`; if (txt) { s.canon = arr(s.canon).concat([{ text: `更正：${txt}（${why}）`, turn: s.turn }]).slice(-60); done.push(`${txt}（${why}）`); } }
@@ -15364,9 +15364,9 @@ function timeBlock(s) {
   const L = [], c = s.career || {}, y = s.clock.y;
   if (c.office && c.sinceY != null && y - c.sinceY >= 3) L.push(`你任「${c.office}」已经${y - c.sinceY}年，照本朝考课、任满迁转之制，这段日子该有考满、迁转、留任或罢免的消息（照制度和你的考语，不是一定升）`);
   const a = num(s.protagonist.age); if (a != null && a >= 60) L.push(`你已${a}岁，年老体衰是实情：精力、病痛、致仕、身后事，身边人也会想到`);
-  const old = Object.entries(s.people || {}).filter(([, v]) => v && num(v.age) != null && v.age >= 65).slice(0, 3);
+  const old = Object.entries(s.people || {}).filter(([k, v]) => v && !v.dead && !deadNm(s, k) && num(v.age) != null && v.age >= 65).slice(0, 3);   // 死了的不算（R-266：驾崩一年多的李嗣源还列在「身边上了年纪的」）
   if (old.length) L.push('身边上了年纪的：' + old.map(([k, v]) => `${k}${v.age}岁`).join('、') + '——病老死是常事，照时日写');
-  return L.length ? '【时间在走】' + L.join('；') + '\n' : '';
+  return L.length ? '【时间在走】' + cut(L.join('；'), 900) + '\n' : '';
 }
 function directorBlock(s, said) {
   const mb = s.mainNow, ban = bannedTopics(s, said), ab = arcBlock(s), fp = footprintBlock(s);
@@ -16198,9 +16198,12 @@ ${ev ? '【查到的资料（维基、博查、CBDB：维基与博查说法矛�
 }
 function dossierBlock(s, text) {
   const D = s.dossiers || {}, t = String(text || '') + arr(s.chat).slice(-6).map(c => c.text).join('');
-  const L = Object.entries(D).filter(([k]) => t.includes(k)).slice(0, 6).map(([k, d]) => d.real === false ? `· ${k}：史书里查无此人（当虚构人物写，不要套用任何真人的生平）` :
+  // 本局有他的账就先写本局的（以此为准），查来的生平只留一句、整条截短（R-266：一人一千五百字，李重吉的档案照错人写成「被囚宋州、李从荣已死」，又贵又误事）
+  const here = k => { const v = (s.people || {})[k] || arr(s.household).find(m => m && m.name === k); return v ? '本局（以此为准）：' + [v.role, v.relation, v.where ? '在' + v.where : '', v.dead ? '已故' : '', v.status].filter(Boolean).map(x => one(x, 30)).join('，') + '。' : ''; };
+  const L = Object.entries(D).filter(([k]) => t.includes(k)).slice(0, 6).map(([k, d]) => here(k) && !/已故|未生/.test(d.state || '') && d.real !== false ? `· ${k}${d.born || d.died ? `（${d.born ?? '?'}—${d.died ?? '?'}）` : ''}：${here(k)}史书上：${one(d.identity, 60)}` : d.real === false ? `· ${k}：史书里查无此人（当虚构人物写，不要套用任何真人的生平）` :
     /已故|未生/.test(d.state) ? `· ${k}${d.born || d.died ? `（${d.born ?? '?'}—${d.died ?? '?'}）` : ''}：${d.identity}。${d.y !== s.clock.y ? d.y + '年时' : '此刻'}${d.state}，不得作为活人出场（据${d.src}）` :
     `· ${k}${d.born || d.died ? `（${d.born ?? '?'}—${d.died ?? '?'}）` : ''}：${d.identity}。${d.y !== s.clock.y ? `（${d.y}年时）` : '此刻'}` + [d.state, d.born != null && s.clock ? (s.clock.y - d.born + 1) + '岁（程序按生年算）' : d.age ? d.age + '岁' : '', d.post, d.where ? '在' + d.where : '', d.doing, d.zi ? '字号' + d.zi : '', d.origin ? '出身' + d.origin : '', d.character ? '为人' + d.character : '', d.stance ? '立场' + d.stance : '', d.doubt ? '（资料里查不到此人，存疑：少写，不编他的事迹）' : ''].filter(Boolean).join('，') + `${d.ties ? '；相关：' + d.ties : ''}${d.reach ? '；要见他：' + d.reach : ''}（据${d.src}）`);
+  for (let i = 0; i < L.length; i++) if (L[i].length > 260) L[i] = L[i].slice(0, 260) + '……';
   return L.length ? '【真人档案（这一回牵涉的真实人物，以此为准；跟主角没有来往的不写成他的熟人、亲戚、故交，主角见不到的就见不到：已故、未生的不得作为活人出场；人在别处的不能凭空出现在主角身边，要见他就照「要见他」写周折）】\n' + L.join('\n') : '';
 }
 
@@ -18263,7 +18266,7 @@ async function send(said, span, note, resume) {
       // 账里哪一项格式怪到程序出错：正文照样留下，这一回标成「账没记上」，可以补记，不让整回作废
       const snap = clone(S);
       if (PERF) { const t = Date.now(); if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); S.perf = arr(S.perf).concat([{ turn: (S.turn || 0) + 1, secs: Math.round((t - PERF.t0) / 1000), ph: Object.fromEntries(Object.entries(PERF.ph).map(([k, v]) => [k, Math.round(v / 1000)])), rw: (st.rewrote ? 1 : 0) + (early ? 1 : 0) }]).slice(-20); PERF = null; }
-      try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said);
+      try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said); if (S.money && N0(S.money.cash) < 0) { const owe = -N0(S.money.cash); S.money.cash = 0; try { const H = hhOf(S), ym = Math.floor(ymOf(S.clock)); H.debt = arr(H.debt).concat([{ from: '挪借', amt: owe, rate: 0.02, ym, due: ym + 12 }]); } catch (_) { /* 无 */ } noteErr('现钱成负', '这一回记账后现钱成了 -' + owe + '，记成欠账'); }   // 现钱不成负数：不够的记欠账（R-266）
         // 常理审查挑出的账上毛病：记完账当场改；程序还能挑出硬伤的，再审一次当场改（不留到下一回）
         if (LOGIC_FIX.length) { applyLogicFixes(S, LOGIC_FIX); LOGIC_FIX = []; }
         if (logicFaults(S).length) { PHASE = 'ledger'; render(); try { await within(logicAudit(S), 30000 * TSCALE); } catch (e2) { if (e2 && e2.code === 'cancelled') throw e2; } }
