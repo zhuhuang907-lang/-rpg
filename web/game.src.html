@@ -5829,7 +5829,7 @@ function histBlock(s) {
   const y = s.clock.y, now = ymOf(s.clock), L = [];
   const rs = rulersAt(y, s);
   L.push(histFor(y, s).some(h => h.grade === 'B') && !histFor(y, s).some(h => !h.grade) ? '【联网自建史料（游戏据检索与通行史书整理，B 级；以此为准，与你的记忆不同时照这里）】' : '【内置史料（程序据史书整理，以此为准；与你的记忆不同时照这里）】');
-  if (rs.length) L.push('在位：' + rs.map(r => `${r.title && r.title.startsWith(r.polity) ? '' : r.polity}${r.title ? r.title : ''}${r.name}${r.era ? '（' + r.era + NUMZH(r.n) + ((r.era === '天宝' && r.n >= 3) || r.era === '至德' ? '载' : '年') + '）' : ''}`).join('；'));
+  if (rs.length) L.push('在位：' + rs.map(r => isRuler(s) && r.polity && String(pol0(s) || '').includes(String(r.polity).replace(/[（(].*$/, '')) ? `${r.polity}${s.protagonist.role.replace(/[（(].*$/, '').replace(String(r.polity), '')}${s.protagonist.name}（本局主角，${s.eraName ? s.eraName + '年号' : '照本局'}）` : null).map((x, i) => x || (r => `${r.title && r.title.startsWith(r.polity) ? '' : r.polity}${r.title ? r.title : ''}${r.name}${r.era ? '（' + r.era + NUMZH(r.n) + ((r.era === '天宝' && r.n >= 3) || r.era === '至德' ? '载' : '年') + '）' : ''}`)(rs[i])).join('；'));   /* 主角当了这一国之主：在位的写他，不写史书上的那位（R-266：李从荣登基后内置史料还说在位的是唐末帝李从珂） */
   // 史料只记到月：本月的史事不算「已经发生」，单列出来，正文按真实日子写（日子没到就还没发生）
   const pastAll = histEvents(s, now - 30, now).map(e => histView(s, e)).filter(e => e.status !== '取消' && evYM(e) <= now);
   const past = pastAll.filter(e => !(e.m && evYM(e) === now)), thisMonth = pastAll.filter(e => e.m && evYM(e) === now);
@@ -14754,7 +14754,9 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   // 账册拆两份（R-266）：少变的底子（官制、史料、派系、人物品第、定本、改写的历史、通用推演……）放对话前面能进缓存；回回变的放对话后面；几块越攒越长的截短
   const LED = String(blocks(s, true)).split(/(?=\n【)/), STABLE = /^\s*【(本朝官制|内置史料|朝中派系|人物各项|定本|被改写的历史|通用推演|史线|主角仕途|此时此地的真人|落到主角身上的政令)/, CAP = { 家里: 1800, 时间在走: 1200, '差事': 2200, 前情提要: 2600, 家宅与人情: 1600 };
   const capP = x => { const m = /^\s*【([^】（]{1,12})/.exec(x), k = m && Object.keys(CAP).find(c => m[1].startsWith(c)); return k && x.length > CAP[k] ? x.slice(0, CAP[k]) + '……' : x; };
-  const stableTxt = LED.filter(x => STABLE.test(x)).join(''), liveTxt = LED.filter(x => !STABLE.test(x)).map(capP).join('');
+  const ORD = ['通用推演', '本朝官制', '内置史料', '朝中派系', '人物各项', '此时此地的真人', '落到主角身上的政令', '定本', '被改写的历史', '史线', '主角仕途'], keyOf = x => { const m = /^\s*【([^】（]{1,12})/.exec(x); return m ? ORD.findIndex(k => m[1].startsWith(k)) : 99; };
+  const STB = LED.filter(x => STABLE.test(x)).map(x => { const i = x.indexOf('本月之内'); return i > 0 ? [x.slice(0, i), x.slice(i)] : [x, '']; });   // 内置史料里「本月之内（此刻是本月几日）」一段天天变，挪到后面
+  const stableTxt = STB.slice().sort((a, b) => keyOf(a[0]) - keyOf(b[0])).map(x => x[0]).join(''), liveTxt = STB.map(x => x[1]).filter(Boolean).join('\n') + LED.filter(x => !STABLE.test(x)).map(capP).join('');   // 少变的几块照固定次序，不随条件跳来跳去
   const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + '【这一局少变的底子】' + stableTxt + '\n\n（回回变的账册、这回查到的资料在对话后面）'), ledgerNow = liveTxt + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : '');
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、身边人自己的事（真有才写）、结识的人、家里的变化、季节年景、传来的天下大事），其余一两句带过。` : '';
   const what = deadRealBlock(s) + aimBlock(s) + (String(said || '').trim() ? `【玩家这回说】\n${said}${privateBlock(said, ruling)}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。');
