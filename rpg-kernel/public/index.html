@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121163523';
+const BUILD = '20261121165210';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -5109,7 +5109,8 @@ function textMarch(s, said) {
     const busy = f => arr(s.campaigns).some(c => c.force === f.name && /待发|行军|围城/.test(c.state)), mine = arr(s.forces).filter(f => f && myForce(s, f) && !f.foe && N0(f.troops) > 0);
     let f = mine.find(f => String(f.leader || '').replace(/[（(].*$/, '') === who);
     if (f && arr(s.campaigns).some(c => c.force === f.name && /待发|行军|围城/.test(c.state) && samePlace(c.target, tgt))) continue;
-    if (!f || (n && N0(f.troops) > n * 1.3)) { const idle = mine.filter(x => !busy(x)), src = f || idle.filter(x => samePlace(x.at || '', geoCenter(s)) || samePlace(x.at || '', s.place.full || '')).sort((a, b) => N0(b.troops) - N0(a.troops))[0] || idle.sort((a, b) => N0(b.troops) - N0(a.troops))[0];
+    if (!f || (n && N0(f.troops) > n * 1.3)) { const city = (/([一-鿿]{2})[县州府]?$/.exec(String(geoCenter(s)).replace(/（.*$/, '')) || [])[1] || '', here = x => samePlace(x.at || '', geoCenter(s)) || samePlace(x.at || '', s.place.full || '') || (city && String(x.at || '').includes(city));
+      const idle = mine.filter(x => !busy(x)), src = f || idle.filter(x => here(x) && N0(x.troops) > n).sort((a, b) => N0(b.troops) - N0(a.troops))[0] || idle.filter(here).sort((a, b) => N0(b.troops) - N0(a.troops))[0] || idle.sort((a, b) => N0(b.troops) - N0(a.troops))[0];
       if (!src || !n) continue; const ORG0 = ORGMSG; const r = milDo(s, 'split', { n: Math.min(n, N0(src.troops) - 1), leader: who, name: who + '所部' }, src, null); if (!r) { ORGMSG = ORG0; continue; } f = arr(s.forces).find(x => x.name === r.force); out.push(r.line); }
     if (!f) continue; const line = armyAct(s, 'march', { force: f.name, target: tgt, mode, tactic: mode === '攻' && /围/.test(rest) ? '围城' : '' }); if (line) out.push(line);
   }
@@ -15276,6 +15277,8 @@ function resolveBattle(s, b) {
   const mine = exactF.length ? exactF : arr(s.forces).filter(f => f && N0(f.troops) > 0 && !f.foe && !(!b.ourForces.length && N0(b.ourTroops)) && (!b.ourForces.length || b.ourForces.some(n => String(f.name || '').includes(n) || n.includes(String(f.name || '')) || String(f.leader || '').includes(n))));
   // 主角名下没有兵马（随军、守城、统带的是朝廷的兵）：用推演给的我方人数结算，不扣主角的账
   if (!mine.reduce((a, f) => a + (N0(f.troops) || 0), 0) && N0(b.ourTroops)) mine.splice(0, mine.length, { name: b.ourSide || '我方', troops: N0(b.ourTroops), quality: b.ourQuality || '中', grain: null, virtual: true });
+  /* 还在路上的兵不上这一仗（R-269 真玩：张敬达离太原还有四百里，推演就在太原城下打了一仗、另立了一个围城）：到了地头由程序照日子结算 */
+  { const onRoad = f => arr(s.campaigns).some(c => c.force === f.name && /待发|行军/.test(c.state)); const k = b.fromRuling ? mine.filter(f => !f.virtual && onRoad(f)) : []; if (k.length) { for (const f of k) mine.splice(mine.indexOf(f), 1); if (!mine.length) { noteErr('在途的兵不开打', k.map(f => f.name).join('、') + '还在路上，' + (b.place || '') + '这一仗不算'); return null; } } }
   const ours = mine.reduce((a, f) => a + N0(f.troops), 0); if (!ours) return null;
   // 围城（R-261：以前只把我方伤亡减半，照样当一场强攻打）：主角自家兵马去围一座城，就真立围城——断粮道、按月耗守军的粮，粮尽才崩，进度在军务页
   if (b.tactic === '围城' && b.attacker === '我' && b.place && landPlace(b.place) && !b.siegeDone) { const lead0 = mine.filter(f => !f.virtual).sort((x, y) => N0(y.troops) - N0(x.troops))[0];
@@ -17127,7 +17130,9 @@ function applyReply(s, d, said) {
   const keepLead = x => { const f = arr(s.forces).find(f => f && f.name === (x.name || x.leader)), o = f && String(f.leader || '').replace(/[（(].*$/, ''), n = String(x.leader || '').replace(/[（(].*$/, ''); if (!o || !n || o === n) return x; const known = v => !!((s.people || {})[v] || figByName(v)); return known(o) && !figByName(n) ? { ...x, leader: f.leader } : x; };
   // 兵马大减只认程序的战报（R-261：正文写「西面行营不战自散」，记账把两路两万多人记成零、整支删掉，凤翔守军也记成零——没有一场程序结算的仗）：没打仗，一回最多减一成五
   const keepMen = x => { const f = arr(s.forces).find(f => f && f.name === (x.name || x.leader)), o = f && N0(f.troops), n = N0(x.troops); if (o == null || n == null || o <= 0 || n >= o * 0.85) return x; const fought = arr(s.battles).some(b => b && b.turn === s.turn); if (fought) return x; noteErr('记账兵马大减没战报', `${f.name} ${o}→${n}，照记${Math.round(o * 0.85)}`); return { ...x, troops: Math.round(o * 0.85), status: f.status }; };
-  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(keepLead).map(keepMen).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
+  /* 在途的兵（待发、行军、围城）在哪、什么状态只归程序照日子算，记账改不动（R-269 真玩：张敬达一回在太原交战、下一回又回到河阳巩县间、再下一回在晋州城西） */
+  const keepMarch = x => { const nm = x.name || x.leader, c = arr(s.campaigns).find(c => c.force === nm && /待发|行军|围城/.test(c.state)); if (!c) return x; const y = { ...x }; delete y.at; delete y.status; return y; };
+  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(keepLead).map(keepMen).map(keepMarch).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
   // 兵马、地盘这一回的增减：记进账目，并摆到正文下面（不用翻册子也看得见）
   if (play) {
     const mv = [];
@@ -17315,6 +17320,7 @@ function tidyState(s) {
   if (!s || typeof s !== 'object') return s;
   try { for (const [k, v] of Object.entries(s.people || {})) if (v && v.role && BIO_ROLE.test(String(v.role))) v.role = cleanRole(s, k, v.role); } catch (_) { /* 人物现任清不了不耽误 */ }
   try { orgSync(s); } catch (_) { /* 人事树对不齐不耽误 */ }
+  try { const seen = new Set(); s.campaigns = arr(s.campaigns).filter(c => { if (!c || !/待发|行军|围城/.test(c.state || '')) return true; if (seen.has(c.force)) return false; seen.add(c.force); return true; }); } catch (_) { /* 行军单理不了不耽误 */ }   /* 一支兵同时只走一条路（R-269：张敬达同时「行军攻太原」「围城河东太原府」） */
   try { actTidy(s); } catch (_) { /* 行动单理不了不耽误 */ }
   try { for (const [k, d] of Object.entries(s.dossiers || {})) if (d && d.real === false && figByName(k)) { d.real = true; d.chk = '内置史料'; if (/查无此人/.test(d.identity || '')) d.identity = ''; } } catch (_) { /* 旧档案修不了不耽误 */ }   /* 旧存档：名臣包里有的人被判成查无此人的改回真人（R-269） */
   try { if (s.protagonist && Array.isArray(s.household)) s.household = s.household.filter(m => !(m && isSelfKin(s, m.name, m.relation))); } catch (_) { /* 主角还没定 */ }
@@ -18254,7 +18260,7 @@ async function send(said, span, note, resume) {
       ]);
       looked = lk; ruling = rl;
       S.actsNow = arr(ruling && ruling.acts).map(a => ({ ...a })); CUR_RULING = ruling;
-      if (ruling && ruling.battle && !ruling.battleResult) { ruling.battleResult = resolveBattle(S, ruling.battle); if (ruling.battleResult) feedAdd([{ t: `战事结算：${ruling.battleResult.outcome}（胜算约 ${ruling.battleResult.odds}%）`, site: '程序' }]); }
+      if (ruling && ruling.battle && !ruling.battleResult) { ruling.battleResult = resolveBattle(S, { ...ruling.battle, fromRuling: true }); if (ruling.battleResult) feedAdd([{ t: `战事结算：${ruling.battleResult.outcome}（胜算约 ${ruling.battleResult.odds}%）`, site: '程序' }]); }
       if (ruling && SETTINGS.ruling === false) ruling = { steps: [], risks: [], alt: '', search: ruling.search, scene: ruling.scene, brief: ruling.brief, places: ruling.places, realPeople: ruling.realPeople };
       // 这一回牵涉的真人：先立档（生卒、此刻在哪、做什么、见不见得到），和下面的联网查证一起做
       const dosNames = arr(ruling && ruling.realPeople);
