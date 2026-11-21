@@ -15696,10 +15696,35 @@ async function idFollow(s, said, txt) {
     return { role: one(d.role, 30), why: one(d.why, 40) };
   } catch (e) { if (e && e.code === 'cancelled') throw e; return null; }
 }
+/* ========== 账房门（R-270，2026-11-21 玩家：「是不是底层代码有问题，我给你大权，想怎么改都行，维持稳定」）
+ *  根子：同一本账好几处都能写（写正文的、记账的、推演、后台、程序结算），谁说了算没定死，账和正文各说各的。
+ *  这里定死每样账的主人，记账模型交来的改动先过这一道门，不归它管的一律拦下、记进问题报告：
+ *    兵在哪、走到哪、打仗输赢 —— 程序（行军、结算）；记账不能挪在途的兵、不能没打仗就大减兵
+ *    人的官职 —— 玩家的任免（诏书落账）、程序的人事；记账不能顺手改已在账上的人的官
+ *    生死 —— 史书卒年、程序结算、主角亲手改命；记账不能让死人活回来、出场
+ *    日子 —— 程序照这一回要过的时长；钱 —— 程序结算＋记账的进出（另有各道闸）
+ *  以后新加的闸都加在这里，不再散在各处 ========== */
+const GATE_LOG = [];
+function ledgerGate(s, d, said) {
+  const P = s.people || {}, me = (s.protagonist || {}).name, stop = [], appt = APPT_SAID.test(String(said || ''));
+  const dead = n => { const o = P[n]; return !!(o && o.dead && !(s.fateSaved || {})[n]); };
+  /* 人的官职：账上已有官的人，记账只能在玩家这一步是任免、且正文写了这个新官时改 */
+  for (const n of arr(d.presentNpcs)) { if (!n || !n.name) continue; const k = one(n.name, 12), o = P[k];
+    if (dead(k)) { stop.push(`${k}已故，不出场`); n._drop = true; continue; }
+    if (o && o.role && n.role && postCore(n.role) !== postCore(o.role) && !String(o.role).includes(String(n.role)) && !(appt && String(d.reply || '').includes(String(n.role).replace(/[（(].*$/, '').slice(-4)))) { stop.push(`${k}的官「${one(o.role, 12)}」不随记账改成「${one(n.role, 12)}」`); n.role = o.role; } }
+  if (Array.isArray(d.presentNpcs)) d.presentNpcs = d.presentNpcs.filter(n => !(n && n._drop));
+  /* 在途的兵：在哪、什么状态只归程序 */
+  for (const x of arr(d.forces)) { if (!x) continue; const nm = x.name || x.leader, c = arr(s.campaigns).find(c => c.force === nm && /待发|行军|围城/.test(c.state)); if (c && (x.at || x.status)) { stop.push(`${nm}在途，位置照程序`); delete x.at; delete x.status; } }
+  /* 死人不升官、不领兵 */
+  for (const x of arr(d.forces)) if (x && x.leader && dead(String(x.leader).replace(/[（(].*$/, ''))) { stop.push(`${x.leader}已故，不改统兵`); delete x.leader; }
+  if (stop.length) { GATE_LOG.push({ turn: s.turn, stop }); GATE_LOG.splice(0, Math.max(0, GATE_LOG.length - 30)); noteErr('账房门', stop.slice(0, 8).join(' / ')); }
+  return stop;
+}
 function applyReply(s, d, said) {
   try { for (const v of Object.values(s.people || {})) if (v && !v.pid) v.pid = 'p' + (s.pidSeq = (num(s.pidSeq) || 0) + 1); } catch (_) {}
   // 「严某」这类占位称呼：正文、人物、家人、大事记、账里一律换成起好的名字（不止正文）
   { const d2 = scrubObj(s, d); if (d2 !== d) { for (const k of Object.keys(d)) delete d[k]; Object.assign(d, d2); } }
+  if (d && d.mode !== 'talk') { try { ledgerGate(s, d, said); } catch (_) { /* 门出错不挡记账 */ } }
   // 记账里还管她叫「柳氏」的（起过名的女眷）：认作同一个人，换成名册上的全名
   { const AL = Object.entries(s.nameMap || {}).filter(([a, f]) => SHI_RE.test(a) && f && f[0] !== '#').concat(Object.entries(s.renamed || {})); if (AL.length) { try { let raw = JSON.stringify(d); for (const [a, f] of AL) raw = raw.split(`"${a}"`).join(`"${f}"`); const d3 = JSON.parse(raw); for (const k of Object.keys(d)) delete d[k]; Object.assign(d, d3); } catch (_) { /* 换不成就照旧 */ } } }
   // AI 偶尔在列表里塞 null：先清掉，免得一处读错整回作废
