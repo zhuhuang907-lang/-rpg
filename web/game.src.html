@@ -1222,9 +1222,11 @@ function migrate(s) {
     n.chat.push({ role: 'gm', kind: 'play', text: l.scene || l.summary || '', turn: l.turn, when: l.time });
     if (l.summary) n.summaries.push({ turn: l.turn, when: l.time, text: l.summary });
   }
-  for (const k of ['deeds', 'powers', 'territory', 'forces', 'prices']) n[k] = [];
-  n.money = { unit: '', cash: null, hist: [] };
-  n.careerLog = [];
+  /* 第一版存档升级（R-271）：原件先另存一份；旧字段是数组、有内容的照搬，不再一律清空 */
+  try { if (s.id && typeof SDB === 'object') SDB.put('orig:' + s.id, JSON.stringify(s)); } catch (_) { /* 存不下就算了 */ }
+  for (const k of ['deeds', 'powers', 'territory', 'forces', 'prices']) n[k] = Array.isArray(s[k]) ? s[k].filter(x => x && typeof x === 'object') : [];
+  n.money = s.money && typeof s.money === 'object' && N0(s.money.cash) != null ? { unit: s.money.unit || '', cash: N0(s.money.cash), hist: [] } : { unit: '', cash: null, hist: [] };
+  n.careerLog = Array.isArray(s.careerLog) ? s.careerLog.filter(x => x && typeof x === 'object') : [];
   delete n.log; delete n.matters; delete n.desk; delete n.last; delete n.consults; delete n.advice;
   n.prev = null;
   return migrate(n);   // 再走一遍第二版的补齐
@@ -8952,7 +8954,10 @@ const MU_C = { k: '', s: null, v: null };
 /** 一家一色，照名字定、局内不变；叛军、自立的、内战分出来的各一色（R-261：别家都是灰旗，分裂内战也是一个颜色） */
 const OWN_PAL = ['#b5543b', '#3c7a9e', '#7d5aa6', '#4f8a3a', '#c08a2a', '#2f8f83', '#a8435f', '#5d6fb3', '#8c6d3f', '#3f6e5a', '#b06a9a', '#6a8c2a', '#c46a2a', '#46708f', '#9a4b3a', '#5a5a9a'];
 const ownerColor = (s, name) => { const n = String(name || '').trim(); if (!n) return '#7a6a5a'; try { const R = realmsAt(s.clock.y, s.clock.m); const r = R && R.list.find(x => x.name === n); if (r && r.col) return r.col; } catch (_) {} let h = 0; for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return OWN_PAL[h % OWN_PAL.length]; };
-function mapUnits(s) { const M0 = admOverlay(s, mapUnits0(s)); if (!M0 || M0._mo) return M0; const M = M0;
+let MU_BUSY = 0;
+/* 防转圈（R-271 查实：画各方据地要问 foreignLand → placeOwner → 又来画图 mapUnits，一层套一层，清代一局两家据城就把页面卡死；朝局检查一直崩就是这个） */
+function mapUnits(s) { if (MU_BUSY) return admOverlay(s, mapUnits0(s)); MU_BUSY++; try { return mapUnits1(s); } finally { MU_BUSY--; } }
+function mapUnits1(s) { const M0 = admOverlay(s, mapUnits0(s)); if (!M0 || M0._mo) return M0; const M = M0;
   // 不在史书疆域里的各方（叛军、自立的藩镇、内战分出来的一支）：据地照他们画（R-261）
   const PO = {}; try { const RL = realmsAt(s.clock.y, s.clock.m), names = new Set(arr(RL && RL.list).map(x => x.name)); for (const p of arr(s.powers)) { const atW = !!p && arr(s.wars).some(w => w && w.state === '交战' && w.with && p.name && (w.with === p.name || String(w.with).includes(p.name) || p.name.includes(w.with))); if (!p || !p.name || names.has(p.name) || !(atW || powerLand(s, p))) continue; if (!atW && !/叛|自立|僭|伪|割据|不臣|起兵/.test([p.kind, p.status, p.stance, p.note].join(' ')) && !foreignLand(s, p.seat)) continue; /* 本朝还听命的藩镇（934 年的河东石敬瑭）不另上色；打起来、自立了才算一家 */ for (const t of String([p.seat, p.land].filter(Boolean).join('、')).split(/[、，,；;\s]+/)) { const k = geoStem(t.replace(/[（(].*$/, '')); if (k && k.length >= 2 && !PO[k]) PO[k] = { owner: p.name, why: '据地' }; } } } catch (_) {}
   const MO = Object.assign({}, PO, (s && s.mapOwn) || {}); if (!Object.keys(MO).length) return M;
@@ -15411,9 +15416,11 @@ async function fictionClash(s) {
   // 2026-11-05 玩家：「真实人物如果跟其他历史人物撞名了不需要改」——只改确知是编的（程序起的、虚构主角戏里的、核过查无此人的），没核过的、真人一概不动
   /* R-268（2026-11-21 玩家：「又把历史真人的名字改了，因为你以为他们是编造的」）：只改程序自己起的名字（补「某」起的、拟名）和虚构主角的家里人；
    *  凡是真人名单里有的（内置史料、名录、核过的、档案里的）一概不动——以前「拟」字号的位子上坐着真人，查重名一查「史书有此人」反倒把真人改了名 */
-  const yNow = num((s.clock || {}).y), otherEra = n => { const L = []; for (const h of HALL(s)) for (const f of arr(h.figures)) if (f && f.name === n) L.push([num(f.born), num(f.died)]); const g = figByName(n); if (g) L.push([num(g.b), num(g.d)]);
+  /* 本局核实过的真人（档案、核查、名录、人事树上史书有载的）：怎样都不改名；只是和名臣包里别朝的人同名的，照年代断 */
+  const RV = n => !!(((s.dossiers || {})[n] || {}).real === true || ((chkOf(s, n) || {}).real && !otherEra(n)) || arr(s.household).some(m => m && m.rec && m.name === n) || arr(s.org && s.org.nodes).some(nd => arr(nd.posts).some(q => q.holder === n && /史书|史载|明载|查/.test(q.src || ''))));
+  const yNow = num((s.clock || {}).y), otherEra = n => { const L = []; for (const h of HALL(s).concat(HIST.filter(h => !HALL(s).includes(h)))) for (const f of arr(h.figures)) if (f && f.name === n) L.push([num(f.born), num(f.died)]); const g = figByName(n); if (g) L.push([num(g.b), num(g.d)]);
     return L.length > 0 && L.every(([b, d]) => (b != null || d != null) && (yNow < (b != null ? b : d - 80) - 5 || yNow > (d != null ? d : b + 90) + 5)); };
-  const F = [...new Set([...[...fictionShow(s), ...FS].filter(n => !RN.has(n)), ...famF])].filter(n => famF.includes(n) || (!RN.has(n) && (!R.has(n) || otherEra(n))))   /* 虚构主角的家里人一定是虚构的，撞了名人照改 */.filter(n => !(s.protagonist && s.protagonist.userNamed && n === s.protagonist.name)).filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 120), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
+  const F = [...new Set([...fictionShow(s), ...FS, ...famF])].filter(n => famF.includes(n) || (!RV(n) && (!(RN.has(n) || R.has(n)) || otherEra(n))))   /* 虚构主角的家里人一定是虚构的，撞了名人照改 */.filter(n => !(s.protagonist && s.protagonist.userNamed && n === s.protagonist.name)).filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 120), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
   // 一批二十四个名字一起查（每个名字直接搜，看有没有同名的史书人物）
   const NB = {}, cand0 = F.filter(n => !R.has(n)).slice(0, 96);   // 一次最多查九十六个，没轮到的下回接着查
   // 先让 DeepSeek 认：明确是史书名人的直接改名，明确不是的放过，拿不准的才上博查
@@ -17098,7 +17105,7 @@ function bgJobs(s0, d, g) {
     { id: 'compact', msg: '整理较早的经过', due: () => arr(s0.summaries).length > 60, run: () => compactMemory(s0) },
     { id: 'pack', msg: '联网整理这几年的史料', due: () => packNeed(s0), run: () => ensureHistPack(s0) },
     { id: 'sync', msg: '按月联网同步此刻前后的史事', due: () => syncNeed(s0), run: () => ensureSync(s0) },
-    { id: 'world', msg: '看天下大势的走向', due: () => d && SETTINGS.world !== false && needTick(s0, d), run: async () => { s0.fateTick = false; const r = await worldTick(s0); if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }, ex: true, needs: ['sync', 'pack'] },
+    { id: 'world', msg: '看天下大势的走向', due: () => d && SETTINGS.world !== false && needTick(s0, d), run: async () => { const ft = s0.fateTick; s0.fateTick = false; let r; try { r = await worldTick(s0); } catch (e) { if (ft) s0.fateTick = true; throw e; }   /* 推演没成：改了历史的那一下留着，下回再推（R-271） */ if (g && (r.changes.length || r.ripples.length || arr(r.moves).length)) g.extra = Object.assign(g.extra || {}, { worldTick: r }); }, ex: true, needs: ['sync', 'pack'] },
     { id: 'gaz', msg: '查这地方此时的样子（本地志）', due: () => needGaz(s0), run: () => buildGazetteer(s0), free: true },
     { id: 'adm', msg: '联网查这一年的政区（政权、省、府州，本省到县）', due: () => admDue(s0), run: () => buildAdmin(s0).catch(e => { s0.admFail = s0.turn; throw e; }) },
     { id: 'realmfix', msg: '照史料立国势：国库、太仓、兵额、各州户口兵粮、各支兵马', due: () => realmFixDue(s0), run: () => buildRealm(s0).catch(e => { s0.rfFail = s0.turn; throw e; }), ex: true },
