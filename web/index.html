@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121002142';
+const BUILD = '20261121002908';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -6902,9 +6902,11 @@ function storyDate(s, text) {
   // 后面只写「到了五月」「七月里」、不带年号的：接着最后那个年号年（没有就照眼下）往后数，月份比前面小的算第二年
   const base = best || { y: y0, m: s.clock.m, at: 0 }, rest = t.slice(base.at || 0), re2 = /(^|[^年\d一二三四五六七八九十元])(正|腊|十一|十二|[一二三四五六七八九十])月(里|间|初|中|底|末|下旬|上旬|中旬|[一二三四五六七八九十廿初]{1,3}日?)?/g;
   // 「去岁腊月换封条」「去年冬月」是在说旧事，不往前拨钟（R-260：说了一句去岁腊月，钟从二月跳到腊月，一下快了一年）
-  let last = null, k; while ((k = re2.exec(rest))) { if (/(去岁|去年|前年|昨岁|上年|旧年|往年|往岁|那年|当年|早年|先年|前岁|昔年|上回|上次)[^。，；]{0,2}$/.test(rest.slice(Math.max(0, k.index - 6), k.index + k[1].length))) continue; last = k; }
+  const inQ = i => { const o = rest.lastIndexOf('「', i), c = rest.lastIndexOf('」', i); return o > c; };   // 人物台词里说的月份是在讲事，不是时间走到了（R-266：「腊月里潞王旧部……」把正月拨到腊月）
+  let last = null, k; while ((k = re2.exec(rest))) { if (inQ(k.index)) continue; if (/(去岁|去年|前年|昨岁|上年|旧年|往年|往岁|那年|当年|早年|先年|前岁|昔年|上回|上次)[^。，；]{0,2}$/.test(rest.slice(Math.max(0, k.index - 6), k.index + k[1].length))) continue; last = k; }
   // 只往后认：比前面那个年月早的月份是在说旧事（「二月十三到西廊」），不当第二年；前头写了「次年、明年、开春」的才往下一年数
-  if (last) { const mo = { 正: 1, 腊: 12 }[last[2]] || zh(last[2]), nx = /(次年|来年|明年|翌年|过了年|转过年|过完年|开春|新年|岁首|年后)[^。]{0,8}$/.test(rest.slice(0, last.index + 1)); if (mo >= 1 && mo <= 12 && (nx || mo >= base.m)) { const y = base.y + (nx ? 1 : 0); if (y <= y0 + 6) { const c = { y, m: mo, d: 1 }; if (ymOf(c) >= ymOf(s.clock) - 0.01) best = c; } } }
+  if (last) { const mo = { 正: 1, 腊: 12 }[last[2]] || zh(last[2]), nx = /(次年|来年|明年|翌年|过了年|转过年|过完年|开春|新年|岁首|年后)[^。]{0,8}$/.test(rest.slice(0, last.index + 1)); const jumpOK = nx || mo - base.m <= 3 || /(到了|直到|转眼|及至|挨到|等到|熬到|入了|进了|过了|开了|眨眼)[^。]{0,4}$/.test(rest.slice(Math.max(0, last.index - 8), last.index + 1));   // 不带年号的月份一下往后跳三个月以上，要有「到了、转眼」这类话
+    if (mo >= 1 && mo <= 12 && (nx || mo >= base.m) && jumpOK) { const y = base.y + (nx ? 1 : 0); if (y <= y0 + 6) { const c = { y, m: mo, d: 1 }; if (ymOf(c) >= ymOf(s.clock) - 0.01) best = c; } } }
   return best;
 }
 function eraLabel(s, y) {
@@ -15846,6 +15848,9 @@ function privateBlock(said, ruling) {
   const L = [...new Set(plans.concat(raw))].slice(0, 6); if (!L.length) return '';
   return `\n【主角心里的盘算、私下的打算（不是说出口的话）】\n${L.map(x => '· ' + x).join('\n')}\n这几件写成主角心里怎么想、私下怎么准备（独处时，或只对最亲信的一两个人低声交代）；不当众说出、不嚷给旁人听，旁人不知道就不能拿它告发、责罚、对质。玩家没写他对谁说的，就是没对任何人说。`;
 }
+/** 写戏材料里越攒越长的几块截短、同名的块只留一份（R-266：一回四万多 token，原型号一回一毛五以上） */
+const CAP_ALL = { 官员办事: 1200, 前情提要: 1800, 差事: 1500, 早年旧事: 1800, 家宅与人情: 1100, 家底: 1000, 史线: 1200, 时间在走: 900, 家里: 1500, 人物底: 2200, 场景简报: 1400, 这一年此地的史实梳理: 700, 史书原文: 700 };
+function capAll(t) { const parts = String(t).split(/(?=\n【)/), seen = new Set(); return parts.map(x => { const m = /^\s*【([^】（]{1,14})/.exec(x); if (!m) return x; const key = Object.keys(CAP_ALL).find(k => m[1].startsWith(k)); if (key) { if (seen.has(key)) return ''; seen.add(key); if (x.length > CAP_ALL[key]) { const nl = x.indexOf('\n', CAP_ALL[key]); return x.slice(0, nl > 0 && nl < CAP_ALL[key] + 200 ? nl : CAP_ALL[key]) + '……\n'; } } return x; }).join(''); }
 const STABLE_MEMO = {};
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
@@ -15878,7 +15883,7 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const lookNote = EXTRA_LOOK ? `\n【你要查的账（照这个写，不要再写「查账」）】\n${EXTRA_LOOK}` : '\n【缺数先查账】材料里找不到你这一回要用的确数（兵马、军务、家宅、钱粮、国势、行动单、势力、某个人、某个地方）时，不要估、不要编：整篇只回一行「【查账：要查的几样，用顿号隔开；人写「人物:姓名」，地方写「地图:地名」】」，程序把账给你再写。材料够就直接写。';
   const noGain = !gainSanction(s, said, ruling) ? '\n【这一回账上不会有的】玩家这一步没有求官应举，行动单上也没有在办的升迁：不写主角得官、封爵、登科、得称号（写了程序会删，也不记账）；史书上此时在世的人，主角没碰他就不写他死。' : '';
   const acctNote = acctLiteOk(s, said, span, ruling) && !fix ? '\n' + acctRules(s) : '';
-  return pushUser(turns, '【这一局的账册（此刻）】\n' + ledgerNow + '\n\n' + IRON_HEAD + what + noGain + unbNote + lookNote + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文' + (acctNote ? '；正文和【幕后】写完后，最后一定另起一行写【本回事实】交账（照下面的格式，这几行玩家看不到）。' + acctNote : '。'));   // 交账的要求放最末：放在中间真模型会漏（2026-11-16 实测六回一回都没交）
+  return pushUser(turns, capAll('【这一局的账册（此刻）】\n' + ledgerNow + '\n\n' + IRON_HEAD + what + noGain + unbNote + lookNote + modernNote(said) + '\n' + modulesBlock(said, ruling) + (bb ? '\n' + bb : '') + (dir ? '\n' + dir : '') + (dos ? '\n' + dos : '') + (ab ? '\n' + ab : '') + (ruling ? '\n' + rulingText(ruling) : '') + '\n' + ((ruling && ruling.lookTxt) || ledgerLookup(s, [], said)) + scene + brief + (ip ? '\n' + ip : '') + spanText + (note ? `\n【玩家对你上一版的意见，这次照此重写】${note}` : '') + (fix ? `\n\n【你的上一稿】\n${fix.draft}\n\n【编辑的审读意见（照此改这一稿：有毛病的地方改掉，好的地方保留，不要从头另写一个故事）】\n${fix.why}` : '') + IRON_TAIL + recapTail(s, said, span) + '\n\n照规则写正文' + (acctNote ? '；正文和【幕后】写完后，最后一定另起一行写【本回事实】交账（照下面的格式，这几行玩家看不到）。' + acctNote : '。')));   // 交账的要求放最末：放在中间真模型会漏（2026-11-16 实测六回一回都没交）
 }
 /* ========== 写戏顺手交账、程序自己记（R-243 第二步）：平常的一步不再另请模型记账——写正文的那一次在末尾交几行固定格式的事实，
  *  程序照格式落账（钱的进出、过了多久、人在哪、见了谁、行动单进展、摘要）；格式不对、缺要紧的行，照旧请模型全套记账。大事、长跨度照旧全套 ========== */
