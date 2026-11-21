@@ -10997,6 +10997,8 @@ function logiHtml(s) { if (!logiOK(s)) return ''; const D = depotsOf(s), F = arr
     ${arr(s.logiLog).length ? `<div class="list">${s.logiLog.slice(-3).reverse().map(x => `<div class="muted" style="font-size:12px">${esc(x.when)}：${esc(x.t)}</div>`).join('')}</div>` : ''}`; }
 function supplyLine(s, f) {
   if (!f || !f.at) return { k: 1, li: 0, from: '' };
+  /* 驻在自家地盘上的兵就地取给（R-271：幽州的卢龙军、魏州的天雄军被算成「远离京城补给不继」，一年按月逃散；跨月逐月结算后掉得更多） */
+  if (!/行军|交战|围城|出征/.test(f.status || '') && !arr(s.campaigns).some(c => c.force === f.name && /待发|行军|围城/.test(c.state))) { const mine = ((() => { try { return myDomain(s).places || []; } catch (_) { return []; } })()).concat(arr(s.territory).map(x => x.place)); const at0 = String(f.at).replace(/[（(].*$/, ''); if (mine.some(p => samePlace(p, at0) || String(p).includes(at0.slice(0, 2)))) return { k: 1, li: 0, from: at0 }; }
   if (depotsOf(s).length && myForce(s, f)) { const sp = supCalc(s, f); if (sp) { const ym0 = Math.floor(ymOf(s.clock)), k = (f.cutTill != null && f.cutTill >= ym0 ? 0.7 : 1) * sp.k; return { k: Math.round(k * 100) / 100, li: sp.li, from: sp.from || '仓', cut: sp.cut || k < sp.k, foe: sp.foe, water: sp.water }; } }   /* 有仓的照运粮的路算（R-155） */ const at = placeXY(s, f.at, s.clock.y); if (!at || !at.lat) return { k: 1, li: 0, from: '' };
   const own = [...new Set(((() => { try { return myDomain(s).places || []; } catch (_) { return []; } })()).concat(arr(s.territory).map(x => x.place)))].map(n => [n, placeXY(s, n, s.clock.y)]).filter(([, u]) => u && u.lat);
   if (!own.length) return { k: 1, li: 0, from: '' };
