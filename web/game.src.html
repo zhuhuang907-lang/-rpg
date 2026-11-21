@@ -1668,7 +1668,8 @@ async function callClaude(input, onReply, extra, tier) {
   //  写正文、改稿开局以后一律不深想（推演已经想过了）；推演只在打仗、政变、造反这类定生死的一步深想，上表、入宫、拜访不深想
   if (DSM() && econTight()) { const heavy = heavyStep(S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''), decisive = DECISIVE_RE.test(typeof CUR_SAID !== 'undefined' ? CUR_SAID : '') || arr(S && S.campaigns).some(c => /交战|围城/.test(c.state || ''));
     if (kind === '裁定' && heavy && !decisive) extra = { ...extra, light: true, thinking: false };
-    if (kind === '写戏' || (kind === '改稿' && heavy)) { extra = { ...extra, thinking: false }; }   // 平常一步的改稿用快型号：真模型第九轮，初稿加改稿两次都用原型号，一回就两毛多
+    /* 再压（R-266 实测四回一回四毛二，写正文的原型号占四成）：写正文只在定生死的一步（打仗、政变、造反）用原型号；平常的一步、所有改稿都用快型号——账上没有的事程序照旧删、对账改稿兜底 */
+    if (kind === '写戏' && decisive) { extra = { ...extra, thinking: false }; }
     else if (!(kind === '裁定' && heavy)) extra = { ...extra, fast: true, thinking: false }; }
   if (DSM() && plain && extra && extra.temperature > 1.0) extra = { ...extra, temperature: 1.0 };
   // 分工：这一件交给 GLM 还是 DeepSeek（需求台账 R-135）；GLM 出错（不是玩家停下）自动退回 DeepSeek 再来一次
@@ -14751,16 +14752,16 @@ function privateBlock(said, ruling) {
   return `\n【主角心里的盘算、私下的打算（不是说出口的话）】\n${L.map(x => '· ' + x).join('\n')}\n这几件写成主角心里怎么想、私下怎么准备（独处时，或只对最亲信的一两个人低声交代）；不当众说出、不嚷给旁人听，旁人不知道就不能拿它告发、责罚、对质。玩家没写他对谁说的，就是没对任何人说。`;
 }
 /** 写戏材料里越攒越长的几块截短、同名的块只留一份（R-266：一回四万多 token，原型号一回一毛五以上） */
-const CAP_ALL = { 官员办事: 1200, 前情提要: 1800, 差事: 1500, 早年旧事: 1800, 家宅与人情: 1100, 家底: 1000, 史线: 1200, 时间在走: 900, 家里: 1500, 人物底: 2200, 场景简报: 1400, 这一年此地的史实梳理: 700, 史书原文: 700 };
+const CAP_ALL = { 大势主线: 1200, 本地志: 800, 派系与利益集团: 1200, 官员办事: 1000, 前情提要: 1800, 差事: 1200, 早年旧事: 900, 家宅与人情: 1000, 家底: 800, 史线: 900, 时间在走: 800, 家里: 1200, 人物底: 2200, 场景简报: 1400, 这一年此地的史实梳理: 450, 史书原文: 450, 主角在这世上留下: 900, 本地官员名册: 1100, 国势账: 800, 本朝升迁之制: 600, 年代志: 450, 这一年代这类人: 400, 县级地理: 300 };
 function capAll(t) { const parts = String(t).split(/(?=\n【)/), seen = new Set(); return parts.map(x => { const m = /^\s*【([^】（]{1,14})/.exec(x); if (!m) return x; const key = Object.keys(CAP_ALL).find(k => m[1].startsWith(k)); if (key) { if (seen.has(key)) return ''; seen.add(key); if (x.length > CAP_ALL[key]) { const nl = x.indexOf('\n', CAP_ALL[key]); return x.slice(0, nl > 0 && nl < CAP_ALL[key] + 200 ? nl : CAP_ALL[key]) + '……\n'; } } return x; }).join(''); }
 const STABLE_MEMO = {};
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
   // 回回变的账册、这回查到的资料挪到对话后面（R-266）：前头只留不变的规则和对话，DeepSeek 能缓存前缀
   // 账册拆两份（R-266）：少变的底子（官制、史料、派系、人物品第、定本、改写的历史、通用推演……）放对话前面能进缓存；回回变的放对话后面；几块越攒越长的截短
-  const LED = String(blocks(s, true)).split(/(?=\n【)/), STABLE = /^\s*【(本朝官制|内置史料|朝中派系|人物各项|定本|被改写的历史|通用推演|主角仕途|落到主角身上的政令)/, CAP = { 家里: 1800, 时间在走: 1200, '差事': 2200, 前情提要: 2600, 家宅与人情: 1600 };
+  const LED = String(blocks(s, true)).split(/(?=\n【)/), STABLE = /^\s*【(本朝官制|定本|被改写的历史|通用推演)/   /* 实测（R-266）人物各项、派系、仕途、政令、内置史料回回挑的不一样，放前面整段缓存全坏；只留真不变、只往后添的几块 */, CAP = { 家里: 1800, 时间在走: 1200, '差事': 2200, 前情提要: 2600, 家宅与人情: 1600 };
   const capP = x => { const m = /^\s*【([^】（]{1,12})/.exec(x), k = m && Object.keys(CAP).find(c => m[1].startsWith(c)); return k && x.length > CAP[k] ? x.slice(0, CAP[k]) + '……' : x; };
-  const ORD = ['通用推演', '本朝官制', '人物各项', '朝中派系', '主角仕途', '落到主角身上的政令', '内置史料', '被改写的历史', '定本']   /* 越不常变的越靠前：中间哪块变了，只坏它后面的缓存 */, keyOf = x => { const m = /^\s*【([^】（]{1,12})/.exec(x); return m ? ORD.findIndex(k => m[1].startsWith(k)) : 99; };
+  const ORD = ['通用推演', '本朝官制', '被改写的历史', '定本']   /* 越不常变的越靠前：中间哪块变了，只坏它后面的缓存 */, keyOf = x => { const m = /^\s*【([^】（]{1,12})/.exec(x); return m ? ORD.findIndex(k => m[1].startsWith(k)) : 99; };
   const STB = LED.filter(x => STABLE.test(x)).map(x => { const i = x.indexOf('本月之内'); return i > 0 ? [x.slice(0, i), x.slice(i)] : [x, '']; });   // 内置史料里「本月之内（此刻是本月几日）」一段天天变，挪到后面
   // 这一回没带上的少变块，照上回的接着带（R-266：块是看这一回相不相干挑的，忽有忽无，前缀又对不上）
   const MEMO = (STABLE_MEMO[s.id] = STABLE_MEMO[s.id] || {}); for (const [x] of STB) { const k = keyOf(x); if (k < 99) MEMO[k] = x; }

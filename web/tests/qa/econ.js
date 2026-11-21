@@ -13,9 +13,11 @@ const path = require('path');
       if (econTight()) bad.push('开局还没查齐就算平常回合了');
       await callClaude('裁定这一步', null, { kind: '裁定' }); const o0 = cap[cap.length - 1] || {}; if (o0.fast) bad.push('开局的调用也被换成快型号');
       S.settledAt = 0; S.turn = 3; if (!econTight()) bad.push('开局查齐以后没算平常回合');
-      CUR_SAID = '找二当家说说话'; for (const k of ['裁定', '推演', '记账', '改稿', '']) { cap = []; await callClaude('写这一回', null, k ? { kind: k, thinking: true } : { json: false, thinking: true }); const o = cap[cap.length - 1] || {}, story = k === ''; if (o.thinking) bad.push(`平常回合的「${k || '写正文'}」还开着深想`); if (story ? o.fast : !o.fast) bad.push(`平常回合的「${k || '写正文'}」型号不对（写正文用原型号，别的用快型号）：` + JSON.stringify({ fast: o.fast })); }
+      CUR_SAID = '找二当家说说话'; for (const k of ['裁定', '推演', '记账', '改稿', '']) { cap = []; await callClaude('写这一回', null, k ? { kind: k, thinking: true } : { json: false, thinking: true }); const o = cap[cap.length - 1] || {}, story = k === ''; if (o.thinking) bad.push(`平常回合的「${k || '写正文'}」还开着深想`); if (!o.fast) bad.push(`平常回合的「${k || '写正文'}」型号不对（R-266：平常的一步连写正文都用快型号）：` + JSON.stringify({ fast: o.fast })); }
       // 要紧的一步：裁定、写正文照旧用原型号；记账和后台杂活仍用快型号
       CUR_SAID = '带兵攻打曹县县城，先断它的粮道'; cap = []; await callClaude('裁定这一步', null, { kind: '裁定' }); if ((cap[cap.length - 1] || {}).fast) bad.push('要紧的一步，裁定也被换成快型号');
+      cap = []; await callClaude('写这一回', null, { json: false }); if ((cap[cap.length - 1] || {}).fast) bad.push('打仗这一步，写正文也被换成快型号');
+      cap = []; await callClaude('改这一稿', null, { json: false, kind: '改稿' }); if (!(cap[cap.length - 1] || {}).fast) bad.push('改稿没用快型号');
       cap = []; await callClaude('记这一回', null, { kind: '记账' }); if (!(cap[cap.length - 1] || {}).fast) bad.push('要紧的一步，记账没用快型号');
       CUR_SAID = '找二当家说说话'; cap = []; await callClaude('裁定这一步', null, { kind: '裁定' }); if (!(cap[cap.length - 1] || {}).fast) bad.push('平常的一步，裁定没用快型号');
       ECON_Q = { turn: -1, bg: 0, ds: 0 }; if (!econQuota(S, 'bg', 1) || econQuota(S, 'bg', 1)) bad.push('后台一回一件的份额不对'); if (!econQuota(S, 'ds', 1) || econQuota(S, 'ds', 1)) bad.push('充当搜索一回一批的份额不对');
