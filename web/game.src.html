@@ -15300,24 +15300,28 @@ async function fictionClash(s) {
   // 程序自己起的虚构名字（人事树上标虚拟的、人选里虚构的、名册里拟的）撞了史书真人，一律改名，不能因为名字像真人就当成真人留着
   const FS = new Set(); for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.src === '拟' && p.holder) FS.add(p.holder); for (const t of arr(s.talent && s.talent.list)) if (t && !t.real) FS.add(t.name); for (const o of arr(s.offices)) if (o && o.src === '拟' && o.name) FS.add(o.name);
   // 2026-11-05 玩家：「真实人物如果跟其他历史人物撞名了不需要改」——只改确知是编的（程序起的、虚构主角戏里的、核过查无此人的），没核过的、真人一概不动
-  const F = [...new Set([...[...fictionShow(s), ...FS].filter(n => !RN.has(n) || FS.has(n)), ...famF])].filter(n => !(s.protagonist && s.protagonist.userNamed && n === s.protagonist.name)).filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 120), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
+  /* R-268（2026-11-21 玩家：「又把历史真人的名字改了，因为你以为他们是编造的」）：只改程序自己起的名字（补「某」起的、拟名）和虚构主角的家里人；
+   *  凡是真人名单里有的（内置史料、名录、核过的、档案里的）一概不动——以前「拟」字号的位子上坐着真人，查重名一查「史书有此人」反倒把真人改了名 */
+  const yNow = num((s.clock || {}).y), otherEra = n => { const L = []; for (const h of HALL(s)) for (const f of arr(h.figures)) if (f && f.name === n) L.push([num(f.born), num(f.died)]); const g = figByName(n); if (g) L.push([num(g.b), num(g.d)]);
+    return L.length > 0 && L.every(([b, d]) => (b != null || d != null) && (yNow < (b != null ? b : d - 80) - 5 || yNow > (d != null ? d : b + 90) + 5)); };
+  const F = [...new Set([...[...fictionShow(s), ...FS].filter(n => !RN.has(n)), ...famF])].filter(n => !RN.has(n) && (!R.has(n) || otherEra(n))).filter(n => !(s.protagonist && s.protagonist.userNamed && n === s.protagonist.name)).filter(n => !s.clashOK[n] && n.length >= 2 && !/未取名/.test(n)).sort((a, b) => R.has(b) - R.has(a)).slice(0, 120), out = [];   // 撞内置名单的先改（不费事），联网查的每回最多三个
   // 一批二十四个名字一起查（每个名字直接搜，看有没有同名的史书人物）
   const NB = {}, cand0 = F.filter(n => !R.has(n)).slice(0, 96);   // 一次最多查九十六个，没轮到的下回接着查
   // 先让 DeepSeek 认：明确是史书名人的直接改名，明确不是的放过，拿不准的才上博查
   let toNet = cand0;
   // 2026-11-05 玩家拿闽国的局：「为什么要真正的官员改名啊」——查实：人事树上占位的名字（陈峤、郑元弼、刘乙、张睦、程赟）正是这一年闽国的真官员，查重名时查出「史书有此人」就当撞名改掉了。
   // 现在一并问清：史书上那位是不是就是这一年、这一家的这个人（同时同地同身份）；是的就认作真人、名字不动，只有撞了别朝别地的人才改名
-  const SAME = new Set(), yl = `公元${s.clock.y}年（${s.clock.yearLabel || ''}）${s.place.polity || ''}`, roleOf = n => { for (const nd of arr(s.org && s.org.nodes)) for (const p of arr(nd.posts)) if (p.holder === n) return nd.name + p.title; const v = (s.people || {})[n]; return v ? v.role || '' : ''; };
+  const pl0 = String((s.place || {}).polity || '').replace(/[（(].*$/, '').replace(/^(后|前|南|北|东|西)(?=.)/, '').slice(0, 2), SAME = new Set(), yl = `公元${s.clock.y}年（${s.clock.yearLabel || ''}）${s.place.polity || ''}`, roleOf = n => { for (const nd of arr(s.org && s.org.nodes)) for (const p of arr(nd.posts)) if (p.holder === n) return nd.name + p.title; const v = (s.people || {})[n]; return v ? v.role || '' : ''; };
   if (cand0.length && DSM()) { try { const { text } = await callClaude(`下面这些名字，哪些和中国历史上（任何朝代）有名有姓、史书或方志有传的人物同名？只看名字本身是否同名，不管时代。
 这一局是${yl}；括号里是这个名字在局里的身份。同名的再判一句：史书上那一位，是不是就是这一年、这一家、这个身份的这个人（same: true），还是别朝别地的另一个人（same: false）。
 ${cand0.map(n => n + (roleOf(n) ? '（' + roleOf(n) + '）' : '')).join('、')}
 只输出一个 JSON 对象：{"famous":[{"name":"","who":"是哪朝的什么人","same":false}],"unsure":[""]}`, null, { maxTokens: 2000, temperature: 0, kind: '检索', detached: true, thinking: false });
-      const d = parseJSON(text); if (d) { for (const x of arr(d.famous)) { const n = one(x && x.name, 8); if (!cand0.includes(n)) continue; if (x.same === true || x.same === 'true') { SAME.add(n); continue; } NB[n] = `${n}：${one(x.who, 40)}（DeepSeek）`; } const uns = new Set(arr(d.unsure).map(x => one(x, 8))); for (const n of cand0) if (!(n in NB) && !uns.has(n)) NB[n] = ''; toNet = cand0.filter(n => uns.has(n)); } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
+      const d = parseJSON(text); if (d) { for (const x of arr(d.famous)) { const n = one(x && x.name, 8); if (!cand0.includes(n)) continue; if (x.same === true || x.same === 'true' || (pl0 && String(x.who || '').includes(pl0))) { SAME.add(n); continue; }   /* R-268：说是本朝本国的人，就当同一个人，不改名 */ NB[n] = `${n}：${one(x.who, 40)}（DeepSeek）`; } const uns = new Set(arr(d.unsure).map(x => one(x, 8))); for (const n of cand0) if (!(n in NB) && !uns.has(n)) NB[n] = ''; toNet = cand0.filter(n => uns.has(n)); } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
   if (canSearch()) for (let k = 0; k < toNet.length; k += 24) { const P = toNet.slice(k, k + 24); try { const B = await within(bochaDeep(s, P, 300, { verify: true }), 60000, null); if (!B || B.skipped) continue; for (const n of P) { const h = clashHit(n, arr(B.items).filter(i => i.q === n || String(i.title).includes(n))); NB[n] = h ? `${n}：${cut(h.snippet, 60)}（${h.ds ? 'DeepSeek 检索' : '博查'}）` : ''; } } catch (e) { if (e && e.code === 'cancelled') throw e; } }
   for (const n of SAME) { markRealPerson(s, n); s.clashOK[n] = 1; }
   for (const n of F) {
     if (SAME.has(n)) continue;
-    let why = R.has(n) ? `${n}是史书上的真人（内置史料）` : null;
+    let why = R.has(n) && otherEra(n) ? `${n}是别朝的史书人物（内置史料）` : null;
     let looked = n in NB; if (!why && looked) why = NB[n] || null;
     if (!why) { if (!looked && canSearch()) continue; s.clashOK[n] = 1; continue; }   // 这回没轮到联网查的，下回再查
     const m = arr(s.household).find(x => x.name === n), p = (s.people || {})[n] || {};
@@ -15563,6 +15567,7 @@ function applyFixes(text, fixes) {
     const wrong = String((f && f.wrong) || '').trim(), right = String((f && f.right) || '').replace(/【(幕后|当前情况|戏外)】/g, '').trim();   // 改正的话里夹了内部标记，会把幕后露给玩家
     if (!wrong || !right || wrong === right || wrong.length < 2 || wrong.length > 40) continue;   // 单个字（两→钱）会把全文同字都改坏
     if (fixIsNote(wrong, right)) continue;
+    if (typeof S !== 'undefined' && S && S.protagonist) { const RN = new Set([...realNameSet(S), ...Object.keys(S.people || {}), ...Object.keys(S.dossiers || {}), ...arr(S.household).map(m => m && m.name)]); if ([...RN].some(n => n && n.length >= 2 && wrong.includes(n) && !right.includes(n))) continue; }   /* R-268：审稿把局里已有的人（真人、还没核的都算）的名字改成别的名字，不照改 */
     if (/[（(]或|或[“「]/.test(right) && !/[（(]或|或[“「]/.test(wrong)) continue;   // 改法里留着「（或康都指挥使）」这种两可的话：不是改法
     if (wrong.length <= 2 && text.split(wrong).length > 2) continue;   // 两个字的（「将军」）全文不止一处：一改全改，连「左骁卫上将军」都改坏   // R-257：「国号大闽」→「国号大闽（史实如此，可保留）」——审稿把批注当改法，照替就把批注露进正文
     if (text.includes(wrong)) text = text.split(wrong).join(right);
