@@ -963,7 +963,7 @@ const store = {
     }
     const t = new Date().toTimeString().slice(0, 5);
     const where = MODE === 'local' ? '游戏存档文件夹' : '你的账号';
-    SAVED = remote ? `已存到${where} · ${t}` : local ? `已存在本浏览器 · ${t}${MODE === 'local' || (DB && UID) ? `（${where}这次没存上，下回会再试）` : ''}` : '这回没存上。别关页面，下回会再试。';
+    SAVED = remote ? `已存到${where} · ${t}` : local ? `已存在本浏览器 · ${t}${MODE === 'local' || (DB && UID) ? `（${where}这次没存上，下回会再试）` : ''}` : '这回没存上（浏览器的存储空间可能满了）。别关页面，先到设置页点「导出这一局存档」存一份到电脑。';
     SAVED_BAD = !remote && !local;
     lsSet('hrpg:last', s.id);
     return remote || local;
@@ -1325,7 +1325,7 @@ function partial(text) {
 const TSCALE = (() => { try { return Number(localStorage.getItem('hrpg:tscale')) || 1; } catch (_) { return 1; } })();
 function within(p, ms, dflt = null) {
   let t; const cap = new Promise(r => { t = setTimeout(() => r(dflt), ms * TSCALE); });
-  p.catch(() => { /* 到点以后才出错的不管 */ });
+  const t0 = Date.now(); p.catch(e => { if (e && e.code === 'cancelled') return; if (Date.now() - t0 >= ms * TSCALE) noteErr('超时以后才出错', String((e && e.message) || e).slice(0, 200)); });   /* 到点以后才出的错照记，不再悄悄吞掉（R-272） */
   return Promise.race([p, cap]).finally(() => clearTimeout(t));
 }
 /* ========== 人生纪事（R-245，2026-11-17 玩家转来外部策划的评审：「让玩家知道自己已经走了多远……不要只记录成功」）：
@@ -16233,7 +16233,7 @@ function setBusy(on) { BUSY = on; if (on) THINK_T0 = Date.now(); try { render();
 setInterval(() => { if (BUSY) { const el = $('#secs'); if (el) el.textContent = Math.round((Date.now() - THINK_T0) / 1000);
   // 显示「正忙」却没有在写的这一回（上一步出错没收尾）：二十秒后自己放开，发出键重新能点，不让玩家以为卡死了
   /* 开局一次查齐（prepAll）也是「正忙、没在写这一回」，不能放开：放开了玩家一出手就跟后台的活撞上、那一回丢了 */
-  if (!TURN && !PREP && Date.now() - THINK_T0 > 20000) { BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已自动放开'); ERRMSG = ERRMSG || '上一步没收好尾，已放开，可以接着写'; render(); } } }, 1000);
+  if (!TURN && !PREP && Date.now() - THINK_T0 > 20000) { try { if (CTL && !CTL.signal.aborted) CTL.abort(); } catch (_) { /* 无 */ } BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已自动放开'); ERRMSG = ERRMSG || '上一步没收好尾，已放开，可以接着写'; render(); } } }, 1000);
 
 /* ========== 画像：主角的脸存在存档里（可捏）；身边的人按名字和身份生成一张固定的脸 ========== */
 const faceGender = g => /女/.test(String(g || '')) ? 'female' : 'male';
@@ -16292,13 +16292,13 @@ function openFaceEditor() {
 }
 let PERF = null, CUR_RULING = null, EXTRA_LOOK = '';
 /** 账里的列表只留像样的条目：AI 记账偶尔留下 null、一个字、缺名字的条目，一条坏的就能让整页画不出来、按钮全失灵（2026-10-30 玩家：第二回合说一句就没反应了） */
-function tidyState(s) {
+function tidyState(s, light) {
   if (!s || typeof s !== 'object') return s;
-  try { for (const [k, v] of Object.entries(s.people || {})) if (v && v.role && BIO_ROLE.test(String(v.role))) v.role = cleanRole(s, k, v.role); } catch (_) { /* 人物现任清不了不耽误 */ }
-  try { orgSync(s); } catch (_) { /* 人事树对不齐不耽误 */ }
+  if (!light) try { for (const [k, v] of Object.entries(s.people || {})) if (v && v.role && BIO_ROLE.test(String(v.role))) v.role = cleanRole(s, k, v.role); } catch (_) { /* 人物现任清不了不耽误 */ }
+  if (!light) try { orgSync(s); } catch (_) { /* 人事树对不齐不耽误 */ }
   try { if (s.jail && typeof s.jail === 'object') { const j = s.jail; if (!j.where) j.where = j.place ? j.place + (j.by ? '（' + j.by + '营中）' : '') : '牢中'; if (!j.charge) j.charge = j.by ? '兵败被擒' : '未定'; if (!j.since) j.since = j.ym != null ? '被擒那月' : timeText(s.clock); } } catch (_) { /* 牢里的账补不齐不耽误 */ }   /* 两套押牢字段对齐（R-271） */
   try { const seen = new Set(); s.campaigns = arr(s.campaigns).filter(c => { if (!c || !/待发|行军|围城/.test(c.state || '')) return true; if (seen.has(c.force)) return false; seen.add(c.force); return true; }); } catch (_) { /* 行军单理不了不耽误 */ }   /* 一支兵同时只走一条路（R-269：张敬达同时「行军攻太原」「围城河东太原府」） */
-  try { actTidy(s); } catch (_) { /* 行动单理不了不耽误 */ }
+  if (!light) try { actTidy(s); } catch (_) { /* 行动单理不了不耽误 */ }
   try { for (const [k, d] of Object.entries(s.dossiers || {})) if (d && d.real === false && figByName(k)) { d.real = true; d.chk = '内置史料'; if (/查无此人/.test(d.identity || '')) d.identity = ''; } } catch (_) { /* 旧档案修不了不耽误 */ }   /* 旧存档：名臣包里有的人被判成查无此人的改回真人（R-269） */
   try { if (s.protagonist && Array.isArray(s.household)) s.household = s.household.filter(m => !(m && isSelfKin(s, m.name, m.relation))); } catch (_) { /* 主角还没定 */ }
   // 旧存档：丙等位子（书吏衙役兵丁、八九品杂职）上程序起的虚构名字清掉，只写员额（2026-11-05 玩家：虚构人物太多）
@@ -16332,7 +16332,7 @@ function sideFind(q) { q = String(q || '').trim(); const again = q && q === FIND
 function render() {
   /* 保持同步绘制：按钮点完、月结跑完，调用者紧接着就能读到新页（异步合帧试过，测试与「点完立刻看结果」都不稳）。
      省开销靠两处不改变行为的：大存档只 stringify 一次、后台连做多个活时三秒合存一次（R-189）。 */
-  try { if (S) tidyState(S); render0(); RENDER_ERR = ''; return; } catch (e) { RENDER_ERR = String(e && e.message || e); noteErr('render', RENDER_ERR, { stack: String(e && e.stack || '').slice(0, 600), tab: typeof TAB !== 'undefined' ? TAB : '' }); }
+  try { if (S) tidyState(S, true); render0();   /* 画界面只做轻的整理；人事树对齐、行动单收起这些重的每回合开始、读档时才做（R-272：以前正文一边出字一边跑） */ RENDER_ERR = ''; return; } catch (e) { RENDER_ERR = String(e && e.message || e); noteErr('render', RENDER_ERR, { stack: String(e && e.stack || '').slice(0, 600), tab: typeof TAB !== 'undefined' ? TAB : '' }); }
   try { if (typeof TAB !== 'undefined' && TAB !== 'board') { TAB = 'board'; render0(); return; } } catch (_) { /* 局面页也画不出 */ }
   const app = document.querySelector('#app'); if (app && !document.querySelector('#renderErr')) app.insertAdjacentHTML('afterbegin', `<div id="renderErr" class="err" style="margin:8px 0">页面有一块画不出来（${esc(RENDER_ERR.slice(0, 120))}），已记进问题报告；游戏照常能玩，可以接着写下一步，或在「设置」里导出问题报告。</div>`);
 }
@@ -17200,7 +17200,7 @@ const worker = async () => {
 /** 一回合：先写正文（边写边显示），再交给账房记账核史实。账没记上，正文也留下，可以补记 */
 async function send(said, span, note, resume) {
   if (!S) return;
-  if (BUSY) { if (!TURN && Date.now() - (THINK_T0 || 0) > 20000) { BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已放开'); } else { ERRMSG = '上一步还在写（可以点「停下」再写这一步）'; try { render(); } catch (_) { } setTimeout(() => { if (ERRMSG.startsWith('上一步还在写')) { ERRMSG = ''; try { render(); } catch (_) { } } }, 4000); return; } }   // 以前这里一声不响就返回，玩家以为卡死了
+  if (BUSY) { if (!TURN && Date.now() - (THINK_T0 || 0) > 20000) { try { if (CTL && !CTL.signal.aborted) CTL.abort(); } catch (_) { /* 无 */ } BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已放开'); } else { ERRMSG = '上一步还在写（可以点「停下」再写这一步）'; try { render(); } catch (_) { } setTimeout(() => { if (ERRMSG.startsWith('上一步还在写')) { ERRMSG = ''; try { render(); } catch (_) { } } }, 4000); return; } }   // 以前这里一声不响就返回，玩家以为卡死了
   tidyState(S);
   if (!resume) { try { textMarch(S, said); } catch (_) { /* 认不出军令就照常写 */ } }
   EDITING = false;
