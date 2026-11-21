@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121000555';
+const BUILD = '20261121001235';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -15846,15 +15846,18 @@ function privateBlock(said, ruling) {
   const L = [...new Set(plans.concat(raw))].slice(0, 6); if (!L.length) return '';
   return `\n【主角心里的盘算、私下的打算（不是说出口的话）】\n${L.map(x => '· ' + x).join('\n')}\n这几件写成主角心里怎么想、私下怎么准备（独处时，或只对最亲信的一两个人低声交代）；不当众说出、不嚷给旁人听，旁人不知道就不能拿它告发、责罚、对质。玩家没写他对谁说的，就是没对任何人说。`;
 }
+const STABLE_MEMO = {};
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
   // 回回变的账册、这回查到的资料挪到对话后面（R-266）：前头只留不变的规则和对话，DeepSeek 能缓存前缀
   // 账册拆两份（R-266）：少变的底子（官制、史料、派系、人物品第、定本、改写的历史、通用推演……）放对话前面能进缓存；回回变的放对话后面；几块越攒越长的截短
-  const LED = String(blocks(s, true)).split(/(?=\n【)/), STABLE = /^\s*【(本朝官制|内置史料|朝中派系|人物各项|定本|被改写的历史|通用推演|史线|主角仕途|此时此地的真人|落到主角身上的政令)/, CAP = { 家里: 1800, 时间在走: 1200, '差事': 2200, 前情提要: 2600, 家宅与人情: 1600 };
+  const LED = String(blocks(s, true)).split(/(?=\n【)/), STABLE = /^\s*【(本朝官制|内置史料|朝中派系|人物各项|定本|被改写的历史|通用推演|主角仕途|落到主角身上的政令)/, CAP = { 家里: 1800, 时间在走: 1200, '差事': 2200, 前情提要: 2600, 家宅与人情: 1600 };
   const capP = x => { const m = /^\s*【([^】（]{1,12})/.exec(x), k = m && Object.keys(CAP).find(c => m[1].startsWith(c)); return k && x.length > CAP[k] ? x.slice(0, CAP[k]) + '……' : x; };
-  const ORD = ['通用推演', '本朝官制', '内置史料', '朝中派系', '人物各项', '此时此地的真人', '落到主角身上的政令', '定本', '被改写的历史', '史线', '主角仕途'], keyOf = x => { const m = /^\s*【([^】（]{1,12})/.exec(x); return m ? ORD.findIndex(k => m[1].startsWith(k)) : 99; };
+  const ORD = ['通用推演', '本朝官制', '人物各项', '朝中派系', '主角仕途', '落到主角身上的政令', '内置史料', '被改写的历史', '定本']   /* 越不常变的越靠前：中间哪块变了，只坏它后面的缓存 */, keyOf = x => { const m = /^\s*【([^】（]{1,12})/.exec(x); return m ? ORD.findIndex(k => m[1].startsWith(k)) : 99; };
   const STB = LED.filter(x => STABLE.test(x)).map(x => { const i = x.indexOf('本月之内'); return i > 0 ? [x.slice(0, i), x.slice(i)] : [x, '']; });   // 内置史料里「本月之内（此刻是本月几日）」一段天天变，挪到后面
-  const stableTxt = STB.slice().sort((a, b) => keyOf(a[0]) - keyOf(b[0])).map(x => x[0]).join(''), liveTxt = STB.map(x => x[1]).filter(Boolean).join('\n') + LED.filter(x => !STABLE.test(x)).map(capP).join('');   // 少变的几块照固定次序，不随条件跳来跳去
+  // 这一回没带上的少变块，照上回的接着带（R-266：块是看这一回相不相干挑的，忽有忽无，前缀又对不上）
+  const MEMO = (STABLE_MEMO[s.id] = STABLE_MEMO[s.id] || {}); for (const [x] of STB) { const k = keyOf(x); if (k < 99) MEMO[k] = x; }
+  const stableTxt = Object.keys(MEMO).map(Number).sort((a, b) => a - b).map(k => MEMO[k]).join(''), liveTxt = STB.map(x => x[1]).filter(Boolean).join('\n') + LED.filter(x => !STABLE.test(x)).map(capP).join('');   // 少变的几块照固定次序，不随条件跳来跳去
   const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + '【这一局少变的底子】' + stableTxt + '\n\n（回回变的账册、这回查到的资料在对话后面）'), ledgerNow = liveTxt + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : '');
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、身边人自己的事（真有才写）、结识的人、家里的变化、季节年景、传来的天下大事），其余一两句带过。` : '';
   const what = deadRealBlock(s) + aimBlock(s) + (String(said || '').trim() ? `【玩家这回说】\n${said}${privateBlock(said, ruling)}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。');
