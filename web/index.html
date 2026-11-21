@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261121165210';
+const BUILD = '20261121165354';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4302,11 +4302,25 @@ function orgSync(s) {
   const posts = []; for (const n of N) for (const q of arr(n && n.posts)) if (q && q.title) posts.push(q);
   for (const q of posts) { const h = q.holder && P[q.holder]; if (h && h.dead) { out.push(`${q.title}：${q.holder}已故，空出`); q.holder = ''; q.src = ''; } }
   const byCore = new Map(); for (const q of posts) { const c = postCore(q.title); if (c.length >= 2) { if (!byCore.has(c)) byCore.set(c, []); byCore.get(c).push(q); } }
-  for (const [name, v] of Object.entries(P)) { if (!v || v.dead || name === me || !v.role) continue; const L = byCore.get(postCore(v.role)); if (!L || L.length !== 1) continue; const q = L[0];
+  for (const [name, v] of Object.entries(P)) { if (!v || v.dead || name === me || !v.role) continue; for (const part of String(v.role).split(/兼|，|,/)) { const L = byCore.get(postCore(part)); if (!L || L.length !== 1) continue; const q = L[0];
     if (q.holder === name || arr(q.others).includes(name)) continue;
     const cur = q.holder && P[q.holder], curStill = cur && !cur.dead && postCore(cur.role) === postCore(q.title);
     if (!q.holder || !curStill) { if (q.holder) out.push(`${q.title}：${q.holder}→${name}`); else out.push(`${q.title}：补上${name}`); q.holder = name; q.src = q.src && q.src !== '拟' ? q.src : '账'; }
-    else if (!arr(q.others).includes(name)) { q.others = arr(q.others).concat([name]); out.push(`${q.title}：添${name}`); } }
+    else if (!arr(q.others).includes(name)) { q.others = arr(q.others).concat([name]); out.push(`${q.title}：添${name}`); } } }
+  return out;
+}
+/** 任免照诏书落账（R-269 真玩：玩家「照拟下诏任命」，正文诏书写了「崔棁可守右散骑常侍，韩昭裔可守枢密承旨……」，账上一个没记）：
+ *  玩家这一步是任免的，正文里「某可守／可／除／授／拜／为／兼／判 某官」，人是账上在世的、官名像官名的，记成他的现任，人事树随后对齐 */
+const APPT_SAID = /任命|任用|除授|授官|拜官|下诏.{0,6}(任|除|授|拜|补)|补齐|补缺|补上|擢|迁转|升任|调任|罢免|免去|照拟/;
+const APPT_OFF = /(部|使|郎|侍郎|舍人|大夫|学士|尚书|丞|令|尹|卿|监|将军|指挥使|常侍|侍中|御史|拾遗|补阙|给事中|承旨|判官|推官|参军|刺史|节度使|留守|统军|都督|总管|招讨使|平章事|宰相)$/;
+function textAppoint(s, said, text) {
+  if (!s || !APPT_SAID.test(String(said || ''))) return []; const P = s.people || {}, out = [], me = (s.protagonist || {}).name;
+  const T0 = String(text || '').replace(/([一-鿿]{2,3}?)以([一-鿿]{2,10}?)兼(?:判)?([一-鿿]{2,12}?)(?=[，,；;。」]|$)/g, '$1为$2兼$3');
+  const re = /([一-鿿]{2,3}?)(可守|可充|可兼|可判|可|除|授|拜|为|兼|判|充|守)([一-鿿、]{2,16}?)(?=[，,；;。、」]|$)/g; let m; text = T0;
+  while ((m = re.exec(String(text || '')))) { const who = m[1], verb = m[2], post0 = m[3].replace(/^(本官|本职)/, ''), post = /兼|判/.test(verb) && P[who] && P[who].role && !String(P[who].role).includes(post0) ? postCore(P[who].role) + '兼' + post0 : post0;
+    if (!P[who] || P[who].dead || who === me || !APPT_OFF.test(post0) || post0.length < 2 || /^(何|什么|谁)/.test(post)) continue;
+    const pre = String(text).slice(Math.max(0, m.index - 12), m.index); if (/举荐|荐|请以|拟|可否|若|如|不如|何不/.test(pre + String(text).slice(m.index + m[0].length, m.index + m[0].length + 6)) || /^(何|什么|谁)/.test(post0)) continue;   /* 举荐、拟议的不算，诏书里的才算 */
+    const was = P[who].role; if (was === post) continue; P[who].role = post; P[who].roleLog = arr(P[who].roleLog).concat([{ when: timeText(s.clock), from: was, to: post, why: '诏书任命' }]).slice(-8); out.push(`${who}：${was || '？'}→${post}`); }
   return out;
 }
 function findPost(s, name) { for (const n of arr(s.org && s.org.nodes)) for (const p of arr(n.posts)) if (p.holder === name) return p; return null; }
@@ -18399,7 +18413,7 @@ async function send(said, span, note, resume) {
       // 账里哪一项格式怪到程序出错：正文照样留下，这一回标成「账没记上」，可以补记，不让整回作废
       const snap = clone(S);
       if (PERF) { const t = Date.now(); if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); S.perf = arr(S.perf).concat([{ turn: (S.turn || 0) + 1, secs: Math.round((t - PERF.t0) / 1000), ph: Object.fromEntries(Object.entries(PERF.ph).map(([k, v]) => [k, Math.round(v / 1000)])), rw: (st.rewrote ? 1 : 0) + (early ? 1 : 0) }]).slice(-20); PERF = null; }
-      try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said); if (S.money && N0(S.money.cash) < 0) { const owe = -N0(S.money.cash); S.money.cash = 0; try { const H = hhOf(S), ym = Math.floor(ymOf(S.clock)); H.debt = arr(H.debt).concat([{ from: '挪借', amt: owe, rate: 0.02, ym, due: ym + 12 }]); } catch (_) { /* 无 */ } noteErr('现钱成负', '这一回记账后现钱成了 -' + owe + '，记成欠账'); }   // 现钱不成负数：不够的记欠账（R-266）
+      try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said); try { const ap = textAppoint(S, said, fx.text); if (ap.length) { noteErr('照诏书落账', ap.join(' / ')); orgSync(S); } } catch (_) { /* 认不出诏书就照记账 */ } if (S.money && N0(S.money.cash) < 0) { const owe = -N0(S.money.cash); S.money.cash = 0; try { const H = hhOf(S), ym = Math.floor(ymOf(S.clock)); H.debt = arr(H.debt).concat([{ from: '挪借', amt: owe, rate: 0.02, ym, due: ym + 12 }]); } catch (_) { /* 无 */ } noteErr('现钱成负', '这一回记账后现钱成了 -' + owe + '，记成欠账'); }   // 现钱不成负数：不够的记欠账（R-266）
         // 常理审查挑出的账上毛病：记完账当场改；程序还能挑出硬伤的，再审一次当场改（不留到下一回）
         if (LOGIC_FIX.length) { applyLogicFixes(S, LOGIC_FIX); LOGIC_FIX = []; }
         if (logicFaults(S).length) { PHASE = 'ledger'; render(); try { await within(logicAudit(S), 30000 * TSCALE); } catch (e2) { if (e2 && e2.code === 'cancelled') throw e2; } }
