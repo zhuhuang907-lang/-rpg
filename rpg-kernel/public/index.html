@@ -1717,7 +1717,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261120235355';
+const BUILD = '20261121000017';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -14703,7 +14703,7 @@ function blocks(s, forStory) {
   if (forStory && farLine(FAR)) L.push(farLine(FAR));
   if (s.arcGoal) L.push('【大势主线里这样的人可奔的长远目标（只作参考：玩家没往这边走，长远目标就照玩家自己做的事定，不往主线上拽）】' + s.arcGoal);
   if (arr(s.goals).length) L.push('【主角眼下的目标（上一回定的；没做成也没落空就在 goals 里原样照抄、status 写「在做」，不要换说法）】' + s.goals.map(g => `${g.term}：${g.text}`).join('；'));
-  const od = arr(s.orders).filter(o => /在办|待办|推迟/.test(o.status));
+  const od = arr(s.orders).filter(o => /在办|待办|推迟/.test(o.status) && (s.turn || 0) - (num(o.turn) || 0) <= 15).slice(-8);   // 十五回前交代、一直没下文的不再回回抄（R-266：第 38 回的差事到第 58 回还在材料里）
   if (od.length) L.push('【差事：交代下去还没办完的（到时必须写结果）】\n' + od.map(o => `· 第${o.turn}回合交代 ${o.who}：${o.what}（${o.status}${o.result ? '，' + o.result : ''}）`).join('\n'));
   const w = s.world || {};
   const gb = gazBlock(s); if (gb) L.push(gb);
@@ -15849,7 +15849,11 @@ function privateBlock(said, ruling) {
 function storyInput(s, said, span, note, sys, ruling, fix) {
   const fresh = arr(s.research).filter(x => x.turn === s.turn).slice(-10);
   // 回回变的账册、这回查到的资料挪到对话后面（R-266）：前头只留不变的规则和对话，DeepSeek 能缓存前缀
-  const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + '（这一局的账册、这回查到的资料在对话后面）'), ledgerNow = blocks(s, true) + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : '');
+  // 账册拆两份（R-266）：少变的底子（官制、史料、派系、人物品第、定本、改写的历史、通用推演……）放对话前面能进缓存；回回变的放对话后面；几块越攒越长的截短
+  const LED = String(blocks(s, true)).split(/(?=\n【)/), STABLE = /^\s*【(本朝官制|内置史料|朝中派系|人物各项|定本|被改写的历史|通用推演|史线|主角仕途|此时此地的真人|落到主角身上的政令)/, CAP = { 家里: 1800, 时间在走: 1200, '差事': 2200, 前情提要: 2600, 家宅与人情: 1600 };
+  const capP = x => { const m = /^\s*【([^】（]{1,12})/.exec(x), k = m && Object.keys(CAP).find(c => m[1].startsWith(c)); return k && x.length > CAP[k] ? x.slice(0, CAP[k]) + '……' : x; };
+  const stableTxt = LED.filter(x => STABLE.test(x)).join(''), liveTxt = LED.filter(x => !STABLE.test(x)).map(capP).join('');
+  const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + '【这一局少变的底子】' + stableTxt + '\n\n（回回变的账册、这回查到的资料在对话后面）'), ledgerNow = liveTxt + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : '');
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、身边人自己的事（真有才写）、结识的人、家里的变化、季节年景、传来的天下大事），其余一两句带过。` : '';
   const what = deadRealBlock(s) + aimBlock(s) + (String(said || '').trim() ? `【玩家这回说】\n${said}${privateBlock(said, ruling)}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。');
   // 制度程序只在玩家这一步本身是公事时才给写正文的人（不然它就满篇衙门文书、摊派差役）
