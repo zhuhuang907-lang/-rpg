@@ -1690,7 +1690,7 @@ function ledgerLiteOk(s, said, story, ruling) {
   if (!s || !s.protagonist || (s.turn || 0) < 2) return false;
   if ((s.turn || 0) - (s.ledgerFullAt || 0) >= 5) return false;   // 隔几回总要全套核一遍，免得漏记的慢慢攒下
   if (ruling && ruling.battleResult) return false;
-  if (!ruling && arr(s.actsNow).some(a => a && /令|试/.test(a.type || ''))) return false;   /* 推演这回没成、又开了新令：走全套记账报单子的进展，不然这张令没人报、一直吊着（完整测试时好时坏查出） */
+  if (!ruling && typeof RULING_FAIL !== 'undefined' && RULING_FAIL && arr(s.actsNow).some(a => a && /令|试/.test(a.type || ''))) return false;   /* 推演这回没成、又开了新令：走全套记账报单子的进展，不然这张令没人报、一直吊着（完整测试时好时坏查出） */
   const x = String(said || ''), y = String(story || '');
   if (x.length > 150 || LEDGER_SAID_BIG.test(x) || LEDGER_BIG_RE.test(x + y)) return false;
   if (s.jail || arr(s.campaigns).some(c => /待发|行军|交战/.test(c.state || ''))) return false;
@@ -1729,7 +1729,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261122032939';
+const BUILD = '20261122043410';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2347,7 +2347,7 @@ function migrate(s) {
 }
 
 /* ========== 调 Claude ========== */
-let CTL = null, TURN = null, BUSY = false, LAST_ACTION = null;
+let CTL = null, TURN = null, BUSY = false, LAST_ACTION = null, RULING_FAIL = false;
 const ERR = {
   not_granted: '你还没允许这个页面使用 Claude。刷新页面后再发一次，在弹出的确认框里点「允许」。',
   sampling_disabled: '这个账号暂时用不了 Claude。',
@@ -18422,6 +18422,7 @@ async function send(said, span, note, resume) {
   if (BUSY) { if (!TURN && Date.now() - (THINK_T0 || 0) > 20000) { try { if (CTL && !CTL.signal.aborted) CTL.abort(); } catch (_) { /* 无 */ } BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已放开'); } else { ERRMSG = '上一步还在写（可以点「停下」再写这一步）'; try { render(); } catch (_) { } setTimeout(() => { if (ERRMSG.startsWith('上一步还在写')) { ERRMSG = ''; try { render(); } catch (_) { } } }, 4000); return; } }   // 以前这里一声不响就返回，玩家以为卡死了
   tidyState(S);
   if (!resume) { try { textMarch(S, said); } catch (_) { /* 认不出军令就照常写 */ } }
+  RULING_FAIL = false;
   EDITING = false;
   // 后台的活照做，不挡玩家；记账前只等和记账写同一处的那几件（最多十五秒）
   if (S && S.id && !resume) { try { SDB.put('prev:' + S.id, saveJSON(S)); } catch (_) { /* 记不下悔不了 */ } }   // 悔一步：每回动笔前存一份（R-266）
@@ -18454,7 +18455,7 @@ async function send(said, span, note, resume) {
         // 玩家提了方略：单独推演一回（能不能办、谁赞成反对、花多少、几个月、影响），写戏照它写
         stratWant(said) ? within(planAnalyze(S, said).then(P => { S.planNow = P; }).catch(e => { if (e && e.code === 'cancelled') throw e; S.planNow = null; }), 150000) : Promise.resolve((S.planNow = null)),
       ]);
-      looked = lk; ruling = rl;
+      looked = lk; ruling = rl; RULING_FAIL = !rl && wantPlan;   /* 推演这回真跑了、没成 */
       S.actsNow = arr(ruling && ruling.acts).map(a => ({ ...a })); CUR_RULING = ruling;
       if (ruling && ruling.battle && !ruling.battleResult) { ruling.battleResult = resolveBattle(S, { ...ruling.battle, fromRuling: true }); if (ruling.battleResult) feedAdd([{ t: `战事结算：${ruling.battleResult.outcome}（胜算约 ${ruling.battleResult.odds}%）`, site: '程序' }]); }
       if (ruling && SETTINGS.ruling === false) ruling = { steps: [], risks: [], alt: '', search: ruling.search, scene: ruling.scene, brief: ruling.brief, places: ruling.places, realPeople: ruling.realPeople };

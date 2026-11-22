@@ -25,7 +25,7 @@ const path = require('path');
   await p.evaluate(() => { S.fisc = null; TAB = 'power'; render0(); const x = document.querySelector('[data-dip="修好"]'); if (x) x.click(); });
   if (!/这就去推|正在推|推好了/.test(await p.evaluate(() => ORGMSG))) bad.push('底账没推好时点「修好」没去推：' + await p.evaluate(() => ORGMSG));
   // 三、没填内容就点：说清楚缺什么，不一声不吭
-  await p.evaluate(() => { TAB = 'army'; ORGMSG = ''; render0(); }); const ut = await p.$('#bUtAdd'); if (ut) { await ut.click(); await p.waitForTimeout(200); if (!/先写/.test(await p.evaluate(() => ORGMSG))) bad.push('「定这个兵种」没填名字也一声不吭'); }
-  await p.evaluate(() => { TAB = 'trade'; ORGMSG = ''; render0(); }); const sh = await p.$('#bShop'); if (sh) { await sh.click(); await p.waitForTimeout(200); if (!/先写/.test(await p.evaluate(() => ORGMSG))) bad.push('「开张」没填内容也一声不吭'); }
+  await p.evaluate(() => { TAB = 'army'; ORGMSG = ''; render0(); }); const ut = await p.$('#bUtAdd'); if (ut) { await p.click('#bUtAdd'); await p.waitForTimeout(200); if (!/先写/.test(await p.evaluate(() => ORGMSG))) bad.push('「定这个兵种」没填名字也一声不吭'); }
+  await p.evaluate(() => { TAB = 'trade'; ORGMSG = ''; render0(); }); const sh = await p.$('#bShop'); if (sh) { await p.click('#bShop'); await p.waitForTimeout(200); if (!/先写/.test(await p.evaluate(() => ORGMSG))) bad.push('「开张」没填内容也一声不吭'); }
   const all = bad.concat(errs); console.log('ERRS', JSON.stringify(all)); await b.close(); process.exit(all.length ? 1 : 0);
 })().catch(e => { console.log('ERRS', JSON.stringify(['崩了：' + e.message])); process.exit(1); });
