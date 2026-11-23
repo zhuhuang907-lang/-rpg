@@ -33,6 +33,7 @@ function ledger0(p) {
   if (/【玩家这回说】[^\n]*过日子/.test(p)) return JSON.stringify({ elapsedDays: 95, turnSummary: '过日子' });
   if (/【玩家这回说】[^\n]*募/.test(p)) return JSON.stringify({ elapsedDays: 10, ledger: [{ item: '募勇安家银', amount: -600 }], forces: [{ name: '乡勇', leader: '汪景和', troops: 400, grain: 2000, quality: '新', at: '江都县', status: '统带' }], prices: [{ item: '米', price: 900, per: '石' }], turnSummary: '募勇' });
 
+  if (p.includes('【玩家这回说】') && /闽王|王延钧|长乐府|长兴元年/.test(p) && !/扬州|盐运使|盐商/.test(p)) return minLedger930(p);
   const TCH = p.includes('【玩家这回说】') ? { touches: [{ event: '乾隆帝第二次南巡', lever: '盐商报效', how: '联络总商拒绝报效', weight: '重' }] } : {};
   const IDC = p.includes('【玩家这回说】去运司衙门找人') ? { identity: { role: '两淮盐运司幕僚', identityModule: 'official', why: '受卢见曾延聘入幕', meters: [{ 项: '官声', 值: '初入幕府' }, { 项: '幕中人脉', 值: '3 人' }] } } : {};
   const d = { ...TCH, ...IDC, elapsedDays: R([0, 1, 3, 10, 30, 90, 365]), yearLabel: '', ledger: [{ item: '杂费', amount: -R([5, 20, 300]) }],
@@ -56,12 +57,109 @@ function ledger0(p) {
   else if (f < 0.12) s = s.replace('"杂费"', '"他说"好"的杂费"');        // 未转义的引号
   return s;
 }
-function opening() {
+/* 930 闽王这一局：假 AI 也得照这个年代回（2026-11-24 项目主人：拿乾隆盐商的假回复去测五代闽国，满嘴卢见曾、68岁，纯属瞎说）。
+   只在提示里认出「闽/王延钧/930/长兴」时走这一支；别的局照旧用盐商那一套。 */
+function minOpening930() {
+  return JSON.stringify({
+    setup: { name: '王延钧', gender: '男', age: 40, role: '闽王', identityModule: 'emperor', yearLabel: '长兴元年', gregorianYear: 930, month: 6, day: 1, place: '福州', polity: '闽', unit: '贯', cash: 20000,
+      household: [{ relation: '妻', name: '刘氏', age: 36 }, { relation: '子', name: '王继鹏', age: 15 }] },
+    world: { overview: '后唐长兴元年。中原以后唐最强；闽据福、建、泉、漳、汀五州，北邻吴越，西接吴与南汉。', events: [], upcoming: [] },
+    meters: [{ 项: '国库', 值: '十二万贯' }, { 项: '民心', 值: '尚可' }, { 项: '威望', 值: '初立' }, { 项: '军心', 值: '中' }],
+    groups: [{ 人群: '闽中士民', 值: 55 }, { 人群: '泉州海商', 值: 60 }, { 人群: '建州山民', 值: 45 }],
+    estate: { assets: [{ name: '闽王宫', qty: 1, value: 20000 }], income: [{ item: '五州赋税', amount: 7500 }], expense: [{ item: '军饷', amount: 6000 }], projects: [] },
+    prices: [{ item: '米', price: 400, per: '石' }, { item: '绢', price: 800, per: '匹' }, { item: '盐', price: 200, per: '斗' }],
+    presentNpcs: [{ name: '王继鹏', role: '子' }, { name: '陈金凤', role: '妾' }, { name: '王延羲', role: '弟' }],
+    places: [{ name: '福州', now: '闽王宫', belong: '闽', from: '治所' }, { name: '建州', now: '建州城', belong: '闽', from: '北三百里' }, { name: '泉州', now: '泉州港', belong: '闽', from: '南四百里' }],
+    powers: [{ name: '后唐', leader: '李嗣源', troops: '二十万' }, { name: '吴', leader: '杨溥', troops: '八万' }, { name: '吴越', leader: '钱镠', troops: '五万' }, { name: '楚', leader: '马殷', troops: '五万' }, { name: '南汉', leader: '刘岩', troops: '四万' }, { name: '荆南', leader: '高从诲', troops: '一万' }],
+    territory: [{ place: '福州', pop: 80000, troops: 6000, grain: 60000, loyalty: 60 }, { place: '建州', pop: 50000, troops: 5000, grain: 40000, loyalty: 55 }, { place: '泉州', pop: 70000, troops: 5000, grain: 40000, loyalty: 60 }, { place: '漳州', pop: 30000, troops: 3000, grain: 20000, loyalty: 55 }, { place: '汀州', pop: 20000, troops: 2000, grain: 15000, loyalty: 50 }],
+    forces: [{ name: '威武军', leader: '王延钧', troops: 12000, grain: 8000, quality: '中', at: '福州', status: '驻守' }, { name: '泉州镇军', leader: '王延美', troops: 4000, grain: 3000, quality: '中', at: '泉州', status: '驻守' }],
+    realm: { treasury: 120000, granary: 300000, army: 30000, revenue: 90000, outlay: 80000, capital: '福州' },
+    career: { office: '闽王', titles: ['威武军节度使'], powers: '军政民政', superior: '后唐（名义上）', nextSteps: [] },
+    hints: ['先安五州：福州、建州、泉州是根本', '泉州海商供了财赋大半', '北边吴越、西边吴与南汉，都盯着闽'],
+    goals: [{ term: '长远', text: '保闽五州，伺机向北取信、婺', why: '闽地偏狭，守得住才谈得上图远', status: '新' }],
+    turnSummary: '开场'
+  });
+}
+function minLedger930(p) {
+  const last = String((p.match(/【玩家这回说】([^\n]*)/) || [])[1] || '');
+  const d = {
+    elapsedDays: /月/.test(last) ? 30 : /年/.test(last) ? 365 : 2,
+    yearLabel: /年/.test(last) ? '长兴二年' : '长兴元年',
+    turnSummary: last ? last.slice(0, 20) + '，照办了' : '过了两日',
+    meters: [{ 项: '民心', 值: '尚可', 变: '平', 因: '境内无事' }, { 项: '威望', 值: '渐起', 变: '↑', 因: '处置得宜' }],
+    groups: [{ 人群: '闽中士民', 值: 56 }, { 人群: '泉州海商', 值: 61 }],
+    presentNpcs: [{ name: '王继鹏', role: '子', favor: 20, personality: '好文', goal: '继位', plan: '结好军中', knows: '父王近来多病' }],
+    places: [{ name: '福州', now: '闽王宫', belong: '闽' }],
+    powers: [], worldEvents: [], forces: [], household: [], orders: [], deeds: [], canon: [], localFigures: [], almanac: [], fixes: [], gmNotes: [], hints: [], goals: []
+  };
+  if (/募兵|征兵|扩军/.test(last)) d.armyResults = [{ force: '威武军', act: '募编', ok: true, n: 2, tpl: '牙兵', why: '闽中丁壮应募' }];
+  if (/修仓|积粮|粮/.test(last)) d.ledger = [{ item: '修仓积粮', amount: -800 }];
+  if (/遣使|修好|结盟|联姻/.test(last)) d.turnSummary = '遣使往来，邻国回书';
+  return JSON.stringify(d);
+}
+function opening(p) {
+  if (/930|闽王|王延钧|长乐府|长兴元年/.test(String(p || ''))) return minOpening930();
   return JSON.stringify({ setup: { name: '汪景和', gender: '男', age: 41, role: '扬州两淮盐商', identityModule: 'commoner', yearLabel: '乾隆二十二年', gregorianYear: Number(process.env.YEAR || 1757), month: 3, day: 6, place: '扬州府江都县', polity: '清', unit: '两', cash: 80000, household: [{ relation: '子', name: '汪承裕', age: 16 }] },
     world: { overview: '乾隆中期。', events: [], upcoming: [] }, meters: [{ 项: '家资', 值: '80000两' }], groups: [{ 人群: '盐商', 值: 50 }],
     estate: { assets: [{ name: '窝单', qty: '三千引', value: 30000 }], income: [{ item: '盐利', amount: 3000 }], expense: [{ item: '家用', amount: 300 }], projects: [] }, hints: ['去仪征'], goals: [{ term: '眼下', text: '查清仪征那二百引盐的去向', why: '不查清，年底运司对账要赔', status: '新' }, { term: '今年', text: '保住三千引窝单', why: '窝单是汪家的根本', status: '新' }, { term: '长远', text: '让承裕考中举人', why: '盐商之家要出个读书人才算站稳', status: '新' }], turnSummary: '开场' });
 }
+function minStory930(p) {
+  const said = String((p.match(/【玩家这回说】([^\n]*)/) || [])[1] || '');
+  const t = said ? `你吩咐下去：「${said.slice(0, 40)}」。` : '你照常过了一日。';
+  const dip = /遣使|修好|结盟|联姻|称臣/.test(said) ? '\n使者带了土物，取道温、台往杭州去；吴越那边钱镠年事已高，儿子们正暗中较劲。' : '';
+  return `长兴元年六月，福州。闽江口的海风穿过王宫的廊庑，案上摊着五州的丁口与粮饷。\n${t}${dip}\n福州八万口、建州五万、泉州七万，泉州的船税是今年最大的一笔进项；北边的吴越、西边的吴与南汉，都有人在边境上探头。你把要办的事一件件吩咐下去，宫中安静下来。`;
+}
+function answer930(p, last) {
+  if (p.includes('【开局】') && /账房兼史官|账房（短记账单）/.test(p)) return minOpening930();
+  if (p.includes('【开局】')) return minStory930(p);
+  if (/账房兼史官|账房（短记账单）/.test(p)) return minLedger930(p);
+  if (p.includes('照规则写正文')) return minStory930(p);
+  if (p.includes('的国势账')) return JSON.stringify({ unit: '贯', realm: { treasury: 120000, granary: 300000, army: 30000, revenue: 90000, outlay: 80000, note: '五州赋税，泉州海舶为大宗' },
+    territory: [{ place: '福州', pop: 80000, troops: 6000, grain: 60000, loyalty: 60, note: '王都' }, { place: '建州', pop: 50000, troops: 5000, grain: 40000, loyalty: 55 }, { place: '泉州', pop: 70000, troops: 5000, grain: 40000, loyalty: 60 }, { place: '漳州', pop: 30000, troops: 3000, grain: 20000, loyalty: 55 }, { place: '汀州', pop: 20000, troops: 2000, grain: 15000, loyalty: 50 }],
+    forces: [{ name: '威武军', leader: '王延钧', troops: 12000, grain: 8000, quality: '中', at: '福州', status: '驻守' }, { name: '泉州镇军', leader: '王延美', troops: 4000, grain: 3000, quality: '中', at: '泉州', status: '驻守' }], privy: { cash: 20000, note: '内帑' }, standing: '闽地偏狭，海舶之利为命脉' });
+  if (p.includes('天下各家的兵力')) return JSON.stringify({ realms: [
+    { name: '后唐', leader: '李嗣源', seat: '河南府', troops: 200000, why: '《旧五代史·唐明宗纪》', stance: '宗主（名义）', note: '中原最强，方与两川相持' },
+    { name: '吴', leader: '杨溥', seat: '江都府', troops: 80000, why: '《新五代史·吴世家》', stance: '邻境，时通使', note: '徐温秉政，吴主守成' },
+    { name: '吴越', leader: '钱镠', seat: '杭州', troops: 60000, why: '《十国春秋·吴越》', stance: '通使，曾结姻', note: '钱镠年老，诸子争立' },
+    { name: '楚', leader: '马殷', seat: '潭州', troops: 50000, why: '《十国春秋·楚》', stance: '通使', note: '据湖南，兼有桂管' },
+    { name: '南汉', leader: '刘岩', seat: '广州', troops: 50000, why: '《十国春秋·南汉》', stance: '邻境，时相侵', note: '新得交州' },
+    { name: '荆南', leader: '高从诲', seat: '江陵府', troops: 15000, why: '《十国春秋·荆南》', stance: '弱小，通使', note: '三州之地，事大以求存' },
+    { name: '定难军', leader: '李仁福', seat: '夏州', troops: 20000, why: '《宋史·夏国传》', stance: '不相关', note: '据夏绥银宥' },
+    { name: '静海军', leader: '曲承美', seat: '交州', troops: 10000, why: '《资治通鉴》卷277', stance: '不相关', note: '交州土豪，南汉正图之' }] });
+  if (p.includes('定出此时此地各衙门在任的人')) return JSON.stringify({ officials: [
+    { post: '威武军节度使', place: '福州', name: '王延钧', since: '926', until: '935', src: '《新五代史·闽世家》' },
+    { post: '建州刺史', place: '建州', name: '王延政', since: '930', until: '943', src: '《十国春秋·闽》' },
+    { post: '泉州刺史', place: '泉州', name: '王延美', since: '930', until: '935', src: '《十国春秋·闽》' },
+    { post: '漳州刺史', place: '漳州', name: '王继鹏', since: '930', until: '935', src: '推：宗室领州' }] });
+  if (p.includes('列出这一年在他身边、和他有往来的人')) return JSON.stringify({ people: [
+    { name: '王继鹏', tie: '子', role: '琅琊王', where: '福州', source: '《十国春秋·闽》' },
+    { name: '陈金凤', tie: '妾', role: '淑妃', where: '福州', source: '《十国春秋·闽》' },
+    { name: '王延羲', tie: '弟', role: '建王', where: '福州', source: '《十国春秋·闽》' },
+    { name: '王延政', tie: '弟', role: '建州刺史', where: '建州', source: '《十国春秋·闽》' }] });
+  if (p.includes('开「天下名录」')) return JSON.stringify({ realms: [
+    { realm: '闽', people: [{ name: '王延钧', post: '闽王', since: 926, source: '《新五代史·闽世家》' }, { name: '王继鹏', post: '琅琊王', since: 930, source: '《十国春秋·闽》' }, { name: '王延政', post: '建州刺史', since: 930, source: '《十国春秋·闽》' }] },
+    { realm: '吴', people: [{ name: '徐温', post: '大丞相', since: 909, source: '《新五代史·吴世家》' }, { name: '严可求', post: '右仆射', since: 920, source: '《十国春秋·严可求传》' }] }] });
+  if (p.includes('国策书：照这个政权')) return JSON.stringify({ policies: [
+    { id: 'p1', area: '经济', name: '通海舶', desc: '招徕泉州海商，抽解舶税', cost: 3, need: [], real: '闽国以海舶之利立国', effect: '国库增收，海商得利' },
+    { id: 'p2', area: '军事', name: '整牙兵', desc: '选泉州、建州丁壮补牙兵', cost: 4, need: [], real: '五代藩镇皆以牙兵为腹心', effect: '兵额增，军饷亦增' },
+    { id: 'p3', area: '内政', name: '劝农桑', desc: '福州、建州兴修陂塘', cost: 3, need: [], real: '闽中多山，陂塘为命', effect: '民心涨，田赋增' }] });
+  if (p.includes('整理主角这一路仕途')) return JSON.stringify({ office: '闽王', rank: '', superior: '后唐（名义）', review: '朝贡不失', tenure: '世袭', next: [], limits: ['闽地五州，难以中原争衡'], appoint: '父死子继', entry: [], basis: '《新五代史·闽世家》' });
+  if (p.includes('核实几位官员')) return JSON.stringify({ people: [] });
+  if (p.includes('只管查资料')) return JSON.stringify({ results: [] });
+  if (p.includes('整理出确实写在资料里')) return JSON.stringify({ almanac: [{ cat: '物价', text: '闽中米一石约四百文', src: '推' }, { cat: '风俗', text: '泉州海舶岁至，抽解为赋', src: '推' }] });
+  if (p.includes('压成一段四百字以内')) return '王延钧据闽五州，北事吴越，西邻吴与南汉，泉州海舶之利为赋税大宗。';
+  if (p.includes('常理审查')) return JSON.stringify({ fixes: [] });
+  if (p.includes('这样的人在这个年代不可能没有')) return JSON.stringify({ add: [], single: true });
+  if (p.includes('敌国之主') || p.includes('大臣和将领')) return JSON.stringify({ orders: [], memorials: [], generals: [] });
+  if (p.includes('推年岁') || p.includes('年岁')) return JSON.stringify({ people: [] });
+  if (p.includes('兵种')) return JSON.stringify({ units: [
+    { name: '牙兵', desc: '藩镇亲军，披甲持槊', size: 500, atk: 6, def: 6, shock: 6, mob: 4 },
+    { name: '弩手', desc: '闽中多山，弩手守隘', size: 400, atk: 5, def: 5, shock: 4, mob: 5 },
+    { name: '水军', desc: '泉州海舶，习水战', size: 300, atk: 4, def: 4, shock: 3, mob: 7 }] });
+  return '{}';
+}
 function answer(p, last, json) {
+  if (/闽王|王延钧|长乐府|长兴元年|长兴二年|930年/.test(p)) return answer930(p, last);
   // 敌国之主、手下大臣由 DeepSeek 扮演（R-145）：敌国照战局进攻主角离他最近的城，大臣请犒军，将领固守
   if (p.includes('你扮演跟主角交战的各家之主')) { const pw = (p.match(/· ([^：\n]+)：主事的/) || [])[1] || '', city = ((p.match(/主角的城池：([^、\n]+)/) || [])[1] || '').replace(/等$/, ''); return JSON.stringify({ orders: pw ? [{ power: pw, act: city ? '进攻' : '按兵', target: city, share: 0.3, term: '', general: '', why: '趁其不备' }] : [] }); }
   if (p.includes('照这个官这个月真会落到他头上的公事')) return JSON.stringify({ duties: [{ kind: '断案', title: '审一桩争田的案子', who: '王秀才', why: '积了半年' }], bribe: { who: '', ask: '', kind: '' } });   // 臣子线（R-149）
@@ -93,6 +191,10 @@ function answer(p, last, json) {
   if (p.includes('还没给玩家看') && p.includes('逐条判断')) return JSON.stringify({ fixes: [{ wrong: '运司那边', right: '运使衙门那边', why: '查证' }] });
   if (p.includes('还没给玩家看')) return chance(0.1) ? 'oops' : JSON.stringify({ fixes: [{ wrong: '东家', right: '东翁', why: '称谓' }], doubts: [{ quote: '运司那边', query: '两淮运司 乾隆', why: '不确定' }] });
   if (p.includes('「本地志」')) return chance(0.1) ? '{' : JSON.stringify({ admin: '扬州府治江都、甘泉二县同城', officials: [{ post: '两淮盐运使', name: '卢见曾', note: '好文', sure: true }, null], economy: '盐业', families: '江、汪诸家', places: '东关街、天宁寺', customs: '好园林', current: '南巡余波', counties: ['江都县', '甘泉县', '无此县'] });
+  if (p.includes('先把玩家的设定落到真实历史里') && /930|闽王|王延钧|长乐府/.test(p)) { fs.appendFileSync('resolve.log', 'M ' + p.slice(0, 200).split(String.fromCharCode(10)).join(' '));
+    return JSON.stringify({ y: 930, m: 6, d: 1, yearLabel: '长兴元年', polity: '闽', place: '福州', placeShort: '福州', name: '王延钧', real: true, gender: '男', age: 40, role: '闽王',
+      native: '光州固始', whereBasis: '《新五代史·闽世家》：王审知据福州，子延钧嗣位', traces: ['《新五代史·闽世家》：延钧，审知次子，审知卒，延翰立，延钧杀之而自立'], inferred: ['年岁史书未载，照其父王审知生年与兄弟次序推约四十岁'], adjust: [],
+      people: ['王继鹏', '陈金凤', '王延羲', '王延政'], queries: ['福州 长兴元年 闽王 王延钧'] }); }
   if (p.includes('先把玩家的设定落到真实历史里') && (/姓名：|人物：|知府|盐运使/.test(p.split('要求：')[0]))) { fs.appendFileSync('resolve.log', 'P ' + p.slice(0, 300).replace(/\n/g, ' ') + '\n');
     const head = p.split('要求：')[0], nm = (head.match(/姓名：([^（\n]+)/) || [])[1], wantReal = /人物：必须是史书上/.test(head), fake = /人物：虚构/.test(head);
     const base = { y: 1757, m: 3, d: 6, yearLabel: '乾隆二十二年', polity: '清', place: '江南扬州府江都县', placeShort: '扬州', gender: '男', age: 41, adjust: [], people: [], queries: [] };
@@ -132,7 +234,7 @@ function answer(p, last, json) {
   if (p.includes('深明因果')) return chance(0.15) ? '{"overview":' : JSON.stringify({ overview: '大势' + n, upcoming: [{ key: '', y: 1760, m: 3, text: '新出之事' + n, status: '新出', why: '因你' }], figures: [{ name: '傅恒', alive: chance(0.1) ? false : true, post: '首席军机大臣' }], ripples: [{ cause: '你查盐栈', effect: '运司警觉' + n, when: '一月' }], outside: [{ y: 1757, m: 4, where: '苏州府', text: '苏州织造衙门催缴丝税OUTSIDEMARK' + n }, { y: 1757, m: 4, where: '江宁府', text: '两江总督尹继善巡视江宁' + n }], npcMoves: (() => { const L = [...String((p.match(/【身边的人（这次要推的要紧人物[^】]*】([^\n]*)/) || [])[1] || '').matchAll(/(?:^|；)([^（；]{2,6})（/g)].map(x => x[1]); const a = L[0] || R(names), b = L[1]; return [{ name: a, op: '结交', with: '运司书吏', did: '托人打听你的底细' + n, why: '提防', cause: '怕你抢了生意', open: false, plan: '再看看' }].concat(b ? [{ name: b, op: '迁', where: '仪征县', did: '去仪征盐栈办货' + n, cause: '盐栈催货', open: true }] : []).concat([null]); })(), factions: [{ name: '盐商公所', leader: '江春', members: '八大总商', aims: '保窝单', stance: '观望', strength: '强' }], upcoming: [{ key: '', y: 1830, m: 3, text: '新出' + n, status: '新出', why: '因你', needs: '盐价不跌' }] });
   if (p.includes('的国势账')) return JSON.stringify({ unit: '贯', realm: { treasury: 5000000, granary: 3000000, army: 800000, revenue: 60000000, outlay: 58000000, note: '财赋大半养兵' }, territory: [{ place: '开封府', pop: 260000, troops: 100000, grain: 1000000, loyalty: 60, tax: 0, ruler: '', note: '京畿' }, { place: '河间府', pop: 90000, troops: 30000, grain: 200000, loyalty: 50 }], forces: [{ name: '殿前司禁军', leader: '王宗濋', troops: 70000, grain: 500000, quality: '中', at: '开封', status: '驻守' }], privy: { cash: 300000, note: '内藏库' }, standing: '金兵南下在即' });
   if (p.includes('立主角的家底')) { fs.appendFileSync('estate.log', (p.includes('上一次的毛病') ? 'retry' : 'first') + '\n'); const poor = /流民|乞丐/.test(p.slice(0, 1400)); if (poor && !p.includes('上一次的毛病')) return JSON.stringify({ unit: '文', cash: 80000, standing: '富户', assets: [{ name: '良田', qty: '300亩', value: 900000 }], income: [], expense: [] }); return JSON.stringify(poor ? { unit: '文', cash: 37, cashNote: '贴身缝着三十几文铜钱', standing: '城外流民，无田无屋', assets: [{ name: '破棉袄', qty: '一件', value: 30, note: '补丁摞补丁' }, { name: '口粮', qty: '糠饼两个', value: 6, note: '撑两天' }], income: [{ item: '城外打短工', amount: 300, note: '有活才有' }], expense: [{ item: '口粮', amount: 450, note: '米价腾贵' }], debts: [] } : { unit: '两', cash: 80000, cashNote: '银库存银', standing: '扬州总商之一', assets: [{ name: '东关街宅院', qty: '三进', value: 12000, note: '祖宅' }, { name: '窝单', qty: '三千引', value: 60000, note: '世业' }], income: [{ item: '盐利', amount: 3000, note: '按引计' }], expense: [{ item: '家用', amount: 400, note: '' }], debts: [{ to: '运库', amount: 5000, note: '南巡垫款' }] }); }
-  if (p.includes('定出此时此地各衙门在任的人')) { fs.writeFileSync('off_prompt.txt', p); return JSON.stringify({ officials: [{ post: '两淮盐运使', place: '扬州府', name: '卢见曾', since: '1753.5', until: '1762.3', src: '史料' }, { post: '扬州知府', place: '扬州府', name: '高恒', since: '1756.2', until: '1757.11', src: '推断', basis: '博查：1756年到任，1757年冬调任' }, { post: '江都知县', place: '江都县', name: '某某', src: '拟' }, { post: '甘泉知县', place: '江都县', name: '沈廷芳', since: '1757.1', src: '拟' }] }); }
+  if (p.includes('定出此时此地各衙门在任的人')) { fs.writeFileSync('off_prompt.txt', p); return JSON.stringify({ officials: [{ post: '两淮盐运使', place: '扬州府', name: '卢见曾', since: '1753.5', until: '1757.6', src: '史料' }, { post: '扬州知府', place: '扬州府', name: '高恒', since: '1756.2', until: '1757.11', src: '推断', basis: '博查：1756年到任，1757年冬调任' }, { post: '江都知县', place: '江都县', name: '某某', src: '拟' }, { post: '甘泉知县', place: '江都县', name: '沈廷芳', since: '1757.1', src: '拟' }] }); }
   if (p.includes('精通历代职官制度')) return JSON.stringify({ era: '清', summary: '省府县', ladder: [{ tier: '地方', posts: [{ name: '知县', rank: '正七品', duty: '一县' }] }], paths: [], fixes: [], unsure: [] });
   if (p.includes('要把它写成一部书')) { fs.appendFileSync('book.log', (p.includes('浅近文言') ? 'hist' : 'novel') + '\n'); return (p.includes('浅近文言') ? '卷一　乾隆二十二年' : '第一回　钞关前问引价　运司里说盐法') + '\n' + '汪景和至钞关问引价，书吏言今岁引价腾贵。'.repeat(20); }
   if (p.includes('你是历史地理检索员')) { fs.appendFileSync('geoalias.log', 'x\n'); return JSON.stringify(/「京师」/.test(p) ? { county: '大兴县', pref: '顺天府', modern: '北京' } : { county: '', pref: '' }); }
@@ -179,7 +281,7 @@ function answer(p, last, json) {
     return JSON.stringify({ results: qs.map(q => ({ q, items: know(q) })) }); }
   if (p.includes('整理出确实写在资料里')) return JSON.stringify({ almanac: [{ cat: '物价', text: '米价一石一两六钱', src: '志' }] });
   if (p.includes('压成一段四百字以内')) return '较早的经过：查账、置产、结亲。';
-  if (p.includes('账房兼史官') && p.includes('【开局】')) return opening();
+  if (p.includes('账房兼史官') && p.includes('【开局】')) return opening(p);
   if (/账房兼史官|账房（短记账单）/.test(p)) return ledger(p);
   if (p.includes('【开局】')) { fs.writeFileSync('open_prompt.txt', p); } if (p.includes('【开局】')) return '乾隆二十二年三月初六，扬州。\n你叫汪景和，四十一岁，祖籍徽州歙县，在扬州行盐已是第三代。家里住在东关街北边的老宅，三进院子，前头是账房，后头住着老母亲和独子承裕。\n这一年的扬州还没从去年皇上南巡的热闹里缓过来。天宁寺的行宫刚拆了彩棚，瘦西湖边那几座为接驾赶修的亭子还新得发亮。盐商们为这趟南巡捐了不少银子，如今运司衙门正逐家催还垫款。\n早饭刚撤下去，账房程立德就抱着账本进来了。';
   if (p.includes('照规则写正文')) { fs.appendFileSync('dir.log', JSON.stringify({ seed: /这一回的历史主线/.test(p), ban: /不许再写的题材/.test(p), redo: p.includes('上一稿的毛病') }) + '\n'); if (!p.includes('上一稿的毛病') && !p.includes('戏外：') && Math.random() < 0.6) return PAS[pi++ % PAS.length] + '\n程立德躬身请示：「此事如何是好，还请老爷示下。」账房又来请示，问怎么办才好，盘账盘到半夜。'; }
