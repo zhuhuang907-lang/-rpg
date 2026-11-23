@@ -1,0 +1,892 @@
+diff --git a/play13.js b/play13.js
+new file mode 100644
+index 0000000..82bd6fa
+--- /dev/null
++++ b/play13.js
+@@ -0,0 +1,373 @@
++// 任务十三·真模型连玩驱动：五代十国 8 打法 × 30 回（3 套活法转换、2 套乱来）。
++// 每回存：玩家原话、正文全文、用时、年月、政体、拦下信息、页面错误；断点续跑（有 NN.json 就从下一回继续）。
++// 环境：GAME_PORT=8793、DS_PORT=4711、OUT=…；Key 只在转发进程环境变量里，不进任何文件。
++'use strict';
++// 脱壳启动也能找到 playwright（不打 NODE_PATH 就自己补上）
++if (!process.env.NODE_PATH || !/rpg[\\/]node_modules/.test(process.env.NODE_PATH)) {
++  process.env.NODE_PATH = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/rpg/node_modules';
++  require('module').Module._initPaths();
++}
++const { chromium } = require('playwright');
++const fs = require('fs'), path = require('path');
++const GAME = 'http://127.0.0.1:8793/', PROXY = 'http://127.0.0.1:4711';
++const OUT = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/out13';
++const ONLY = process.env.ONLY || process.argv[2] || '';   // 命令行第一参数也可以指定只跑哪一套
++const STEPS = 30;
++const phase = t => fetch(PROXY + '/__phase', { method: 'POST', body: t }).catch(() => {});
++// —— 打法 ——
++const P = {
++  chu: { form: ['开运二年', '潭州', '楚国牙军小卒', '周铁山'], steps: [
++    '看看我现在是什么身份、在哪一营、上官是谁、手头有多少钱，营里有哪些弟兄',
++    '这个月好好操练，跟同营的弟兄打好关系，留心哪位军校肯提拔人',
++    '找机会在都头面前露一手武艺，请他记下我的名字',
++    '听说溪峒蛮在边境闹事，我向都头请缨随军出征',
++    '随军出征，打仗时冲在前头，争取立功',
++    '论功行赏时，向上官讨个队正的差事',
++    '拿赏钱请营里几个军校喝酒，收两三个靠得住的亲随',
++    '过半年，打听王府里大王的身体，和几位公子谁的势力大、谁会接位',
++    '托人引荐，投到握兵的大将门下效力',
++    '这一年照常带兵操练，替大将跑腿办事，攒些功劳和人望',
++    '打听朝里谁当权、谁在争，各家都在做什么准备',
++    '向大将求升指挥使，愿意去守最要紧的城门或边州',
++    '过一年，看看我现在的官职、手下多少兵、有哪些靠得住的人',
++    '结交天策府的学士和几位握兵的大将，送些礼，探探他们的心思',
++    '朗州那边若有动静，我主动请缨带本部去守边',
++    '真打起来，我率本部迎战，争取立大功',
++    '打完仗论功，请大王授我一镇节度使，愿意出镇最要紧的军州',
++    '到任以后整顿军州：清点兵马钱粮，安抚百姓，把亲随安插在要紧的位子上',
++    '暗中扩充兵马，囤积粮草，联络几位对朝廷不满的将领',
++    '过半年，打听潭州朝廷和朗州两边谁强谁弱，各自还有多少兵',
++    '派心腹去南唐那边探探口风，看他们会不会出兵',
++    '趁两边打得最凶的时候，我按兵不动，保存实力',
++    '等两边都打得精疲力竭，我率本部兵马突入长沙，控制王府、府库和城门',
++    '召集城里的将领和官员，宣布我继承楚王之位，不服的当场拿下',
++    '派人分头去各州安抚，许诺各州刺史官职照旧，要他们上表称臣',
++    '遣使到中原朝廷和南唐，请求承认我为楚王',
++    '过三个月，看看各州服不服、外面有没有大军压境',
++    '看看我现在的身份、地盘、兵马、钱粮，有哪些敌人',
++    '过半年，看看南唐和中原朝廷对我称王的反应，各边州可还安稳',
++    '把各州刺史、各军都指挥使的名册和兵马钱粮报上来，我要立个长期的章程'] },
++  huofa1: { form: ['长兴二年', '汴州', '绸缎商人', '陈九郎'], steps: [
++    '看看我手头的现钱、铺子里的货、伙计都有谁',
++    '这个月照常开门做生意，留心北边军情对行情的影响',
++    '收一批上等潞绸，托漕船运到扬州去卖',
++    '过两个月，看看扬州的买卖做了多大赚头',
++    '契丹南下消息传来，市面大乱，我把货贱价出手，换现钱藏着',
++    '兵荒马乱做不成生意，我关了铺子去投军，凭识字先做个书吏',
++    '营里操练文书，我把军需账目理得清清楚楚',
++    '过半年，我请都头把我调去做粮料判官，管一营粮饷',
++    '粮饷账目从无差错，向都虞候讨个十将的军职',
++    '过一年，看看我的官职、手下的兵、攒下的钱',
++    '随军出征，我管转运粮草，讲价买粮、雇车船',
++    '大军回师，论功我讨个押衙的差事',
++    '拿积攒的钱在汴州买一所宅子、十亩近郊田',
++    '过半年，托同乡在府里给我谋个孔目官的位子',
++    '到府衙上任，把历年积压的案卷理清',
++    '府库钱粮出入我定个新章程，上官很满意',
++    '过一年，我求外放做个镇遏使，带家眷去赴任',
++    '到镇上清点戍卒、仓廪，修栅练兵',
++    '过半年，镇上商旅渐渐多了，我在镇口开一间货栈',
++    '把铺子、田、货栈的账盘一盘，算算这几年家底厚了多少',
++    '朝廷又要打仗，征我镇的粮，我按数缴足，再捐三百贯军费',
++    '过半年，请上官保举我兼任本镇团练判官',
++    '儿子长大了，教他读书算账，让他管货栈',
++    '过一年，我上书请辞官职，只想做个田舍翁',
++    '辞官获准，我把镇务交割清楚，回乡置业',
++    '买二十亩水田、两头牛，雇两个庄客',
++    '过半年，看看庄稼收成、家业进出',
++    '逢年过节请乡邻吃酒，给村里修一座桥',
++    '过半年，乡里推我做里正，我应了下来',
++    '看看我如今的身家、田产、在乡里的名望，回想这一路的活法'] },
++  huofa2: { form: ['天成三年', '福州', '寺院沙弥', '释无碍'], steps: [
++    '看看我在寺里的职事、师父是谁、寺里有多少田产',
++    '这个月随师父诵经、扫塔，学着接待香客',
++    '过半年，寺里要修藏经阁，我去帮忙监工',
++    '城里打仗，乱兵抢了寺院，师父罹难，我还俗投军报仇，改名吴无碍',
++    '从伙兵做起，操练时加倍用功',
++    '首战小胜，都头记我一功',
++    '过半年，我升了十将，带五十人守北门',
++    '夜里巡城拿住细作两名，得赏钱买了马',
++    '过一年，看看我的官职、部下、积蓄',
++    '大军围城之战，我率部守城头三天三夜',
++    '城解围，论功升我做个副兵马使',
++    '拿赏钱置了一所小宅，娶妻',
++    '过半年，新节度使点我做亲随将，入牙军',
++    '牙军里操练、随扈，学着看公文',
++    '过一年，节度使派我去邻州送国书，路上小心应付关卡',
++    '出使办成，回禀条理清楚，升我做都知兵马使',
++    '统一营兵，汰弱补强，练成一支能打的',
++    '过半年，随主帅出战，我这营先登破寨',
++    '论功我讨了本州马步军都虞候的实职',
++    '到任清点州兵、军械、粮草，造册上报',
++    '过半年，把州兵操练章程立起来',
++    '民户告军官占了水源，我按律断还百姓，得罪了同僚',
++    '过一年，我被排挤出州，改授本县县令',
++    '到县上任，劝农桑、修陂塘、减狱讼',
++    '过半年，县里户口添了、荒田开垦了',
++    '旧军中弟兄来县里找我谋差事，我安排两个做县里的弓手',
++    '过一年，上计考绩得了上等',
++    '我修书给旧日寺中师兄，托他讲经荐福亡魂',
++    '过半年，我把县务交给县尉，自己告假回了一次福州旧寺',
++    '看看我这一路从沙弥到县令的履历、如今的家小和心迹'] },
++  huofa3: { form: ['清泰二年', '成都', '银匠', '赵小乙'], steps: [
++    '看看我的铺子、手艺、现钱和帮工',
++    '打一套鎏金茶具，交货给城中的锦江楼',
++    '过两个月，接了官府的一单差事：给军中打五百个箭镞',
++    '官差做完，结了工钱，也结了些军中的人缘',
++    '攒下本钱，在城中开一间金银铺，雇两个学徒',
++    '过半年，铺子生意渐好，兼收旧金银熔铸',
++    '用利钱放两笔小贷，都要抵押',
++    '过一年，盘一盘铺子、放贷、积蓄',
++    '蜀中大乱，物价飞涨，我收金银不收钱',
++    '乱平之后，用金银在乡下买三百亩田',
++    '雇庄客耕种，修陂塘，买耕牛',
++    '过半年，看看田庄的收成和佃户的情形',
++    '把城中铺子交给徒弟经营，我常驻田庄',
++    '修庄墙、置器械，防流寇',
++    '过半年，乡里大户请我出头办保甲',
++    '我领着乡丁清查户口、编保甲',
++    '县里调乡夫修官道，我出面按户摊派、监工',
++    '过一年，官道修成，县令嘉奖，保我做个乡长',
++    '做乡长后断两件田土纠纷，都断得公道',
++    '过半年，本县的常平仓出纳入我监督',
++    '荒年开仓平粜，我按册放粮，记好账目',
++    '过半年，账目经得起县里勾检，上官信得过我',
++    '儿子送去读书，请落第的老儒教他',
++    '过一年，盘算家业：田、铺、放贷、仓职',
++    '有人在县里告我摊派不公，我备好簿册对质',
++    '对质清楚，诬告者受罚，我名声更好',
++    '过半年，县令升迁，新县令到任我先去拜会',
++    '逢荒年再开仓，我垫自己的钱补足放粮的数',
++    '过半年，乡老们送我「公正」的匾，县里保举我做司户佐史',
++    '看看我这一路的活法变迁、如今的职役与家业'] },
++  chuwar: { form: ['乾祐三年', '潭州', '楚国马步军都指挥使', '周铁山'], steps: [
++    '看看我手下有多少兵马、驻在哪里、粮草多少，朗州那边马希萼的兵马有什么动静',
++    '整顿本部兵马：清点甲械，各营加紧操练，把老弱换下来',
++    '派探马去朗州、益阳一带，打探马希萼的兵力、蛮兵多少、走哪条路来',
++    '率本部兵马进驻益阳，扼守资江渡口，沿江扎营',
++    '马希萼的兵到了，我依托渡口列阵迎战，弓弩先射，等他半渡再击',
++    '打完这一仗，清点伤亡，收拢溃兵，整修营垒，把战况报回长沙',
++    '挑八百轻兵，趁夜绕到敌后，烧他的粮船',
++    '看看现在的战局：两边各剩多少兵、谁占着哪些地方、长沙那边怎么样',
++    '战罢回长沙述职，奏报军情',
++    '清点此战缴获与伤亡，抚恤阵亡将士的家小',
++    '过半年，加紧造箭修械，充实武库',
++    '派人去朗州散布流言，离间马希萼与蛮兵首领',
++    '朗州果然内讧，我请命率水军顺湘江而下，袭其储粮',
++    '水军夜袭得手，烧粮船三十艘',
++    '回师守长沙，添修城防，添置床弩',
++    '过半年，马希萼大军压境，我登城督战',
++    '守城半月，城中粮足，敌军师老兵疲',
++    '乘夜出奇兵劫营，敌军自乱',
++    '大破敌军于城下，俘其偏将',
++    '乘胜追击，收复益阳、桥口诸镇',
++    '朗州遣使求和，我与朝廷商议受降之礼',
++    '和议成，我率军回长沙，论功升武安军节度副使',
++    '过半年，整编诸军，定营制、饷制',
++    '清丈军屯，兵农分开，军饷不再拖欠',
++    '过半年，操练新阵法，试飞火抛石',
++    '南汉兵犯岭北，我率军出桂管御之',
++    '与南汉兵相持于边界，我坚壁清野',
++    '乘其退兵，追击斩获甚众',
++    '班师回潭州，大王赐宴，加我检校太保',
++    '看看我如今的官职、兵马、威名，和楚国朝中对我的议论'] },
++  wild1: { form: ['天福三年', '汴州', '落第书生', '秦大方'], steps: [
++    '看看自己身上有几贯钱、会些什么、住在何处',
++    '我听说军中有火药之法，我要造火枪火炮卖给军中',
++    '找铁匠试造火铳，还要配弹丸',
++    '试放成功，我写一份《火器图说》',
++    '去节度使衙门献图说，请求当众试放',
++    '我要开一间报馆，用雕版印报纸卖，报名叫《汴京新闻》',
++    '报纸印了三百份，我在市集叫卖',
++    '我要在汴州办钱庄，发银票，可通兑',
++    '银票印好，我贴出告示',
++    '我修一封信，要用电报发往太原',
++    '我画了一张从汴州到洛阳的铁路图，请官府修铁路',
++    '我招募人手成立新军，改用洋操，配火铳',
++    '给新军定操典，每天出操',
++    '向朝廷上书，请设学会、开学堂教算学',
++    '学堂开了，我自任教习',
++    '我烧出一面玻璃镜，开办作坊',
++    '玻璃镜卖得好，我扩大作坊，招股集资，设股份公司',
++    '我要造一台蒸汽机带动的纺车',
++    '试造飞鸢，从城楼上试飞',
++    '写信给吴越国王，推销我的火器和报纸',
++    '我要造一台印刷机，一日印千张',
++    '把《汴京新闻》改成日报，加「时评」一栏',
++    '在报上登广告，替商号做宣传',
++    '成立镖局，承揽汴洛之间的货运',
++    '向官府申请专利，禁止别人仿造我的火铳',
++    '召集商人，计划修汴州到扬州的电报线',
++    '给自己铸银元，上刻我的名字',
++    '编一部《富国策》，主张通商致富',
++    '把这些年造的东西列一张单子，看看哪些成了、哪些被官府当妖异禁了',
++    '盘点这几年干的事，看看身家如何、官司有没有沾身'] },
++  wild2: { form: ['应顺元年', '长安', '落魄道人', '贾半仙'], steps: [
++    '看看我身上有什么、住在何处',
++    '我要去终南山寻访仙人，求长生之术',
++    '山中遇一老道，传我一部《服气诀》',
++    '按诀辟谷，七日不食',
++    '下山采药，配九转还魂丹',
++    '丹成，我先试一粒',
++    '在市中设坛，画符驱邪，收人钱米',
++    '城中贵人请我去府中禳灾',
++    '禳灾有验，贵人赠我金帛',
++    '用金帛起一座丹房，广收学徒炼丹',
++    '炼丹走火，丹房失火，烧了半条街',
++    '官府拿问我，我画符自辩',
++    '夜观天象，上书朝廷说有星变，请修德禳灾',
++    '朝廷召我入宫问对，我说得天花乱坠',
++    '请旨去华山求仙药',
++    '在华山筑坛，斋戒四十九日',
++    '坛上白日见仙鹤，其实是我驯的鸽群',
++    '朝廷赐我「通玄先生」号',
++    '趁机请建仙坛于宫中，岁费十万',
++    '有谏官上章弹劾我妖言惑众',
++    '我画符诅咒谏官，说他必遭天谴',
++    '谏官果然贬官，朝野侧目',
++    '我要练剑仙之术，飞剑取人于千里之外',
++    '收徒三人，教他们符箓与吐纳',
++    '徒弟骗人钱财跑了，官府又来拿我',
++    '我施展隐身术躲避差役',
++    '差役仍把我拿了，我在狱中装神弄鬼',
++    '狱卒害怕，我借机越狱逃出城',
++    '改名换姓，混入道观里做知观',
++    '盘点这几年装神弄鬼的事，看看结局如何'] },
++  wengu: { form: ['清泰元年', '太原', '河东节度使掌书记', '杜文蔚'], steps: [
++    '看看我的职任、上司、衙里同僚',
++    '这一个月写判官厅的文书、批阅呈文',
++    '节度使要上表朝廷，我起草表文',
++    '表文写得称旨，节度使赏我绢五十匹',
++    '过半年，军中幕僚议事，我录问对之辞',
++    '邻镇来使，我负责接伴、撰回书',
++    '回书措辞得体，两镇修好',
++    '过一年，我兼管书奏案，掌笺表书檄',
++    '朝廷使者来宣谕，我记录问答、办交割',
++    '幕中缺推官，众僚推我兼领',
++    '我断两件狱讼，引律分明',
++    '过半年，节度使遣我入京奏事',
++    '入京遍谒中书、枢密两院的吏员，探朝廷新政',
++    '面奏称旨，朝廷欲留我朝中任职',
++    '我受朝命，做监察御史里行',
++    '御史任上，我弹劾一名贪墨的县令',
++    '过半年，出按诸州刑狱，平反冤案两起',
++    '回朝述职，同僚忌我风裁',
++    '藩帅入朝，荐我到新镇做掌书记',
++    '我转赴新镇掌书记，一路观风问俗',
++    '到镇，撰《四时炉冶颂》为节度使寿',
++    '过半年，镇中军务倥偬，我掌往来书檄，昼夜不辍',
++    '文字之误为人所摘，我引咎自劾',
++    '过一年，幕府改组，新判官到任，我让位',
++    '我改任本州司户参军，管户籍赋役',
++    '造籍账，均定户等，按赀征税',
++    '过半年，籍账成，无隐户漏口',
++    '荒年，我按户等减免，民不扰而税足',
++    '过一年，考绩上上，朝廷征我做殿中侍御史',
++    '看看我这一路文墨生涯的履历、文名与身家'] },
++};
++const NSTEPS = +(process.env.STEPS || 30);
++// 页面冻死时 evaluate 会永远不回来：一律加超时（2026-11-22 板面死循环实证）
++const ev = (p, fn, arg, ms) => Promise.race([p.evaluate(fn, arg), new Promise((_, rej) => setTimeout(() => rej(new Error('EVAL_TIMEOUT')), ms || 20000))]);
++const snap = p => ev(p, () => S ? JSON.parse(JSON.stringify(S)) : null, undefined, 30000);
++const view = p => ev(p, () => { if (!S) return { err: ERRMSG || '' }; const g = S.chat[S.chat.length - 1] || {};
++  return { turn: S.turn, y: (S.clock || {}).y, yearLabel: (S.clock || {}).yearLabel, m: (S.clock || {}).m, pol: (S.place || {}).polity, place: (S.place || {}).full, role: (S.protagonist || {}).role, name: (S.protagonist || {}).name, cash: (S.money || {}).cash, err: ERRMSG || '', receipt: (document.querySelector('.receipt') || {}).innerText || '', review: arr(S.reviewLog).slice(-1)[0] || null, audit: g.audit || null, text: String(g.text || '').slice(0, 20000) }; }, undefined, 20000)
++  .catch(e => ({ err: '页面取数超时（' + (e && e.message) + '）', timeout: true }));
++const idle = (p, ms) => p.waitForFunction(() => !BUSY && document.querySelector('#said'), null, { timeout: ms || 1500000, polling: 500 }).then(() => true).catch(() => false);
++const openStart = async (p, cfg, dir) => {
++  await phase('开局');
++  await p.evaluate(() => { const d = document.querySelector('#dCustom'); if (d) d.open = true; });
++  await p.fill('#cYear', cfg.form[0]); await p.fill('#cPlace', cfg.form[1]); await p.fill('#cRole', cfg.form[2]); await p.fill('#cName', cfg.form[3]);
++  await p.selectOption('#cReal', '虚');
++  const t0 = Date.now();
++  await p.click('#bCustomStart');
++  const ok = await idle(p, 900000);   // 开局最多等 15 分钟；正文出了忙标志不落的，下面兜住
++  fs.writeFileSync(dir + '/00-opening.json', JSON.stringify({ ok, ms: Date.now() - t0, view: await view(p), }, null, 1));
++  console.log('开局', ok ? 'ok' : '卡住', Math.round((Date.now() - t0) / 1000) + 's');
++  let done = ok;
++  if (!ok) {
++    // 2026-11-22：wengu 档开局正文已写出，BUSY 却一直不落（三次 25—34 分钟），当作开局完成、把忙标志放开接着玩
++    try {
++      const st = await p.evaluate(() => { const g = S && S.chat && S.chat[S.chat.length - 1]; return { id: S && S.id, len: g ? String(g.text || '').length : 0, busy: !!BUSY }; });
++      if (st && st.id && st.len > 200) {
++        await p.evaluate(() => { BUSY = false; ERRMSG = ''; render(); });
++        done = true;
++        console.log('开局正文已出（' + st.len + ' 字），忙标志没落，强制放开继续');
++      }
++    } catch (_) { /* 还是不行就照卡住算 */ }
++  }
++  if (done) { const sid = await p.evaluate(() => S && S.id); if (sid) fs.writeFileSync(dir + '/00-sid.txt', String(sid)); }
++  return done;
++};
++(async () => {
++  const b = await chromium.launch();
++  for (const [key, cfg] of Object.entries(P)) {
++    if (ONLY && key !== ONLY) continue;
++    const dir = OUT + '/' + key;
++    fs.mkdirSync(dir, { recursive: true });
++    if (fs.existsSync(dir + '/done')) { console.log(key, '已完成，跳过'); continue; }
++    let p = await b.newPage();
++    let errs = []; p.on('pageerror', e => errs.push(e.message));
++    const nums = fs.readdirSync(dir).filter(f => /^\d{2}\.json$/.test(f)).map(f => +f.slice(0, 2));
++    const resume = nums.length ? Math.max.apply(null, nums) : 0;
++    await p.goto(GAME);
++    await p.waitForTimeout(2500);
++    let start = 0;
++    if (resume > 0 && fs.existsSync(dir + '/00-sid.txt')) {
++      const sid = fs.readFileSync(dir + '/00-sid.txt', 'utf8').trim();
++      const ok = await p.evaluate(async id => { try { const s = await store.load(id); if (!s) return false; S = s; VIEW = 'game'; TAB = 'chat'; ERRMSG = ''; render(); return true; } catch (_) { return false; } }, sid);
++      console.log(key, '续跑第', resume + 1, '回：载入存档', ok ? '成功' : '失败');
++      if (ok) start = resume;
++    }
++    if (start === 0) { const ok = await openStart(p, cfg, dir); if (!ok) { await p.close(); continue; } }
++    for (let i = start; i < Math.min(cfg.steps.length, NSTEPS); i++) {
++      const said = cfg.steps[i];
++      const sid0 = fs.existsSync(dir + '/00-sid.txt') ? fs.readFileSync(dir + '/00-sid.txt', 'utf8').trim() : '';
++      let okT = false, tries = 0, v = null;
++      while (tries <= 2) {
++        await phase(key + ':第' + (i + 1) + '回' + (tries ? '(重试' + tries + ')' : ''));
++        const t1 = Date.now();
++        let pre = { t: -1, n: -1 };
++        try { pre = await ev(p, () => ({ t: S ? S.turn : -1, n: S && S.chat ? S.chat.length : -1 }), undefined, 20000); } catch (_) { pre = null; }   // 页面冻死：pre 取不到，按卡住处理
++        let sent = pre !== null;
++        try { if (sent) { await p.fill('#said', said); await p.click('#bSend'); } } catch (e) { sent = false; okT = false; v = { said, i: i + 1, ok: false, ms: Date.now() - t1, errs: errs.slice(), tries, fillErr: String(e && e.message || e).slice(0, 140) }; }
++        if (!sent && !v) v = { said, i: i + 1, ok: false, ms: Date.now() - t1, errs: errs.slice(), tries, fillErr: '页面没回应（冻死）' };
++        if (sent) {
++          okT = await idle(p, 600000);   // 一步十分钟不回头就当卡住（2026-11-21 实跑遇过单次调用挂二十多分钟）
++          v = await view(p);
++          let adv = null;
++          try { adv = await ev(p, () => ({ t: S ? S.turn : -1, n: S && S.chat ? S.chat.length : -1 }), undefined, 20000); } catch (_) { adv = null; }
++          // 没推进＝这一步实际没成（2026-11-22 实跑：网络抖动那回游戏自己重试不成，回合没走，正文还是上一回的）
++          const stuck = !adv || (adv.t === pre.t && adv.n === pre.n);
++          const badnet = /抖|连不上|中途断开|ECONN|没给出|没回话/.test(v.err || '');
++          v.stuck = stuck; v.badnet = badnet;
++          okT = okT && !stuck && !badnet;
++        }
++        v.said = said; v.i = i + 1; v.ok = okT; v.ms = Date.now() - t1; v.errs = errs.slice(); v.tries = tries;
++        if (okT || tries >= 2 || !sid0) break;
++        tries++;
++        console.log(key, '第', i + 1, '回卡住，重试', tries);
++        try { await p.close(); } catch (_) { /* 已关 */ }
++        p = await b.newPage(); errs = []; p.on('pageerror', e => errs.push(e.message));
++        await p.goto(GAME); await p.waitForTimeout(2500);
++        const ok = await p.evaluate(async id => { try { const s = await store.load(id); if (!s) return false; S = s; VIEW = 'game'; TAB = 'chat'; ERRMSG = ''; render(); return true; } catch (_) { return false; } }, sid0);
++        console.log(key, '第', i + 1, '回重试载入存档', ok ? '成功' : '失败');
++        if (!ok) break;
++      }
++      fs.writeFileSync(dir + '/' + String(i + 1).padStart(2, '0') + '.json', JSON.stringify(v, null, 1));
++      console.log(key, i + 1, okT ? 'ok' : '卡住', Math.round(v.ms / 1000) + 's', said.slice(0, 16));
++      if (!okT) break;
++    }
++    const nDone = fs.readdirSync(dir).filter(f => /^\d{2}\.json$/.test(f)).length;
++    if (nDone >= Math.min(cfg.steps.length, NSTEPS)) {
++      const pre = await view(p);
++      await p.reload(); await p.waitForTimeout(4000);
++      await idle(p, 60000);
++      const post = await view(p);
++      fs.writeFileSync(dir + '/99-reload.json', JSON.stringify({ turnPre: pre.turn, turnPost: post.turn, yPre: pre.y, yPost: post.y, cashPre: pre.cash, cashPost: post.cash }, null, 1));
++      fs.writeFileSync(dir + '/done', String(Date.now()));
++      console.log(key, '完成，刷新恢复检查已写');
++    }
++    await p.close();
++  }
++  await b.close();
++})().catch(e => { console.error('ERR', e && e.message); process.exit(1); });
+diff --git a/table_check.js b/table_check.js
+new file mode 100644
+index 0000000..06ab0c1
+--- /dev/null
++++ b/table_check.js
+@@ -0,0 +1,176 @@
++// 任务十三·对表程序：把每回正文里的人名、官名、年号、地名、词物抽出来，对朝廷数据、任职年表、名臣包、史料包、地名表、超时代词物。
++// 表上没有的真人名、这时代没有的官名物件，逐条列出（不改游戏代码，只做核对）。
++// 本文件只当库用：findings(text, year) 返回检出条目；运行入口见 table_check_run.js，自测见 table_check_test.js
++'use strict';
++const fs = require('fs');
++const B = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg';
++const RD = p => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return null; } };
++const arr = x => Array.isArray(x) ? x : (x ? [x] : []);
++// —— 数据（每条路径都是写死的字面量，不做任何拼接）——
++const H_TL = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/history/tang-late.json');
++const H_SUITANG = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/history/suitang.json');
++const H_HANS = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/history/han-sanguo.json');
++const H_JIN = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/history/jin-16.json');
++const H_NB = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/history/nanbei.json');
++const H_SN = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/history/song-north.json');
++const H_SSY = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/history/song-south-yuan.json');
++const H_ML = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/history/ming-late.json');
++const H_QM = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/history/qing-mid.json');
++const HISTS = [H_TL, H_SUITANG, H_HANS, H_JIN, H_NB, H_SN, H_SSY, H_ML, H_QM].filter(Boolean);
++const F_SG = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/figures/sanguo.json');
++const F_J16 = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/figures/jin16.json');
++const F_NB = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/figures/nanbei.json');
++const F_ST = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/figures/suitang.json');
++const F_TM = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/figures/tangmo.json');
++const F_WD = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/figures/wudai.json');
++const F_SONG = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/figures/song.json');
++const FIGS = [F_SG, F_J16, F_NB, F_ST, F_TM, F_WD, F_SONG].filter(Boolean);
++const T_CBD = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/tenure/wudai-cbdb.json');
++const T_LZ = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/tenure/wudai-liezhuan.json');
++const T_TJ = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/tenure/tongjian-184-960.json');
++const T_SG = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/tenure/sanguo-zaifu.json');
++const T_J16 = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/tenure/jin16-zaifu.json');
++const T_NB = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/tenure/nanbei-zaifu.json');
++const T_ST = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/tenure/suitang-zaifu.json');
++const T_TH = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/tenure/tanghou-zaifu.json');
++const T_SONG = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/tenure/song-zaifu.json');
++const TENURES = [T_CBD, T_LZ, T_TJ, T_SG, T_J16, T_NB, T_ST, T_TH, T_SONG].filter(Boolean);
++const COURT = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/court/wudai.json') || {};
++const P_WD = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/preset/wudai.json');
++const P_TM = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/preset/tangmo.json');
++const PRESETS = [P_WD, P_TM].filter(Boolean);
++const PN = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/preset/placenames.json') || {};
++const GEO = RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/geo.json') || {};
++const VOCAB = (RD('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/web/vocab/wudai.json') || {}).absent || [];
++// —— 年号表：era → {from,to,polities} ——
++const ERAS = new Map();
++for (const h of HISTS) for (const r of arr(h.rulers)) {
++  const rs = arr(r.reigns);
++  for (let i = 0; i < rs.length; i++) {
++    const x = rs[i];
++    let era, from;
++    if (Array.isArray(x)) { era = x[0]; from = x[1]; } else { era = x.era || x.name; from = x.from != null ? x.from : x.start; }
++    if (!era || typeof from !== 'number') continue;
++    const nx = rs[i + 1];
++    let to;
++    if (nx) to = (Array.isArray(nx) ? nx[1] : (nx.from != null ? nx.from : nx.start)) - 1;
++    else to = r.to || from + 40;
++    const k = String(era).replace(/[（(].*$/, '');
++    const o = ERAS.get(k) || { from, to, polities: [] };
++    o.from = Math.min(o.from, from); o.to = Math.max(o.to, to);
++    if (r.polity) o.polities.push(r.polity);
++    ERAS.set(k, o);
++  }
++}
++// 沿用年号：天福至十二年（947 后汉仍称天福十二年）、天祐至二十年（923 晋仍称天祐二十年）
++const ERA_CONT = { 天福: { max: 12, endY: 947 }, 天祐: { max: 20, endY: 923 } };
++const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++// —— 真人名表（含别名、关系人）——
++const NAMES = new Map();
++const putName = (n, src) => { if (n && typeof n === 'string' && n.length >= 2 && n.length <= 5 && !/[，。「」（）0-9]/.test(n)) NAMES.set(n, src); };
++for (const f of FIGS) for (const p of arr(f.people)) {
++  putName(p.name, 'figures'); for (const a of arr(p.alias || p.al)) putName(a, 'figures 别名');
++}
++for (const h of HISTS) { for (const f of arr(h.figures)) putName(f.name, 'history'); for (const r of arr(h.rulers)) putName(r.name, 'history 君主'); }
++for (const t of TENURES) for (const f of arr(t.figures)) putName(f.name, 'tenure');
++for (const p of arr(COURT.people)) { putName(p.name, 'court'); for (const t of arr(p.ties)) putName(t.name, 'court 关系'); }
++// —— 错词表 → 超时代官名 / 词物 ——
++const RAWBAD = [];
++for (const x of VOCAB) for (const w of String(x.w || '').split('、')) { const c = w.replace(/[（(].*$/, '').trim(); if (c) RAWBAD.push(c); }
++for (const w of ['协办大学士', '军机章京', '通政使', '税课司', '驿丞', '漕运总督', '河道总督', '盐运使', '织造', '副将', '都司', '守备', '协领', '佐领', '绿营', '八旗', '团练大臣', '候补知县', '捐监', '廪生', '监生', '贡生', '童生', '武举人', '电报', '电话', '电灯', '自来水', '飞机', '火车', '汽车', '轮船', '邮局', '邮票', '照相', '相片', '望远镜', '显微镜', '闹钟', '怀表', '西装', '皮鞋', '领带', '报纸', '杂志', '广告', '公司', '股票', '银行', '钞票', '纸币', '银元', '铜元', '法币', '玻璃镜', '蒸汽机', '印刷机', '滑翔翼', '铁路', '专利', '日报', '时评', '洋操', '操典', '股份']) RAWBAD.push(w);
++const OFFCHAR = /[使将官兵臣督抚司阁处院考监政卿尹尉令守总参校侍郎枢密节度团练防御观察留守虞判推记簿丞史盐漕河织税巡检知]/;
++const OFF_BAD = [...new Set(RAWBAD.filter(w => OFFCHAR.test(w)))];
++const WORD_BAD = [...new Set(RAWBAD)].filter(w => !OFF_BAD.includes(w) && w.length >= 2);
++// —— 地名表（底账政区＋地名对照＋地理库＋史料事件地＋朝廷驻地＋常用别称）——
++const PLACES = new Set();
++const addPlace = n => { if (n && typeof n === 'string' && n.length >= 2 && n.length <= 6 && !/[，。「」（]/.test(n)) PLACES.add(n); };
++for (const p of PRESETS) for (const x of arr(p.places)) { addPlace(x.name); addPlace(x.seat); for (const c of arr(x.counties)) addPlace(c && c.name); }
++for (const x of arr(PN.places)) { addPlace(x.name); addPlace(x.seat); for (const a of arr(x.aka)) addPlace(a); }
++for (const r of arr(GEO.rows)) addPlace(r && r[0]);
++for (const h of HISTS) for (const e of arr(h.events)) if (e.where) String(e.where).split(/[、，]/).forEach(addPlace);
++for (const p of arr(COURT.people)) for (const x of arr(p.posts)) addPlace(x.seat);
++for (const [k, v] of Object.entries({ 河南府: ['洛阳', '洛州', '东都'], 京兆府: ['长安', '雍州'], 开封府: ['汴州', '东京', '汴梁'], 太原府: ['太原', '并州', '晋阳'], 江宁府: ['金陵', '建康', '昇州'], 成都府: ['成都', '益州'], 江陵府: ['江陵', '荆州'], 福州: ['长乐府'], 扬州: ['广陵', '江都'], 广州: ['番禺'] })) { PLACES.add(k); for (const x of v) PLACES.add(x); }
++// —— 姓氏与语境 ——
++const SU2 = ['欧阳', '慕容', '宇文', '耶律', '皇甫', '尉迟', '长孙', '司徒', '司空', '司马', '独孤', '赫连', '拓跋', '完颜', '夏侯', '诸葛', '公孙', '哥舒'];
++const SU1 = '王李张刘陈杨赵黄周吴徐孙马胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任卢姚沈钟姜崔谭陆范汪廖石金韦贾夏付方邹熊白孟秦邱侯江尹薛闫段雷龙黎史陶贺毛郝顾龚邵万钱严覃武戴莫孔向汤常温康施文牛樊葛邢安齐易乔伍庞颜倪庄聂章鲁岳翟殷詹申欧关焦兰柳甘柴包宁欧仇祝罗淳于';
++const SU = new Set(SU1.split(''));
++const NAME_STOP = new Set(['大王', '天王', '天子', '陛下', '殿下', '太后', '太妃', '太子', '王后', '皇后', '夫人', '娘子', '郎君', '官人', '相公', '和尚', '长老', '道士', '先生', '郎中', '大夫', '衙内', '衙役', '差役', '小二', '掌柜', '师父', '师兄', '师弟', '徒弟', '学徒', '弟兄', '兄弟', '众人', '百姓', '军士', '将士', '吏员', '乡老', '乡邻', '庄客', '佃户', '门客', '亲随', '细作', '奸细', '使者', '来使', '使臣', '贵人', '官府', '朝廷', '县里', '州里', '城中', '军中', '山里', '村里', '家中', '路上', '邻里', '老者', '老儿', '小儿', '女子', '男子', '少年', '老儒', '同僚', '上官', '长官', '下属', '部下', '部众', '部曲', '家小', '家眷', '妻小', '儿郎', '壮丁', '丁夫', '民夫', '役夫', '匠人', '商贾', '客商', '富户', '大户', '贫户', '流民', '饥民', '灾民', '小民', '草民', '小人', '老朽', '在下', '贫僧', '贫道', '老衲', '山人', '野人', '文士', '学士', '举人', '秀才', '贡士', '书生', '学子', '生徒', '游客', '行客', '过客', '行商', '贩夫', '走卒', '贩子', '牙人', '牙侩', '驮夫', '船夫', '艄公', '纤夫', '樵夫', '猎户', '渔夫', '农夫', '菜农', '园户', '窑工', '矿工']);
++const VA = '曰道说言笑怒喜惊惧命令遣率将领部谓问答拜见执斩杀讨降败走遁卒死起兵进兵引兵渡屯督战吩咐嘱咐叫喝斥骂贺谢送迎护随押解报禀奏呈递上书问道答道笑道怒道说道答曰叹曰泣曰对曰与同和及议商谈办谋着手';
++const VB = '谓命遣令召见与同偕以拜授封杀斩执责让托嘱问教诲派请邀唤呼找寻带携率领差支赏赐给问对见驾召对';
++// —— 中文数字 ——
++const zh2num = s => {
++  if (s === '元') return 1;
++  const D = '一二三四五六七八九';
++  if (s.length === 1) return D.indexOf(s) + 1;
++  if (s === '十') return 10;
++  if (s[0] === '十') return 10 + D.indexOf(s[1]) + 1;
++  if (s.length === 2 && s[1] === '十') return (D.indexOf(s[0]) + 1) * 10;
++  if (s.length === 3 && s[1] === '十') return (D.indexOf(s[0]) + 1) * 10 + D.indexOf(s[2]) + 1;
++  if (/^[0-9]+$/.test(s)) return +s;
++  return null;
++};
++// —— 检查 ——
++const PLACE_RE = /[\u4e00-\u9fa5]{1,3}(?:州|府|县|镇|关|驿|山|江|河|湖|寺|观|村|寨|堡|桥|渡|津)/g;
++const PLACE_HEAD_BAD = '大小老新旧诸众百千万两三四五六七八九十半全每进退攻守屯劳犒援乱溃领率分合破袭降征行扎列出收移拔渡济涉还回我敌他彼其此这运自至达往发从由即将就便乃而因故遂续随接继';
++// 跨词切出来的碎片（「送纳到寺」「有人在山」「那一关」）：首字是这些就不当地名报
++const PLACE_FRAG = '送纳到往说没是节去有在过那不过这我你他她它又才便就都也还再很更最几各诸众其此该本全半里外上下午后前当初昨今明次日月年时候处所边那头目口手身心面';
++const findings = (t, y) => {
++  const out = [];
++  const text = String(t || '').replace(/\s+/g, '');
++  if (!text) return out;
++  // 1) 年号＋年：只认年号表上有的年号（防「守了七年」「行医三十年」这类被当成纪元）；
++  //    改元后接的两字另查，表上没有就是编的年号
++  const ERA_NAMES = [...ERAS.keys()].sort((a, b) => b.length - a.length);
++  const reEra = new RegExp('(' + ERA_NAMES.map(esc).join('|') + ')(元|[一二三四五六七八九十]{1,3})年', 'g');
++  for (const m of text.matchAll(reEra)) {
++    const era = m[1], ord = zh2num(m[2]);
++    const e = ERAS.get(era);
++    if (!e) continue;
++    const cont = ERA_CONT[era];
++    let span = e.to - e.from + 1;
++    if (cont && y && y <= cont.endY && ord != null && ord <= cont.max) span = Math.max(span, cont.max);
++    if (ord != null && ord > span) out.push({ kind: '年号', text: era + m[2] + '年', why: era + '只用' + (e.to - e.from + 1) + '年，写不出第' + ord + '年', ctx: text.slice(Math.max(0, m.index - 10), m.index + m[0].length + 10) });
++    else if (ord != null && ord > 1 && y && Math.abs(e.from + ord - 1 - y) > 5) out.push({ kind: '年号', text: era + m[2] + '年', why: era + ord + '年应是' + (e.from + ord - 1) + '年，本回是' + y + '年', ctx: text.slice(Math.max(0, m.index - 10), m.index + m[0].length + 10) });
++  }
++  for (const m of text.matchAll(/改元\s*([\u4e00-\u9fa5]{2})/g)) if (!ERAS.has(m[1])) out.push({ kind: '年号', text: m[1], why: '改元用了个年号表上没有的年号', ctx: text.slice(Math.max(0, m.index - 10), m.index + m[0].length + 10) });
++  // 2) 超时代官名（跳过跨词误命中）
++  const skipCtx = (w, i) => {
++    const prev = text[i - 1] || '', next = text[i + w.length] || '';
++    if (w === '门派' && prev === '衙') return true;                                   // 「衙门派的」不是武侠门派
++    if (w === '文明' && '牒移榜'.includes(prev) && next === '日') return true;         // 「牒文明日」
++    if (w === '报到' && '我你他她它这那'.includes(next)) return true;                 // 「报到我这里」＝报给
++    return false;
++  };
++  for (const w of OFF_BAD) { const i = text.indexOf(w); if (i >= 0 && !skipCtx(w, i)) out.push({ kind: '官名', text: w, why: '这时代没有的官名（错词表/明清职官）', ctx: text.slice(Math.max(0, i - 12), i + w.length + 12) }); }
++  // 3) 超时代词物
++  for (const w of WORD_BAD) { const i = text.indexOf(w); if (i >= 0 && !skipCtx(w, i)) out.push({ kind: '词物/官名', text: w, why: OFF_BAD.includes(w) ? '这时代没有的官名（错词表/明清职官）' : '这时代没有的物件/说法（错词表）', ctx: text.slice(Math.max(0, i - 12), i + w.length + 12) }); }
++  // 4) 表上没有的真人名：姓＋1–2 字，后接称名语境（曰道说、命令遣、问答……）；或前有称谓动词
++  const reN = new RegExp('([' + SU2.join('|') + ']|[' + SU1 + '])([\\u4e00-\\u9fa5]{1,2})(?=[' + VA + '])', 'g');
++  const found = new Map();
++  for (const m of text.matchAll(reN)) {
++    const nm = m[1] + m[2];
++    if (NAMES.has(nm) || NAME_STOP.has(nm) || found.has(nm)) continue;
++    const pre = text.slice(Math.max(0, m.index - 4), m.index);
++    const preOK = pre === '' || /[。！？；：，、]/.test(pre.slice(-1)) || VB.split('').some(c => pre.includes(c));
++    if (preOK) found.set(nm, m.index);
++  }
++  for (const [nm, i] of found) out.push({ kind: '人名', text: nm, why: '朝廷/任职/名臣/史料各表上都没有的真人名（或为本局虚构、或为错名，列出供复核）', ctx: text.slice(Math.max(0, i - 14), i + nm.length + 14) });
++  // 5) 地名：带后缀的地名 token；先剥掉开头的动词/数词，再对表；末 2–3 字是已知地名即算对上；含官名词的跳过（官名另报）
++  const seenP = new Set();
++  for (const m of text.matchAll(PLACE_RE)) {
++    let tok = m[0];
++    if (seenP.has(tok)) continue;
++    seenP.add(tok);
++    while (tok.length > 2 && PLACE_HEAD_BAD.includes(tok[0])) tok = tok.slice(1);
++    if (PLACE_FRAG.includes(m[0][0])) continue;                                      // 碎片，不报
++    if (tok.length >= 3 && (SU1.includes(tok[0]) || SU2.includes(tok.slice(0, 2)))) continue;   // 像「周铁山」这种人名，不当地名报
++    if (PLACES.has(tok)) continue;
++    if (PLACES.has(tok.slice(0, -1))) continue;
++    if (PLACES.has(tok.slice(-3)) || PLACES.has(tok.slice(-2))) continue;
++    if (OFF_BAD.some(w => tok.includes(w))) continue;
++    out.push({ kind: '地名', text: tok, why: '地名表/地理库里对不上（或为新造、或为误写，列出供复核）', ctx: text.slice(Math.max(0, m.index - 12), m.index + m[0].length + 12) });
++  }
++  return out;
++};
++module.exports = { findings, ERAS, NAMES, PLACES, OFF_BAD, WORD_BAD };
++// __EOF__
+diff --git a/table_check_test.js b/table_check_test.js
+new file mode 100644
+index 0000000..6174943
+--- /dev/null
++++ b/table_check_test.js
+@@ -0,0 +1,29 @@
++// 任务十三·对表程序自测（验收要求：放一段故意带错人名、错官名的正文，要全查出来；对的人不误伤）
++// 用法：node table_check_test.js
++'use strict';
++const { findings, NAMES } = require('./table_check.js');
++const bad930 = { y: 930, text: '天成十四年春，冯道为相，枢密使范延光召知府王思远与总督林昭德议事于洛阳。知县带电报一封，火枪三百支，自香江县运至潭州城外。账房用铅笔与钢笔记账，众人称快。李嗣源居晋阳，安重诲领枢密副使，桑维翰献策。' };
++const r = findings(bad930.text, bad930.y);
++const kinds = k => r.filter(x => x.kind === k).map(x => x.text);
++console.log('检出：', JSON.stringify(r.map(x => x.kind + ':' + x.text)));
++let fail = 0;
++const must = [
++  ['人名', ['王思远', '林昭德']],
++  ['官名', ['知府', '总督', '知县']],
++  ['年号', ['天成十四年']],
++  ['词物/官名', ['电报', '火枪', '铅笔', '钢笔']],
++  ['地名', []],
++];
++for (const [k, list] of must) for (const w of list) if (!kinds(k).some(t => t.includes(w))) { console.log('漏：' + k + ' ' + w); fail++; }
++// 已知真人、真官名、真地名不得误报
++for (const x of r) {
++  if (['冯道', '范延光', '李嗣源', '安重诲', '桑维翰'].includes(x.text)) { console.log('误报真人：' + x.text); fail++; }
++  if (x.kind === '地名' && /洛阳|潭州|晋阳|上海/.test(x.text) === false) { /* 上海县应被检出 */ }
++}
++if (!kinds('地名').some(t => t.includes('香江'))) { console.log('漏：地名 香江县'); fail++; }
++for (const x of r) if (x.kind === '地名' && /洛阳|潭州|晋阳/.test(x.text)) { console.log('误报地名：' + x.text); fail++; }
++// 库里应有人名核对（确保数据加载成功）
++console.log('名表规模：', NAMES.size);
++if (NAMES.size < 5000) { console.log('名表太小，数据没加载全'); fail++; }
++console.log(fail ? ('自测不合格 ' + fail) : '自测通过：错的都查出来，对的没误伤');
++process.exit(fail ? 1 : 0);
+diff --git a/table_check_run.js b/table_check_run.js
+new file mode 100644
+index 0000000..1db13d2
+--- /dev/null
++++ b/table_check_run.js
+@@ -0,0 +1,43 @@
++// 任务十三·对表程序运行入口：读 turns.jsonl（字面量路径），写 对表.md 与 对表.json。
++// 用法：node table_check_run.js
++'use strict';
++const fs = require('fs');
++const { findings, ERAS, NAMES, PLACES, OFF_BAD, WORD_BAD } = require('./table_check.js');
++const IN = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/turns.jsonl';
++const MD = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/对表.md';
++const JS = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/对表.json';
++const rows = fs.readFileSync(IN, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
++const per = new Map();
++for (const r of rows) { const k = r.s || '未知'; if (!per.has(k)) per.set(k, { turns: 0, n: 0, byKind: {}, items: [] }); }
++let tot = 0;
++for (const r of rows) {
++  const k = r.s || '未知', o = per.get(k);
++  o.turns++;
++  const f = findings(r.text, r.y);
++  o.n += f.length; tot += f.length;
++  for (const x of f) o.byKind[x.kind] = (o.byKind[x.kind] || 0) + 1;
++  if (f.length) o.items.push({ i: r.i, f });
++}
++let md = '# 正文对表报告（任务十三之二）\n\n';
++md += '- 对的表：名臣包 7 段、史料包 9 段、任职年表 9 种、朝廷数据（五代 21 国）、地名对照 1468 条＋地理库 ' + PLACES.size + ' 名＋底账政区、错词表 wudai ' + (OFF_BAD.length + WORD_BAD.length) + ' 条（官名 ' + OFF_BAD.length + '＋词物 ' + WORD_BAD.length + '）\n';
++md += '- 检出=表上没有的真人名、这时代没有的官名/词物、年号写不出/对不上年、地名表地理库都查不到；逐条列出供人复核\n';
++md += '- 口径（R-244，2026-11-16 项目主人定）：**次要人物可以虚构**——「人名」栏里多数是本局照规矩现生成的次要人物（刘二、王阿六之类），**不算错**，列出来只为人工复核有没有混进真人的错名；「地名」栏同理，含营寨、山口的小地名。**只有「年号」「官名」「词物/官名」三类是硬伤**，下文用黑体单列。\n';
++md += '- 名表规模：真人 ' + NAMES.size + ' 名；年号 ' + ERAS.size + ' 个\n\n';
++const jsonOut = {};
++let hardTot = 0;
++for (const [k, o] of per) {
++  const hard = (o.byKind['年号'] || 0) + (o.byKind['官名'] || 0) + (o.byKind['词物/官名'] || 0), soft = o.n - hard;
++  hardTot += hard;
++  jsonOut[k] = { turns: o.turns, findings: o.n, hard, soft, byKind: o.byKind };
++  md += '## ' + k + '\n\n- 回数 ' + o.turns + '，检出 ' + o.n + ' 条（' + (o.n / Math.max(1, o.turns)).toFixed(1) + ' 条/回）：**硬伤 ' + hard + ' 条**（年号/官名/词物，见于下文黑体），待复核 ' + soft + ' 条（人名/地名，含本局照 R-244 现生成的次要人物与营寨小地名）；分类 ' + JSON.stringify(o.byKind) + '\n';
++  for (const it of o.items) for (const f of it.f) if (f.kind !== '人名' && f.kind !== '地名') md += '  - **第' + it.i + '回 ' + f.kind + '**「' + f.text + '」（' + f.why + '）…' + f.ctx + '…\n';
++  let softN = 0;
++  for (const it of o.items) {
++    for (const f of it.f) if (f.kind === '人名' || f.kind === '地名') { if (softN >= 12) break; softN++; md += '  - 第' + it.i + '回 ' + f.kind + '「' + f.text + '」…' + f.ctx + '…\n'; }
++    if (softN >= 12) break;
++  }
++}
++md += '\n合计：' + rows.length + ' 回、检出 ' + tot + ' 条（' + (tot / Math.max(1, rows.length)).toFixed(1) + ' 条/回），其中硬伤 ' + hardTot + ' 条、待复核 ' + (tot - hardTot) + ' 条\n';
++fs.writeFileSync(MD, md, 'utf8');
++fs.writeFileSync(JS, JSON.stringify(jsonOut, null, 1), 'utf8');
++console.log('对表完成：' + rows.length + ' 回，检出 ' + tot + ' 条 → 对表.md');
+diff --git a/collect13.py b/collect13.py
+new file mode 100644
+index 0000000..69df91f
+--- /dev/null
++++ b/collect13.py
+@@ -0,0 +1,82 @@
++# 任务十三：把 out13/ 各打法的每回 JSON 汇成 turns.jsonl（给对表程序）＋ 打法meta。
++# 用法：python -I collect13.py
++import json, os, glob, re
++
++BASE = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build'
++OUT = BASE + '/out13'
++# 引擎拦下＝程序体检打回玩家的话（应为零）；抖动＝网络/模型重试；在局受阻＝NPC 拒绝、事不可办（写实摩擦，不算拦）
++ENG_RE = re.compile(r'打回|重写|不合常理|拒收|不许发出|体检')
++RET_RE = re.compile(r'自动重试|抖')
++META = {
++  'chu': '楚国牙军小卒→楚王（通关打法，照 play3 的「湖南内战夺位」路线）',
++  'huofa1': '绸缎商人→军中书吏→粮料判官/十将→孔目官→镇遏使→辞官归乡做里正（活法转换 5 次）',
++  'huofa2': '寺院沙弥→还俗伙兵→十将/副兵马使→亲随将/都知兵马使→马步军都虞候→县令（活法转换 4 次）',
++  'huofa3': '银匠→金银铺主→田庄地主→乡长/司户佐史（活法转换 4 次）',
++  'chuwar': '楚国马步军都指挥使的战争操控（渡口野战、夜袭、守城、追击、受降、整军、御边）',
++  'wild1': '乱来之一：火铳、报馆、钱庄银票、电报、铁路、洋操新军、玻璃镜股份、蒸汽机、飞鸢、印刷机、专利（库外与时代外的事）',
++  'wild2': '乱来之二：寻仙、辟谷、炼丹、画符、禳灾、星变奏对、剑仙、隐身、越狱（装神弄鬼全线）',
++  'wengu': '节度使掌书记→监察御史里行→新镇掌书记→司户参军→殿中侍御史（文资幕职线）',
++}
++rows = []
++meta_out = {}
++for d in sorted(glob.glob(OUT + '/*')):
++    k = os.path.basename(d)
++    if k == 'calls' or not os.path.isdir(d):
++        continue
++    turns = []
++    op = {}
++    try:
++        with open(d + '/00-opening.json', encoding='utf8') as f:
++            op = json.load(f)
++    except OSError:
++        op = {}
++    ts = sorted(glob.glob(d + '/[0-9][0-9].json'))
++    blocked = 0
++    retried = 0
++    story = 0
++    okn = 0
++    ms = 0
++    for f in ts:
++        with open(f, encoding='utf8') as fh:
++            v = json.load(fh)
++        ok = v.get('ok')
++        ms += (v.get('ms') or 0)
++        if ok:
++            okn += 1
++        rows.append({'s': k, 'i': v.get('i'), 'y': v.get('y'), 'pol': v.get('pol'), 'text': v.get('text') or ''})
++        turns.append({'i': v.get('i'), 'ok': ok, 'ms': v.get('ms'), 'y': v.get('y'), 'm': v.get('m'), 'when': v.get('yearLabel'), 'pol': v.get('pol'),
++                      'said': (v.get('said') or '')[:60], 'tlen': len(v.get('text') or ''),
++                      'err': v.get('err') or '', 'receipt': (v.get('receipt') or '')[:200],
++                      'audit': v.get('audit'), 'review': v.get('review')})
++    for t in turns:
++        engblob = (t['err'] or '') + json.dumps(t['audit'] or {}, ensure_ascii=False) + json.dumps(t['review'] or {}, ensure_ascii=False)
++        t['blocked'] = bool(ENG_RE.search(engblob))   # 引擎打回玩家的话（应为零）；回执里的「驳回/受阻」是故事内摩擦，不算
++        t['retry'] = bool(t['err'] and RET_RE.search(t['err']))
++        t['story'] = bool(re.search(r'驳回|受阻|部分办成', t['receipt'] or ''))
++        blocked += 1 if t['blocked'] else 0
++        retried += 1 if t['retry'] else 0
++        story += 1 if t['story'] else 0
++    rl = {}
++    try:
++        with open(d + '/99-reload.json', encoding='utf8') as f:
++            rl = json.load(f)
++    except OSError:
++        rl = {}
++    exc = {}
++    for i in (1, 8, 15, 22, 30):
++        cand = [f for f in ts if f.endswith('/' + str(i).zfill(2) + '.json')]
++        if cand:
++            with open(cand[0], encoding='utf8') as fh:
++                v2 = json.load(fh)
++            exc[str(i)] = (v2.get('text') or '').strip().replace('\n', ' ')[:200]
++    meta_out[k] = {'说明': META.get(k, ''), 'form': op.get('view', {}).get('name') and [op['view'].get('when'), op['view'].get('place'), op['view'].get('role'), op['view'].get('name')],
++                   '开局ms': op.get('ms'), '开局ok': op.get('ok'), '回数': len(turns), '成功回数': okn, '用时合计ms': ms,
++                   '拦下回数': blocked, '抖动回数': retried, '在局受阻回数': story, 'turns': turns, 'reload': rl, 'excerpts': exc}
++with open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/turns.jsonl', 'w', encoding='utf8', newline='\n') as f:
++    for r in rows:
++        f.write(json.dumps(r, ensure_ascii=False) + '\n')
++with open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/meta13.json', 'w', encoding='utf8', newline='\n') as f:
++    json.dump(meta_out, f, ensure_ascii=False, indent=1)
++print('回数合计', len(rows), '；打法', len(meta_out))
++for k, v in meta_out.items():
++    print('%-8s %2d/%2d 回 拦下 %d' % (k, v['成功回数'], v['回数'], v['拦下回数']))
+diff --git a/make_records.py b/make_records.py
+new file mode 100644
+index 0000000..62be3f8
+--- /dev/null
++++ b/make_records.py
+@@ -0,0 +1,153 @@
++# 任务十三：把 out13/ 的每套实玩写成「中书省/附件/实玩/2026-11-21-<打法>.md」一页记录。
++# 用法：python -I make_records.py
++import json, glob, os, datetime
++
++OUT = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/out13'
++REC = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records'
++META = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/meta13.json'
++DUI = 'C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/对表.json'
++DATE = '2026-11-21'
++TITLE = {
++  'chu': '楚国牙军小卒→楚王（通关打法）',
++  'huofa1': '绸缎商人→军吏→粮料判官→孔目官→镇遏使→里正（活法转换 5 次）',
++  'huofa2': '沙弥→伙兵→十将→亲随将→马步军都虞候→县令（活法转换 4 次）',
++  'huofa3': '银匠→金银铺主→田庄地主→乡长/司户佐史（活法转换 4 次）',
++  'chuwar': '楚国马步军都指挥使的战争操控（野战、夜袭、守城、追击、受降、整军、御边）',
++  'wild1': '乱来之一：火铳、报馆、银票、电报、铁路、洋操新军、玻璃镜、蒸汽机、飞鸢、印刷机、专利',
++  'wild2': '乱来之二：寻仙、辟谷、炼丹、画符、禳灾、星变奏对、剑仙、隐身、越狱',
++  'wengu': '节度使掌书记→监察御史里行→新镇掌书记→司户参军→殿中侍御史（文资幕职线）',
++}
++COST = [0.02, 1, 4]   # 快型号每百万 token：缓存命中、未命中、输出（元）
++
++
++def peak(t0):
++    try:
++        d = datetime.datetime.fromisoformat(t0.replace('Z', '+00:00')) + datetime.timedelta(hours=8)
++    except Exception:
++        return 1
++    return 2 if d.weekday() < 5 and ((9 <= d.hour < 12) or (14 <= d.hour < 18)) else 1
++
++
++def costs():
++    """每套花费：优先读该套存档里的花费账 costLog（游戏自己照官方价目记的，最准）；读不到再看调用记录。"""
++    per = {}
++    for k in TITLE:
++        sid = ''
++        try:
++            with open(OUT + '/' + k + '/00-sid.txt', encoding='utf8') as f:
++                sid = f.read().strip()
++        except OSError:
++            sid = ''
++        if not sid:
++            continue
++        try:
++            with open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/scan-rpg/rpg-kernel/data/websaves/' + sid + '.json', encoding='utf8') as f:
++                d = json.load(f)
++        except (OSError, ValueError):
++            continue
++        cl = d.get('costLog') or []
++        if cl:
++            per[k] = {'yuan': sum(float(x.get('yuan') or 0) for x in cl), 'calls': len(cl),
++                      'inn': sum(int(x.get('in') or 0) for x in cl), 'out': sum(int(x.get('out') or 0) for x in cl)}
++    files = sorted(glob.glob(OUT + '/calls/*.json'))
++    for f in files:
++        try:
++            with open(f, encoding='utf8') as fh:
++                d = json.load(fh)
++        except (OSError, ValueError):
++            continue
++        u = d.get('usage') or {}
++        if not u:
++            continue
++        who = str(d.get('phase') or '').split(':')[0]
++        if who not in TITLE or who in per:
++            continue
++        inn, hit, out = int(u.get('in') or 0), int(u.get('cacheHit') or 0), int(u.get('out') or 0)
++        miss = max(0, inn - hit)
++        yuan = (miss * COST[1] + hit * COST[0] + out * COST[2]) / 1e6 * peak(d.get('t0') or '')
++        o = per.setdefault(who, {'yuan': 0.0, 'calls': 0, 'inn': 0, 'out': 0})
++        o['yuan'] += yuan
++        o['calls'] += 1
++        o['inn'] += inn
++        o['out'] += out
++    return per
++
++
++def main():
++    os.makedirs(REC, exist_ok=True)
++    with open(META, encoding='utf8') as f:
++        meta = json.load(f)
++    try:
++        with open(DUI, encoding='utf8') as f:
++            dui = json.load(f)
++    except OSError:
++        dui = {}
++    cb = costs()
++    summary = ['# 任务十三 · 真模型实玩八套总表（' + DATE + '）', '',
++               '| 打法 | 回数 | 对不上（条/每回） | 拦下 | 用时合计 | 花费合计 | 每回均费 |', '|---|---|---|---|---|---|---|']
++    for k in ['chu', 'huofa1', 'huofa2', 'huofa3', 'chuwar', 'wild1', 'wild2', 'wengu']:
++        m = meta.get(k) or {}
++        turns = m.get('turns') or []
++        n = len(turns)
++        if not n:
++            continue
++        okn = m.get('成功回数') or 0
++        nf = (dui.get(k) or {}).get('findings', 0)
++        ms = sum((t.get('ms') or 0) for t in turns)
++        c = cb.get(k) or {'yuan': 0, 'inn': 0, 'out': 0, 'calls': 0}
++        avg = c['yuan'] / max(1, okn)
++        lines = ['# 实玩记录 · ' + k, '',
++                 '- 日期：' + DATE,
++                 '- 打法：' + (TITLE.get(k) or m.get('说明') or ''),
++                 '- 开局：' + ('；'.join(str(x) for x in (m.get('form') or []) if x) if m.get('form') else '见 00-opening.json'),
++                 '- 回数：%d/%d（完成 %d）' % (okn, n, n),
++                 '- 对不上：%d 条，%.1f 条/回（明细见 对表.md 的 %s 节）' % (nf, nf / max(1, n), k),
++                 '- 引擎拦下（程序打回玩家的话，应为零）：%d 次' % (m.get('拦下回数') or 0),
++                 '- 网络抖动自动重试：%d 回（都重试成功）' % (m.get('抖动回数') or 0),
++                 '- 在局受阻（NPC 拒绝、事不可办等写实摩擦）：%d 回' % (m.get('在局受阻回数') or 0),
++                 '- 用时：合计 %.1f 分，每回均值 %.0f 秒' % (ms / 60000.0, ms / max(1, n) / 1000.0),
++                 '- 花费：合计 ¥%.2f，每回均值 ¥%.2f（快型号官方价目，含工作日高峰翻倍；调用 %d 次，输入 %d token、输出 %d token）' % (c['yuan'], avg, c['calls'], c['inn'], c['out']),
++                 '- 刷新恢复：' + (('第 %s 回刷新后仍在第 %s 回、年月 %s→%s' % (m['reload'].get('turnPre'), m['reload'].get('turnPost'), m['reload'].get('yPre'), m['reload'].get('yPost'))) if m.get('reload') else '未记'),
++                 '']
++        if m.get('拦下回数'):
++            lines += ['## 引擎拦下的回', '', '| 回 | 原话 | 拦下信息（前 160 字） |', '|---|---|---|']
++            for t in turns:
++                if t.get('blocked'):
++                    blob = ((t.get('err') or '') + ' ' + (t.get('receipt') or '')).strip().replace('\n', ' ')[:160]
++                    lines.append('| %s | %s | %s |' % (t.get('i'), (t.get('said') or '').replace('|', '/'), blob.replace('|', '/')))
++            lines.append('')
++        lines += ['## 逐回', '', '| 回 | 成功 | 用时秒 | 年月 | 政权 | 正文长 | 备注 |', '|---|---|---|---|---|---|---|']
++        for t in turns:
++            lines.append('| %s | %s | %.0f | %s | %s | %s | %s |' % (
++                t.get('i'), '是' if t.get('ok') else '否', (t.get('ms') or 0) / 1000.0,
++                t.get('when') or '', t.get('pol') or '', t.get('tlen') or 0, ''))
++        lines += ['', '## 原文摘录', '']
++        for i in ('1', '8', '15', '22', '30'):
++            txt = (m.get('excerpts') or {}).get(i)
++            if txt:
++                lines += ['**第 %s 回**：%s' % (i, txt), '']
++        body = '\n'.join(lines) + '\n'
++        # 一套一条字面量路径，路径不拼接（Mimosa 规矩）
++        if k == 'chu':
++            open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records/2026-11-21-chu.md', 'w', encoding='utf8', newline='\n').write(body)
++        elif k == 'huofa1':
++            open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records/2026-11-21-huofa1.md', 'w', encoding='utf8', newline='\n').write(body)
++        elif k == 'huofa2':
++            open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records/2026-11-21-huofa2.md', 'w', encoding='utf8', newline='\n').write(body)
++        elif k == 'huofa3':
++            open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records/2026-11-21-huofa3.md', 'w', encoding='utf8', newline='\n').write(body)
++        elif k == 'chuwar':
++            open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records/2026-11-21-chuwar.md', 'w', encoding='utf8', newline='\n').write(body)
++        elif k == 'wild1':
++            open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records/2026-11-21-wild1.md', 'w', encoding='utf8', newline='\n').write(body)
++        elif k == 'wild2':
++            open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records/2026-11-21-wild2.md', 'w', encoding='utf8', newline='\n').write(body)
++        elif k == 'wengu':
++            open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records/2026-11-21-wengu.md', 'w', encoding='utf8', newline='\n').write(body)
++        summary.append('| %s | %d/%d | %d（%.1f/回） | %d | %.1f 分 | ¥%.2f | ¥%.2f |' % (
++            k, okn, n, nf, nf / max(1, n), m.get('拦下回数') or 0, ms / 60000.0, c['yuan'], avg))
++    open('C:/Users/DELL/.zcode/workspace/draft-533289f1-c5cc-46ef-84c4-8ae6031e4ae0/work/t13build/records/2026-11-21-总表.md', 'w', encoding='utf8', newline='\n').write('\n'.join(summary) + '\n')
++    print('记录写好', len(summary) - 4, '套')
++
++
++main()
