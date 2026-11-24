@@ -32,7 +32,8 @@ const path = require('path');
     ORGMSG = ''; ERRMSG = ''; callClaude = async () => ({ text: '{}' }); VIEW = 'game'; SIDE_FOLD = false; }, [id, ECON]);
   await p.evaluate(src => { window.__IDS = eval('(' + src + ')'); }, '{' + Object.entries(IDS).map(([k, f]) => `${JSON.stringify(k)}: ${f.toString()}`).join(',') + '}');
   const res = {}, bad = [], SKIP = /^(＋|－|⛶|跟着我|大图|收回|回到正文|关闭|展开|收起|×|✕)$|^(本地（到县）|天下)$/;
-  for (const id of Object.keys(IDS)) {
+  const ONLY = String(process.env.ALLBTN_IDS || '').split(',').filter(Boolean);
+  for (const id of (ONLY.length ? Object.keys(IDS).filter(k => ONLY.includes(k)) : Object.keys(IDS))) {
     // 每个身份换新页面：连续几百次建档/渲染会把渲染器磨崩（2026-11-21 崩点实测），真实玩家也不会一页建八百个档
     if (process.env.ALLBTN_FRESH) { await p.reload(); await p.waitForFunction(() => typeof partyStart === 'function'); await p.evaluate(src => { window.__IDS = eval('(' + src + ')'); }, '{' + Object.entries(IDS).map(([k, f]) => `${JSON.stringify(k)}: ${f.toString()}`).join(',') + '}'); }   // reload 会把 __IDS 冲掉，要重注（2026-11-24 查出）
     await setup(id); const tabs = (await p.evaluate(() => tabsFor(S).map(x => x[0]))).filter(t => /^(board|people|estate|trade|power|court|army|career|skill)$/.test(t));

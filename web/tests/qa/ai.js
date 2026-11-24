@@ -103,11 +103,14 @@ function opening(p) {
     world: { overview: '乾隆中期。', events: [], upcoming: [] }, meters: [{ 项: '家资', 值: '80000两' }], groups: [{ 人群: '盐商', 值: 50 }],
     estate: { assets: [{ name: '窝单', qty: '三千引', value: 30000 }], income: [{ item: '盐利', amount: 3000 }], expense: [{ item: '家用', amount: 300 }], projects: [] }, hints: ['去仪征'], goals: [{ term: '眼下', text: '查清仪征那二百引盐的去向', why: '不查清，年底运司对账要赔', status: '新' }, { term: '今年', text: '保住三千引窝单', why: '窝单是汪家的根本', status: '新' }, { term: '长远', text: '让承裕考中举人', why: '盐商之家要出个读书人才算站稳', status: '新' }], turnSummary: '开场' });
 }
+function lastLineAfter(p, mk) { const a = String(p || '').split(mk); if (a.length < 2) return ''; return (a[a.length - 1].split(String.fromCharCode(10)).find(x => String(x).trim()) || '').trim(); }
 function minStory930(p) {
-  const said = String((p.match(/【玩家这回说】([^\n]*)/) || [])[1] || '');
+  const said = lastLineAfter(p, '【玩家这回说】') || lastLineAfter(p, '【玩家】');   /* 先取这一回的，取不到再取提示里最后一条旧话 */
   const t = said ? `你吩咐下去：「${said.slice(0, 40)}」。` : '你照常过了一日。';
   const dip = /遣使|修好|结盟|联姻|称臣/.test(said) ? '\n使者带了土物，取道温、台往杭州去；吴越那边钱镠年事已高，儿子们正暗中较劲。' : '';
-  return `长兴元年六月，福州。闽江口的海风穿过王宫的廊庑，案上摊着五州的丁口与粮饷。\n${t}${dip}\n福州八万口、建州五万、泉州七万，泉州的船税是今年最大的一笔进项；北边的吴越、西边的吴与南汉，都有人在边境上探头。你把要办的事一件件吩咐下去，宫中安静下来。`;
+  const court = /上朝|听政|钱粮|各州/.test(said) ? '\n五州的丁口、粮饷一册册摊开：福州八万口，建州五万，泉州七万，漳、汀各两三万；泉州船税是今年最大的一笔进项。' : '';
+  const army = /整训|练兵|兵马|军务/.test(said) ? '\n威武军的将校到了阶下，甲叶上还带着海边的潮气；你让他们按月操练，不得扰民。' : '';
+  return `长兴元年六月，福州。闽江口的海风穿过王宫的廊庑，案上摊着五州的丁口与粮饷。\n${t}${court}${dip}${army}\n北边的吴越、西边的吴与南汉，都有人在边境上探头。你把要办的事一件件吩咐下去，宫中安静下来。`;
 }
 function answer930(p, last) {
   if (p.includes('【开局】') && /账房兼史官|账房（短记账单）/.test(p)) return minOpening930();
