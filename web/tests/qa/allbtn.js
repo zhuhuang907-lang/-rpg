@@ -4,7 +4,7 @@
 const { chromium } = require('playwright');
 const path = require('path');
 (async () => {
-  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1280, height: 1000 } });
+  let b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}); let p = await b.newPage({ viewport: { width: 1280, height: 1000 } });
   const errs = []; p.on('pageerror', e => errs.push('page: ' + e.message));
   await p.goto('file://' + path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'))); await p.waitForFunction(() => typeof partyStart === 'function');
   const ECON = { unit: '贯', rice: 1.2, wage: 0.1, landPrice: 8, yield: 2, rentRate: 0.5, caravan: 500, ransom: 300, protect: 20, cloth: 1, interest: 0.03, myLand: 0, feast: 60, opera: 30, incense: 10, doctor: 20, pay: 1, payOff: 3, juan: 50 };
@@ -32,7 +32,11 @@ const path = require('path');
     ORGMSG = ''; ERRMSG = ''; callClaude = async () => ({ text: '{}' }); VIEW = 'game'; SIDE_FOLD = false; }, [id, ECON]);
   await p.evaluate(src => { window.__IDS = eval('(' + src + ')'); }, '{' + Object.entries(IDS).map(([k, f]) => `${JSON.stringify(k)}: ${f.toString()}`).join(',') + '}');
   const res = {}, bad = [], SKIP = /^(＋|－|⛶|跟着我|大图|收回|回到正文|关闭|展开|收起|×|✕)$|^(本地（到县）|天下)$/;
-  for (const id of Object.keys(IDS)) { await setup(id); const tabs = (await p.evaluate(() => tabsFor(S).map(x => x[0]))).filter(t => /^(board|people|estate|trade|power|court|army|career|skill)$/.test(t));
+  const ONLY = String(process.env.ALLBTN_IDS || '').split(',').filter(Boolean);
+  for (const id of (ONLY.length ? Object.keys(IDS).filter(k => ONLY.includes(k)) : Object.keys(IDS))) {
+    // 每个身份换新页面：连续几百次建档/渲染会把渲染器磨崩（2026-11-21 崩点实测），真实玩家也不会一页建八百个档
+    if (process.env.ALLBTN_FRESH) { await p.reload(); await p.waitForFunction(() => typeof partyStart === 'function'); await p.evaluate(src => { window.__IDS = eval('(' + src + ')'); }, '{' + Object.entries(IDS).map(([k, f]) => `${JSON.stringify(k)}: ${f.toString()}`).join(',') + '}'); }   // reload 会把 __IDS 冲掉，要重注（2026-11-24 查出）
+    await setup(id); const tabs = (await p.evaluate(() => tabsFor(S).map(x => x[0]))).filter(t => /^(board|people|estate|trade|power|court|army|career|skill)$/.test(t));
     for (const tab of tabs) { await setup(id); await p.evaluate(t => { TAB = t; render0(); }, tab); const n = await p.$$eval('.side .pane button', xs => xs.length);
       { const tb = await p.evaluate(() => { const T = (document.querySelector('.side .pane') || {}).innerText || ''; const m = T.replace(/牒某某/g, '').replace(/“[^”]*”/g, '“例”').match(/undefined|NaN|\bnull\b|\[object|（）|「」|某某|某人|某地|主角|议事会|最后通牒|国债|封臣|军团/); return m ? m[0] + '：' + T.slice(Math.max(0, m.index - 30), m.index + 20).replace(/\s+/g, ' ') : ''; }); if (tb) bad.push(`${id}·${tab}页面有错字：${tb}`); }
       for (let i = 0; i < n; i++) { await setup(id); await p.evaluate(t => { TAB = t; render0(); }, tab);
@@ -45,5 +49,5 @@ const path = require('path');
         { const tb = await p.evaluate(() => { const T = ((document.querySelector('.side .pane') || {}).innerText || '') + '\n' + (($('#said') || {}).value || '') + '\n' + (ORGMSG || ''); const m = T.replace(/牒某某/g, '').replace(/“[^”]*”/g, '“例”').match(/undefined|NaN|\bnull\b|\[object|（）|「」|某某|某人|某地|主角|议事会|最后通牒|国债|封臣|军团/); return m ? m[0] + '：' + T.slice(Math.max(0, m.index - 30), m.index + 20).replace(/\s+/g, ' ') : ''; }); if (tb) bad.push(`${id}·${tab}「${info.lab}」点后页面有错字：${tb}`); } if (/^(没变|画不出|出错)/.test(r)) bad.push(`${id}·${tab}「${info.lab}」：${r}`); } } }
   require('fs').writeFileSync(process.env.OUT || 'allbtn.json', JSON.stringify({ res, errs }, null, 1));
   const tot = Object.values(res).reduce((a, x) => a + x.length, 0); console.log('点了', tot, '个按钮');
-  const all = bad.concat(errs.slice(0, 10)); console.log('ERRS', JSON.stringify(all)); await b.close(); process.exit(all.length ? 1 : 0);
+  const all = bad.concat(errs.slice(0, 10)); console.log('ERRS', JSON.stringify(all)); try { await b.close(); } catch (_) {} process.exit(all.length ? 1 : 0);
 })().catch(e => { console.log('ERRS', JSON.stringify(['崩了：' + e.message])); process.exit(1); });

@@ -138,6 +138,7 @@ start ai.js && {
   run "南北朝、隋唐前期君主年号：君主照正史、年号照哈佛库年号表，换君改元同年归对人；只有君主年号的表不挡联网自建史事；东魏开局年号是武定（R-226）" 120 env PLAY="$ROOT/web/play.html" node rulers2.js
   run "真玩查出的五处：心里的盘算不写成说出口、「过半年」让时间走、一仗几日过几日、敌情看得见交过手的敌军、楚照中原正朔、行动单不露内部说法、主角不标虚拟（R-254）" 120 env PLAY="$ROOT/web/play.html" node r254.js
   run "AI 调度省钱第一阶段：要紧的一步只认真大事、块名长的也裁得到、每次调用记花费账、设置页看得到（R-255）" 120 env PLAY="$ROOT/web/play.html" node r255.js
+  run "五代十国世系、史事易主、不待探报、早年地盘不倒推（R-275）" 120 env PLAY="$ROOT/web/play.html" node r276.js
   run "开局物价照底账：纺织月收入不丢、别区的价不当本地载值、底账另折本位不把 AI 给的再除一千（R-256 补、R-273）" 120 env PLAY="$ROOT/web/play.html" node r256.js
   run "临阵出的主意算进仗里、据城守门不再回回大败、正文胜负跟程序对不上打回重写（R-257）" 120 env PLAY="$ROOT/web/play.html" node r257.js
   run "看到的就是做好的：真人照史死、别名认真人、志向固定、军务页兵种内置（R-258）" 120 env PLAY="$ROOT/web/play.html" node r258.js
