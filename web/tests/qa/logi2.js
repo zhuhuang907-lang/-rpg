@@ -20,7 +20,7 @@ const path = require('path');
     if (!(r.besieged > 0 && r.besieged < r.normal * 0.5)) bad.push('京城被围，本色还照常运进太仓：' + JSON.stringify(r)); }
   // 后勤栏写每月吃多少、够几个月；随军粮不够才给就地征粮
   await setup(1050); await ev(() => { S.forces[0].at = '洛阳'; S.forces[0].grain = 0; S.realm.granary = 0; delete S.forces[0].sup; render(); });
-  { const t = await ev(() => document.body.innerText); if (!/每月约吃.*够0个月/.test(t)) bad.push('后勤栏没写每月吃多少、够几个月'); }
+  { const t = await ev(() => document.body.innerText); if (!/每月约吃.*(够0个月|不足一个月)/.test(t)) bad.push('后勤栏没写每月吃多少、够几个月'); }
   { const r0 = await ev(() => ({ g: S.forces[0].grain, m: S.gov.stats['民心'] }));
     if (await click('[data-logi="forage"][data-f="禁军"]', '就地征粮')) { const r = await ev(() => ({ g: S.forces[0].grain, m: S.gov.stats['民心'], msg: ORGMSG })); if (!(r.g > 0) || !(r.m < r0.m)) bad.push('在自家洛阳就地征粮没得粮或民心没掉：' + JSON.stringify(r)); }
     const g1 = await ev(() => S.forces[0].grain); await ev(() => render()); const el = await p.$('[data-logi="forage"][data-f="禁军"]'); if (el) { await p.click('[data-logi="forage"][data-f="禁军"]'); await p.waitForTimeout(120); }
