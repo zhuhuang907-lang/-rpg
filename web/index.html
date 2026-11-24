@@ -1736,7 +1736,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261124022300';
+const BUILD = '20261124022510';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -2795,7 +2795,7 @@ async function callClaude(input, onReply, extra, tier) {
   // R-266（2026-11-20 玩家：「开局之后一回合平均两毛五到两毛是最高的了」；真模型李从荣五十回实测一回五毛五）：
   //  写正文、改稿开局以后一律不深想（推演已经想过了）；推演只在打仗、政变、造反这类定生死的一步深想，上表、入宫、拜访不深想
   if (DSM() && econTight()) { const heavy = heavyStep(S, typeof CUR_SAID !== 'undefined' ? CUR_SAID : ''), decisive = DECISIVE_RE.test(typeof CUR_SAID !== 'undefined' ? CUR_SAID : '') || arr(S && S.campaigns).some(c => /交战|围城/.test(c.state || ''));
-    if (kind === '裁定' && heavy && !decisive) extra = { ...extra, light: true, thinking: false };
+    if (kind === '裁定' && heavy && !decisive) extra = { ...extra, light: true, thinking: false, fast: true };   // 2026-11-24 玩家「滥用pro」：不要紧的重步（任免、婚嫁、大买卖）推断也交快型号，原型号只留给定生死的一步
     /* 再压（R-266 实测四回一回四毛二，写正文的原型号占四成）：写正文只在定生死的一步（打仗、政变、造反）用原型号；平常的一步、所有改稿都用快型号——账上没有的事程序照旧删、对账改稿兜底 */
     if (kind === '写戏' && decisive) { extra = { ...extra, thinking: false }; }
     else if (!(kind === '裁定' && heavy)) extra = { ...extra, fast: true, thinking: false }; }
@@ -4458,8 +4458,10 @@ function pickHook(s, said) {
   if (!quiet && s.turn - (s.lastHook || 0) < 2) return null;
   const L = arr(s.hooks).filter(h => !h.used && (h.until == null || h.until >= ym));
   if (!L.length) return null;
-  const lastKind = (arr(s.hooks).filter(h => h.used).slice(-1)[0] || {}).kind;
-  const h = L.sort((a, b) => (a.kind === lastKind) - (b.kind === lastKind) || (a.until || 0) - (b.until || 0))[0];
+  // 同类钩子连续上门是玩家说的「有人来做同一件事」（2026-11-24）：最近三回用过的类先避开，实在没有别的再退回去
+  const recentKinds = new Set(arr(s.hooks).filter(h => h.used).slice(-3).map(h => h.kind));
+  const fresh = L.filter(h => !recentKinds.has(h.kind));
+  const h = (fresh.length ? fresh : L).sort((a, b) => (a.until || 0) - (b.until || 0))[0];
   return h;
 }
 function hookBlock(s) {
@@ -7252,9 +7254,11 @@ ${arr(s.orders).some(o => /在办|待办|推迟/.test(o.status)) ? '【交代下
 ${aimBlock(s)}${deadRealBlock(s)}${s.custom ? '【玩家定的设定（一直作数，随剧情变了的以现在的账为准）】' + cut(s.custom, 500) + '\n' : ''}${arr(s.canon).length ? '【定本】' + s.canon.slice(-12).map(x => x.text).join('；') + '\n' : ''}${s.inst ? '【本朝官制】' + cut(s.inst.summary, 200) + '\n' : ''}${promoBlock(s) ? promoBlock(s) + '\n' : ''}${factBlock(s) ? factBlock(s) + '\n' : ''}${addrBlock(s) ? addrBlock(s) + '\n' : ''}${skillBlock(s) ? skillBlock(s) + '\n' : ''}${peopleStatBlock(s, said) ? peopleStatBlock(s, said) + '\n' : ''}${hookBlock(s) ? hookBlock(s) + '\n' : ''}${schemeBlock(s) ? schemeBlock(s) + '\n' : ''}${questBlock(s) ? questBlock(s) + '\n' : ''}${actBlock(s) ? actBlock(s) + '\n' : ''}${pressBlock(s) ? pressBlock(s) + '\n' : ''}${homeBlock(s) ? homeBlock(s) + '\n' : ''}${offBlock(s) ? offBlock(s) + '\n' : ''}${campBlock(s) ? campBlock(s) + '\n' : ''}${edictBlock(s) ? edictBlock(s) + '\n' : ''}${facBlock(s) ? facBlock(s) + '\n' : ''}${govBlock(s) ? govBlock(s) + '\n' : ''}${affairBlock(s) ? affairBlock(s) + '\n' : ''}${armyBlock(s) ? armyBlock(s) + '\n' : ''}${orgPendingBlock(s) ? orgPendingBlock(s) + '\n' : ''}${s.gazetteer ? gazBlock(s) + '\n' : ''}${histBlock(s) ? histBlock(s) + '\n' : ''}${dossierBlock(s, said) ? dossierBlock(s, said) + '\n' : ''}${archiveBlock(s, said) ? archiveBlock(s, said) + '\n' : ''}${geoBlock(s, said) ? geoBlock(s, said) + '\n' : ''}${regimeBlock(s) ? regimeBlock(s) + '\n' : ''}${instPoints(s, said) ? instPoints(s, said) + '\n' : ''}
 ${directorBlock(s, said)}${arr(s.shapes).length ? '【最近几回的场面（这回不许雷同）】\n' + s.shapes.slice(-4).map(x => `· 第${x.turn}回：${x.type || ''}，在${x.where}；出场 ${x.cast}；停在 ${x.end}`).join('\n') + '\n' : ''}${modulesBlock(said)}
 【玩家这回说】${said}
+${(() => { const k = arr(s.chat).filter(c => c && c.role === 'gm' && c.text && c.kind !== 'talk').slice(-2).map(c => themeOf(c.text)); return (k.length >= 2 && k[0] && k[0] === k[1] && k[0] !== '军情' && themeOf(said) !== k[0]) ? `【这一回换一类事（硬要求）】最近两回都是「${k[0]}」一类、玩家这回也没追这件事；这一回旁人、外头的事从别的方向起（词讼、婚嫁、任免、商货行情、灾疫、工程、科第、家事、军情里另挑），同一类最多作背景一句，不许再当主线，更不许再写成有人上门来讨同一件事。\n` : ''; })()}
 ${(() => { const g = [...arr(s.chat)].reverse().find(c => c.role === 'gm' && c.kind !== 'talk'); return g ? '【上一回停在】' + (t => t.slice(Math.max(0, t.search(/[。！？」]/) + 1)))(String(g.text).slice(-200)) + '\n（玩家若没理会这个问题，就当主角没接话：别人照自己的盘算反应，但不替主角做决定。）\n' : ''; })()}
 一件事成不成、别人怎么回应，照四样推：当时的局势（朝局、财政、边事、年景）、各人的利害（得什么失什么）、当代的道德礼法和舆论（那个年代的人怎么看，不用今天的眼光）、实际的可行性（制度、钱粮、人手、路程、时日）。旁人当面说的不一定是真话：照他的利害、城府、和主角的亲疏、尊卑，可能奉承、敷衍、推诿、隐瞒、撒谎、阳奉阴违、借刀杀人，也可能直言；why 里写清他嘴上怎么说、心里怎么打算，scene 里每个人的「瞒着什么」照此写。
 再为这一回写一份场景简报（brief），给写正文的人当材料——要具体、确凿、有那个年代的味道：这件事牵涉的衙门与办事程序（谁有权、走什么文书（用本朝本代的文书名目））、此时此地相关职位上是谁（写全名，照【本地官员名册】与材料）、当时人的说法与称谓、相关各方（人群、行当、衙役、士绅、商人）的利害与惯常做法、可写进场面的器物与细节；拿不准的标「推」，不编造。
+这一回的场景要落在实处：牵涉的衙门与文书、当时的物价工价、当年的年景与大事、本地的寺观街市，至少两样写进 brief 与 scene；不许写成哪朝哪代都成立的空泛世情，也不许每回都是催欠讨债、有人找上门来报麻烦（2026-11-24 玩家：「剧情跟历史无关而且非常无聊」「动不动就是催收欠款」）。
 【制度框架】只是框架，可能有错：这一回要用到的衙门、职衔、文书、程序、称谓，凡框架里没有、或你拿不准的，也列进 search 去查。
 另外，写这一回之前要联网查证什么，由你来定：只查写准玩家这一步非查不可的——这一步牵涉的真人（此时的官职、所在、生死）、要去的地方（此时的名称、隶属、路程）、要办的事的制度门道和行情、眼前用得着的器物风俗；再加一两条此时的天下局势、朝政、本地光景，好让场面有那个年代的背景。每条搜索词都要带上本朝年号或公元年份（不然会搜出别的朝代、现代的东西）。列成搜索词（二到五条，写成「人名 年号某年 地名」「朝代 地名 衙门或行当」这样的词）；已经清楚的、材料里已有的不查，没有要查的就给 []。
 再给写正文的人备一份人物底（scene）：出场的每个人此刻想要什么、怕什么、瞒着什么；不在场的人这段日子照自己的盘算做了什么，有到了时候、并且照身份能传到主角这里的（书信、差人、风闻，路程日子说得通）才在这一回露出来，人不因此跑到主角跟前；（交代下去的事有了结果、幕后的真相露出一角、有人记恨来报复），没有就空着，不硬凑。不替玩家做决定、不替主角说话；别人照自己的盘算行事。玩家做的事是正戏，不管跟历史主线有没有关系；【这一回的历史主线】是背景：顺得进去就让它在此地露一点样子（风声、邸报、调兵征发、物价人心，一两句），不为它造事；到了日子写它怎样砸到主角这里；但不拽主角去主线，也不替他安排差事（别人找上门托事是偶尔的）。一回只安排一两件事，不堆。推演只回答玩家这一步会怎样，不往里添玩家没牵出来的事、人和冲突——但主角做过的事引起的后果不算加戏：照【主角在这世上留下的痕迹】【主角对历史的影响】顺着因果推下去，该来的反应、报复、得势失势照样来；史书真人只照史料行事，不替他编史料没有的言行、性情、往事和跟主角的关系；不为了凑到历史大事、大人物跟前，去改主角或旁人的身份、籍贯、行程、官职、关系；官员、贵族先用查到的真人，查不到照前任推断，再不行起合乎身份的雅名；拿不准的往平常处推，不往戏剧处推。意外（surprise）：多数回合空着；只有前文埋下的、有人的打算到了时候、主角做过的事的后果，顺理成章该发作的才写，并说清来由；凭空的、为了热闹的、把不在场的旧人拉回来的都不要。玩家还在上一回那场对话、那段路、那件事里，场面就接着上一回，不换；新起一场时，场面类型、出场的人、开头和收尾的方式才和【最近几回的场面】错开。不要每回都安排人找上门来报麻烦，主角在跟人说话时，停在对方说完、轮到主角开口处；主角在路上时，停在路上一处要主角自己定怎么走的地方；不在对话和路上时，也可以停在一个意外、一个消息、一段日子的结束上。
@@ -16654,6 +16658,24 @@ function stripOwnLines(said, text) {
     if (hit / Q.length >= 0.6 && !badNum) return all; cut++; return pre && pre.trim().length > 4 ? pre.replace(/[，,]\s*$/, '。') : ''; });
   return cut ? t.replace(/\n{3,}/g, '\n\n').replace(/^\s*\n/, '') : text;
 }
+/* 这一回正文归哪一类事（2026-11-24 玩家「剧情极度同质化，动不动就是催收欠款」）：只用于查重与换题，不进界面 */
+const THEME_KINDS = [
+  ['催征', /催征|催科|追比|欠饷|逋欠|欠银|欠粮|积欠|讨债|索债|还债|借债|放债|摊派|征粮|征银|完粮|完税/g],
+  ['词讼', /告状|词讼|官司|过堂|审案|升堂|状纸|口供|尸格|勘验|勾决/g],
+  ['婚嫁', /说亲|议亲|提亲|下聘|过门|迎娶|婚书|媒人|嫁娶/g],
+  ['任免', /除授|告身|制书|堂除|迁转|补官|保举|考成|罢官|参本|弹章/g],
+  ['军情', /点兵|调兵|行军|拔营|哨探|探报|围城|交战|粮道|军令|守城/g],
+  ['商货', /行情|米价|货价|议价|赊账|进项|铺面|账目|行商|客商|粜米/g],
+  ['家事', /内宅|妻|妾|子女|分家|族里|宗祠|婚丧|寿宴|家书/g],
+  ['灾疫', /旱|水灾|蝗|瘟疫|饥荒|赈灾|放粮|流民/g],
+  ['工程', /修渠|筑堤|浚河|修城|修桥|兴工|夫役|工料/g],
+  ['科第', /县学|书院|童生|秀才|乡试|会试|读书|塾师|讲学/g],
+];
+function themeOf(t) {
+  const x = String(t || ''); let best = '', bn = 1;
+  for (const [k, re] of THEME_KINDS) { const n = (x.match(re) || []).length; if (n > bn) { bn = n; best = k; } }
+  return best;
+}
 function draftFaults(s, said, text, span) {
   const out = [], asks = countIn(text, BORING[3][1]);
   { const D = deadOnStage(s, text); if (D.length) out.push(`已故的人在正文里说话办事：${D.join('、')}已经死了（照史书或本局），不许再出场；提到他只能是追忆、祭奠、遗命`); }
@@ -16664,6 +16686,12 @@ function draftFaults(s, said, text, span) {
   // 字数（2026-11-05 玩家：「字数不对，表达相当拖延」）：没让过一段日子的，超出约定一半以上打回去
   { const [lo, hi] = LEN_N[SETTINGS.len] || LEN_N.normal, n = String(text || '').replace(/\s/g, '').length;
     if (!SPANS[span] && n > hi * 1.5) out.push(`正文${n}字，约定${lo}到${hi}字：只留跟玩家这一步直接相干的经过和结果，删掉铺垫、旁枝、景物和重复的话，压到${hi}字以内`); }   // 只管写长了：对话停在对方说完的那种回合本来就短
+  // 少写字数（2026-11-24 玩家：「经常少写字数」）：不到下限一半、又不是停在对方问话上的，打回去写足
+  { const [lo2, hi2] = LEN_N[SETTINGS.len] || LEN_N.normal, n2 = String(text || '').replace(/\s/g, '').length, tail2 = String(text || '').trim().slice(-1);
+    if (!SPANS[span] && Number(s.turn) >= 2 && (typeof BUSY === 'undefined' || !!BUSY) && n2 > 0 && n2 < Math.round(lo2 * 0.5) && !/[？?]/.test(tail2)) out.push(`正文${n2}字，短于约定${lo2}到${hi2}字：把这一步的经过、在场人的话与反应、结果和后果写足，别两句就收（对话停在对方说完处的不算短）`); }
+  // 同质化（2026-11-24 玩家：「动不动就是催收欠款，或者有人来做同一件事」）：连着两回同一类事，第三回打回去换题
+  { const th = themeOf(text), prev = arr(s.chat).filter(c => c && c.role === 'gm' && c.text && c.kind !== 'talk').slice(-2).map(c => themeOf(c.text));
+    if (th && th !== '军情' && themeOf(said) !== th && prev.length >= 2 && prev.every(x => x === th)) out.push(`又写成「${th}」一类（前两回都是这一类）：这一回换一类事起头——词讼、婚嫁、任免、商货行情、灾疫、工程、科第、家事里另挑一类；同一类最多作背景一句，不许再当主线`); }
   if (asks >= 2) out.push(`身边的人一再请示、等主角拍板（出现 ${asks} 处）：他们是能干的人，分内的事自己办好、回报结果，最多留一件真正要主角定的大事`);
   // 人物一再追问主角（对白里的问句）、事情一再往后拖：都打回去
   const qs = countIn(text, /要不要|是否要|可否|您的意思|您说呢/g);
