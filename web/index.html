@@ -1561,6 +1561,12 @@ function storyRules() {
 
 /* ========== 国势账：地盘、兵马、势力、国库按名字合并（不再被一张不全的清单整组冲掉），粮饷与岁入岁出由程序照日子结算 ========== */
 const GONE = v => /^(true|是|1|丢|失|亡|散|灭)/.test(String(v == null ? '' : v).trim());
+/* 同一支兵换个写法（考卷一 2026-11-22：「河东军（北京留守司）」「河东军（北京留守）」同将同地同数记成两条）：认成账上那一支 */
+function forceAlias(s, x) { if (!x || !x.name || arr(s.forces).some(f => f && f.name === x.name)) return x;
+  const st = n => String(n || '').replace(/[（(].*$/, '').trim(), ld = n => String(n || '').replace(/[（(].*$/, '').trim();
+  const same = arr(s.forces).filter(f => f && !f.foe === !x.foe && st(f.name) && (st(f.name) === st(x.name) ? (!x.leader || !f.leader || ld(f.leader) === ld(x.leader))
+    : (ld(f.leader) && ld(f.leader) === ld(x.leader) && f.at && x.at && String(f.at).slice(0, 2) === String(x.at).slice(0, 2) && N0(f.troops) && Math.abs(N0(f.troops) - N0(x.troops)) <= N0(f.troops) * 0.03)));
+  return same.length === 1 ? { ...x, name: same[0].name } : x; }
 function mergeRows(old, upd, key, n) {
   const m = new Map(arr(old).filter(x => x && x[key]).map(x => [x[key], x]));
   for (const x of arr(upd)) {
@@ -1736,7 +1742,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261124022608';
+const BUILD = '20261124024103';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4331,8 +4337,12 @@ function orgSync(s) {
   const N = arr(s && s.org && s.org.nodes); if (!N.length) return []; const P = s.people || {}, out = [], me = (s.protagonist || {}).name;
   const posts = []; for (const n of N) for (const q of arr(n && n.posts)) if (q && q.title) posts.push(q);
   for (const q of posts) { const h = q.holder && P[q.holder]; if (h && h.dead) { out.push(`${q.title}：${q.holder}已故，空出`); q.holder = ''; q.src = ''; } }
-  const byCore = new Map(); for (const q of posts) { const c = postCore(q.title); if (c.length >= 2) { if (!byCore.has(c)) byCore.set(c, []); byCore.get(c).push(q); } }
-  for (const [name, v] of Object.entries(P)) { if (!v || v.dead || name === me || !v.role) continue; for (const part of String(v.role).split(/兼|，|,/)) { const L = byCore.get(postCore(part)); if (!L || L.length !== 1) continue; const q = L[0];
+  const byCore = new Map(); for (const q of posts) { const c = postCore(q.title); if (c.length >= 2) { if (!byCore.has(c)) byCore.set(c, []); byCore.get(c).push(q); }
+    const tag = (/[（(]([^）)]{2,6})[）)]/.exec(q.title) || [])[1]; if (tag && /首辅|首相|宰相|知政事/.test(tag)) { if (!byCore.has(tag)) byCore.set(tag, []); byCore.get(tag).push(q); } }   // 「中极殿大学士（首辅）」：人物写「大学士（某年起为首辅）」也认得是这一席（考卷三）
+  for (const [name, v] of Object.entries(P)) { if (!v || v.dead || name === me || !v.role) continue;
+    { const mv = /^(?:由|自)?[一-鿿]{2,12}?(?:迁|升任|升|改任|转任|擢|进)([一-鿿]{2,12})$/.exec(String(v.role).trim()); if (mv && !/[兼，,]/.test(v.role)) { v.roleLog = arr(v.roleLog).concat([{ when: timeText(s.clock), from: v.role, to: mv[1], why: '迁转' }]).slice(-8); v.role = mv[1]; } }   // 考卷一：人物写成「御史中丞迁御史大夫」，人事树对不上，御史大夫一直空着——照迁去的官记
+    const parts = String(v.role).split(/兼|，|,/); { const tg = /首辅|首相/.exec(String(v.role)); if (tg) parts.push(tg[0]); }
+    for (const part of parts) { const L = byCore.get(postCore(part)) || byCore.get(part.trim()); if (!L || L.length !== 1) continue; const q = L[0];
     if (q.holder === name || arr(q.others).includes(name)) continue;
     const cur = q.holder && P[q.holder], curStill = cur && !cur.dead && postCore(cur.role) === postCore(q.title);
     if (!q.holder || !curStill) { if (q.holder) out.push(`${q.title}：${q.holder}→${name}`); else out.push(`${q.title}：补上${name}`); q.holder = name; q.src = q.src && q.src !== '拟' ? q.src : '账'; }
@@ -5497,9 +5507,9 @@ function applyLogicFixes(s, fixes) {
     let ok = false;
     if (/household/.test(t)) { const m = arr(s.household).find(z => z.name === nm); if (m) { if (f === 'age' && N != null && N >= 0 && N < 110) { m.age = N; ok = true; } else if (f === 'relation' && str) { m.relation = str; ok = true; } else if (f === 'dead') { m.dead = v === true || /是|true|1/.test(String(v)); ok = true; } else if (f === 'away') { m.away = v === true || /是|true|1/.test(String(v)); ok = true; } } }
     else if (/people/.test(t)) { const m = (s.people || {})[nm]; if (m && /^(age|role|tie|where|status)$/.test(f)) { m[f] = f === 'age' ? (N != null && N >= 0 && N < 110 ? N : m.age) : str; ok = true; } }
-    else if (/protagonist/.test(t)) { if (f === 'age' && N != null && N > 0 && N < 110) { p.age = N; ok = true; introDirty = true; } else if (f === 'role' && str) { p.role = str; ok = true; introDirty = true; } }
+    else if (/protagonist/.test(t)) { if (f === 'age' && N != null && N > 0 && N < 110) { p.age = N; ok = true; introDirty = true; } else if (f === 'role' && str && !(/皇帝|天子|^帝$|称帝|即位|登基|国主/.test(str) && identityOf(s).power !== 'sovereign')) { p.role = str; ok = true; introDirty = true; } }   // 对账改正不许把没即位的主角改成皇帝（考卷一：秦王抬头变「皇帝」，下一回又改回）：即位只走正文、推演那条路
     else if (/career/.test(t)) { if (/^(office|rank|post)$/.test(f)) { s.career = s.career || {}; s.career[f] = str; ok = true; } }
-    else if (/money/.test(t)) { if (N != null && N >= 0 && s.money && !(N0(s.money.cash) < 0 && Math.abs(N + N0(s.money.cash)) < 1)) { s.money.cash = N; ok = true; } }   // 负数不许被「改正」成同数的正数（R-266：-28727 一回后变 +28727）
+    else if (/money/.test(t)) { const c0 = N0(s.money && s.money.cash); if (N != null && N >= 0 && s.money && !(c0 < 0 && Math.abs(N + c0) < 1) && !(c0 != null && c0 >= 0 && N > c0 * 3 + 1000)) { s.money.cash = N; ok = true; } }   // 对账改正不许凭空翻几十倍（考卷一：905 一回变 30000，正文没有进项）；真有进项走记账   // 负数不许被「改正」成同数的正数（R-266：-28727 一回后变 +28727）
     else if (/forces/.test(t)) { const m = arr(s.forces).find(z => z.name === nm); if (m && /^(troops|grain|at|leader)$/.test(f)) { m[f] = /troops|grain/.test(f) ? (N != null && N >= 0 ? N : m[f]) : str; ok = true; } }
     else if (/gov/.test(t)) { if (s.gov && s.gov.keys.includes(nm) && N != null && N >= 0) { s.gov.stats[nm] = N; s.gov.basis = s.gov.basis || {}; s.gov.basis[nm] = '推算：常理审查更正——' + why; ok = true; } }
     if (/canon/.test(t) || ok) { const txt = /canon/.test(t) ? one(v, 80) : `${nm || (t === 'protagonist' ? p.name : t === 'money' ? '现钱' : '')}${f ? '的' + f : ''}改为${str}`; if (txt) { s.canon = arr(s.canon).concat([{ text: `更正：${txt}（${why}）`, turn: s.turn }]).slice(-60); done.push(`${txt}（${why}）`); } }
@@ -6904,6 +6914,7 @@ function vocabFaults(s, text) {
   const y = s && s.clock ? s.clock.y : 0, t = String(text || ''), out = [];
   for (const V of ERAVOCAB) { if (!V || !V.range || y < V.range[0] || y > V.range[1]) continue;
     for (const x of arr(V.absent)) { const raw = String(x.w || ''); if (/今义|可通融|语境/.test(raw)) continue;
+      if (/[（(][^）)]*(义|尊称)[^）)]*[）)]/.test(raw) || /慎用/.test(String(x.why || '') + String(x.say || ''))) continue;   // 看词义才算错的（秀才作生员、大人作官场尊称）、表上自己写「慎用」的：认不准，不打回（任务十三对表：误报占硬伤九成，白白改稿花钱）
       const words = raw.replace(/[（(][^）)]*[）)]/g, '').split(/[、，,／/]/).map(w => w.trim()).filter(w => w.length >= 2);
       const hit = words.find(w => t.includes(w)); if (hit) out.push(`写了这时还没有的「${hit}」：这时说「${String(x.say || '').split(/[、，]/)[0]}」之类，照当时的说法改`);
       if (out.length >= 4) return out; } }
@@ -8374,8 +8385,9 @@ function applyActs(s, d) {
     let st = /办成|成了|完成/.test(r.state || '') && !/部分/.test(r.state || '') ? '办成' : /部分/.test(r.state || '') ? '部分办成' : /驳/.test(r.state || '') ? '驳回' : /受阻|失败|没成|办砸/.test(r.state || '') ? '受阻' : /搁/.test(r.state || '') ? '搁下' : '拖着';
     // 裁定在写之前定的成败压过正文（任务十六第四步）：这一回新开的单子，裁定说办不到、越权的，记账报「办成」也只记受阻
     { const an = arr(s.actsNow).find(z => z.realId === x.id); if (an && /办成/.test(st)) { const rs = arr(CUR_RULING && CUR_RULING.steps).find(t => t && simText(t.what || '', x.what) >= 0.3); if (an.over === 'ok' && /越权/.test(String(an.ok || '')) && !(rs && /办不到|办不成/.test(String(rs.ok || '')))) { overPress(s, an); } else if (rs && /办不到|办不成/.test(String(rs.ok || '')) || /越权/.test(String(an.ok || ''))) { st = '受阻'; r.why = one((rs && rs.why) || '越了权限，办不下去', 60); r.changed = '没改'; s.unbooked = arr(s.unbooked).concat([{ turn: s.turn, text: `正文写「${one(x.what, 20)}」办成了，可照你的身份和手里的东西这一步办不到，账上记受阻` }]).slice(-30); } } }
-    x.state = st; x.touched = s.turn; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state: st, why: one(actPlain(r.why), 60), changed: one(actPlain(r.changed), 60) }]).slice(-8);
-    out.push({ id: x.id, type: x.type, what: x.what, state: st, why: one(r.why, 60), changed: one(r.changed, 60) });
+    const last = arr(x.log).slice(-1)[0], again = last && last.turn < s.turn && last.state === st && x.state === st;   // 考卷一（2026-11-22）：记账每回照抄同一条「拖着」，回执连八回一个样——状态没变的不再进回执、不再记一笔
+    x.state = st; if (!again) { x.touched = s.turn; x.log = arr(x.log).concat([{ turn: s.turn, when: timeText(s.clock), state: st, why: one(actPlain(r.why), 60), changed: one(actPlain(r.changed), 60) }]).slice(-8); }
+    if (!again) out.push({ id: x.id, type: x.type, what: x.what, state: st, why: one(r.why, 60), changed: one(r.changed, 60) });
   }
   // 这一回新开、职权以内、跟前就能办的令（推演说「能」、步骤不费月余、没走诏令），记账漏报的照办成记（玩家吩咐了、正文写了，不能吊着三回再写「没有下文」）
   { const ST = arr(CUR_RULING && CUR_RULING.steps); for (const a of arr(s.actsNow)) { const x = arr(s.acts).find(z => z.id === a.realId); if (!x || x.state !== '在办' || x.edict || out.some(o => o.id === x.id) || !/令|试/.test(x.type)) continue;
@@ -8504,9 +8516,12 @@ function windfallGuard(s, d, said, ruling) {
   if (Array.isArray(d.ledger) && cash != null && !fought && !WIND_MONEY.test(E)) {
     const monthly = arr((s.estate || {}).income).reduce((a, x) => a + Math.max(0, N0(x && x.amount) || 0), 0);
     const spent = d.ledger.reduce((a, x) => a + Math.max(0, -(N0(x && x.amount) || 0)), 0);
-    const cap = Math.max(Math.abs(cash), monthly * 3, spent);
+    const cap = Math.max(Math.abs(cash), monthly * 3, spent, N0(s.lifeCash0) || 0);   // 考卷三：现钱是 0 时上限也成了 0，什么横财都认（0 一回变 322.55）——至少照开局的家底算
     d.ledger = d.ledger.filter(x => { const a = N0(x && x.amount); if (a != null && a > 0 && cap > 0 && a > cap) { unb.push(`进项「${one(x.item, 16)}」${a}`); return false; } return true; });
   }
+  // 一之二、公家的钱不进私账（考卷三：知县勘验、赈济、补库银，账上现钱成了 -243.75、又凭空进 322.55）：库银、赋税、赈粮、军饷这些是衙门的，不是主角的现钱；自掏腰包、垫付、俸禄、贿赂、赏赐才算
+  if (Array.isArray(d.ledger) && (isRuler(s) || govScope(s))) d.ledger = d.ledger.filter(x => { if (!x) return false; const w = String(x.item || '') + ' ' + String(x.note || '');
+    if (PUB_MONEY.test(w) && !PRIV_MONEY.test(w)) { unb.push(`「${one(x.item, 16)}」是公家的钱，不记进你的现钱`); return false; } return true; });
   // 二、妻妾夫婿：正文凭空送来的不认
   if (Array.isArray(d.household) && !WIND_MARRY.test(E)) d.household = d.household.filter(h => {
     if (!h || !h.name) return true; const old = arr(s.household).some(m => m.name === h.name);
@@ -16438,7 +16453,7 @@ ${text}
 3 所知：每个人只知道他此时能知道的，消息按路程迟到，没有未卜先知；书中人不知道将来的史事
 4 身份与规矩：尊卑、称谓、官场与家族的规矩合这个年代；小人物见不到大人物，见到要有门路
 5 时间与路程：这一回里过的时间、走的路、办的事在日子上说得通
-6 前后一致：与上一回的结尾、定本、真人档案不矛盾；已死的人不出场，人不在两处
+6 前后一致：与上一回的结尾、定本、真人档案不矛盾；已死的人不出场，人不在两处；同一回里同一样东西的数目（人数、钱粮、囚犯、兵马）前后不打架，旁人报的数不同要交代为什么（考卷：十七名、二十七名同回两说）
 7 历史背景：大势的阶段（前兆、发生、余波）没写错，到了日子的大事没漏；外地的消息按路程到达、风闻和确报分清；玩家自己的事没被硬拽去跟主线挂钩，主角的出身、籍贯、所在没被改去凑大事、没被挪到大事跟前，没有攀附名人（跟主角没来往的真人认得他、来找他、成了他的亲戚故交），没有给有记载的人（主角或真人）添史料没有的身份、官职、交往、事迹（主角亲手改过的除外：本局已经改了的人和事照本局写，不倒回史书原样），没有堆砌事件、派任务、加玩家这一步没牵出来的戏
 8 人物不蠢：身边的人能干，不事事请示、不追问玩家「要不要」「怎么办」；对手聪明，不为了让主角赢而犯傻；人物不善化——该有的私心、贪婪、势利、狠辣照那个年代写，没人说教、劝善、突然良心发现
 9 数目与器物：钱粮、兵力、价格、距离的量级合这个年代；没有这个年代没有的东西、说法
@@ -16482,16 +16497,24 @@ const ERA_TABLE = '武德618贞观627永徽650显庆656龙朔661麟德664乾封6
 const ERA_START = (() => { const m = new Map(); for (const [, n, y] of ERA_TABLE.matchAll(/([\u4e00-\u9fff]{2})(\d{3,4})/g)) if (!m.has(n)) m.set(n, +y); return m; })();
 const CN = { 元: 1, 正: 1, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
 const cnNum = x => { const t = String(x); if (/^\d+$/.test(t)) return +t; if (t.length === 1) return CN[t] || 0; let n = 0; const i = t.indexOf('十'); if (i < 0) return [...t].reduce((a, c) => a * 10 + (CN[c] || 0), 0); n = (i === 0 ? 1 : CN[t[i - 1]] || 1) * 10 + (CN[t[i + 1]] || 0); return n; };
+/** 朝廷改了元、亡了，别家照旧奉这个年号的（岐奉天复到 924、晋吴奉天祐到 923、前凉奉建兴到 361、升平到 376）：年份写过头不算错 */
+const ERA_KEPT = { 天复: 924, 天祐: 923, 建兴: 361, 升平: 376 };
 /** 正文写到的年号年份在将来（未卜先知）、或年号是这个政权此时还没有的：编的 */
 function futureEras(s, text) {
   const y = s.clock && s.clock.y; if (y == null) return [];
   const starts = new Map();
   for (const h of HALL(s)) for (const r of arr(h.rulers)) for (const rg of arr(r.reigns)) if (rg && rg[0]) { const n = String(rg[0]); if (!starts.has(n) || starts.get(n) > rg[1]) starts.set(n, rg[1]); }
   if (y >= 600) for (const [n, st] of ERA_START) if (!starts.has(n) || starts.get(n) > st) starts.set(n, st);   // 隋以前同名的年号多，只拿内置史料查
-  const out = [];
+  const out = [], ends = new Map();   // 同一政权下一个年号起的那年，就是这个年号最后一年（改元那年两个年号都用得着）
+  for (const h of HALL(s)) { const R = [], last = {}; for (const r of arr(h.rulers)) { const pp = r.polity || h.id || ''; if (r.to != null) last[pp] = Math.max(last[pp] ?? -1e9, +r.to); for (const rg of arr(r.reigns)) if (rg && rg[0] && rg[1] != null) R.push({ n: String(rg[0]), f: +rg[1], p: pp }); }
+    const byP = {}; for (const x of R) (byP[x.p] = byP[x.p] || []).push(x);
+    for (const [pp, L] of Object.entries(byP)) { L.sort((a, b) => a.f - b.f); const put = (n, e) => { if (!ends.has(n) || ends.get(n) < e) ends.set(n, e); };
+      for (let i = 0; i < L.length; i++) { const nx = L.slice(i + 1).find(z => z.f > L[i].f && z.n !== L[i].n); if (nx) put(L[i].n, nx.f); else if (last[pp] != null && !L.slice(i + 1).some(z => z.n !== L[i].n)) put(L[i].n, last[pp]); } } }   // 一朝最后一个年号到末代君主下台那年为止（清泰到 936）
+  for (const [n, e] of Object.entries(ERA_KEPT)) if (ends.has(n)) ends.set(n, Math.max(ends.get(n), e));
   for (const m of String(text || '').matchAll(/([一-鿿]{2})(元|[一二三四五六七八九十]{1,3})年/g)) {
     const st = starts.get(m[1]); if (st == null) continue;
     const yy = st + cnNum(m[2]) - 1; if (yy > y + 0) out.push(`「${m[0]}」是公元 ${yy} 年，此时才 ${y} 年`);
+    else { const e = ends.get(m[1]); if (e != null && yy > e) out.push(`「${m[0]}」不存在：${m[1]}到公元 ${e} 年就改元了（考卷：清泰只有三年，写出清泰四年）`); }
   }
   return [...new Set(out)].slice(0, 3);
 }
@@ -16743,6 +16766,7 @@ function spanMonths(span, said) {
   const zh = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 半: 0.5 };
   // 只认真叫日子往前走的说法（R-257：借钱「一年还本」，钟一下过了一年）：「过一年」「一年后」「当差两年」「这一年照常……」
   const N = '(半|[一两二三四五六七八九十]|\\d+)', SPAN_RE = new RegExp(`(?:过|等|守|熬|住|待|歇|当差|当直|操练|经营|干|做|跑|练|混)\\s*(?:了|上|满)?\\s*${N}\\s*(年|个?月)|${N}\\s*(年|个?月)\\s*(?:以后|之后|后|过去|光景|下来|再看|再说|里|中|间)|这${N}?\\s*(年|个?月)(?:里|中|间|下来)?[^。；]{0,12}(?:照常|照旧|当差|当直|操练|经营|攒|练|守)|(?:此|自|今)后\\s*${N}\\s*(个?月|年)`);
+  { const cm0 = (typeof S !== 'undefined' && S && S.clock && S.clock.m) || 6; if (/到年底|到年终|到年末|到岁末|年底(?:考成|再|为止)/.test(t) && !/明年|来年|[两二三四五六七八九十\d]\s*年/.test(t)) return Math.max(0.5, 12 - cm0 + 0.5); }   // 考卷三：「这一年照常理政，到年底考成」照十二个月走，钟过到次年六月——说了到年底就到年底
   const mm = t.match(SPAN_RE); if (mm) { const n = mm[1] || mm[3] || mm[5] || mm[7] || '一', u = mm[2] || mm[4] || mm[6] || mm[8]; const v = zh[n] ?? +n; return /年/.test(u) ? Math.min(60, v * 12) : Math.min(24, v); }
   let m = null;
   { const cm = (typeof S !== 'undefined' && S && S.clock && S.clock.m) || 6, upto = to => ((to - cm + 12) % 12) || 12;   /* 照此刻几月算（R-271：一律给六个月，正月说「到年底」该十一个月，十一月说只一两个月） */
@@ -17323,6 +17347,14 @@ function queueNameSearch(s, post) {
   s.lookups = [q].concat(arr(s.lookups).filter(x => x !== q)).slice(0, 4);
 }
 /** 把一段字（或一整份账）里的「严某」「王某人」全换成起好的名字 */
+const PUB_MONEY = /库银|库存|官库|县库|州库|府库|国库|内帑|公帑|官帑|公费|公使钱|赈济|赈粮|放赈|起运|存留|解京|解送|漕粮|漕折|夏税|秋粮|条鞭|税银|钱粮|赋税|田赋|军饷|粮饷|军需|仓粮|库藏|追比|旧欠/;
+const PRIV_MONEY = /私|自掏|自家|自己|垫|捐|俸|养廉|薪|贿|赏|赠|礼金|束脩|分红|家用/;
+/** 身份一句和官职账对齐（考卷三：抬头「罢官在籍（原吴县典史）」，账上官职仍是吴县知县、正文还在等考语）：
+ *  账上有官的，身份不许写成罢官在籍；身份写着现任某官、账上官职空着的不动（那是别处管） */
+function roleSync(s) { const c = s && s.career, p = s && s.protagonist; if (!c || !p) return; const off = String(c.office || '').trim(), role = String(p.role || '');
+  if (off && /^(罢官|革职|致仕|闲居|在籍|罢)/.test(role) && !/罢|革|致仕/.test(off)) { p.role = off; s.careerLog = arr(s.careerLog).concat([{ when: timeText(s.clock), what: `身份照官职账改回${off}` }]).slice(-80); } }
+/** 写戏的向程序要账的括注（【查账：……】【缺数先查账】这类）不进正文 */
+function stripLookNotes(t) { return String(t == null ? '' : t).replace(/[ \t]*【(查账|缺数先查账|你要查的账)[^】\n]{0,200}】[ \t]*/g, '').replace(/\n{3,}/g, '\n\n').trim(); }
 function scrubText(s, t) { t = String(t == null ? '' : t); const nf = nameFixes(s, t).sort((a, b) => b.wrong.length - a.wrong.length); for (const x of nf) t = t.split(x.wrong).join(x.right); return t; }
 function scrubObj(s, o) { try { const raw = JSON.stringify(o), t = scrubText(s, raw); return t === raw ? o : JSON.parse(t); } catch (_) { return o; } }
 /** 真人名单：史料里的、档案里认定的真人、查到的本地真人、名册里史料或推断出的官员 */
@@ -18154,7 +18186,7 @@ function applyReply(s, d, said) {
   const keepMen = x => { const f = arr(s.forces).find(f => f && f.name === (x.name || x.leader)), o = f && N0(f.troops), n = N0(x.troops); if (o == null || n == null || o <= 0 || n >= o * 0.85) return x; const fought = arr(s.battles).some(b => b && b.turn === s.turn); if (fought) return x; noteErr('记账兵马大减没战报', `${f.name} ${o}→${n}，照记${Math.round(o * 0.85)}`); return { ...x, troops: Math.round(o * 0.85), status: f.status }; };
   /* 在途的兵（待发、行军、围城）在哪、什么状态只归程序照日子算，记账改不动（R-269 真玩：张敬达一回在太原交战、下一回又回到河阳巩县间、再下一回在晋州城西） */
   const keepMarch = x => { const nm = x.name || x.leader, c = arr(s.campaigns).find(c => c.force === nm && /待发|行军|围城/.test(c.state)); if (!c) return x; const y = { ...x }; delete y.at; delete y.status; return y; };
-  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(keepLead).map(keepMen).map(keepMarch).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
+  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(x => forceAlias(s, x)).map(keepLead).map(keepMen).map(keepMarch).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
   // 兵马、地盘这一回的增减：记进账目，并摆到正文下面（不用翻册子也看得见）
   if (play) {
     const mv = [];
@@ -18403,10 +18435,14 @@ function sideFind(q) { q = String(q || '').trim(); const again = q && q === FIND
     const hits = [...side.querySelectorAll('b,td,div,span,summary,li,p,a,button')].filter(e => !e.closest('.tabs') && e.id !== 'sideFind' && (e.textContent || '').includes(q) && ![...e.children].some(c => (c.textContent || '').includes(q)));
     if (hits.length) { findMark(q); setTimeout(() => findMark(q), 60); ORGMSG = hits.length > 1 ? `「${q}」在${(tabsFor(S).find(t => t[0] === tk) || [])[1] || tk}里，共${hits.length}处（再按回车找下一个册子）` : ''; return tk; } }
   ORGMSG = `账册里没有「${q}」`; render0(); return null; }
+/* 发出键按下去、松手之前页面重画了（上一回收尾），点击落在旧按钮上没人接，玩家以为发了其实没发（zcode 全库扫描 二·5）：按下记一笔，重画后补点一次 */
+let SEND_ARM = 0;
+document.addEventListener('pointerdown', e => { const b = e.target && e.target.closest && e.target.closest('#bSend'); if (b && !b.disabled) SEND_ARM = Date.now(); }, true);
+function sendReplay() { if (!SEND_ARM) return; if (Date.now() - SEND_ARM > 800) { SEND_ARM = 0; return; } const old = SEND_ARM; setTimeout(() => { if (SEND_ARM !== old) return; SEND_ARM = 0; const b = $('#bSend'), v = $('#said'); if (b && !b.disabled && !BUSY && v && v.value.trim()) b.click(); }, 450); }
 function render() {
   /* 保持同步绘制：按钮点完、月结跑完，调用者紧接着就能读到新页（异步合帧试过，测试与「点完立刻看结果」都不稳）。
      省开销靠两处不改变行为的：大存档只 stringify 一次、后台连做多个活时三秒合存一次（R-189）。 */
-  try { if (S) tidyState(S, true); render0();   /* 画界面只做轻的整理；人事树对齐、行动单收起这些重的每回合开始、读档时才做（R-272：以前正文一边出字一边跑） */ RENDER_ERR = ''; return; } catch (e) { RENDER_ERR = String(e && e.message || e); noteErr('render', RENDER_ERR, { stack: String(e && e.stack || '').slice(0, 600), tab: typeof TAB !== 'undefined' ? TAB : '' }); }
+  try { if (S) tidyState(S, true); render0(); sendReplay();   /* 画界面只做轻的整理；人事树对齐、行动单收起这些重的每回合开始、读档时才做（R-272：以前正文一边出字一边跑） */ RENDER_ERR = ''; return; } catch (e) { RENDER_ERR = String(e && e.message || e); noteErr('render', RENDER_ERR, { stack: String(e && e.stack || '').slice(0, 600), tab: typeof TAB !== 'undefined' ? TAB : '' }); }
   try { if (typeof TAB !== 'undefined' && TAB !== 'board') { TAB = 'board'; render0(); return; } } catch (_) { /* 局面页也画不出 */ }
   const app = document.querySelector('#app'); if (app && !document.querySelector('#renderErr')) app.insertAdjacentHTML('afterbegin', `<div id="renderErr" class="err" style="margin:8px 0">页面有一块画不出来（${esc(RENDER_ERR.slice(0, 120))}），已记进问题报告；游戏照常能玩，可以接着写下一步，或在「设置」里导出问题报告。</div>`);
 }
@@ -18705,7 +18741,7 @@ function renderGame() {
     return `<div class="msg gm ${c.kind === 'talk' ? 'talk' : ''}">
       <div class="lab">${c.kind === 'talk' ? '<span>戏外 · 不花时间</span>' : `<span>${c.turn != null ? '第 ' + esc(c.turn) + ' 回合' : '开场'}</span><span class="tag">${esc(c.when || '')}${c.extra && c.extra.days ? ` · 过了 ${c.extra.days} 天` : ''}</span>`}</div>
       ${c.extra && c.extra.intro ? introHtml(c.extra.intro) : ''}
-      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}${c.extra && c.extra.yearCard && arr(c.extra.yearCard.lines).length ? `<div class="yearcard"><b>${esc(c.extra.yearCard.label)}年终</b>${c.extra.yearCard.lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>` : ''}${c.extra && arr(c.extra.delta).length ? `<div class="delta">这一回：${arr(c.extra.delta).map(esc).join(' · ')}</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${(isLast && EDITING ? paras(c.text) : parasEnt(s, markFict(s, c.text)))}</div>${c.extra ? receiptHtml(c.extra.acts, c.extra.unbooked) : ''}
+      ${c.extra && c.extra.fixack ? `<div class="muted" style="font-size:13px;margin-bottom:4px">${esc(c.extra.fixack)}</div>` : ''}${c.cur && c.cur.head ? `<div class="headln">【${esc(c.cur.head)}】</div>` : ''}${c.extra && c.extra.yearCard && arr(c.extra.yearCard.lines).length ? `<div class="yearcard"><b>${esc(c.extra.yearCard.label)}年终</b>${c.extra.yearCard.lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>` : ''}${c.extra && arr(c.extra.delta).length ? `<div class="delta">这一回：${arr(c.extra.delta).map(esc).join(' · ')}</div>` : ''}<div class="text" ${isLast && EDITING ? 'contenteditable="true" id="editText"' : ''}>${(isLast && EDITING ? paras(c.text) : parasEnt(s, markFict(s, stripLookNotes(c.text))))}</div>${c.extra ? receiptHtml(c.extra.acts, c.extra.unbooked) : ''}
       ${c.kind !== 'talk' ? extrasHtml(c.extra && c.extra.salvaged && !(isLast && c.unsettled) ? { ...c.extra, salvagedBtn: false } : c.extra) : ''}
       ${isLast && !BUSY ? `<div class="msgacts">${EDITING ? '<button class="main" id="bEditSave">保存修改</button><button id="bEditCancel">取消</button>'
         : `<button id="bRegen" ${s.prev ? '' : 'disabled title="开场不能重写；想换开场，回首页重开一局"'}>重写这一条</button><button id="bEdit">改这段文字</button>`}</div>${!EDITING && s.prev && c.kind !== 'talk' ? `<div class="fbrow"><span class="muted">这一回有毛病，点一下就照这个重写：</span>${Object.keys(FEEDBACK).map(k => `<button class="chip" data-fb="${esc(k)}">${esc(k)}</button>`).join('')}</div>` : ''}<div id="regenBox"></div>
@@ -19137,15 +19173,16 @@ async function startGame(sentence, have, havePre, custom, spec) {
 /* ========== 开局一次查齐（2026-11-05 玩家：「什么叫做上回合没推成啊，无法接受……一次性所有数据查清楚，开局可以慢，后面速度正常就好」）：
  *  开场写完以后，把家谱、人事树、在任官员表、朝堂全表、更替表、人才年表、州府长官、行情、财政底账、户口、国势、天下各家、本事、史料包……后台该做的一口气做完，
  *  没做成的当场清掉「失败了下回再试」的标记、马上重试（最多三轮），做的时候挡着输入框、写明在查什么；做完才放玩家走第一步。往后每回照常在后头做，不再等。 ========== */
-let PREP = null;
+let PREP = null, PREP_MAX = 15 * 60 * 1000;
 async function prepAll(s0) {
   PREP = { round: 0, t0: Date.now() }; PHASE = 'prep'; setBusy(true);
   try {
     for (let r = 1; r <= 5 && S === s0 && !BG_STOP; r++) {
       PREP.round = r; render();
       if (r > 1) for (const k of Object.keys(s0)) if (/Fail$/.test(k) && s0[k] != null && typeof s0[k] === 'number') delete s0[k];   // 上一轮没做成的，这一轮当场再做
-      await afterTurn(s0, null, null);
-      if (Date.now() - PREP.t0 > 15 * 60 * 1000) break;   // 最多等十五分钟，网络实在不通就先放行，剩下的照常在后头做
+      { const left = PREP_MAX - (Date.now() - PREP.t0); if (left <= 0) break; let tm = null;   // 任务十三实跑：一轮里一个调用卡住，开局挡了三十四分钟——一轮也不许超过总时限，到点先放玩家走，剩下的在后头接着做
+        await Promise.race([afterTurn(s0, null, null), new Promise(res => { tm = setTimeout(res, left); })]); clearTimeout(tm); }
+      if (Date.now() - PREP.t0 > PREP_MAX) break;   // 最多等十五分钟，网络实在不通就先放行，剩下的照常在后头做
       const L = bgJobs(s0, null, null).filter(j => { try { return !!j.due(); } catch (_) { return false; } }).filter(j => !/^(press|agenda|compact|world|sync|pol|digest)$/.test(j.id));
       if (!L.length) break; PREP.left = L.map(j => j.msg);
       if (r >= 3 && seesCourt(s0) && !s0.org) orgFromLib(s0);   /* 联网整理三轮都没成：照本朝制度库先立起人事树，一回合就看得到（R-194） */
@@ -19352,6 +19389,7 @@ async function send(said, span, note, resume) {
         if (lk) { const keys = lk[1].split(/[、，,；;\s]+/).map(x => x.trim()).filter(Boolean).slice(0, 8); EXTRA_LOOK = ledgerLookup(S, keys, said) || '账上没有这几样的记载：照材料里已有的写，没有的不写确数。'; S.lookAsked = arr(S.lookAsked).concat([{ turn: S.turn, keys }]).slice(-20);
           try { const rl = await callClaude(storyInput(S, said, span, note, sys, ruling), draftCb, { json: false, temperature: STORY_T, maxTokens: 6000, system: sys ? storyRules() : '', ...(LIGHT ? { thinking: false } : {}) }); st = splitStory(rl.text); } finally { EXTRA_LOOK = ''; }
           if (/^\s*【查账/.test(String(st.text || ''))) st = { ...st, text: '' }; } }
+      if (st && st.text) st = { ...st, text: stripLookNotes(st.text) };   // 考卷三：长正文末尾挂着「【查账：钱粮实数……】」，玩家看得到——要账只认单独一行，混在正文里的一律删
       // 偶尔一个字没写出来：自动再写一次，不让玩家点
       if (!st.text) {
         const r2 = await callClaude(storyInput(S, said, span, note, sys, ruling), draftCb, { json: false, temperature: STORY_T, maxTokens: 6000, system: sys ? storyRules() : '' });
@@ -19452,7 +19490,7 @@ async function send(said, span, note, resume) {
       // 账里哪一项格式怪到程序出错：正文照样留下，这一回标成「账没记上」，可以补记，不让整回作废
       const snap = clone(S);
       if (PERF) { const t = Date.now(); if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); S.perf = arr(S.perf).concat([{ turn: (S.turn || 0) + 1, secs: Math.round((t - PERF.t0) / 1000), ph: Object.fromEntries(Object.entries(PERF.ph).map(([k, v]) => [k, Math.round(v / 1000)])), rw: (st.rewrote ? 1 : 0) + (early ? 1 : 0) }]).slice(-20); PERF = null; }
-      try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said); try { const ap = textAppoint(S, said, fx.text); if (ap.length) { noteErr('照诏书落账', ap.join(' / ')); orgSync(S); } } catch (_) { /* 认不出诏书就照记账 */ } if (S.money && N0(S.money.cash) < 0) { const owe = -N0(S.money.cash); S.money.cash = 0; try { const H = hhOf(S), ym = Math.floor(ymOf(S.clock)); H.debt = arr(H.debt).concat([{ from: '挪借', amt: owe, rate: 0.02, ym, due: ym + 12 }]); } catch (_) { /* 无 */ } noteErr('现钱成负', '这一回记账后现钱成了 -' + owe + '，记成欠账'); }   // 现钱不成负数：不够的记欠账（R-266）
+      try { applyReply(S, Object.assign(d, { reply: deslop(fx.text), mode: 'play', span }), said); roleSync(S); try { const ap = textAppoint(S, said, fx.text); if (ap.length) { noteErr('照诏书落账', ap.join(' / ')); orgSync(S); } } catch (_) { /* 认不出诏书就照记账 */ } if (S.money && N0(S.money.cash) < 0) { const owe = -N0(S.money.cash); S.money.cash = 0; try { const H = hhOf(S), ym = Math.floor(ymOf(S.clock)); H.debt = arr(H.debt).concat([{ from: '挪借', amt: owe, rate: 0.02, ym, due: ym + 12 }]); } catch (_) { /* 无 */ } noteErr('现钱成负', '这一回记账后现钱成了 -' + owe + '，记成欠账'); }   // 现钱不成负数：不够的记欠账（R-266）
         // 常理审查挑出的账上毛病：记完账当场改；程序还能挑出硬伤的，再审一次当场改（不留到下一回）
         if (LOGIC_FIX.length) { applyLogicFixes(S, LOGIC_FIX); LOGIC_FIX = []; }
         if (logicFaults(S).length) { PHASE = 'ledger'; render(); try { await within(logicAudit(S), 30000 * TSCALE); } catch (e2) { if (e2 && e2.code === 'cancelled') throw e2; } }
@@ -19911,7 +19949,7 @@ document.addEventListener('click', async e => {
     }
   }
   if (ds.write) { const ta = $('#said'); ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + ds.write; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); ta.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
-  if (t.id === 'bSend') {
+  if (t.id === 'bSend') { SEND_ARM = 0;
     const sp = $('#span').value; const said = $('#said').value; $('#span').value = 'auto';
     // 玩家是在指出上一回写错了（「你写错了…」「戏外：这里不对…」「敷衍」）：不当成新一步，照他说的重写上一回
     if (S && S.prev && isFixRequest(said)) {

@@ -22,10 +22,11 @@ http.createServer(async (req, res) => {
   try { up = await fetch(UP + req.url.replace(/^\/v1/, ''), { method: req.method, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + KEY }, body: req.method === 'GET' ? undefined : JSON.stringify(j || {}) }); }
   catch (e) { rec.err = 'fetch ' + (e.cause && e.cause.code || e.message); rec.ms = Date.now() - t0; fs.appendFileSync(path.join(OUT, 'calls.jsonl'), JSON.stringify(rec) + '\n'); res.writeHead(502); res.end(JSON.stringify({ error: { message: rec.err } })); return; }
   rec.status = up.status; res.writeHead(up.status, { 'content-type': up.headers.get('content-type') || 'application/json' });
-  let raw = ''; const rd = up.body.getReader(), dec = new TextDecoder();
-  try { for (;;) { const { done, value } = await rd.read(); if (done) break; const s = dec.decode(value, { stream: true }); raw += s; res.write(s); } }
+  let raw = '', gone = false; const rd = up.body.getReader(), dec = new TextDecoder();
+  res.on('close', () => { if (!res.writableFinished) { gone = true; rec.err = rec.err || 'client aborted'; try { rd.cancel().catch(() => {}); } catch (_) { /* 已断 */ } } });   // 游戏那头先挂了（中途取消、超时）：停读上游，不再往断掉的连接写（zcode 扫描：undici terminated 崩过四回）
+  try { for (;;) { const { done, value } = await rd.read(); if (done) break; const s = dec.decode(value, { stream: true }); raw += s; if (!gone) try { res.write(s); } catch (_) { gone = true; } } }
   catch (e) { rec.err = 'stream ' + (e.cause && e.cause.code || e.message); }   // 上游半路断了：记下来、照常结束这一次，不让整个转发进程崩掉（真模型实测 2026-11-16 崩过一回，之后的调用全没记上）
-  res.end();
+  try { if (!gone) res.end(); } catch (_) { /* 已断 */ }
   let content = '', reasoning = '', usage = null, finish = null;
   if (stream) { for (const line of raw.split('\n')) { const m = line.match(/^data:\s*(\{.*\})\s*$/); if (!m) continue; try { const c = JSON.parse(m[1]); const d = c.choices && c.choices[0]; if (d && d.delta) { content += d.delta.content || ''; reasoning += d.delta.reasoning_content || ''; } if (d && d.finish_reason) finish = d.finish_reason; if (c.usage) usage = c.usage; } catch (_) { /* 半截 */ } } }
   else { try { const c = JSON.parse(raw); const d = c.choices && c.choices[0]; content = d && d.message ? d.message.content || '' : ''; reasoning = d && d.message ? d.message.reasoning_content || '' : ''; finish = d && d.finish_reason; usage = c.usage || null; } catch (_) { /* 错误页 */ } }
