@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
   const leak = async () => p.evaluate(() => { const t = document.body.innerText; return ['卢见曾', '乾隆', '扬州', '盐运使', '盐商', '两淮'].filter(k => t.includes(k)); });
   await p.fill('#qText', '930年 闽王 王延钧');
   await p.click('#bStart');
-  const opened = await idle(120000);
+  const opened = await (async () => { try { await p.waitForSelector('#said', { timeout: 180000 }); } catch (_) { return false; } return idle(120000); })();
   const st0 = await p.evaluate(() => S ? { name: S.protagonist.name, y: S.clock.y, polity: S.place.polity, role: S.protagonist.role, realm: !!S.realm, treasury: S.realm && S.realm.treasury, household: arr(S.household).map(m => m.relation + ':' + m.name).slice(0, 12), forces: arr(S.forces).map(f => f.name + '/' + f.troops), territory: arr(S.territory).map(t => t.place).slice(0, 8), prices: arr(S.prices).length } : null);
   const lk0 = await leak();
   const inputs = ['上朝听政，问各州钱粮', '遣使往吴越修好', '令威武军整训'];
