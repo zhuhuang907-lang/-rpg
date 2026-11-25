@@ -5977,6 +5977,7 @@ function startMonth(s, r, era) {
   const ev = histEvents(s, r.from * 12, r.from * 12 + 12).sort((a, b) => (a.key && String(a.key).startsWith('act:') ? 1 : 0) - (b.key && String(b.key).startsWith('act:') ? 1 : 0)).find(e => e.y === r.from && e.m && (arr(e.who).includes(r.name) || String(e.text).includes(r.name) || String(e.text).includes(String(era ? era[0] : '').replace(/[（(].*$/, ''))) && ACCEDE_RE.test(e.text));
   return ev ? ev.m : 1;
 }
+const rootPol = n => String(n || '').split('（')[0].split('(')[0];
 function rulersAt(y, s, m) {
   const out = [], seen = new Set();
   const mm = m != null ? m : s && s.clock && s.clock.y === y ? s.clock.m : 12;
@@ -5987,7 +5988,7 @@ function rulersAt(y, s, m) {
   { const has = new Set(all.map(r => String(r.polity).replace(/（.*$/, '')));
     for (const P of POLLIST) { const k = String(P.name || '').replace(/（.*$/, ''); if (!k || has.has(k) || !(P.from <= y && P.to >= y)) continue;
       { let R = arr(P.rulers).filter(r => r.from <= y && r.to >= y);
-        if (R.length > 1) { R.sort((a, b) => a.from - b.from); R = [mm < 7 ? R[0] : R[R.length - 1]]; }   // 总表不记月份：这一年换君的，上半年算旧君、下半年算新君（马殷 930 年冬卒）
+        if (R.length > 1) { const rn = (() => { try { return realmRuler(k, y + (mm - 1) / 12); } catch (_) { return ''; } })(), hit = rn && R.find(r => rn.includes(String(r.name).replace(/（.*$/, ''))); R.sort((a, b) => a.from - b.from); R = hit ? [hit] : [mm < 7 ? R[0] : R[R.length - 1]]; }   // 总表不记月份：先照疆域表里带月份的君主（马殷 930 冬卒），没有再按上下半年分
         for (const r of R) if (!seen.has(k + r.name)) { seen.add(k + r.name); all.push({ polity: k, name: String(r.name).replace(/（.*$/, ''), title: r.title || '', from: r.from, to: r.to, reigns: arr(r.eras).map(e => [e.name, e.from]), src: r.src, fromList: true }); } } } }
   /* 王室世系里的君主也补进来（2026-11-22：王潮、卓岩明、李仁达、留从效、陈洪进这些不在政权总表里的，玩闽国时皇帝要全） */
   for (const HH of HOUSES) { if (!HH || !HH.range || y < HH.range[0] || y > HH.range[1]) continue;
@@ -6010,7 +6011,10 @@ function rulersAt(y, s, m) {
     const rg = rg0.filter(x => x[1] < y || (x[1] === y && mm >= (x[2] || (r.from === y && x === rg0[0] ? startMonth(s, r, x) : 1)))).pop();
     out.push({ polity: r.polity, name: r.name, title: r.title || '', era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
   }
-  return out;
+  /* 同一人、同一个国名的两种写法（荆南／荆南（南平））只留一条（2026-11-26：天下名录里高从诲出现两次） */
+  const bestN = new Map();
+  for (const r of out) { const k = rootPol(r.name) + '|' + rootPol(r.polity); const o = bestN.get(k); if (!o || String(r.polity).length < String(o.polity).length) bestN.set(k, r); }
+  return [...bestN.values()];
 }
 /** 跨了年、AI 没给新年号：把年号后的年数往后推（「至正九年」过一年 →「至正十年」）；推不了就不留旧的 */
 function bumpEra(label, dy) {
@@ -7079,7 +7083,7 @@ async function buildRoster(s) {
   // 只查自己那一家，名字又必须出现在搜到的摘要里——五代十国一搜什么都没有。改成：这一年并立的每一家各做一张表（问 DeepSeek 照史书列，带出处），有博查的一个个按名字核，核得上的收；没博查照表收（问 DS 要表）
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '';
   const base = [], seen = new Set();
-  for (const r of rulersAt(y, s)) if (!seen.has(r.name)) { seen.add(r.name); base.push({ g: r.polity || pol, name: r.name, post: r.title || r.polity, src: '内置史料' }); }
+  for (const r of rulersAt(y, s)) { let reg = ''; try { for (const q of [r.polity, String(r.polity || '').replace(/[（(].*$/, '')]) { if (!q) continue; const v = regRuler(s, { name: q }); if (v) { reg = v; break; } } } catch (_) {} const nm = reg ? reg.replace(/（.*$/, '') : r.name, mm = /（([^（）]*)）\s*$/.exec(reg || ''); if (!nm || seen.has(nm)) continue; seen.add(nm); base.push({ g: r.polity || pol, name: nm, post: mm ? mm[1] : (r.title || r.polity), src: '内置史料' }); }
   for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && postOnly(ps[2]) && !seen.has(f.name + ps[2])) { seen.add(f.name + ps[2]); base.push({ g: '', name: f.name, post: postOnly(ps[2]), since: ps[0], src: '内置史料' }); }
   /* 任职年表、朝廷数据也进名录（Claude 自办 4，R-225/R-227）：本政权这一年在任的，按官的轻重排，大官在前 */
   { const PRI = t => /宰相|平章|丞相|仆射|侍中|中书令|尚书令|枢密|大学士|首辅/.test(t) ? 6 : /尚书|节度使|总督|巡抚|都督|大将军|太尉|司徒|司空/.test(t) ? 5 : /侍郎|御史|学士|观察|留守|总兵|刺史|知府|太守/.test(t) ? 4 : /将军|指挥使|判官|掌书记|郎中|给事中/.test(t) ? 3 : 1;
@@ -7119,7 +7123,7 @@ function rosterHtml(s) {
   if (rosterDue(s) && !BUSY && !ROSTER_P) ROSTER_P = Promise.resolve().then(() => buildRoster(s)).catch(e => { if (!(e && e.code === 'cancelled')) s.rosterFail = s.turn; }).finally(() => { ROSTER_P = null; if (rosterDue(s)) s.rosterFail = s.turn; try { store.save(s); } catch (_) {} if (TAB === 'people') render(); });
   const R = s.roster, head = `<div class="h" style="margin-top:6px"><span class="seal">朝</span>天下名录<span class="note">${R ? R.y + '年' : '这一年'}全国在任、在世的要紧人物</span></div>`;
   if (!R || R.y !== s.clock.y) return head + `<div class="muted">${ROSTER_P ? '正在查这一年全国的宗室王公、中枢大臣、各地大员、将帅、世家……' : '正在查这一年全国的宗室王公、中枢大臣、各地大员、将帅、世家……'}</div>`;
-  return head + `<div class="roster">${R.groups.map((g, i) => `<details class="oadd"${i < 2 ? ' open' : ''}><summary><b>${esc(g.name)}</b> <span class="muted">${g.people.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>职位</th><th></th></tr>${g.people.map(x => `<tr><td><b>${esc(x.name)}</b>${x.note ? `<div class="muted" style="font-size:11px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.post)}${x.since ? `<span class="muted">（${esc(x.since)}年起）</span>` : ''}</td><td><button class="link" data-write="${esc('设法求见' + x.name + '，')}">求见</button></td></tr>`).join('')}</table></div></details>`).join('')}</div>`;
+  return head + `<div class="roster">${R.groups.map((g, i) => `<details class="oadd"${i < 2 ? ' open' : ''}><summary><b>${esc(g.name)}</b> <span class="muted">${g.people.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>职位</th><th></th></tr>${g.people.map(x => `<tr><td><b>${esc(x.name)}</b>${x.note ? `<div class="muted" style="font-size:11px">${esc(x.note)}</div>` : ''}</td><td>${esc((() => { try { const root = n => String(n || '').replace(/[（(].*$/, ''); const me = root(x.name); for (const q of [g.name, root(g.name)]) { const v = q && regRuler(s, { name: q }); if (v && root(v) === me) { const mm = /（([^（）]*)）\s*$/.exec(v); if (mm) return mm[1]; } } } catch (_) {} return x.post; })())}${x.since ? `<span class="muted">（${esc(x.since)}年起）</span>` : ''}</td><td><button class="link" data-write="${esc('设法求见' + x.name + '，')}">求见</button></td></tr>`).join('')}</table></div></details>`).join('')}</div>`;
 }
 /* ========== 全国官员名册：天下名录和人事树并成一份，分中枢、各省、军镇；可搜、可筛；空缺、本事、派系都在上面 ========== */
 let ROSTER_Q = '', ROSTER_G = '';
@@ -9909,7 +9913,7 @@ function mapGestures() {
     else mapPanBy(-st.tx / st.r.width * (B.x1 - B.x0), st.ty / st.r.height * (B.y1 - B.y0));
     render(); };
   document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
-  document.addEventListener('wheel', e => { const sv = svOf(e); if (!sv || !MAPC.box || !S) return; e.preventDefault(); MAPG.drag = Date.now(); clearTimeout(MAPG.wt);
+  document.addEventListener('wheel', e => { const sv = svOf(e); if (!sv || !MAPC.box || !S) return; if (!(e.ctrlKey || e.metaKey) && !MAPZ.big) return;   /* 小图里滚轮留给页面滚动 */ e.preventDefault(); MAPG.drag = Date.now(); clearTimeout(MAPG.wt);
     MAPG.wk = (MAPG.wk || 1) * (e.deltaY < 0 ? 1.25 : 0.8); MAPG.wat = mapLL(sv, e.clientX, e.clientY); sv.style.transformOrigin = `${e.clientX - sv.getBoundingClientRect().left}px ${e.clientY - sv.getBoundingClientRect().top}px`; sv.style.transform = `scale(${MAPG.wk})`;
     MAPG.wt = setTimeout(() => { const k = MAPG.wk; MAPG.wk = 1; mapZoomBy(k, MAPG.wat); render(); }, 220); }, { passive: false });
 }
@@ -10185,7 +10189,7 @@ function stratMap(s) {
   const rl = rl0.filter(r => !r || r.lon == null || r.lat == null || (pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) || isHost(r.name) || visNames.has(r.name));
   const rlOut = rl0.length - rl.length;
   const unloc = M.ok && !M.era ? M.A.units.filter(u => u.lv === 2 && !u.lat).map(u => u.n) : [];
-  const ctl = `<div class="mctl"><button class="link" data-mapbig="1" title="铺满整个屏幕看，字更大">${MAPZ.big ? '收回' : '⛶ 大图'}</button><button class="link" data-mapzoom="in" title="放大">＋</button><button class="link" data-mapzoom="out" title="缩小">－</button><button class="link${near && MAPZ.follow !== false ? ' on' : ''}" data-mapview="near" title="回到你在的地方，跟着你走">◎ 跟着我</button><span class="muted">两指或滚轮缩放、拖动看别处；放大了才标各州县的名字</span></div>`;
+  const ctl = `<div class="mctl"><button class="link" data-mapbig="1" title="铺满整个屏幕看，字更大">${MAPZ.big ? '收回' : '⛶ 大图'}</button><button class="link" data-mapzoom="in" title="放大">＋</button><button class="link" data-mapzoom="out" title="缩小">－</button><button class="link${near && MAPZ.follow !== false ? ' on' : ''}" data-mapview="near" title="回到你在的地方，跟着你走">◎ 跟着我</button><span class="muted">拖动看别处；Ctrl/⌘+滚轮缩放（大图里直接滚轮）；放大了才标各州县的名字</span></div>`;
   return `<div class="mapwrap${MAPZ.big ? ' big' : ''}">${svg}${MAPZ.big ? ctl : ''}</div>` + (MAPZ.big ? '' : ctl) + '<!--MAPLEGEND-->' + `<div class="mlayers">${[['terr', '地形'], ['river', '河流'], ['road', '通路'], ['pass', '关隘'], ['adm', '政区'], ['fig', '名臣']].map(([k, n]) => `<label><input type="checkbox" data-maplay="${k}"${(k === 'fig' ? Ly[k] !== false : Ly[k]) ? ' checked' : ''}>${n}</label>`).join('')}</div>`
     + (rl.length ? `<div class="mlegend">${rl.map(r => `<span><i style="background:${r.col}"></i><b>${esc(r.name)}</b>${regRuler(s, r) ? '·' + esc(regRuler(s, r)) : ''}${r.capital ? '·都' + esc(r.capital) : ''}${r.basis === '推算' ? '<span class="att">推算</span>' : ''}${(pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) ? '（你在此）' : ''}${isHost(r.name) ? '<span class="att">交战</span>' : ''}</span>`).join('')}${rlOut > 0 ? `<span class="muted">图外还有 ${rlOut} 家</span>` : ''}</div>` : '')
     + `<div class="mlegend">${owners.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}${PL ? '<span>◉ 府州治所</span><span>▫ 县城</span><span><b>━</b> 省界</span><span>— 府州界</span>' : ''}<span>★ 你在这里</span><span>⚔ 打过仗</span><span style="color:#b8860b">◎ 这一回你攻占</span><span style="color:#c0392b">◎ 这一回失陷</span><span style="color:#d35400">◎ 叛乱中</span><span style="color:#8a8a8a">◌ 无人占领</span><span style="color:#555">✕ 残破被毁</span><span style="color:#7a1f1a">⚑ 流寇（游动，不占州府）</span><span style="color:#5d4e8a">◎ 史事易主（按月）</span><span><b style="color:#5b3a1a">关</b> 关隘</span><span>╌ 平路相通</span><span>┈ 山路难行</span><span class="muted">不通的不画线</span>${PL && zoom ? '<span>┄ 县界</span>' : ''}<span style="color:#8a3b12">━ ━ 驿道</span><span style="color:#2f6fa8">运河</span></div>`
@@ -17250,6 +17254,7 @@ function tidyState(s, light) {
   return s;
 }
 let RENDER_ERR = '';
+let COMPOSING = false, RENDER_Q = false;   /* 输入法组字中：先不重画，组完再补 */
 /** 重画出错不许把整局卡死：先把账里的坏条目清掉再画一次；还不行就在页面上明说出了什么错，按钮照样能用 */
 /* 账册搜索（R-266）：输入人名地名，跳到头一个写着它的册子、滚过去、高亮 */
 let FIND_Q = '';
@@ -17267,6 +17272,7 @@ function render() {
   const app = document.querySelector('#app'); if (app && !document.querySelector('#renderErr')) app.insertAdjacentHTML('afterbegin', `<div id="renderErr" class="err" style="margin:8px 0">页面有一块画不出来（${esc(RENDER_ERR.slice(0, 120))}），已记进问题报告；游戏照常能玩，可以接着写下一步，或在「设置」里导出问题报告。</div>`);
 }
 function render0() {
+  if (COMPOSING) { RENDER_Q = true; return ''; }
   if (PERF && BUSY) { const t = Date.now(); if (PHASE !== PERF.cur) { if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); PERF.cur = PHASE; PERF.last = t; } }
   /* 不做「内容签名相同就跳过」：月结会改国势、民生、家底这些散在几十处的账，签名漏一处就是页面不刷新（2026-11-11 实测踩过）。
      省重绘靠上面一帧合并 + 后台存档节流，正确性优先（R-189）。 */
@@ -18405,13 +18411,16 @@ document.addEventListener('submit', e => {
 document.addEventListener('change', e => { const t = e.target; if (t && t.matches && t.matches('[data-mapf]') && S) { MAPZ.from = t.value || ''; MAPC.rt = null; render(); } });
 const keepCustom = e => { const el = e.target; if (el && el.closest && el.closest('#fCustom') && el.id) { CUSTOM[el.id] = el.value; lsSet('hrpg:custom', JSON.stringify(CUSTOM)); } };
 document.addEventListener('input', e => { if (e.target && e.target.id === 'qText') QTEXT = e.target.value; });
-document.addEventListener('input', e => { if (e.target && e.target.id === 'rosterQ') { ROSTER_Q = e.target.value; render(); } });
+let ROSTER_T = null;
+document.addEventListener('input', e => { if (e.target && e.target.id === 'rosterQ') { ROSTER_Q = e.target.value; clearTimeout(ROSTER_T); ROSTER_T = setTimeout(() => { if (!COMPOSING) render(); }, 200); } });
 document.addEventListener('change', e => { if (e.target && e.target.id === 'rosterG') { ROSTER_G = e.target.value; render(); } });
 document.addEventListener('change', async e => { const t = e.target; if (!t || t.id !== 'fSaveImport' || !t.files || !t.files[0]) return; const m = () => $('#updMsg');
   try { const o = JSON.parse(await t.files[0].text()); if (!o || !o.protagonist || !o.clock || !o.id) throw new Error('不是这个游戏的存档文件'); const s2 = migrate(o); await store.save(s2); S = s2; VIEW = 'game'; TAB = 'board'; ERRMSG = ''; lsSet('hrpg:last', s2.id); render(); }
   catch (err) { ERRMSG = '导入没成：' + (err.message || err); render(); } finally { t.value = ''; } });
 document.addEventListener('input', keepCustom); document.addEventListener('change', keepCustom);
 document.addEventListener('toggle', e => { if (e.target && e.target.id === 'dCustom') CUSTOM_OPEN = e.target.open; }, true);
+document.addEventListener('compositionstart', e => { const id = e.target && e.target.id; if (id === 'said' || id === 'rosterQ' || id === 'sideFind') COMPOSING = true; }, true);
+document.addEventListener('compositionend', e => { const id = e.target && e.target.id; if (id === 'said' || id === 'rosterQ' || id === 'sideFind') { COMPOSING = false; if (RENDER_Q) { RENDER_Q = false; setTimeout(() => { try { render(); } catch (_) { /* 下回再画 */ } }, 0); } } }, true);
 document.addEventListener('keydown', e => {
   // 回车就发（R-260：玩家本能按回车发不出去）；Shift+回车换行；输入法选字时的回车不算
   if (e.target.id === 'said' && e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); const bs = $('#bSend'); if (bs && !bs.disabled) bs.click(); }
@@ -18460,7 +18469,7 @@ document.addEventListener('click', async e => {
       else if (g.dataset.mapview === 'near') { const h = hereXY(S); if (h) { MAPZ.mode = 'near'; MAPZ.c = { lon: +h.lon, lat: +h.lat }; MAPZ.sel = ''; MAPZ.nearName = geoCenter(S); MAPZ.follow = true; } }
       else if (g.dataset.mapprov) { MAPZ.mode = 'prov'; MAPZ.prov = g.dataset.mapprov; MAPZ.sel = ''; }
       else if (g.dataset.mapnear) { if (g.dataset.tab) { TAB = 'map'; MAPZ.inited = true; } const M = mapUnits(S), n = g.dataset.mapnear, u = M.L2.concat(M.C, Object.values((M.A && M.A.counties) || {}).flat()).find(x => x.n === n && x.lat) || (() => { const x = geoData().find(x => x.name === n && x.lat); return x ? { lon: x.lon, lat: x.lat } : null; })(); if (u) { MAPZ.mode = 'near'; MAPZ.prov = ''; MAPZ.sel = n; MAPZ.nearName = n; MAPZ.c = { lon: u.lon, lat: u.lat }; MAPZ.follow = false; MAPZ.span = Math.min(num(MAPZ.span) || 1.2, 1.2); } }
-      else if (g.dataset.mapu) { MAPZ.sel = MAPZ.sel === g.dataset.mapu ? '' : g.dataset.mapu; MAPZ.pt = null; if (MAPZ.sel) setTimeout(() => { const mi = $('#mapInfo'); if (mi && mi.scrollIntoView) mi.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 60); }   // 点了哪一处，详情紧跟图下、滚进眼里（R-260）
+      else if (g.dataset.mapu && !(MAPG.drag && Date.now() - MAPG.drag < 400)) { MAPZ.sel = MAPZ.sel === g.dataset.mapu ? '' : g.dataset.mapu; MAPZ.pt = null; if (MAPZ.sel) setTimeout(() => { const mi = $('#mapInfo'), sd = document.querySelector('.side'); if (!mi || !sd) return; const a = mi.getBoundingClientRect(), b = sd.getBoundingClientRect(); if (a.top < b.top + 40 || a.bottom > b.bottom - 20) sd.scrollTo({ top: sd.scrollTop + (a.top - b.top) - 40, behavior: 'smooth' }); }, 60); }   // 点了哪一处，详情紧跟图下、滚进眼里（R-260）
       else if (g.dataset.mapgoto) { const keep = MAPZ.from; MAPZ.from = ''; MAPC.rt = null; const R = selRoute(S), pid = ($('[data-mappace]') || {}).value || 'normal', o = R && R.ok ? arr(R.opts).find(x => x.id === pid && x.allowed) || arr(R.opts).find(x => x.allowed) : null; MAPZ.from = keep; MAPC.rt = null;
         const line = `动身去${MAPZ.sel}${R && R.ok ? `（约${R.li}里${R.via.length ? '，取道' + R.via.join('、') : ''}${o ? '，' + o.name + '约' + o.days + '日' : ''}）` : ''}。`; const box = $('#said'); if (box) { box.value = (box.value ? box.value.replace(/\s*$/, '') + '\n' : '') + line; try { lsSet('hrpg:draft', box.value); } catch (_) {} } ORGMSG = '已写进下一步：' + line; }
       else if (g.dataset.mapgo) { const f = ($('[data-mapf]') || {}).value || (arr(S.forces).find(x => myForce(S, x)) || {}).name; MAPZ.from = f || ''; MAPC.rt = null; const R = selRoute(S), pid = ($('[data-mappace]') || {}).value || 'normal', o = R && R.ok ? arr(R.opts).find(x => x.id === pid && x.allowed) || arr(R.opts).find(x => x.allowed) : null;
