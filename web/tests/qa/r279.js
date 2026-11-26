@@ -45,6 +45,7 @@ const path = require('path');
       const f = draftFaults(S, said, T, 'auto');
       if (!f.some(x => /一再请示/.test(x))) bad.push('下面的人一再请示没打回：' + f.join(' / '));
       if (!f.some(x => /亲自领兵、去某地/.test(x))) bad.push('亲率进驻却还在原地没打回：' + f.join(' / '));
+      if (draftFaults(S, '去亲征行营打听，城里招募壮丁助守是怎么个章程。', '你出了铺子往行营去。书手抬头：「问章程？」', 'auto').some(x => /亲自领兵、去某地/.test(x))) bad.push('「亲征行营」这个衙门名被当成亲征出兵');
       const f2 = draftFaults(S, said, '五更造饭，你领背嵬军渡江北上，一路行军，第九日到了郾城。城上守臣开门迎你。「宣抚来得正好。」', 'auto');
       if (f2.some(x => /亲自领兵、去某地/.test(x))) bad.push('已经动身了还说没动身：' + f2.join(' / ')); }
     // 十、春秋诸侯在位照十二诸侯年表（原来整段没有，写戏把前 635 年的宋君写成二十年后的宋昭公）
@@ -79,6 +80,12 @@ const path = require('path');
       S.realm = { treasury: 1e7, granary: 1e7, revenue: 6e7, outlay: 0 }; S.gov = { scope: 'realm', stats: { 国库: 1e7, 太仓粮: 1e7 }, keys: [] };
       S.depots = [{ name: '东京仓', at: '开封', grain: 1000 }]; S.forces = [{ name: '厢军', leader: '赵祯', owner: '宋', troops: 100000, at: '各路', status: '驻守', morale: 60 }];
       const o = armyMonthly(S, 1); if (o.some(x => /断粮|缺粮/.test(x)) || !(S.realm.granary < 1e7)) bad.push('本国各路的兵没从太仓拨粮：' + o.join(' / ')); }
+    // 十八、R-280：主角二十三人随守军守城，友军一起算，主角的兵只折自己那一份，不判成二十三人对三千
+    { S = newSave({ name: '沈怀远', gender: '男', age: 20, role: '东京绸缎行富商之子', gregorianYear: 1126, month: 1, day: 25, place: '东京开封府', polity: '宋' });
+      S.forces = [{ name: '沈家助守壮丁队', leader: '沈怀远', owner: '你', troops: 23, at: '宣泽门', status: '驻守', morale: 60 }];
+      const base = { enemy: '完颜宗望东路军', enemyTroops: 3000, enemyQuality: '精', place: '东京开封府宣泽门', terrain: '城池', attacker: '敌', ourForces: ['沈家助守壮丁队'], ourSide: '宣泽门守军与助守壮丁', ourQuality: '弱' };
+      for (const b of [{ ...base, allyTroops: 8000 }, { ...base }]) { const r = resolveBattle(S, b); if (!r) { bad.push('守城一仗没结算'); continue; } S.forces[0].troops = 23; applyBattle(S, r);
+        const left = N0(S.forces[0].troops); if (!(left >= 15)) bad.push('二十三人随守军守城折到只剩' + left + '：' + JSON.stringify({ ours: r.ours, deadUs: r.deadUs, outcome: r.outcome, ally: b.allyTroops })); } }
     return bad;
   });
   const bad = out.concat(errs);
