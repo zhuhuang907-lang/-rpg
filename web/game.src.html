@@ -4124,6 +4124,25 @@ async function techInvent(s, name, desc) {
 const MARCH_VERB = /(进围|围攻|围|进攻|攻打|攻|讨伐|讨|助攻|增援|驰援|屯驻|驻扎|移驻|进驻|驻|镇守|防守|北上|南下|西进|东进|开赴|赶赴|前往|奔赴|赴|往|至)/;
 /** R-280 靖康真玩：打字说「收拢溃兵、把本部扩到三百人」，账上的兵从不动（兵数只照募编由程序结算，可打字的招人不算募编），正文写到三百八十九、账上一百七十一。
  *  不是一方之主（一方之主照军务页募兵、人力池）、手下有自家兵的：照玩家说的招人——一个月最多招现有的四分之一（至少二十人），每人照十天工钱给安家钱，钱不够招多少算多少；照数记进兵马、写进写戏材料 */
+/** R-281 先定数后写：玩家打字说「拿出三百贯」「借给他十两」「赏每人五百文」这类明说了数目的花销，程序先照现钱扣（不够就不扣、照实告诉写戏的），
+ *  写戏照这个数写，记账别再记一遍（同一笔的支出在记账里删掉）。一方之主动国库另有门路，不走这里；招人的安家钱归 textRaise */
+const SPEND_RATE = { 文: 1, 贯: 1000, 缗: 1000 };
+function textSpend(s, said) {
+  if (!s || !s.money) return []; s.cashNow = arr(s.cashNow).filter(x => x && x.turn === s.turn);
+  if (isRuler(s) || s.money.cash == null) return [];
+  const u = s.money.unit || '文', out = [];
+  for (const cl of String(said || '').split(/[。；;！!？?\n]/)) {
+    if (!cl.trim() || /若|如果|倘|要不要|能不能|可否|问问|打听|多少|几何|算一算|看看/.test(cl) || /招|募/.test(cl)) continue;
+    const m = /(拿出|花去?|花掉|出|赏给?|借给|捐出?|付给?|交给?|送给?|垫付?|支给?|贴补|给)[^，,。；]{0,14}?([零〇一二两三四五六七八九十百千万\d.]+)\s*(贯|缗|两|文)/.exec(cl); if (!m) continue;
+    if (/(向|跟|找|从)[^，,]{0,8}借(?!给)/.test(cl) || /收|讨|要回|卖/.test(cl.slice(0, m.index + 2))) continue;
+    const n0 = /^[\d.]+$/.test(m[2]) ? Number(m[2]) : zhNum(m[2]); if (!(n0 > 0)) continue;
+    let amt = null; if (m[3] === u || (m[3] === '缗' && u === '贯')) amt = n0; else if (SPEND_RATE[m[3]] && SPEND_RATE[u]) amt = n0 * SPEND_RATE[m[3]] / SPEND_RATE[u]; if (amt == null) continue;
+    const cash = N0(s.money.cash) || 0, what = one(cl.trim(), 24);
+    if (cash >= amt) { s.money.cash = Math.round((cash - amt) * 100) / 100; const line = `${what}：照吩咐从现钱支出${fmtN(amt, u)}，余${fmtN(s.money.cash, u)}`; s.cashNow.push({ turn: s.turn, amt, line }); out.push(line); }
+    else { const line = `${what}：要${fmtN(amt, u)}，现钱只有${fmtN(cash, u)}，拿不出这个数（一文没动）`; s.cashNow.push({ turn: s.turn, amt: 0, line }); out.push(line); }
+  }
+  if (out.length) noteErr('打字花钱', out.join(' / '));
+  return out; }
 function textRaise(s, said, span) {
   if (!s || !s.protagonist || isRuler(s)) return []; const t = String(said || '');
   const hit = /(招|募|收拢|收编|收纳|扩到|扩充|扩编|添|补|凑)[^。；]{0,14}?(兵|人|丁|壮|勇|溃卒|散兵|乡兵|弟兄)/.exec(t); if (!hit) return [];
@@ -16720,7 +16739,8 @@ function storyInput(s, said, span, note, sys, ruling, fix) {
   const turns = recentTurns(s, (sys ? '' : storyRules() + '\n\n') + '【这一局少变的底子】' + stableTxt + '\n\n（回回变的账册、这回查到的资料在对话后面）'), ledgerNow = liveTxt + (fresh.length ? '\n\n' + researchBlock({ ...s, research: fresh, locals: [] }).replace('【联网查到的资料', '【这一回联网查到的资料（给你心里有数：跟这一回的事相干的，化进细节里；不相干的一概不用，不要为了用资料硬塞事）') : '');
   const spanText = SPANS[span] ? `\n【这一回要过的时间】${SPANS[span]}。把这段日子写出来：按时间先后挑最要紧的几件写细（玩家这一步的结果、身边人自己的事（真有才写）、结识的人、家里的变化、季节年景、传来的天下大事），其余一两句带过。` : '';
   const armyNow = arr(s.armyPending).filter(x => x && x.done && x.turn === s.turn).map(x => '· ' + String(x.line || '').replace(/^下令：/, '')).filter(Boolean);
-  const what = (armyNow.length ? `【这一步程序已经照账办了的军令（正文照这个写：多少兵、谁统领、从哪支分出、开往哪里，一字不改；主角说的话照玩家原话，不改数目；什么时候到、打得怎样由程序照日子算，正文不写到）】\n${armyNow.join('\n')}\n` : '') + deadRealBlock(s) + aimBlock(s) + (String(said || '').trim() ? `【玩家这回说】\n${said}${privateBlock(said, ruling)}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。');
+  const cashNow = arr(s.cashNow).filter(x => x && x.turn === s.turn).map(x => '· ' + x.line);
+  const what = (cashNow.length ? `【这一步程序已经照账办了的银钱（正文照这个数写；拿不出的就写拿不出、钱从别处来要写明从谁手里来）】\n${cashNow.join('\n')}\n` : '') + (armyNow.length ? `【这一步程序已经照账办了的军令（正文照这个写：多少兵、谁统领、从哪支分出、开往哪里，一字不改；主角说的话照玩家原话，不改数目；什么时候到、打得怎样由程序照日子算，正文不写到）】\n${armyNow.join('\n')}\n` : '') + deadRealBlock(s) + aimBlock(s) + (String(said || '').trim() ? `【玩家这回说】\n${said}${privateBlock(said, ruling)}` : '【玩家这回没说话】主角没做新的事、也没开口。上一回若停在有人跟主角说话、或一件事摆在主角眼前，就当主角没有接话：写对方等不来话怎么想、怎么做，但不替主角做决定。上一回若已无事，日子平平往下过，跳到有事的时候（几天到一旬，在打仗就写这几日的军中与敌情），停在一件新事刚找到主角面前。');
   // 制度程序只在玩家这一步本身是公事时才给写正文的人（不然它就满篇衙门文书、摊派差役）
   const adm = /衙|官|公文|奏|疏|审|案|税|赋|兵|军|朝|任|升|调|考|吏|差事|公事/.test(String(said || ''));
   const BN = { institutions: '衙门与程序', people: '相关的人', terms: '当时的说法', interests: '各方利害', details: '可写的细节' };
@@ -17679,6 +17699,7 @@ function applyReply(s, d, said) {
     const mo = s.money, u = mo.unit || '两', ledger = [];
     if (mo.cash == null && N0(d.setCash) != null) mo.cash = N0(d.setCash);
     for (const x of arr(d.ledger).slice(0, 30)) { const a = N0(x && x.amount); if (a != null && a !== 0) ledger.push({ item: one(x.item, 30), amount: a, note: one(x.note, 40) }); }
+    if (play) { const C = arr(s.cashNow).filter(x => x && x.amt > 0 && x.turn >= (s.turn || 0) - 1 && !x.booked).map(x => (x.booked = true, x.amt)); for (const amt of C) { const i = ledger.findIndex(x => x.amount < 0 && Math.abs(-x.amount - amt) <= amt * 0.15); if (i >= 0) { noteErr('程序先扣了的不重记', ledger[i].item + ' ' + ledger[i].amount); ledger.splice(i, 1); } } }   // R-281：打字花的钱程序已经扣了
     // 物价只给了变的那几样：按货名并进去，没提到的照旧
     if (Array.isArray(d.prices) && d.prices.length) { const m = new Map(arr(s.prices).map(x => [x.item, x])); for (const x of d.prices.filter(x => x && x.item)) { const k = one(x.item, 10), pv = N0(x.price); if (pv == null && m.has(k)) continue; m.set(k, { item: k, price: pv, per: one(x.per, 4) }); } s.prices = [...m.values()].slice(-24); }
     for (const n of arr(d.presentNpcs)) {
@@ -19091,7 +19112,7 @@ async function send(said, span, note, resume) {
   if (!S) return;
   if (BUSY) { if (!TURN && Date.now() - (THINK_T0 || 0) > 20000) { try { if (CTL && !CTL.signal.aborted) CTL.abort(); } catch (_) { /* 无 */ } BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已放开'); } else { ERRMSG = '上一步还在写（可以点「停下」再写这一步）'; try { render(); } catch (_) { } setTimeout(() => { if (ERRMSG.startsWith('上一步还在写')) { ERRMSG = ''; try { render(); } catch (_) { } } }, 4000); return; } }   // 以前这里一声不响就返回，玩家以为卡死了
   tidyState(S);
-  if (!resume) { try { textMarch(S, said); } catch (_) { /* 认不出军令就照常写 */ } try { textRaise(S, said, span); } catch (_) { /* 认不出招人就照常写 */ } }
+  if (!resume) { try { textMarch(S, said); } catch (_) { /* 认不出军令就照常写 */ } try { textRaise(S, said, span); } catch (_) { /* 认不出招人就照常写 */ } try { textSpend(S, said); } catch (_) { /* 认不出花销就照常写 */ } }
   RULING_FAIL = false;
   EDITING = false;
   // 后台的活照做，不挡玩家；记账前只等和记账写同一处的那几件（最多十五秒）
