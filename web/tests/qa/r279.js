@@ -53,7 +53,7 @@ const path = require('path');
       if (rs.includes('宋昭公')) bad.push('前 632 年查出了宋昭公'); }
     // 十一、一国之主岁入没算出来：原有兵马照常由朝廷养，不按月欠饷逃散；国库是负数时「付」不出负数，欠饷不翻滚
     { const run = inc => { S = newSave({ name: '赵祯', gender: '男', age: 34, role: '皇帝', gregorianYear: 1043, month: 5, day: 1, place: '开封', polity: '宋' });
-        S.gov = { scope: 'realm', stats: { 国库: -1000000, ...(inc ? { 岁入: 60000000 } : {}) }, keys: [] }; S.forces = [{ name: '禁军', leader: '赵祯', owner: '宋', troops: 100000, at: '开封', status: '驻守', morale: 60 }];
+        S.gov = { scope: 'realm', stats: { 国库: -1000000 }, keys: [] }; S.realm = { treasury: -1000000, revenue: inc ? 60000000 : null, outlay: 0 }; S.forces = [{ name: '禁军', leader: '赵祯', owner: '宋', troops: 100000, at: '开封', status: '驻守', morale: 60 }];
         for (let i = 1; i <= 12; i++) { const c = CAL.monthAt({ y: 1043, m: 5, leap: false }, i); S.clock = { ...S.clock, y: c.y, m: c.m }; armyMonthly(S, 1); } return S.forces[0]; };
       const a = run(false); if (N0(a.owed) > 0) bad.push('岁入没算出来，原有禁军还按月欠饷：' + a.owed);
       const b2 = run(true); if (!(N0(b2.owed) > 0) || N0(b2.owed) > 100000 * 2 * 12) bad.push('国库是负数时欠饷越滚越大：' + b2.owed); }
