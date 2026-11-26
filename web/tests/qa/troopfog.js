@@ -43,6 +43,7 @@ const path = require('path');
     await p.click('[data-bluff]'); await p.waitForTimeout(100);
     const r = await ev(() => ({ on: bluffOn(S), seen: myTroopsSeen(S), all: myTroopsAll(S), cash: S.money.cash }));
     if (!r.on || r.seen !== Math.round(r.all * 1.5) || !(r.cash < 100)) errs.push('虚张声势没生效：' + JSON.stringify(r));
+    await p.waitForFunction(() => /正虚张着/.test(document.body.innerText), null, { timeout: 3000 }).catch(() => {});   // 点了先存档再重画，满负荷时存档慢，等重画（不是只等 0.1 秒）
     h = await ev(() => document.body.innerText); if (!/正虚张着/.test(h)) errs.push('军务页没写正虚张着');
     const end = await ev(() => { const msgs = []; for (let i = 0; i < 5 && S.bluff; i++) { S.clock.m += 1; if (S.clock.m > 12) { S.clock.m = 1; S.clock.y++; } msgs.push(...bluffMonthly(S)); } return { left: !!S.bluff, msgs }; });
     if (end.left || !end.msgs.some(m => /识破|散了/.test(m))) errs.push('虚张声势过了五个月还在、或散了没说：' + JSON.stringify(end)); }
