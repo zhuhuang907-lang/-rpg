@@ -11,7 +11,7 @@ const path = require('path');
     const bad = [];
     // 一、写戏开头照抄的时刻标记删掉，正文里的日子不动
     const cases = [['（四月十八酉时起，写到七月十八未时）  程婉贞见你', '程婉贞见你'], ['六月三十日午时 保儿那张纸', '保儿那张纸'], ['七月初五）  七月初六辰时，你', '七月初六辰时，你'], ['（第3回合，写到四月）\n正文', '正文'],
-      ['七月初五午时，周金宝把', '七月初五午时，周金宝把'], ['嘉靖四十年春，丝价', '嘉靖四十年春，丝价'], ['「要现银。」你说。', '「要现银。」你说。'], ['（乾隆五十二年二月十六酉时） 你把惊堂木搁下', '你把惊堂木搁下'], ['五月十五午时）  你叫门吏起来', '你叫门吏起来'], ['（这一回没写完）你', '（这一回没写完）你']];
+      ['七月初五午时，周金宝把', '七月初五午时，周金宝把'], ['嘉靖四十年春，丝价', '嘉靖四十年春，丝价'], ['「要现银。」你说。', '「要现银。」你说。'], ['（乾隆五十二年二月十六酉时） 你把惊堂木搁下', '你把惊堂木搁下'], ['五月十五午时）  你叫门吏起来', '你叫门吏起来'], ['（这一回没写完）你', '（这一回没写完）你'], ['（嘉靖三十九年四月廿五至七月廿五）  你把冯秀兰的话', '你把冯秀兰的话']];
     for (const [a, w] of cases) { const g = stripEcho(a); if (g !== w) bad.push('开头标记没删对：' + JSON.stringify(a) + ' → ' + JSON.stringify(g)); }
     // 二、底账的工钱是月钱：折成日钱；本来就是日钱的不动
     { const E = { unit: '两', rice: 2.882, wage: 2.62, fromPreset: ['rice', 'wage'] }; econSane(E); if (!(E.wage > 0.05 && E.wage < 0.12)) bad.push('一个月的工钱没折成一天的：' + E.wage); if (!/像是一个月的/.test(E.basis || '')) bad.push('折工钱没记进依据'); }
@@ -64,6 +64,11 @@ const path = require('path');
     for (const role of ['湖北京西宣抚使', '江淮招讨使', '沿江制置使', '鄂州御前诸军都统制']) { const T = newSave({ name: '岳飞', gender: '男', age: 38, role, gregorianYear: 1140, month: 6, day: 1, place: '鄂州', polity: '南宋' }); const d = identityOf(T); if (d.command === 'none') bad.push(role + '算成了不管兵的'); }
     // 十四、春秋列国的国君是一方之主
     for (const [role, pol] of [['晋国国君', '晋'], ['齐国国君', '齐'], ['晋侯', '晋']]) { const T = newSave({ name: '姬重耳', gender: '男', age: 62, role, gregorianYear: -636, month: 2, day: 1, place: '绛', polity: pol }); const d = identityOf(T); if (!d.ruler) bad.push(role + '不算一方之主：' + JSON.stringify({ power: d.power, why: d.why })); }
+    // 十五、整句一字不差又来一遍的删后一处；短句、不同的句子不动
+    { const P = '「陈大官，我托齐门一个熟人问过了，周市那边姓沈的倒有几个。」他把纸条递过来。';
+      const T = '她没往下说。院门口，王本初又探进头来。' + P + '\n\n院门口，王本初又探进头来。' + P;
+      const g = dedupSent(T); if (g.split('托齐门一个熟人').length !== 2) bad.push('结尾整段重了一遍没删：' + g);
+      const T2 = '他没说话。你点了头。他没说话。'; if (dedupSent(T2) !== T2) bad.push('短句重复被误删：' + dedupSent(T2)); }
     return bad;
   });
   const bad = out.concat(errs);
