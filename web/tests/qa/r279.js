@@ -69,6 +69,11 @@ const path = require('path');
       const T = '她没往下说。院门口，王本初又探进头来。' + P + '\n\n院门口，王本初又探进头来。' + P;
       const g = dedupSent(T); if (g.split('托齐门一个熟人').length !== 2) bad.push('结尾整段重了一遍没删：' + g);
       const T2 = '他没说话。你点了头。他没说话。'; if (dedupSent(T2) !== T2) bad.push('短句重复被误删：' + dedupSent(T2)); }
+    // 十六、同一支兵换个说法记两回的只留一条（不论字的先后、国号、括号）；不同的兵不并
+    { const T = newSave({ name: '姬重耳', gender: '男', age: 62, role: '晋国国君', gregorianYear: -636, month: 2, day: 1, place: '绛', polity: '晋' });
+      T.forces = [{ name: '晋国上军', leader: '赵衰', troops: 5000 }, { name: '上军', leader: '狐毛', troops: 5000 }, { name: '禁军在京主力', troops: 200000 }, { name: '禁军主力（在京）', troops: 400000 }, { name: '下军', troops: 5000 }, { name: '中军', troops: 5000 }, { name: '秦军', foe: true, troops: 3000 }, { name: '秦军', foe: true, troops: 1000 }];
+      const d = forcesDedupe(T), n = T.forces.map(f => f.name);
+      if (n.join() !== '晋国上军,禁军在京主力,下军,中军,秦军,秦军') bad.push('同一支兵记两回没并、或并错了：' + n.join() + ' / ' + d.join()); }
     return bad;
   });
   const bad = out.concat(errs);

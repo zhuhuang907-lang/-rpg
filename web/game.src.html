@@ -481,6 +481,14 @@ function forceAlias(s, x) { if (!x || !x.name || arr(s.forces).some(f => f && f.
   const same = arr(s.forces).filter(f => f && !f.foe === !x.foe && st(f.name) && (st(f.name) === st(x.name) ? (!x.leader || !f.leader || ld(f.leader) === ld(x.leader))
     : (ld(f.leader) && ld(f.leader) === ld(x.leader) && f.at && x.at && String(f.at).slice(0, 2) === String(x.at).slice(0, 2) && N0(f.troops) && Math.abs(N0(f.troops) - N0(x.troops)) <= N0(f.troops) * 0.03)));
   return same.length === 1 ? { ...x, name: same[0].name } : x; }
+/** 长考卷（R-279）：开局记账把同一支兵记两回——「禁军在京主力」和「禁军主力（在京）」、「晋国上军」和「上军」，兵数跟着翻倍。
+ *  自家（非敌军）的兵：名字去掉括号、标点、国号以后字一样（不论先后）的，只留先记的那条 */
+function forcesDedupe(s) { if (!s || !Array.isArray(s.forces)) return [];
+  const pol = String((s.place && s.place.polity) || '').replace(/[（(].*$/, ''), strip = n => String(n || '').replace(/[（）()、，,·\s]/g, '').replace(new RegExp('^(' + (pol ? pol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '国|' + pol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '@@') + ')'), '');
+  const key = n => [...strip(n)].sort().join(''), seen = new Map(), drop = [];
+  s.forces = s.forces.filter(f => { if (!f || !f.name || f.foe) return true; const k = key(f.name); if (k.length < 2) return true; const a = seen.get(k); if (!a) { seen.set(k, f); return true; }
+    if (N0(a.troops) == null && N0(f.troops) != null) a.troops = f.troops; if (!a.leader && f.leader) a.leader = f.leader; drop.push(f.name); s.campaigns = arr(s.campaigns).filter(c => c.force !== f.name); return false; });
+  return drop; }
 function mergeRows(old, upd, key, n) {
   const m = new Map(arr(old).filter(x => x && x[key]).map(x => [x[key], x]));
   for (const x of arr(upd)) {
@@ -14711,7 +14719,7 @@ ${unitsBlock(s)}${note ? '\n【上一次立的账有这些不合史实的数，�
   const T = arr(d.territory).filter(x => x && x.place).slice(0, 30).map(x => ({ place: one(x.place, 16), pop: num0(x.pop), troops: num0(x.troops), grain: num0(x.grain), loyalty: num0(x.loyalty), tax: num0(x.tax), ruler: one(x.ruler, 12), note: one(x.note, 60) }));
   const F = arr(d.forces).filter(x => x && (x.name || x.leader)).slice(0, 20).map(x => ({ name: one(x.name, 20), leader: one(x.leader, 12), troops: num0(x.troops), grain: String(num0(x.grain) ?? ''), quality: one(x.quality, 12), at: one(x.at, 16), status: one(x.status, 6), src: num0(x.troops) == null ? '不详' : /史|志|传|纪|载|录|书|卷|据/.test(String(x.basis || '')) && !/推|约|估/.test(String(x.basis || '').slice(0, 4)) ? '史载' : '推算', why: one(x.basis, 60) || (R0.length ? '照查到的资料' : '没写依据') }));
   if (T.length) s.territory = mergeRows(s.territory, T, 'place', 60);
-  if (F.length) s.forces = mergeRows(s.forces, F, 'name', 40);
+  if (F.length) { s.forces = mergeRows(s.forces, F, 'name', 40); forcesDedupe(s); }
   s.money = s.money || { hist: [] }; s.money.unit = cleanUnit(d.unit) || cleanUnit(s.money.unit) || '两';
   if (d.privy && num0(d.privy.cash) != null) s.money.cash = num0(d.privy.cash);
   s.estate = Object.assign(s.estate || {}, { standing: one(d.standing, 80), cashNote: one(d.privy && d.privy.note, 60), src: R0.length ? '查证' : '史书', at: s.turn });
@@ -17911,7 +17919,7 @@ function applyReply(s, d, said) {
   const keepMen = x => { const f = arr(s.forces).find(f => f && f.name === (x.name || x.leader)), o = f && N0(f.troops), n = N0(x.troops); if (o == null || n == null || o <= 0 || n >= o * 0.85) return x; const fought = arr(s.battles).some(b => b && b.turn === s.turn); if (fought) return x; noteErr('记账兵马大减没战报', `${f.name} ${o}→${n}，照记${Math.round(o * 0.85)}`); return { ...x, troops: Math.round(o * 0.85), status: f.status }; };
   /* 在途的兵（待发、行军、围城）在哪、什么状态只归程序照日子算，记账改不动（R-269 真玩：张敬达一回在太原交战、下一回又回到河阳巩县间、再下一回在晋州城西） */
   const keepMarch = x => { const nm = x.name || x.leader, c = arr(s.campaigns).find(c => c.force === nm && /待发|行军|围城/.test(c.state)); if (!c) return x; const y = { ...x }; delete y.at; delete y.status; return y; };
-  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(x => forceAlias(s, x)).map(keepLead).map(keepMen).map(keepMarch).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30);
+  if (Array.isArray(d.forces) && d.forces.length) s.forces = mergeRows(s.forces, rows(d.forces, 20).map(x => forceAlias(s, x)).map(keepLead).map(keepMen).map(keepMarch).map(x => ({ ...x, src: 'AI记账', name: x.name || x.leader, ...(N0(x.troops) != null ? { troops: String(Math.max(0, Math.round(N0(x.troops)))) } : {}) })), 'name', 30); forcesDedupe(s);
   // 兵马、地盘这一回的增减：记进账目，并摆到正文下面（不用翻册子也看得见）
   if (play) {
     const mv = [];
