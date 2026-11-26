@@ -16,7 +16,8 @@ const path = require('path');
     window.REPLY = { verdict: '允', reply: '加派无据，着即免征。', why: '怕上司知道' }; window.callClaude = async () => ({ text: JSON.stringify(REPLY) });
     VIEW = 'game'; TAB = 'board'; SIDE_FOLD = false; render(); });
   if (!(await ev(() => isCommoner(S)))) bad.push('佃农不算百姓');
-  // 每月吃穿
+  // 每月吃穿（开局那个月不扣：先过一个月，R-279）
+  { const z0 = await ev(() => S.money.cash); await month(); if ((await ev(() => S.money.cash)) !== z0) bad.push('开局那个月就扣了吃穿'); }
   { const r0 = await ev(() => ({ c: S.money.cash, need: hhNeed(S) })); await month(); const c1 = await ev(() => S.money.cash); if (!(Math.abs((r0.c - c1) - r0.need) < 0.01)) bad.push('一家吃穿没照人口米价扣：' + JSON.stringify({ ...r0, c1 })); }
   // 佃田：劳力上限
   await p.fill('#hhAmt', '100'); await click('[data-hh="lease"]', '佃田'); if ((await ev(() => hhOf(S).lease))) bad.push('两个劳力也佃得下一百亩');

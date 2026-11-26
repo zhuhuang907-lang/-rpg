@@ -35,6 +35,28 @@ const path = require('path');
       if (!seen.some(x => /^1043:庆历三年/.test(x))) bad.push('1043 年的月份没照庆历三年：' + seen.join(' ')); }
     // 七、明代江南米价不再照 1640 年荒年价往前推
     { const L = PRESETLIB.filter(R => R.range && R.range[0] === 1368).flatMap(R => arr(R.prices)).filter(x => x.region === '江南' && x.from === 1560); if (!L.length || L[0].rice > 1100) bad.push('嘉靖年间江南米价还是荒年价：' + JSON.stringify(L[0] && L[0].rice)); }
+    // 八、照毛病改几处：只照「原句→改成」替换，别处一字不动；找不到、不止一处、只删一两个字的不改
+    { const T = '陆敬斋摇头：「告示上没写，等县里的话。」金军游骑已过临颍，兀术在后。书吏誊了令。米一石三两五钱。';
+      const r = applyEdits(T, [{ old: '米一石三两五钱。', new: '米一石七钱。' }, { old: '兀术', new: '' }, { old: '不存在的句子。', new: 'x' }, { old: '令', new: '命' }]);
+      if (r.n !== 1 || r.text !== T.replace('米一石三两五钱。', '米一石七钱。')) bad.push('改几处改坏了别处：' + JSON.stringify(r));
+      if (!/没写/.test(r.text) || !/兀术/.test(r.text) || !/书吏誊了令/.test(r.text)) bad.push('照抄时掉的字又掉了：' + r.text); }
+    // 九、一再请示照「请示拍板」那一类数（原来数成了欠债）；亲率进驻却还在原地议事要打回
+    { S.turn = 5; const said = '亲率背嵬军进驻郾城。', T = '你把话说了。王贵抱拳：「末将这就点背嵬军。」薛弼道：「宣抚，粮道三事请宣抚先定。」孙革道：「檄稿在此，请宣抚示下。」牛皋道：「末将只等宣抚一句话。」';
+      const f = draftFaults(S, said, T, 'auto');
+      if (!f.some(x => /一再请示/.test(x))) bad.push('下面的人一再请示没打回：' + f.join(' / '));
+      if (!f.some(x => /亲自领兵、去某地/.test(x))) bad.push('亲率进驻却还在原地没打回：' + f.join(' / '));
+      const f2 = draftFaults(S, said, '五更造饭，你领背嵬军渡江北上，一路行军，第九日到了郾城。城上守臣开门迎你。「宣抚来得正好。」', 'auto');
+      if (f2.some(x => /亲自领兵、去某地/.test(x))) bad.push('已经动身了还说没动身：' + f2.join(' / ')); }
+    // 十、春秋诸侯在位照十二诸侯年表（原来整段没有，写戏把前 635 年的宋君写成二十年后的宋昭公）
+    { const T = newSave({ name: '姬重耳', gender: '男', age: 62, role: '晋国国君', gregorianYear: -635, month: 5, day: 1, place: '绛', polity: '晋' }); const rs = rulersAt(-632, T).map(r => r.title);
+      for (const w of ['周襄王', '晋文公', '楚成王', '宋成公', '齐昭公', '秦穆公', '郑文公', '鲁僖公', '卫成公', '曹共公']) if (!rs.includes(w)) bad.push('前 632 年在位的没查到：' + w + ' / ' + rs.join('、'));
+      if (rs.includes('宋昭公')) bad.push('前 632 年查出了宋昭公'); }
+    // 十一、一国之主岁入没算出来：原有兵马照常由朝廷养，不按月欠饷逃散；国库是负数时「付」不出负数，欠饷不翻滚
+    { const run = inc => { S = newSave({ name: '赵祯', gender: '男', age: 34, role: '皇帝', gregorianYear: 1043, month: 5, day: 1, place: '开封', polity: '宋' });
+        S.gov = { scope: 'realm', stats: { 国库: -1000000, ...(inc ? { 岁入: 60000000 } : {}) }, keys: [] }; S.forces = [{ name: '禁军', leader: '赵祯', owner: '宋', troops: 100000, at: '开封', status: '驻守', morale: 60 }];
+        for (let i = 1; i <= 12; i++) { const c = CAL.monthAt({ y: 1043, m: 5, leap: false }, i); S.clock = { ...S.clock, y: c.y, m: c.m }; armyMonthly(S, 1); } return S.forces[0]; };
+      const a = run(false); if (N0(a.owed) > 0) bad.push('岁入没算出来，原有禁军还按月欠饷：' + a.owed);
+      const b2 = run(true); if (!(N0(b2.owed) > 0) || N0(b2.owed) > 100000 * 2 * 12) bad.push('国库是负数时欠饷越滚越大：' + b2.owed); }
     return bad;
   });
   const bad = out.concat(errs);
