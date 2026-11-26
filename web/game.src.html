@@ -10503,7 +10503,7 @@ function realmsAt(y, m) {
     L.forEach((n, k) => { if (!col[n]) col[n] = grp[n].kind === '附' ? col[p] : shade(col[p], k); }); }
   const list = names.map(n => { const r0 = rows.find(r => r.n === n), f0 = JS && JS.polities.find(f => nmOf(f) === n), at = r0 ? r0.pts[0] : f0 && f0.anchor ? f0.anchor : [null, null], g = grp[n]; return { name: n, col: col[n], lon: at[0], lat: at[1], basis: f0 ? '江山时序' : '内置史料', builtin: true, main: !!(f0 && f0.role === 'main'), parent: g ? g.parent : '', kind: g ? g.kind : '', vassal: !!(g && g.kind === '附') }; });
   const cache = new Map();
-  const of = (lon, lat, nm) => { if (lon == null || lat == null) return null;
+  const of0 = (lon, lat, nm) => { if (lon == null || lat == null) return null;
     if (nm) { const segs = FIX.get(nm); if (segs) { const hit = segs.filter(x => x[0] <= yv && yv <= x[1] + 0.999 && (x.length < 5 || Math.hypot((x[3] - lon) * Math.cos(lat * Math.PI / 180), x[4] - lat) < 0.7)).pop(); if (hit) { const v = list.find(x => x.name === hit[2]) || list.find(x => String(x.name).replace(/[（(].*$/, "") === String(hit[2]).replace(/[（(].*$/, "")); if (v) return v; } } }   // 校订表优先（州名＋年）
     const k = lon.toFixed(2) + ',' + lat.toFixed(2); if (cache.has(k)) return cache.get(k);
     if (JS) { let eb = null, ed = 1e9; for (const r of encl) for (const [x, y2] of r.pts) { const e = Math.hypot((x - lon) * Math.cos(lat * Math.PI / 180), y2 - lat); if (e < ed && e <= r.r) { ed = e; eb = r; } } if (eb) { const v = list.find(x => x.name === eb.n) || null; cache.set(k, v); return v; } }
@@ -10521,6 +10521,10 @@ function realmsAt(y, m) {
       if (!capHit && gb && gd < (gk === '镇' ? 2.0 : 3.2)) v = list.find(x => x.name === gb.n) || v;
     }
     cache.set(k, v); return v; };
+  /* 州、路、省这类本国内部政区只管上色（同色系分深浅），归属一律报所属政权（R-278 审查：230 年洛阳报成「司隶」、隋文帝地盘只剩 22 州、打仗认不出是谁家的城） */
+  const upV = new Map(), up = v => { if (!v || !isAdminSub(v) || !v.parent) return v; if (upV.has(v.name)) return upV.get(v.name);
+    const P = list.find(x => x.name === v.parent); const w = P ? { ...P, col: v.col, sub: v.name } : v; upV.set(v.name, w); return w; };
+  const of = (lon, lat, nm) => up(of0(lon, lat, nm));
   return { list, of, rows, js: JS ? { id: JS.id, cap: JS.cap } : null };
 }
 const MU_C = { k: '', s: null, v: null };
