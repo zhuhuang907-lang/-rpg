@@ -14771,6 +14771,9 @@ ${note ? '【上一次的毛病，这次改掉】' + note + '\n' : ''}
     debts: rows(d.debts, x => ({ to: one(x.to, 20), amount: N0(x.amount), note: one(x.note, 60) })),
     projects: arr(s.estate && s.estate.projects), src: R0.length ? '查证' : '常识', at: s.turn,
   });
+  /* R-280 真玩：本位是「文」，家当的依据写着「二百亩约四百贯」「存货约一千五百贯」，数目却填成 4000、1500（当文记，田一亩二十文）——依据里明写了多少贯而数目差得远的，照贯折成文 */
+  if (unit === '文') for (const k of ['assets', 'income', 'expense', 'debts']) for (const x of arr(s.estate[k])) { const v = k === 'assets' ? 'value' : 'amount', L = [...String(x.note || '').matchAll(/(\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+)\s*贯/g)], g = L.length ? (/^\d/.test(L[L.length - 1][1]) ? Number(L[L.length - 1][1]) : zhNum(L[L.length - 1][1])) : null;
+    if (g > 0 && N0(x[v]) != null && N0(x[v]) < g * 1000 / 3) x[v] = Math.round(g * 1000); }
   if (old) { s.estate.assets = old.assets.concat(arr(s.estate.assets).filter(x => !old.assets.some(o => o.name === x.name))); s.estate.debts = old.debts.concat(arr(s.estate.debts).filter(x => !old.debts.some(o => o.to === x.to))); }
   s.money = s.money || { hist: [] };
   if (!old) s.money.unit = unit;

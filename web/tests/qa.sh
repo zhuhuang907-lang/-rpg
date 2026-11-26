@@ -144,6 +144,7 @@ start ai.js && {
   run "打字不被重画打断、名册搜索连打、小地图滚轮让页面、Ctrl+滚轮缩放、拖动不误选（R-278）" 200 env PLAY="$ROOT/web/play.html" node typing.js
   run "全面优化：价目常识关、剧情调度议程、朝局五席卡不摆画像（R-278）" 120 env PLAY="$ROOT/web/play.html" node r278.js
   run "长考卷：开头照抄的时刻删掉、底账月工钱折日钱、一家吃穿合常理、开局月不扣、不编债主、小债不卖身、中间各月年号、明代米价（R-279）" 120 env PLAY="$ROOT/web/play.html" node r279.js
+  run "靖康富商子弟真玩：家当照贯写的折成文、宋末底账米价合常理（R-280）" 120 env PLAY="$ROOT/web/play.html" node r280.js
   run "开局物价照底账：纺织月收入不丢、别区的价不当本地载值、底账另折本位不把 AI 给的再除一千（R-256 补、R-273）" 120 env PLAY="$ROOT/web/play.html" node r256.js
   run "临阵出的主意算进仗里、据城守门不再回回大败、正文胜负跟程序对不上打回重写（R-257）" 120 env PLAY="$ROOT/web/play.html" node r257.js
   run "看到的就是做好的：真人照史死、别名认真人、志向固定、军务页兵种内置（R-258）" 120 env PLAY="$ROOT/web/play.html" node r258.js
