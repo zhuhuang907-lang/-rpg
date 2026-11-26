@@ -1771,7 +1771,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261126224915';
+const BUILD = '20261126225742';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -17500,9 +17500,10 @@ function deadOnStage(s, text) { const t = String(text || ''), out = [], seen = n
 function stripOwnLines(said, text) {
   const S0 = String(said || '').replace(/[\s，,。；;：:、「」“”"！!？?]/g, ''); if (!text) return text; let cut = 0;
   const t = String(text).replace(/([^。！？\n」]*?)你[^「」。！？\n，：:]{0,5}?(?:说|道|答|应|问|回|喊|叫|嚷|吼|开口|吩咐)[^「。\n]{0,8}[：:]?\s*「([^」]{2,400})」([。！？]?)/g, (all, pre, q) => {
+    if (/(朝|向|对|冲|跟|和|与|给|替|叫|问|见|望|看|瞧|拉|扯|拦|请|劝|拜|教|让|领|带|随|陪|迎|喊住|叫住)\s*$/.test(pre || '')) return all;   /* R-280：「他翻身上马，朝你喊道」是别人对主角说话，原来当成主角的台词删了半句，剩「朝  岳云」 */
     const Q = q.replace(/[\s，,。；;：:、！!？?]/g, ''); if (!Q) return all; let hit = 0; for (const ch of Q) if (S0.includes(ch)) hit++;
     const nums = q.match(/[零〇一二两三四五六七八九十百千万\d]{2,}/g) || [], badNum = nums.some(x => /[十百千万\d]/.test(x) && !String(said || '').includes(x));   /* 主角台词里改了玩家说的数目（三万写成一万五千） */
-    if (hit / Q.length >= 0.6 && !badNum) return all; cut++; return pre && pre.trim().length > 4 ? pre.replace(/[，,]\s*$/, '。') : ''; });
+    if (hit / Q.length >= 0.6 && !badNum) return all; cut++; const P = String(pre || '').replace(/[，,]\s*$/, ''); if (P.trim().length <= 4) return ''; return /[，,]/.test(P) || !/[\u4e00-\u9fa5]$/.test(P) ? P.replace(/[，,][^，,]*$/, '') + '。' : ''; });   // 删到上一个逗号为止，不留半截
   return cut ? t.replace(/\n{3,}/g, '\n\n').replace(/^\s*\n/, '') : text;
 }
 /* 这一回正文归哪一类事（2026-11-24 玩家「剧情极度同质化，动不动就是催收欠款」）：只用于查重与换题，不进界面 */
@@ -18206,7 +18207,9 @@ function stripEcho(t) {
 function dedupSent(t) { const x = String(t == null ? '' : t), seen = new Set(); let out = '', last = 0;
   for (const m of x.matchAll(/[^。！？!?\n]+[。！？!?]+[」』”]?/g)) { const k = m[0].replace(/^[\s　]+/, ''); if (k.length >= 25 && seen.has(k)) { out += x.slice(last, m.index); last = m.index + m[0].length; continue; } if (k.length >= 25) seen.add(k); }
   return (out + x.slice(last)).replace(/[ \t　]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(); }
-function stripLookNotes(t) { return dedupSent(stripEcho(t)).replace(/[ \t]*【(查账|缺数先查账|你要查的账)[^】\n]{0,200}】[ \t]*/g, '').replace(/\n{3,}/g, '\n\n').trim(); }
+/** R-280 真玩：写戏在正文末尾自己加了一段「【戏外】这里得停一下……请玩家定夺」——戏里的正文不留戏外的话（整段是戏外答话的不动） */
+const stripOOC = t => String(t == null ? '' : t).replace(/^([\s\S]*?\S)\s*[（(]?【戏外】[\s\S]*$/, '$1');
+function stripLookNotes(t) { return dedupSent(stripEcho(stripOOC(t))).replace(/[ \t]*【(查账|缺数先查账|你要查的账)[^】\n]{0,200}】[ \t]*/g, '').replace(/\n{3,}/g, '\n\n').trim(); }
 function scrubText(s, t) { t = String(t == null ? '' : t); const nf = nameFixes(s, t).sort((a, b) => b.wrong.length - a.wrong.length); for (const x of nf) t = t.split(x.wrong).join(x.right); return t; }
 function scrubObj(s, o) { try { const raw = JSON.stringify(o), t = scrubText(s, raw); return t === raw ? o : JSON.parse(t); } catch (_) { return o; } }
 /** 真人名单：史料里的、档案里认定的真人、查到的本地真人、名册里史料或推断出的官员 */
@@ -18956,8 +18959,11 @@ function applyReply(s, d, said) {
     s.estate.cash = mo.cash != null ? fmtN(mo.cash, u) : s.estate.cash;
     extra.ledger = ledger;
     // 主角在哪由玩家定：玩家这一步没说要走，正文也不是被押解、发配、征发、掳走这类身不由己的，账房报的「搬家」不认（不把主角挪到大事跟前凑剧情）
-    const moveOk = /去|往|赴|到|迁|搬|投奔|回|上京|进京|启程|动身|出发|赶往|逃|走一趟|上路|离开|出城|回乡|赶考|赴任|应募|从军|随军|跟着/.test(String(said || '')) || /押解|发配|充军|流放|被掳|掳走|被抓|拿去|押往|押送|征发|签发|调往|改任|移镇|贬|谪/.test(String(d.reply || ''));
+    const moveOk = /去|往|赴|到|迁|搬|投奔|回|上京|进京|启程|动身|出发|赶往|逃|走一趟|上路|离开|出城|回乡|赶考|赴任|应募|从军|随军|跟着|亲率|亲征(?!行营|使)|亲自(率|领|带)|进驻|移驻|移营|进兵|进军|北上|南下|西进|东进|出征|御驾(?!前)/.test(String(said || '')) || /押解|发配|充军|流放|被掳|掳走|被抓|拿去|押往|押送|征发|签发|调往|改任|移镇|贬|谪/.test(String(d.reply || ''));
     if (d.moveTo && !moveOk) { noteErr('账房擅自给主角搬了家，没认', one(d.moveTo, 30)); d.moveTo = ''; d.moveToPolity = ''; }
+    /* R-280 长考卷：岳飞「亲率背嵬军进驻郾城」，正文写到了郾城、在城里召诸将，抬头还是鄂州——玩家说了亲自去哪、正文（不算对白）写到了那里，账房没报搬家的，程序照搬 */
+    if (moveOk && !d.moveTo) { const m = [...String(said || '').matchAll(/(?:进驻|移驻|亲征|亲赴|亲往|赶往|前往|进兵|进军|(?<![进移])(?:赴|往|到|驻|取|攻))([\u4e00-\u9fa5]{2,4}?)(?:城|府|州|县|镇)?(?=[，。！!、]|$)/g)].pop(), X = m && m[1];
+      if (X && X.length >= 2 && !/朝廷|前线|北边|南边|那里|这里|敌营/.test(X)) { const nar = String(d.reply || '').replace(/「[^」]*」/g, ''); if (new RegExp('(抵|到了|到|进了|入|至|进)' + X + '|' + X + '(城下|城中|城里|城外)').test(nar) && !String(s.place.full || '').includes(X)) { d.moveTo = X; noteErr('照正文搬了家', `玩家说亲自去${X}，正文写到了，账房没报，程序照搬`); } } }
     if (d.moveTo) { s.place.full = one(d.moveTo, 30); extra.moved = s.place.full; }
     // 主角此刻人在哪（出门在外也算）：地图跟着人走；回到家就清掉
     { const at = one(d.nowAt, 30).replace(/[（(].*$/, ''); const st = x => geoStem(String(x || '').replace(/^.*?([^省道路]{2,4}(府|州|郡|县))/, '$1'));
@@ -19084,7 +19090,7 @@ function applyReply(s, d, said) {
     { const R = arr(s.research).filter(x => x.turn === s.turn - 1); extra.searched = R.length; }   // 这一回联网查到几条：每回合都查，界面上看得见
   }
   if (String(said || '').trim()) s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'me', text: String(said).trim(), turn: s.turn });
-  s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'gm', kind: play ? 'play' : 'talk', text: (play ? t0 => dedupSent(stripEcho(t0)) : String)(String(d.reply || d.scene || '').trim()).trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null, cur: play ? curStatus(s, d) : null,
+  s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'gm', kind: play ? 'play' : 'talk', text: (play ? t0 => dedupSent(stripEcho(stripOOC(t0))) : String)(String(d.reply || d.scene || '').trim()).trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null, cur: play ? curStatus(s, d) : null,
     hints: arr(d.hints).map(h => one(h, 50)).concat(s.hookNow && play ? s.hookNow.choices : []).filter(Boolean).slice(0, 6) });
   if (s.hookNow && play) { const h = arr(s.hooks).find(x => x.id === s.hookNow.id); if (h) { h.used = true; h.turn = s.turn; } s.lastHook = s.turn; const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { hook: { kind: s.hookNow.kind, title: s.hookNow.title, why: s.hookNow.why, basis: s.hookNow.basis } }); }
   s.hookNow = null;

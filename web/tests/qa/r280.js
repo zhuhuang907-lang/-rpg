@@ -21,6 +21,19 @@ const path = require('path');
     const L = PRESETLIB.filter(R => R.range && R.range[0] <= 1126 && R.range[1] >= 1126).flatMap(R => arr(R.prices)).filter(x => x.from === 1120 && /河南|江南/.test(x.region));
     for (const x of L) if (x.rice < 500 || x.rice > 5000) bad.push('宋末底账米价离谱：' + x.region + ' ' + x.rice);
     if (!L.length) bad.push('宋末底账没查到');
+    // 三、正文末尾的「【戏外】……请玩家定夺」删掉；整段就是戏外答话的不动
+    { const T = '王贵脸色一沉，没接话。\n\n【戏外】这里得停一下：主角还没答孙革这一问。请玩家定夺。'; if (stripOOC(T) !== '王贵脸色一沉，没接话。') bad.push('正文里的戏外话没删：' + stripOOC(T));
+      if (stripOOC('【戏外】可以，我照这个改。') !== '【戏外】可以，我照这个改。') bad.push('整段戏外答话被删了'); }
+    // 四、「朝你喊道」是别人对主角说话，不当主角台词删半句
+    { const T = '他翻身上马，朝你喊道：「末将先行！」岳云已从营里出来。'; if (stripOwnLines('乘胜进兵朱仙镇。', T) !== T) bad.push('别人对主角说话被当成主角台词删了：' + stripOwnLines('乘胜进兵朱仙镇。', T));
+      const T2 = '帐里静了，王贵抬头，你开口道：「明日去襄阳买马，再招五千人！」王贵应了。', g2 = stripOwnLines('乘胜进兵朱仙镇。', T2); if (/开口道|，\s*王贵应了|王贵抬头，\s*王贵/.test(g2) || /[，,]\s*王贵应了/.test(g2)) bad.push('替主角说的台词删得留半截：' + g2); }
+    // 五、玩家说亲自进驻某地、正文写到了那里：账房没报搬家，程序照搬；没说要走的不搬
+    { S = newSave({ name: '岳飞', gender: '男', age: 38, role: '湖北京西宣抚使', gregorianYear: 1140, month: 6, day: 1, place: '荆湖北路鄂州江夏县', polity: '南宋' }); S.chat = [{ role: 'gm', text: '开场' }]; S.turn = 9;
+      try { applyReply(S, { reply: '你传令背嵬军随你北上。闰六月二十日午后，你领背嵬军抵郾城，城门大开。王贵进城来见你：「相公，郾城拿下了。」', mode: 'play', elapsedDays: 8 }, '亲率背嵬军进驻郾城。'); } catch (e) { bad.push('记账出错：' + e.message); }
+      if (!/郾城/.test(S.place.full || '')) bad.push('亲率进驻郾城、正文写到了，抬头还在：' + S.place.full);
+      const T = newSave({ name: '岳飞', gender: '男', age: 38, role: '湖北京西宣抚使', gregorianYear: 1140, month: 6, day: 1, place: '荆湖北路鄂州江夏县', polity: '南宋' }); T.chat = [{ role: 'gm', text: '开场' }]; T.turn = 9;
+      try { applyReply(T, { reply: '探马报说背嵬军已抵郾城。', mode: 'play', moveTo: '郾城' }, '问张宪那边战况如何。'); } catch (e) { bad.push('记账出错：' + e.message); }
+      if (/郾城/.test(T.place.full || '')) bad.push('玩家没说要走，账房搬了家也认了'); }
     return bad;
   });
   const bad = out.concat(errs);
