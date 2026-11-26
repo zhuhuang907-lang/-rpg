@@ -3691,7 +3691,8 @@ function foreignLand(s, place) { const pl = String(place || '').replace(/[（(].
  *  空＝无人占领（谁家账上、地图上都查不到归属），毁＝城破残毁（户口离散、赋税断绝，要修葺才能再用）。
  *  旧存档的 mapOwn 没有 st，照 why、owner 推一个 */
 function mapStateOf(s, stem) {
-  const mo = (s.mapOwn || {})[stem] || (s.mapHist || {})[stem]; if (!mo) return null;   // 玩家打下的优先，其次史事易主
+  const mo = (s.mapOwn || {})[stem] || (s.mapHist || {})[stem]; if (!mo) return null;
+  if (!mo.owner && mo.who) mo.owner = mo.who === '你' ? '你' : String(mo.who);   // 旧写法 { from, who }：归属记在 who（R-278 审查：朝局页整块画不出来）   // 玩家打下的优先，其次史事易主
   if (!mo.st) { const w = String(mo.why || '');
     mo.st = /毁|焚|屠|残|废|燬/.test(w) ? '毁' : /叛|反/.test(w) ? '叛' : mo.owner === '你' ? '得' : '失'; }
   return mo;
@@ -10551,7 +10552,7 @@ function mapUnits1(s) { const M = admOverlay(s, mapUnits0(s)); if (!M) return M;
     if (k.owner === '你') return (R && R.list.find(x => x.name === pol0(s))) || mine;
     if (k.st === '叛') return { name: k.owner || '叛军', col: '#c05a2a' };
     if (k.st === '史') return (R && R.list.find(x => x.name === k.owner)) || { name: k.owner, col: '#5d4e8a' };   // 史事易主照新政权的色
-    return (R && R.list.find(x => x.name === k.owner)) || { name: k.owner, col: '#7a6a5a' }; };
+    return (R && R.list.find(x => x.name === k.owner)) || { name: k.owner || '别家', col: '#7a6a5a' }; };
   M._mo = true; M._moSig = sig;
   return wrapVassals(M); }
 function mapUnits0(s) {
@@ -11087,7 +11088,7 @@ function myDomain(s) {
   // 名义上奉正朔、实际自治的藩镇、附庸另列（realmVassals），不算直辖
   if (d.ruler && d.rebel === 'leader' && !arr(s.territory).length && /流|转战|闯|冲天|起事|揭竿|义军/.test(String(s.protagonist.role || ''))) { const F = arr(s.forces).filter(f => myForce(s, f) && f.at).map(f => f.at); return { kind: 'rebel', label: '你的义军', places: F.length ? [...new Set(F)] : [near(2) || here], recruitCap: null, raid: true, develop: false, govern: false, appoint: true }; }
   if (d.ruler) { const pol = String(pol0(s) || ''), own = arr(s.territory).map(t => t.place).filter(Boolean);
-    if (M && pol) for (const u of arr(M.L2)) { const r = M.reg(u); if (r && (r.name === pol || pol.includes(r.name) || r.name.includes(pol)) && !own.some(p => geoStem(p) === geoStem(u.n))) own.push(u.n); }
+    if (M && pol) for (const u of arr(M.L2)) { const r = M.reg(u); if (r && r.name && (r.name === pol || pol.includes(r.name) || r.name.includes(pol)) && !own.some(p => geoStem(p) === geoStem(u.n))) own.push(u.n); }
     return { kind: 'realm', label: '你的地盘', places: own.length ? own : [near(2) || here], recruitCap: null, raid: true, develop: true, govern: true, appoint: true }; }
   if (d.admin === 'local') { const off = String(d.office.title || ''), county = /县|令|宰/.test(off) && !/府|州|郡|守|刺史/.test(off); return { kind: 'local', label: '你的辖区', places: [near(county ? 3 : 2) || here], recruitCap: 300, raid: false, develop: true, govern: true, appoint: false }; }
   if (armed.length || d.tags.includes('匪')) return { kind: 'stronghold', label: '你的山寨', places: [one((armed[0] || {}).seat, 16) || here], recruitCap: 200, raid: true, develop: true, govern: false, appoint: false, org: armed[0] || null };
