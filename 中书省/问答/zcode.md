@@ -196,3 +196,13 @@
 - **验证**：build `8859009`；护栏 294/0；体检 0；规则 109/0；**全按钮普查 13 身份 1582 个按钮 0 错、0「点了没变」**（本批改动后重点四身份再跑 713 个 0 错）；页面探针三种身份无异常、无 undefined/NaN；残缺旧档（无 keys/无 nodes/无 stats）实测不崩。
 - **没做**：主人说的「时间不推进」「界面老是错误」这轮没复现，没敢瞎动 R-277 的时间逻辑；有存档或截图我再照账查。数值预设化仍等主人点头。
 - 补丁与说明在 `中书省/附件/zcode-朝局与bug-2026-11-26.patch`、`zcode-朝局与bug说明-2026-11-26.md`。请宰相审。
+
+## 报 zcode（2026-11-26 第三批，同分支：大检索——旧档崩溃/朝局回归/离线卡顿）
+
+- 分支 `zcode/plot-director`（累计补丁再更新）。主人原话：「修bug，大检索」「不需要问claude，自己做好」。
+- **旧存档白页（实测复现六类、静态扫出五处）**：① `s.org` 有 nodes 没 posts / 空壳 org → `tidyState` 统一归成数组；② 国势 `govDue` 的 `keys.some`、`stats[k]`、syncGov、阶层、财政里直接取 stats/realm → 加守卫；③ 局面页 `groups`、`meters`（旧写法字符串）、`household.filter`；④ 家业页 `estate` 为 null；⑤ 天下/地理/年谱页 `world.events`、`places`、`chronicle`、`summaries`、`status`；⑥ 月结 `summaries/chronicle.slice` 三处；⑦ `ok()` 缺数组补 `[]`，并把 statusLog/careerLog/prisoners/cargo/companions 纳入兜底。**旧档探针四种身份全页签 0 崩、0 undefined/NaN。**
+- **朝局两处回归**：人事树默认展开（否则线路/保正/虚拟/职权都看不到）；「官员名录」标题改回「全国官员名册」；非君主的朝局补「其余要紧的人」一排（五席之外照样走动），「风声不好」字样照旧——`courtplay.js`、`court.js` 复跑通过。
+- **离线/本机服务没起来时卡 25 秒**：`libEvidence` 查原文库默认等 25 秒，`file://` 或服务没起来时请求不立刻失败，「当面说/议和/劝降」全干等，qa 10 秒等待超时（草根线、臣子线、百姓线、政治四张全挂）。现 `file://`/`MODE==='none'` 最多等 3 秒，查不到当没有；服务器下照旧 25 秒。四张修后复跑 `ERRS []`。
+- **离线打开一直报 Google Fonts 错、截图等字体超时**：页头直连 fonts.googleapis.com 拉三个中文字体，没外网就报错/卡截图。去掉外链，标题退回本机 STKaiti/KaiTi/宋体栈。
+- **验证**：build `8860280`；护栏 294/0；体检 0；规则 109/0；旧档探针 0 崩；四张卡住的线复跑通过；全套 `web/tests/qa.sh` 结果见下（本机另有一个 `~/.local/bin/env` 空壳脚本的坑，跑测试时 PATH 以 /usr/bin 优先、端口改 8893/3893，与游戏无关，没动主人的文件）。
+- 补丁与说明在 `中书省/附件/zcode-大检索-2026-11-26.patch`、`zcode-大检索说明-2026-11-26.md`。
