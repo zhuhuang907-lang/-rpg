@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
   const errs = []; p.on('pageerror', e => errs.push(e.message.slice(0, 200)));
   await p.goto('file:///C:/Users/DELL/.zcode/workspace/rpg17-40/web/play.html');
   await p.waitForFunction(() => typeof mapUnits === 'function', null, { timeout: 60000 });
-  for (const [y, tag, mode, c, span] of [[1000, '1000n', 'near', { lon: 112, lat: 33 }, 7], [1400, '1400n', 'near', { lon: 113, lat: 34 }, 7], [1800, '1800n', 'near', { lon: 113, lat: 34 }, 7]]) {
+  for (const [y, tag, mode, c, span] of [[1800, '1800w', 'world', null, 0], [500, '500w', 'world', null, 0]]) {
     await p.evaluate(({ y, mode, c, span }) => {
       S = newSave({ name: '甲', gender: '男', age: 30, role: '布衣', real: false, gregorianYear: y, month: 6, day: 1, place: '洛阳', polity: '唐' });
       VIEW = 'game'; TAB = 'map'; MAPZ.inited = true; MAPZ.mode = mode; MAPZ.c = c; MAPZ.span = span; MAPZ.follow = false; MAPZ.big = false; render();
