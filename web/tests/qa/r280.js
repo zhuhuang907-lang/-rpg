@@ -34,6 +34,9 @@ const path = require('path');
       const T = newSave({ name: '岳飞', gender: '男', age: 38, role: '湖北京西宣抚使', gregorianYear: 1140, month: 6, day: 1, place: '荆湖北路鄂州江夏县', polity: '南宋' }); T.chat = [{ role: 'gm', text: '开场' }]; T.turn = 9;
       try { applyReply(T, { reply: '探马报说背嵬军已抵郾城。', mode: 'play', moveTo: '郾城' }, '问张宪那边战况如何。'); } catch (e) { bad.push('记账出错：' + e.message); }
       if (/郾城/.test(T.place.full || '')) bad.push('玩家没说要走，账房搬了家也认了'); }
+    { const U = newSave({ name: '沈怀远', gender: '男', age: 21, role: '乡兵头目', gregorianYear: 1127, month: 5, day: 17, place: '东京开封府开封县', polity: '宋' }); U.chat = [{ role: 'gm', text: '开场' }]; U.turn = 43;
+      try { applyReply(U, { reply: '这一季里，你把本部扩到三百人，报了名籍。', mode: 'play', span: 'season' }, '这一季照差遣哨探，把本部扩到三百人，报名籍请口食。'); } catch (e) { bad.push('记账出错：' + e.message); }
+      if (/三百人/.test(U.place.full || '')) bad.push('「扩到三百人」被当成搬去「三百人」：' + U.place.full); }
     // 六、玩家选了「这一年」：正文只写到半个月后的日子，钟也不只走半个月
     { const T = newSave({ name: '赵祯', gender: '男', age: 34, role: '皇帝', gregorianYear: 1043, month: 4, day: 18, place: '东京开封府', polity: '宋' }); T.chat = [{ role: 'gm', text: '开场' }]; T.turn = 15; const y0 = T.clock.y * 12 + T.clock.m;
       try { applyReply(T, { reply: '四月廿二，你在垂拱殿听政。五月初一，晏殊入见：「官家，西夏使臣又到了。」这一年里，朝中议论不断。', mode: 'play', span: 'year', elapsedDays: 13 }, '这一年照常理政。'); } catch (e) { bad.push('记账出错：' + e.message); }
@@ -42,6 +45,14 @@ const path = require('path');
     { const T = '孙七问完。「庄门先不关，」你说，「先把墙上的人撤一半，吴老栓去烧水，再派十个人往北边看看。」孙七应了。', g = stripOwnLines('金兵游骑来庄上抢粮，带弟兄们设伏打他们。', T);
       if (/庄门先不关/.test(g) || !/孙七应了/.test(g)) bad.push('劈成两截的主角台词留了半截：' + g);
       const T2 = '「门不关，」你说，「来的照收。」孙七应了。', g2 = stripOwnLines('门不关，来的照收。', T2); if (!/门不关/.test(g2) || !/来的照收/.test(g2)) bad.push('玩家原话被删了：' + g2); }
+    // 八、打字招人：照玩家说的真招，一季能招的有限、要给安家钱；不是招人的话不动
+    { const T = newSave({ name: '沈怀远', gender: '男', age: 21, role: '乡兵头目', gregorianYear: 1127, month: 5, day: 17, place: '东京开封府开封县', polity: '宋' });
+      T.money = { cash: 100000, unit: '文' }; T.econ = { v: 2, unit: '文', rice: 1500, wage: 20, unitChk: 1, wageChk: 1 }; T.forces = [{ name: '沈家队', leader: '沈怀远', owner: '你', troops: 30, at: '封丘', status: '驻守' }];
+      const o = textRaise(T, '这一季收拢溃兵和乡兵，把本部扩到三百人。', 'season'), n = N0(T.forces[0].troops);
+      if (!(n > 30 && n < 300)) bad.push('一季扩到三百人：要么没招、要么一下招满：' + n + ' / ' + o.join());
+      if (!(T.money.cash < 100000)) bad.push('招人没给安家钱');
+      const n2 = N0(T.forces[0].troops); textRaise(T, '问问哪里在招兵勤王。', 'auto'); if (N0(T.forces[0].troops) !== n2) bad.push('打听招兵的消息也招了人');
+      T.money.cash = 0; const n3 = N0(T.forces[0].troops); textRaise(T, '再招五十人。', 'month'); if (N0(T.forces[0].troops) !== n3) bad.push('没钱也招来了人'); }
     return bad;
   });
   const bad = out.concat(errs);

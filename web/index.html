@@ -1771,7 +1771,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261126230130';
+const BUILD = '20261126232459';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -5227,6 +5227,22 @@ async function techInvent(s, name, desc) {
 /** 打字下的军令也真调兵（R-269 真玩：「命张敬达率禁军三万北上屯驻晋州」，正文写前军开拔、过了天井关，账上一个兵没动、地图上没有行军）：
  *  认出「命／令／遣／派某人 率／领 若干兵 往／赴／屯驻／进围 某地」，照军务页的办法分兵、立行军，程序照日子走；带「若、如果」的有条件的令不动 */
 const MARCH_VERB = /(进围|围攻|围|进攻|攻打|攻|讨伐|讨|助攻|增援|驰援|屯驻|驻扎|移驻|进驻|驻|镇守|防守|北上|南下|西进|东进|开赴|赶赴|前往|奔赴|赴|往|至)/;
+/** R-280 靖康真玩：打字说「收拢溃兵、把本部扩到三百人」，账上的兵从不动（兵数只照募编由程序结算，可打字的招人不算募编），正文写到三百八十九、账上一百七十一。
+ *  不是一方之主（一方之主照军务页募兵、人力池）、手下有自家兵的：照玩家说的招人——一个月最多招现有的四分之一（至少二十人），每人照十天工钱给安家钱，钱不够招多少算多少；照数记进兵马、写进写戏材料 */
+function textRaise(s, said, span) {
+  if (!s || !s.protagonist || isRuler(s)) return []; const t = String(said || '');
+  const hit = /(招|募|收拢|收编|收纳|扩到|扩充|扩编|添|补|凑)[^。；]{0,14}?(兵|人|丁|壮|勇|溃卒|散兵|乡兵|弟兄)/.exec(t); if (!hit) return [];
+  if (/若|如果|倘|要不要|能不能|问问|打听|可否/.test(t.slice(0, hit.index))) return [];
+  const f = arr(s.forces).filter(x => x && !x.foe && myForce(s, x) && !x.party && N0(x.troops) > 0 && !/行军|交战|围城/.test(x.status || '')).sort((a, b) => N0(b.troops) - N0(a.troops))[0]; if (!f) return [];
+  const cur = N0(f.troops), mo = Math.max(0.3, spanMonths(span, t) || 0.3), u = (s.money || {}).unit || '';
+  const m1 = /(扩到|扩充到|凑到|凑成|扩编到|补到|招|募|收)\s*([零〇一二两三四五六七八九十百千万\d]+)\s*(?:人|名|兵|丁|个)/.exec(t), want = m1 ? (/^\d/.test(m1[2]) ? +m1[2] : zhNum(m1[2])) : null, total = !!m1 && /到|成/.test(m1[1]);
+  let add = want ? (total ? want - cur : want) : Math.round(cur * 0.3) + 10; if (!(add > 0)) return [];
+  const cap = Math.round(Math.max(20, cur * 0.25) * Math.min(mo, 12)); add = Math.min(add, cap, 5000);
+  const E = econOf(s), per = E && E.wage ? Math.round(E.wage * 10 * 100) / 100 : 0, P = milPurse(s); if (per && P) add = Math.min(add, Math.floor(Math.max(0, P.have()) / per));
+  let line; if (!(add > 0)) line = `招人：手里的钱给不起安家钱，${f.name}这一回没招到人`;
+  else { if (per && P) P.take(Math.round(add * per * 100) / 100); f.troops = String(cur + add); f.src = '程序结算';
+    line = `招人：${f.name}照吩咐招收${add}人${total && want > cur + add ? `（要扩到${want}人，这段日子能招到的只有这些）` : ''}，安家钱共${fmtN(Math.round(add * per), u)}，现有${cur + add}人`; }
+  noteErr('打字募兵', line); s.armyPending = arr(s.armyPending).concat([{ act: 'text', line, turn: s.turn, done: true }]).slice(-12); return [line]; }
 function textMarch(s, said) {
   if (!s || !s.protagonist || !(isRuler(s) || arr(s.forces).some(f => myForce(s, f)))) return [];
   const out = [];
@@ -18965,7 +18981,7 @@ function applyReply(s, d, said) {
     if (d.moveTo && !moveOk) { noteErr('账房擅自给主角搬了家，没认', one(d.moveTo, 30)); d.moveTo = ''; d.moveToPolity = ''; }
     /* R-280 长考卷：岳飞「亲率背嵬军进驻郾城」，正文写到了郾城、在城里召诸将，抬头还是鄂州——玩家说了亲自去哪、正文（不算对白）写到了那里，账房没报搬家的，程序照搬 */
     if (moveOk && !d.moveTo) { const m = [...String(said || '').matchAll(/(?:进驻|移驻|亲征|亲赴|亲往|赶往|前往|进兵|进军|(?<![进移])(?:赴|往|到|驻|取|攻))([\u4e00-\u9fa5]{2,4}?)(?:城|府|州|县|镇)?(?=[，。！!、]|$)/g)].pop(), X = m && m[1];
-      if (X && X.length >= 2 && !/朝廷|前线|北边|南边|那里|这里|敌营/.test(X)) { const nar = String(d.reply || '').replace(/「[^」]*」/g, ''); if (new RegExp('(抵|到了|到|进了|入|至|进)' + X + '|' + X + '(城下|城中|城里|城外)').test(nar) && !String(s.place.full || '').includes(X)) { d.moveTo = X; noteErr('照正文搬了家', `玩家说亲自去${X}，正文写到了，账房没报，程序照搬`); } } }
+      if (X && X.length >= 2 && !/朝廷|前线|北边|南边|那里|这里|敌营|[零〇一二两三四五六七八九十百千万\d]|人|兵|骑|名|个|成|倍/.test(X) && (() => { try { const xy = placeXY(s, X, s.clock.y); return !!(xy && xy.lat != null); } catch (_) { return false; } })()) {   /* R-280：「把本部扩到三百人」被当成去「三百人」，抬头成了「三百人」——只认地图上查得到的地名 */ const nar = String(d.reply || '').replace(/「[^」]*」/g, ''); if (new RegExp('(抵|到了|到|进了|入|至|进)' + X + '|' + X + '(城下|城中|城里|城外)').test(nar) && !String(s.place.full || '').includes(X)) { d.moveTo = X; noteErr('照正文搬了家', `玩家说亲自去${X}，正文写到了，账房没报，程序照搬`); } } }
     if (d.moveTo) { s.place.full = one(d.moveTo, 30); extra.moved = s.place.full; }
     // 主角此刻人在哪（出门在外也算）：地图跟着人走；回到家就清掉
     { const at = one(d.nowAt, 30).replace(/[（(].*$/, ''); const st = x => geoStem(String(x || '').replace(/^.*?([^省道路]{2,4}(府|州|郡|县))/, '$1'));
@@ -20177,7 +20193,7 @@ async function send(said, span, note, resume) {
   if (!S) return;
   if (BUSY) { if (!TURN && Date.now() - (THINK_T0 || 0) > 20000) { try { if (CTL && !CTL.signal.aborted) CTL.abort(); } catch (_) { /* 无 */ } BUSY = false; noteErr('stuck', '忙碌状态卡住二十秒以上、却没有在写的这一回：已放开'); } else { ERRMSG = '上一步还在写（可以点「停下」再写这一步）'; try { render(); } catch (_) { } setTimeout(() => { if (ERRMSG.startsWith('上一步还在写')) { ERRMSG = ''; try { render(); } catch (_) { } } }, 4000); return; } }   // 以前这里一声不响就返回，玩家以为卡死了
   tidyState(S);
-  if (!resume) { try { textMarch(S, said); } catch (_) { /* 认不出军令就照常写 */ } }
+  if (!resume) { try { textMarch(S, said); } catch (_) { /* 认不出军令就照常写 */ } try { textRaise(S, said, span); } catch (_) { /* 认不出招人就照常写 */ } }
   RULING_FAIL = false;
   EDITING = false;
   // 后台的活照做，不挡玩家；记账前只等和记账写同一处的那几件（最多十五秒）
