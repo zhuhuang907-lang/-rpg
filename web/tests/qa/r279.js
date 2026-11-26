@@ -62,6 +62,8 @@ const path = require('path');
     for (const w of ['自掏腰包垫解', '养廉银', '端阳节礼 送知府']) if (PUB_MONEY.test(w) && !PRIV_MONEY.test(w)) bad.push('自己的钱被当成公家的：' + w);
     // 十三、宋代统兵的使职（宣抚使、招讨使、制置使、都统制）算统兵的
     for (const role of ['湖北京西宣抚使', '江淮招讨使', '沿江制置使', '鄂州御前诸军都统制']) { const T = newSave({ name: '岳飞', gender: '男', age: 38, role, gregorianYear: 1140, month: 6, day: 1, place: '鄂州', polity: '南宋' }); const d = identityOf(T); if (d.command === 'none') bad.push(role + '算成了不管兵的'); }
+    // 十四、春秋列国的国君是一方之主
+    for (const [role, pol] of [['晋国国君', '晋'], ['齐国国君', '齐'], ['晋侯', '晋']]) { const T = newSave({ name: '姬重耳', gender: '男', age: 62, role, gregorianYear: -636, month: 2, day: 1, place: '绛', polity: pol }); const d = identityOf(T); if (!d.ruler) bad.push(role + '不算一方之主：' + JSON.stringify({ power: d.power, why: d.why })); }
     return bad;
   });
   const bad = out.concat(errs);

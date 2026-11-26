@@ -1761,7 +1761,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261126193448';
+const BUILD = '20261126195440';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4045,7 +4045,7 @@ const ID_REBEL = /流寇|义军|起义|起事|造反|揭竿|闯王|闯营|闯军
 // 身份写成庙号、谥号、年号称的（2026-11-03 查实：「隋文帝」「唐太宗」「康熙帝」认不出是皇帝，开局一样当成平民，没有地盘、没有朝局）
 const ID_SOV_TEMPLE = /^[一-鿿]{0,3}(太祖|高祖|世祖|圣祖|成祖|烈祖|太宗|[一-鿿]宗|[一-鿿]帝)$/;
 const ID_SOV_NOT = /妃|嫔|皇后|太后|宫女|宫人|太监|宦官|内侍|侍卫|御前|近臣|乳母|奶娘|皇子|公主|驸马|伴读|讲官|师傅|使者|信使|的|之/;
-const ID_INDEP = /可汗|单于|赞普|大汗|汗王|部落首领|部族首领|部落酋长|部落大人|渠帅|国主|称王|自立|割据|军阀|藩镇|拥兵自重|义军首领|起义军首领|起事首领|土司|酋长|诸侯|封君/;
+const ID_INDEP = /可汗|单于|赞普|大汗|汗王|部落首领|部族首领|部落酋长|部落大人|渠帅|国主|称王|自立|割据|军阀|藩镇|拥兵自重|义军首领|起义军首领|起事首领|土司|酋长|诸侯|封君|国君|一国之君/;   // 长考卷（R-279）：「晋国国君」原来算受朝廷任命的官，不是一方之主
 const ID_FANZHEN = /节度使|留后|观察使/;   // 唐中叶到五代（756—979）才是割据一方的藩镇，别的年代是朝廷命官
 const ID_BANDIT = /土匪|山寨|寨主|山大王|大当家|绿林|响马|落草|盗魁|贼首|匪首|海盗|水寇|马贼|流寇|强人|瓢把子/;
 const ID_BANDIT_HEAD = /寨主|山大王|大当家|盗魁|贼首|匪首|瓢把子|首领|头领|当家/;
@@ -4095,7 +4095,7 @@ function identityOf(s) {
   else if (rebel === 'leader') { power = 'independent'; why = '起事的首领'; }
   else if (s && s.idm === 'warlord' && (T.length || ID_INDEP.test(roleOwn) || (fanzhenEra && ID_FANZHEN.test(roleOwn + officeHeld)) || !officeHeld && !milOff && !civil)) { power = 'independent'; why = T.length ? `据有地盘 ${T.length} 处` : '自领一方、不受朝廷节制'; }
   else if (ID_INDEP.test(roleOwn)) { power = 'independent'; why = '身份写明自立一方'; }
-  else if ((() => { const pl = String((s && s.place && s.place.polity) || '').replace(/[（(].*$/, ''); return pl.length >= 1 && pl.length <= 3 && new RegExp('^(大)?' + pl + '(国)?(王|主|公)(?![府妃子孙女])').test(String(roleOwn || '').trim()); })()) { power = 'independent'; why = '一国之主（' + s.place.polity + '）'; }   // 闽王、吴越王、楚王这类本国的王（2026-11-05：闽王被当成了带兵的将领）
+  else if ((() => { const pl = String((s && s.place && s.place.polity) || '').replace(/[（(].*$/, ''); return pl.length >= 1 && pl.length <= 3 && new RegExp('^(大)?' + pl + '(国)?(王|主|公' + (y != null && y < -221 ? '|侯|伯' : '') + ')(?![府妃子孙女爷])').test(String(roleOwn || '').trim()); })()) {   /* 春秋战国「晋侯」「郑伯」是一国之君（R-279） */ power = 'independent'; why = '一国之主（' + s.place.polity + '）'; }   // 闽王、吴越王、楚王这类本国的王（2026-11-05：闽王被当成了带兵的将领）
   else if (fanzhenEra && ID_FANZHEN.test(roleOwn + officeHeld)) { power = 'independent'; why = '唐中叶到五代的藩镇，自专一方'; }
   else if (s && s.idm === 'noble' && /封国|封地|食邑|领地|采邑|就国/.test(role) && (T.length || (y != null && y < -127))) { power = 'independent'; why = '有封国实土'; }
   else if (officeHeld || civil || milOff) { power = 'appointed'; why = '受朝廷任命：' + (offTxt || ''); }
