@@ -1,11 +1,12 @@
-// 输入/滚动/地图交互回归：组字不被打断、名册搜索不逐字重画、滚轮不被地图吃掉、拖动不误选
+// 打字与地图交互（R-278，2026-11-26 项目主人：「打字问题」「地图交互」）：组字不被重画打断、名册搜索连打不丢字丢焦点、
+// 小地图上普通滚轮滚页面、Ctrl+滚轮才缩放、拖动地图松手不误选州
 const { chromium } = require('playwright');
-const PLAY = 'C:/Users/DELL/.zcode/workspace/rpg17-40/web/play.html';
+const path = require('path'); const PLAY = path.resolve(process.env.PLAY || path.join(__dirname, '../../play.html'));
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const p = await b.newPage({ viewport: { width: 1500, height: 900 } });
   const errs = []; p.on('pageerror', e => errs.push(e.message.slice(0, 200)));
-  await p.goto('file:///' + PLAY);
+  await p.goto('file://' + PLAY);
   await p.waitForFunction(() => typeof newSave === 'function', null, { timeout: 30000 });
   await p.evaluate(() => {
     S = newSave({ name: '王延钧', gender: '男', age: 40, role: '闽王', real: true, gregorianYear: 930, month: 7, day: 3, place: '福州', polity: '闽' });
@@ -59,6 +60,8 @@ const PLAY = 'C:/Users/DELL/.zcode/workspace/rpg17-40/web/play.html';
     await p.mouse.wheel(0, 300);
     await p.waitForTimeout(400);
     const plain = await p.evaluate(() => ({ span: MAPZ.span, side: (document.querySelector('.side') || {}).scrollTop }));
+    const b2 = await p.evaluate(() => { const el = document.querySelector('svg.smap'); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    await p.waitForTimeout(200); await p.mouse.move(b2.x, b2.y);
     await p.keyboard.down('Control'); await p.mouse.wheel(0, -300); await p.keyboard.up('Control');
     await p.waitForTimeout(700);
     const ctrl = await p.evaluate(() => ({ span: MAPZ.span }));
@@ -71,6 +74,14 @@ const PLAY = 'C:/Users/DELL/.zcode/workspace/rpg17-40/web/play.html';
     await p.waitForTimeout(500);
   }
   out.dragSel = { before: beforeSel, after: await p.evaluate(() => MAPZ.sel) };
-  console.log(JSON.stringify({ out, errs }, null, 1));
-  await b.close();
+  const bad = [];
+  if (out.type1.v !== '遣使往吴越') bad.push('普通打字不对：' + JSON.stringify(out.type1));
+  if (!out.ime.sameNode) bad.push('输入法组字中重画换掉了输入框（拼音会被吞）');
+  if (!/遣使往吴越修好/.test(out.imeAfter.v)) bad.push('组字结束后字丢了：' + JSON.stringify(out.imeAfter));
+  if (typeof out.roster === 'object' && (out.roster.v !== '王延钧' || out.roster.focus !== 'rosterQ')) bad.push('名册搜索连打丢字或丢焦点：' + JSON.stringify(out.roster));
+  if (out.wheel && typeof out.wheel === 'object') { if (out.wheel.plain.span !== out.wheel.start.span) bad.push('小地图上普通滚轮被地图吃去缩放了'); if (!(out.wheel.ctrl.span < out.wheel.start.span)) bad.push('Ctrl+滚轮没缩放地图：' + JSON.stringify(out.wheel)); }
+  else bad.push('地图没画出来');
+  if (out.dragSel.after !== out.dragSel.before) bad.push('拖动地图松手误选了州：' + JSON.stringify(out.dragSel));
+  console.log('ERRS', JSON.stringify([...errs, ...bad]));
+  await b.close(); process.exit(errs.length || bad.length ? 1 : 0);
 })().catch(e => { console.error('崩了：' + e.message); process.exit(1); });
