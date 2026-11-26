@@ -38,6 +38,10 @@ const path = require('path');
     { const T = newSave({ name: '赵祯', gender: '男', age: 34, role: '皇帝', gregorianYear: 1043, month: 4, day: 18, place: '东京开封府', polity: '宋' }); T.chat = [{ role: 'gm', text: '开场' }]; T.turn = 15; const y0 = T.clock.y * 12 + T.clock.m;
       try { applyReply(T, { reply: '四月廿二，你在垂拱殿听政。五月初一，晏殊入见：「官家，西夏使臣又到了。」这一年里，朝中议论不断。', mode: 'play', span: 'year', elapsedDays: 13 }, '这一年照常理政。'); } catch (e) { bad.push('记账出错：' + e.message); }
       const mv = T.clock.y * 12 + T.clock.m - y0; if (mv < 8) bad.push('选了这一年，钟只走了' + mv + '个月：' + timeText(T.clock)); }
+    // 七、主角的话被「你说」劈成两截：要删就两截一起删，不留「「庄门先不关，」」
+    { const T = '孙七问完。「庄门先不关，」你说，「先把墙上的人撤一半，吴老栓去烧水，再派十个人往北边看看。」孙七应了。', g = stripOwnLines('金兵游骑来庄上抢粮，带弟兄们设伏打他们。', T);
+      if (/庄门先不关/.test(g) || !/孙七应了/.test(g)) bad.push('劈成两截的主角台词留了半截：' + g);
+      const T2 = '「门不关，」你说，「来的照收。」孙七应了。', g2 = stripOwnLines('门不关，来的照收。', T2); if (!/门不关/.test(g2) || !/来的照收/.test(g2)) bad.push('玩家原话被删了：' + g2); }
     return bad;
   });
   const bad = out.concat(errs);

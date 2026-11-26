@@ -16394,12 +16394,14 @@ function deadOnStage(s, text) { const t = String(text || ''), out = [], seen = n
 /** 最后一道（R-269 真玩：一月一过，正文开头替主角说了一大段玩家没说的吩咐，审稿打回了、改稿还在）：主角的台词跟玩家原话对不上一半的，整句删掉；玩家原话里的照留 */
 function stripOwnLines(said, text) {
   const S0 = String(said || '').replace(/[\s，,。；;：:、「」“”"！!？?]/g, ''); if (!text) return text; let cut = 0;
+  /* R-280：「庄门先不关，」你说，「……」——主角的话被「你说」劈成两截，原来只删后半截、前半截挂在那里。先把两截并成一句再判 */
+  const orig = text; text = String(text).replace(/「([^」]{1,80})[，,]」\s*你([^「」。！？\n]{0,4}?)(说|道)[，,：:]?\s*「([^」]{1,400})」/g, (all, a1, mid, v, a2) => `你${mid}${v}：「${a1}，${a2}」`);
   const t = String(text).replace(/([^。！？\n」]*?)你[^「」。！？\n，：:]{0,5}?(?:说|道|答|应|问|回|喊|叫|嚷|吼|开口|吩咐)[^「。\n]{0,8}[：:]?\s*「([^」]{2,400})」([。！？]?)/g, (all, pre, q) => {
     if (/(朝|向|对|冲|跟|和|与|给|替|叫|问|见|望|看|瞧|拉|扯|拦|请|劝|拜|教|让|领|带|随|陪|迎|喊住|叫住)\s*$/.test(pre || '')) return all;   /* R-280：「他翻身上马，朝你喊道」是别人对主角说话，原来当成主角的台词删了半句，剩「朝  岳云」 */
     const Q = q.replace(/[\s，,。；;：:、！!？?]/g, ''); if (!Q) return all; let hit = 0; for (const ch of Q) if (S0.includes(ch)) hit++;
     const nums = q.match(/[零〇一二两三四五六七八九十百千万\d]{2,}/g) || [], badNum = nums.some(x => /[十百千万\d]/.test(x) && !String(said || '').includes(x));   /* 主角台词里改了玩家说的数目（三万写成一万五千） */
     if (hit / Q.length >= 0.6 && !badNum) return all; cut++; const P = String(pre || '').replace(/[，,]\s*$/, ''); if (P.trim().length <= 4) return ''; return /[，,]/.test(P) || !/[\u4e00-\u9fa5]$/.test(P) ? P.replace(/[，,][^，,]*$/, '') + '。' : ''; });   // 删到上一个逗号为止，不留半截
-  return cut ? t.replace(/\n{3,}/g, '\n\n').replace(/^\s*\n/, '') : text;
+  return cut ? t.replace(/\n{3,}/g, '\n\n').replace(/^\s*\n/, '') : orig;   // 没删的照原样（不把劈开的两截并起来）
 }
 /* 这一回正文归哪一类事（2026-11-24 玩家「剧情极度同质化，动不动就是催收欠款」）：只用于查重与换题，不进界面 */
 const THEME_KINDS = [
