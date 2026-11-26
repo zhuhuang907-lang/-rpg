@@ -24,6 +24,16 @@ const path = require('path');
       if (n < 2) bad.push('有盘算的人四十个月里只动了 ' + n + ' 回（走过一回就不再动了）');
       if (!/议程到了/.test(hit)) bad.push('有盘算的人四十回里一回也没主动走一步');
       const again = plotDir(s); if (again && /议程到了/.test(again)) bad.push('同一个月同一件事又发了一遍'); }
+    // 秦汉、明前期、清后期补了内置君主年号表（原来整段空着，年号都报不出来）
+    for (const [y, pl, pol, want] of [[100, '洛阳', '东汉', '永元十二年'], [-100, '长安', '西汉', '天汉元年'], [1450, '北京', '明', '景泰元年'], [1405, '南京', '明', '永乐三年'], [1850, '北京', '清', '道光三十年'], [1900, '北京', '清', '光绪二十六年']]) {
+      const k = newSave({ name: '某', gender: '男', age: 30, role: '士人', gregorianYear: y, month: 6, day: 1, place: pl, polity: pol }); const e = eraLabel(k, y); if (e !== want) bad.push(y + ' 年年号不是' + want + '：' + e); }
+    // 地图内部分区：州路省只管分深浅，归属报所属政权；割据一方的不被宗主的行省吞掉
+    { const R = realmsAt(1150, 6), v = R.of(120.17, 30.29); if (!v || v.name !== '南宋') bad.push('1150 年杭州归属不是南宋：' + (v && v.name));
+      { let subs = 0; for (let x = 105; x <= 121; x += 1) for (let y = 23; y <= 32; y += 1) { const u = R.of(x, y); if (u && u.name === '南宋' && u.sub) subs++; } if (!subs) bad.push('1150 年南宋境内没分出路一级的深浅'); }
+      const R2 = realmsAt(1360, 6), c = R2.of(104.07, 30.66); if (!c || !/明玉珍/.test(c.name)) bad.push('1360 年成都被元的行省吞了：' + (c && c.name));
+      const R3 = realmsAt(921, 6), z = R3.of(114.56, 38.14); if (!z || z.name !== '赵（王镕）') bad.push('921 年镇州不归赵王王镕：' + (z && z.name)); }
+    // 一个字的国名几朝通用：465 年报刘宋不报「宋」
+    { const k = newSave({ name: '某', gender: '男', age: 30, role: '士人', gregorianYear: 465, month: 6, day: 1, place: '建康', polity: '刘宋' }); if (!rulersAt(465, k, 6).some(r => r.polity === '刘宋')) bad.push('465 年刘宋报成了别的国名'); }
     const s = newSave({ name: '李嗣源', gender: '男', age: 60, role: '后唐皇帝', real: true, gregorianYear: 930, month: 6, day: 1, place: '洛阳', polity: '后唐' }); s.idm = 'emperor'; s.chat = [{ role: 'gm', text: '开场。' }]; s.turn = 3;
     S = s; VIEW = 'game'; SIDE_FOLD = false; TAB = 'board'; render0();
     return bad;

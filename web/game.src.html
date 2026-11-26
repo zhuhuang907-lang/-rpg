@@ -6098,7 +6098,7 @@ function rulersAt(y, s, m) {
     // （新君当年就改了元才换；逾年改元的，这一年仍用旧年号）
     if (r.to === y && all.some(r2 => { if (r2 === r || r2.from !== y || !(r2.polity === r.polity || r2.polity.slice(-1) === r.polity.slice(-1))) return false; const f = arr(r2.reigns).slice().sort((a, b) => a[1] - b[1])[0]; return f && f[1] <= y && mm >= startMonth(s, r2, f[1] === y ? f : null); })) continue;
     const rg = rg0.filter(x => x[1] < y || (x[1] === y && mm >= (x[2] || (r.from === y && x === rg0[0] ? startMonth(s, r, x) : 1)))).pop();
-    out.push({ polity: r.polity, name: r.name, title: r.title || '', era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
+    out.push({ fromList: !!r.fromList, polity: r.polity, name: r.name, title: r.title || '', era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
   }
   /* 同一人、同一个国名的两种写法（荆南／荆南（南平））只留一条（2026-11-26：天下名录里高从诲出现两次） */
   const aliasKey = n => {
@@ -6106,20 +6106,21 @@ function rulersAt(y, s, m) {
     try { for (const [k, v] of Object.entries(POL_ALIAS)) if (r === k || arr(v).includes(r)) return k; } catch (_) {}
     return '·' + String(n);
   };
+  const AMBIG = /^(宋|汉|魏|齐|梁|陈|周|唐|晋|燕|秦|赵|吴|蜀|楚|夏|代|凉|闽|殷|越|郑|成)$/, pk = r => (r.fromList ? 1000 : 0) + (AMBIG.test(String(r.polity)) ? 100 : 0) + String(r.polity).length;   // 内置史料包的写法优先于政权总表   // 一个字的国名几朝通用（宋＝刘宋还是赵宋）：有带姓的写法就留带姓的（R-278 审查：465 年刘宋报成「宋」）
   const byA = new Map();
   for (const r of out) { const k = aliasKey(r.polity); if (!byA.has(k)) byA.set(k, []); byA.get(k).push(r); }
   const keep = [];
   for (const L of byA.values()) {
     if (L.length === 1) { keep.push(L[0]); continue; }
     const rm = (() => { try { return realmRuler(L[0].polity, y + (mm - 1) / 12) || ''; } catch (_) { return ''; } })(), rmn = rm.replace(/[（(].*$/, '').trim();
-    const hit = rmn && L.find(r => { const a = rootPol(r.name); return a === rmn || rmn.includes(a) || a.includes(rmn); });
-    if (hit) { keep.push(hit); continue; }
+    const hit = rmn && L.filter(r => { const a = rootPol(r.name); return a === rmn || rmn.includes(a) || a.includes(rmn); }).sort((a, b) => pk(a) - pk(b))[0];
+    if (hit) { if (!hit.era) { const old = L.find(r => r !== hit && r.era); if (old) Object.assign(hit, { era: old.era, n: old.n }); } keep.push(hit); continue; }   // 新君逾年改元：这一年照用先君的年号（R-278 审查：1850 年报不出道光三十年）
     const eraOf = r => { const rg = arr(r.reigns).filter(x => x[1] <= y).sort((a, b) => b[1] - a[1])[0]; return rg ? rg[1] : -1; };
-    L.sort((a, b) => eraOf(b) - eraOf(a) || String(a.polity).length - String(b.polity).length || (b.from || 0) - (a.from || 0));
+    L.sort((a, b) => eraOf(b) - eraOf(a) || pk(a) - pk(b) || (b.from || 0) - (a.from || 0));
     keep.push(L[0]);
   }
   const bestN = new Map();
-  for (const r of keep) { const k = rootPol(r.name) + '|' + rootPol(r.polity); const o = bestN.get(k); if (!o || String(r.polity).length < String(o.polity).length) bestN.set(k, r); }
+  for (const r of keep) { const k = rootPol(r.name) + '|' + rootPol(r.polity); const o = bestN.get(k); if (!o || pk(r) < pk(o)) bestN.set(k, r); }
   return [...bestN.values()];
 }
 /** 跨了年、AI 没给新年号：把年号后的年数往后推（「至正九年」过一年 →「至正十年」）；推不了就不留旧的 */
@@ -8054,8 +8055,8 @@ const REALM_RULER_TXT = `后梁|907.25|912.5|朱温（梁帝）
 荆南|948.9|960.9|高保融（南平王）
 荆南|960.9|962.9|高保勖（南平王）
 荆南|962.9|964|高继冲（荆南节度使）
-成德镇|907|921.1|王镕（成德军节度使、赵王）
-成德镇|921.1|922|张文礼（成德军留后）
+赵（王镕）|907|921.1|王镕（成德军节度使、赵王）
+赵（王镕）|921.1|922|张文礼（成德军留后）
 北平王（王处直）|907|922|王处直（义武军节度使、北平王）
 燕|907|911|刘守光（燕王）
 燕|911|914|刘守光（燕帝）
@@ -9028,7 +9029,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 晋|913|922||116.4,39.9 117.02,38.21 115.97,39.49 116.09,38.44
 晋|916|922||115.3,36.34 114.37,36.36 115.6,37.07 114.49,37.07
 晋|907|922||111.14,37.51 111.69,38.39 113.3,40.09
-成德镇|907|921|1.0|114.56,38.14 114.77,37.75
+赵（王镕）|907|921|1.0|114.56,38.14 114.77,37.75
 北平王（王处直）|900|922|0.9|114.97,38.52 115.49,39.35
 燕|907|913||116.4,39.9 117.02,38.21 116.09,38.44 115.97,39.49 117.4,40.04
 契丹|907|915||119.2,43.9 121.6,41.1
@@ -9210,6 +9211,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 生女真（诸部）|927|1114|3.5|126.6,45.5 127.5,44.5 129.2,44.0 131.0,46.0
 阻卜、蒙古诸部|900|1205|5|102.4,47.2 106.9,47.9 111.0,47.0 117.0,48.0
 高昌回鹘|848|1209|3|89.2,42.95 87.6,43.8 82.9,41.7
+喀喇汗王朝|840|939|2|75.99,39.47
 喀喇汗王朝|940|1212|3|75.99,39.47 79.9,37.1
 于阗|-100|1006|2|79.9,37.1
 高丽|918|1392|3|126.55,37.97 126.98,37.57 125.75,39.02 128.6,35.87
@@ -10065,8 +10067,8 @@ const REALM_GROUP_TXT = `朔方镇|唐|756|762.9|镇|106.29,38.02 108.66,37.99 1
 淮西镇|唐|784|817|镇|
 魏博镇|后梁|907|923|镇|115.28,36.29 115.98,36.45 114.35,36.1 115.68,37.06 114.07,35.4 115.03,35.77
 魏博镇|后梁|914|923|镇|115.28,36.29 115.98,36.45 114.35,36.1 115.68,37.06 114.07,35.4 115.03,35.77
-成德镇|后梁|907|921|镇|114.5,38.15 115.58,37.55 115.55,38.01 114.77,37.75
-成德镇|后梁|920|921|镇|114.5,38.15 115.58,37.55 115.55,38.01 114.77,37.75
+赵（王镕）|后梁|907|921|镇|114.5,38.15 115.58,37.55 115.55,38.01 114.77,37.75
+赵（王镕）|后梁|920|921|镇|114.5,38.15 115.58,37.55 115.55,38.01 114.77,37.75
 北平王（王处直）|后梁|907|923|镇|
 护国镇|后梁|907|922.9|镇|110.33,34.84 110.45,34.95
 匡国镇|后梁|907|923|镇|109.76,34.52
@@ -10158,7 +10160,7 @@ const REALM_GROUP_TXT = `朔方镇|唐|756|762.9|镇|106.29,38.02 108.66,37.99 1
 泰宁军朱瑾|唐|884|897|镇|
 清海军（刘氏）|后梁|907|917|附|
 平卢王师范|后梁|907|909|附|
-成德镇|后梁|907|921|镇|
+赵（王镕）|后梁|907|921|镇|
 归义军|后唐|923|960|附|
 朝鲜|明|1368|1644|附|
 朝鲜|清|1636|1895|附|
@@ -10478,7 +10480,7 @@ function realmsAt(y, m) {
   // 地盘大的先挑，每家从没用过的色里挑一个跟已上色的邻居差得最远的；色板用完了照黄金角取色相
   const rgb = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16)), pts = n => { const P = rows.filter(r => r.n === n).flatMap(r => r.pts); if (P.length || !JS) return P; return JS.polities.filter(f => nmOf(f) === n && f.anchor).map(f => f.anchor); };
   const near = (a, b) => { const A = pts(a), B = pts(b); for (const p of A) for (const q of B) if (Math.hypot((p[0] - q[0]) * Math.cos(p[1] * Math.PI / 180), p[1] - q[1]) < 3) return true; return false; };
-  const grp = {}, rootOf = n => { const g = grp[n]; return g && g.parent && names.includes(g.parent) ? g.parent : n; };
+  const grp = {}, rootOf = n => { const g = grp[n]; return g && g.parent && g.kind !== '附' && names.includes(g.parent) ? g.parent : n; };   // 附庸自己挑色（项目主人：各国和中原王朝不同色），图上另加斜纹
   for (const n of names) grp[n] = realmGroupAt(n, yv);
   const roots = [...new Set(names.map(rootOf))];
   const order = roots.slice().sort((a, b) => pts(b).length - pts(a).length), used = new Set();
@@ -10500,16 +10502,18 @@ function realmsAt(y, m) {
     return `hsl(${H.toFixed(0)},${S.toFixed(0)}%,${L.toFixed(0)}%)`; };
   const sib = {}; for (const n of names) { const g = grp[n]; if (g && g.parent && g.parent !== n) (sib[g.parent] = sib[g.parent] || []).push(n); }
   for (const [p, L] of Object.entries(sib)) { if (!col[p]) continue; L.sort((a, b) => pts(b).length - pts(a).length);
-    L.forEach((n, k) => { if (!col[n]) col[n] = grp[n].kind === '附' ? col[p] : shade(col[p], k); }); }
+    L.filter(n => grp[n].kind !== '附').forEach((n, k) => { if (!col[n]) col[n] = shade(col[p], k); }); }
   const list = names.map(n => { const r0 = rows.find(r => r.n === n), f0 = JS && JS.polities.find(f => nmOf(f) === n), at = r0 ? r0.pts[0] : f0 && f0.anchor ? f0.anchor : [null, null], g = grp[n]; return { name: n, col: col[n], lon: at[0], lat: at[1], basis: f0 ? '江山时序' : '内置史料', builtin: true, main: !!(f0 && f0.role === 'main'), parent: g ? g.parent : '', kind: g ? g.kind : '', vassal: !!(g && g.kind === '附') }; });
   const cache = new Map();
+  const parOk = (gp, nm) => { const a = String(gp), b = String(nm), rb = b.replace(/[（(].*$/, ''); return a === b || a === rb || (a.length >= 1 && rb.endsWith(a) && rb.length <= a.length + 1) || arr(POL_ALIAS[rb]).includes(a); };   // 分区记的宗主名（宋）对上当年国名（北宋、南宋）
   const of0 = (lon, lat, nm) => { if (lon == null || lat == null) return null;
     if (nm) { const segs = FIX.get(nm); if (segs) { const hit = segs.filter(x => x[0] <= yv && yv <= x[1] + 0.999 && (x.length < 5 || Math.hypot((x[3] - lon) * Math.cos(lat * Math.PI / 180), x[4] - lat) < 0.7)).pop(); if (hit) { const v = list.find(x => x.name === hit[2]) || list.find(x => String(x.name).replace(/[（(].*$/, "") === String(hit[2]).replace(/[（(].*$/, "")); if (v) return v; } } }   // 校订表优先（州名＋年）
     const k = lon.toFixed(2) + ',' + lat.toFixed(2); if (cache.has(k)) return cache.get(k);
     if (JS) { let eb = null, ed = 1e9; for (const r of encl) for (const [x, y2] of r.pts) { const e = Math.hypot((x - lon) * Math.cos(lat * Math.PI / 180), y2 - lat); if (e < ed && e <= r.r) { ed = e; eb = r; } } if (eb) { const v = list.find(x => x.name === eb.n) || null; cache.set(k, v); return v; } }
     if (JS) for (const f of JS.polities) if (jsInFeat(f, lon, lat)) { const v = list.find(x => x.name === nmOf(f)) || null; cache.set(k, v); return v; }
     let best = null, bd = 1e9, bi = -1;
-    for (const r of rows) { let d = 1e9; for (const [x, y2] of r.pts) { const e = Math.hypot((x - lon) * Math.cos(lat * Math.PI / 180), y2 - lat); if (e < d) d = e; }
+    for (const r of rows) { if (r.parent && r.kind !== '附') continue;   // 本国内部的州路省、并色的藩镇不跟别国争地盘：先定这地方归哪国，再在那国里分深浅（R-278 审查：元的四川行省吞了明玉珍的成都、清的云南吞了吴三桂的昆明）
+      let d = 1e9; for (const [x, y2] of r.pts) { const e = Math.hypot((x - lon) * Math.cos(lat * Math.PI / 180), y2 - lat); if (e < d) d = e; }
       if (d > (r.base ? 6 : r.r)) continue;
       // 不是正统王朝的，只在自己够得着的远近里争；正统王朝另外收没人占的地方。一样近的，后列的（后起的、据地的）占
       const eff = r.base && d > r.r ? 50 + d : d;
@@ -10517,14 +10521,18 @@ function realmsAt(y, m) {
     let v = best ? list.find(x => x.name === best.n) : null;
     if (v && !v.parent) {   // 同政权有州/路/省分区：把根政权下离分区治所不远的地方归最近的分区，别整片只剩宗主一色
       const capHit = !!best && best.pts.some(([x, y2]) => Math.hypot((x - lon) * Math.cos(lat * Math.PI / 180), y2 - lat) < 0.35);
-      let gb = null, gd = 1e9, gk = ''; for (const g of rows) { if (g.parent !== v.name || g.y0 > yv || yv >= g.y1) continue; for (const [x, y2] of g.pts) { const e = Math.hypot((x - lon) * Math.cos(lat * Math.PI / 180), y2 - lat); if (e < gd) { gd = e; gb = g; gk = g.kind; } } }
+      let gb = null, gd = 1e9, gk = ''; for (const g of rows) { if (!g.parent || g.kind === '附' || !parOk(g.parent, v.name) || g.y0 > yv || yv >= g.y1) continue; for (const [x, y2] of g.pts) { const e = Math.hypot((x - lon) * Math.cos(lat * Math.PI / 180), y2 - lat); if (e < gd) { gd = e; gb = g; gk = g.kind; } } }
       if (!capHit && gb && gd < (gk === '镇' ? 2.0 : 3.2)) v = list.find(x => x.name === gb.n) || v;
     }
     cache.set(k, v); return v; };
   /* 州、路、省这类本国内部政区只管上色（同色系分深浅），归属一律报所属政权（R-278 审查：230 年洛阳报成「司隶」、隋文帝地盘只剩 22 州、打仗认不出是谁家的城） */
-  const upV = new Map(), up = v => { if (!v || !isAdminSub(v) || !v.parent) return v; if (upV.has(v.name)) return upV.get(v.name);
-    const P = list.find(x => x.name === v.parent); const w = P ? { ...P, col: v.col, sub: v.name } : v; upV.set(v.name, w); return w; };
-  const of = (lon, lat, nm) => up(of0(lon, lat, nm));
+  const selfRow = new Set(rows.filter(r => !r.parent).map(r => r.n));   // 自己在史料里单列一行的（北平王王处直、赵王镕）是独立一家，只是名义上奉宗主
+  const upV = new Map(), up = (v, lon, lat) => { if (!v || !(isAdminSub(v) || v.kind === '镇') || !v.parent || selfRow.has(v.name)) return v; if (upV.has(v.name)) return upV.get(v.name);
+    const par = String(v.parent), rp = par.replace(/[（(].*$/, ''), al = new Set([par, rp].concat(arr(POL_ALIAS[rp])));
+    const C = list.filter(x => x !== v && !isAdminSub(x) && x.kind !== '镇' && (al.has(x.name) || al.has(String(x.name).replace(/[（(].*$/, '')) || String(x.name).endsWith(rp) || arr(POL_ALIAS[x.name]).includes(rp)));
+    const P = C.length > 1 && lon != null ? C.slice().sort((a, b) => Math.hypot((a.lon ?? 999) - lon, (a.lat ?? 999) - lat) - Math.hypot((b.lon ?? 999) - lon, (b.lat ?? 999) - lat))[0] : C[0];   // 宋→北宋/南宋、汉→东汉：取名字对得上、离得最近的那家
+    const w = P ? { ...P, col: v.col, sub: v.name } : v; if (C.length <= 1) upV.set(v.name, w); return w; };
+  const of = (lon, lat, nm) => up(of0(lon, lat, nm), lon, lat);
   return { list, of, rows, js: JS ? { id: JS.id, cap: JS.cap } : null };
 }
 const MU_C = { k: '', s: null, v: null };
