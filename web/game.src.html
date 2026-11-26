@@ -5513,6 +5513,7 @@ const POL_ALIAS = { 蜀汉: ['蜀', '汉', '季汉'], 吴: ['孙吴', '东吴', 
 /* 大小政权总表（任务五，62 国，R-241）：别称并进 POL_ALIAS；内置史料没有君主年号的国，rulersAt 照总表补 */
 let POLLIST = []; try { POLLIST = JSON.parse((document.getElementById('pollist') || {}).textContent || '[]'); if (!Array.isArray(POLLIST)) POLLIST = []; } catch (_) { POLLIST = []; }
 for (const P of POLLIST) { if (!P || !P.name) continue; const k = String(P.name).replace(/（.*$/, ''); const al = arr(P.alias).map(String).filter(x => x && x !== k); if (!al.length) continue; POL_ALIAS[k] = [...new Set(arr(POL_ALIAS[k]).concat(al))]; }
+POL_ALIAS['北宋'] = [...new Set(arr(POL_ALIAS['北宋']).concat(['宋']))];
 const polNorm = x => String(x || '').trim().replace(/^大(?=..)/, '').replace(/(?<=.)[国朝]$/, '');
 /** 这一年这个政权该用的任职表：整份标了政权的照政权；按人分政权的（通鉴、五代十国），先照本名对，对不上再照别称对，别称同时对上两国（东西魏都叫魏）就不认 */
 /* ========== 五代十国朝廷数据（任务七，R-227）：开在有朝廷数据的政权，人事树照数据搭（位子照该国官制、小国照小国的规模）；
@@ -5824,6 +5825,24 @@ function tenureFor(s, y) {
     const act = new Set(); for (const f of arr(t.figures)) if (f.pol && arr(f.posts).some(p => p[0] <= y && p[1] >= y)) act.add(f.pol);
     let hit = [...act].filter(p => polNorm(p) === pol); if (!hit.length) { hit = [...act].filter(p => arr(POL_ALIAS[p]).includes(pol)); if (hit.length > 1) hit = []; }
     if (hit.length) out.push({ id: t.id, figures: arr(t.figures).filter(f => hit.includes(f.pol)) }); }
+  /* 任职年表里同一个人常分成几条（一条有生卒、一条没有）：按名字合并，生卒取有的那条；同名不同人（唐末王溥/宋初王溥）生卒对不上，不并 */
+  const cmap = new Map(), clusters = [];
+  for (const t of out) for (const f of arr(t.figures)) {
+    if (!f || !f.name) continue;
+    const a = { name: f.name, born: f.born ?? null, died: f.died ?? null, native: f.native || '', pol: f.pol || '', pols: new Set(f.pol ? [f.pol] : []), posts: arr(f.posts).map(p => p.slice()) };
+    let c = clusters.find(c => {
+      if (c.name !== a.name) return false;
+      if (c.born != null && a.born != null && Math.abs(c.born - a.born) > 2) return false;
+      if (c.died != null && a.died != null && Math.abs(c.died - a.died) > 2) return false;
+      const hasDate = c.born != null || c.died != null || a.born != null || a.died != null;
+      if (!hasDate && c.pols.size && a.pols.size && ![...a.pols].some(p => c.pols.has(p))) return false;
+      return true;
+    });
+    if (!c) { clusters.push(a); c = a; }
+    else { if (c.born == null) c.born = a.born; if (c.died == null) c.died = a.died; if (!c.native) c.native = a.native; a.pols.forEach(p => c.pols.add(p)); for (const p of a.posts) if (!c.posts.some(q => q[0] === p[0] && q[1] === p[1] && q[2] === p[2])) c.posts.push(p); }
+    cmap.set(f, c);
+  }
+  for (const t of out) { const seenC = new Set(); t.figures = arr(t.figures).map(f => cmap.get(f)).filter(c => c && !seenC.has(c) && seenC.add(c)); }
   return out;
 }
 /** 联网自建的史料包（桌面版：没有内置史料的年代，边玩边查边建，存在本机） */
@@ -5988,6 +6007,7 @@ function startMonth(s, r, era) {
   const ev = histEvents(s, r.from * 12, r.from * 12 + 12).sort((a, b) => (a.key && String(a.key).startsWith('act:') ? 1 : 0) - (b.key && String(b.key).startsWith('act:') ? 1 : 0)).find(e => e.y === r.from && e.m && (arr(e.who).includes(r.name) || String(e.text).includes(r.name) || String(e.text).includes(String(era ? era[0] : '').replace(/[（(].*$/, ''))) && ACCEDE_RE.test(e.text));
   return ev ? ev.m : 1;
 }
+const rootPol = n => String(n || '').split('（')[0].split('(')[0];
 function rulersAt(y, s, m) {
   const out = [], seen = new Set();
   const mm = m != null ? m : s && s.clock && s.clock.y === y ? s.clock.m : 12;
@@ -5998,7 +6018,7 @@ function rulersAt(y, s, m) {
   { const has = new Set(all.map(r => String(r.polity).replace(/（.*$/, '')));
     for (const P of POLLIST) { const k = String(P.name || '').replace(/（.*$/, ''); if (!k || has.has(k) || !(P.from <= y && P.to >= y)) continue;
       { let R = arr(P.rulers).filter(r => r.from <= y && r.to >= y);
-        if (R.length > 1) { R.sort((a, b) => a.from - b.from); R = [mm < 7 ? R[0] : R[R.length - 1]]; }   // 总表不记月份：这一年换君的，上半年算旧君、下半年算新君（马殷 930 年冬卒）
+        if (R.length > 1) { const rn = (() => { try { return realmRuler(k, y + (mm - 1) / 12); } catch (_) { return ''; } })(), hit = rn && R.find(r => rn.includes(String(r.name).replace(/（.*$/, ''))); R.sort((a, b) => a.from - b.from); R = hit ? [hit] : [mm < 7 ? R[0] : R[R.length - 1]]; }   // 总表不记月份：先照疆域表里带月份的君主（马殷 930 冬卒），没有再按上下半年分
         for (const r of R) if (!seen.has(k + r.name)) { seen.add(k + r.name); all.push({ polity: k, name: String(r.name).replace(/（.*$/, ''), title: r.title || '', from: r.from, to: r.to, reigns: arr(r.eras).map(e => [e.name, e.from]), src: r.src, fromList: true }); } } } }
   /* 王室世系里的君主也补进来（2026-11-22：王潮、卓岩明、李仁达、留从效、陈洪进这些不在政权总表里的，玩闽国时皇帝要全） */
   for (const HH of HOUSES) { if (!HH || !HH.range || y < HH.range[0] || y > HH.range[1]) continue;
@@ -6021,7 +6041,27 @@ function rulersAt(y, s, m) {
     const rg = rg0.filter(x => x[1] < y || (x[1] === y && mm >= (x[2] || (r.from === y && x === rg0[0] ? startMonth(s, r, x) : 1)))).pop();
     out.push({ polity: r.polity, name: r.name, title: r.title || '', era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
   }
-  return out;
+  /* 同一人、同一个国名的两种写法（荆南／荆南（南平））只留一条（2026-11-26：天下名录里高从诲出现两次） */
+  const aliasKey = n => {
+    const r = rootPol(n);
+    try { for (const [k, v] of Object.entries(POL_ALIAS)) if (r === k || arr(v).includes(r)) return k; } catch (_) {}
+    return '·' + String(n);
+  };
+  const byA = new Map();
+  for (const r of out) { const k = aliasKey(r.polity); if (!byA.has(k)) byA.set(k, []); byA.get(k).push(r); }
+  const keep = [];
+  for (const L of byA.values()) {
+    if (L.length === 1) { keep.push(L[0]); continue; }
+    const rm = (() => { try { return realmRuler(L[0].polity, y + (mm - 1) / 12) || ''; } catch (_) { return ''; } })(), rmn = rm.replace(/[（(].*$/, '').trim();
+    const hit = rmn && L.find(r => { const a = rootPol(r.name); return a === rmn || rmn.includes(a) || a.includes(rmn); });
+    if (hit) { keep.push(hit); continue; }
+    const eraOf = r => { const rg = arr(r.reigns).filter(x => x[1] <= y).sort((a, b) => b[1] - a[1])[0]; return rg ? rg[1] : -1; };
+    L.sort((a, b) => eraOf(b) - eraOf(a) || String(a.polity).length - String(b.polity).length || (b.from || 0) - (a.from || 0));
+    keep.push(L[0]);
+  }
+  const bestN = new Map();
+  for (const r of keep) { const k = rootPol(r.name) + '|' + rootPol(r.polity); const o = bestN.get(k); if (!o || String(r.polity).length < String(o.polity).length) bestN.set(k, r); }
+  return [...bestN.values()];
 }
 /** 跨了年、AI 没给新年号：把年号后的年数往后推（「至正九年」过一年 →「至正十年」）；推不了就不留旧的 */
 function bumpEra(label, dy) {
@@ -7092,7 +7132,7 @@ async function buildRoster(s) {
   // 只查自己那一家，名字又必须出现在搜到的摘要里——五代十国一搜什么都没有。改成：这一年并立的每一家各做一张表（问 DeepSeek 照史书列，带出处），有博查的一个个按名字核，核得上的收；没博查照表收（问 DS 要表）
   const y = s.clock.y, yl = s.clock.yearLabel || y + '年', pol = s.place.polity || '';
   const base = [], seen = new Set();
-  for (const r of rulersAt(y, s)) if (!seen.has(r.name)) { seen.add(r.name); base.push({ g: r.polity || pol, name: r.name, post: r.title || r.polity, src: '内置史料' }); }
+  for (const r of rulersAt(y, s)) { let reg = ''; try { for (const q of [r.polity, String(r.polity || '').replace(/[（(].*$/, '')]) { if (!q) continue; const v = regRuler(s, { name: q }); if (v) { reg = v; break; } } } catch (_) {} const nm = reg ? reg.replace(/（.*$/, '') : r.name, mm = /（([^（）]*)）\s*$/.exec(reg || ''); if (!nm || seen.has(nm)) continue; seen.add(nm); base.push({ g: r.polity || pol, name: nm, post: mm ? mm[1] : (r.title || r.polity), src: '内置史料' }); }
   for (const h of histFor(y, s)) for (const f of arr(h.figures)) for (const ps of arr(f.posts)) if (ps && ps[0] <= y && (ps[1] == null || ps[1] >= y) && !(f.died != null && f.died < y) && postOnly(ps[2]) && !seen.has(f.name + ps[2])) { seen.add(f.name + ps[2]); base.push({ g: '', name: f.name, post: postOnly(ps[2]), since: ps[0], src: '内置史料' }); }
   /* 任职年表、朝廷数据也进名录（Claude 自办 4，R-225/R-227）：本政权这一年在任的，按官的轻重排，大官在前 */
   { const PRI = t => /宰相|平章|丞相|仆射|侍中|中书令|尚书令|枢密|大学士|首辅/.test(t) ? 6 : /尚书|节度使|总督|巡抚|都督|大将军|太尉|司徒|司空/.test(t) ? 5 : /侍郎|御史|学士|观察|留守|总兵|刺史|知府|太守/.test(t) ? 4 : /将军|指挥使|判官|掌书记|郎中|给事中/.test(t) ? 3 : 1;
@@ -7132,7 +7172,7 @@ function rosterHtml(s) {
   if (rosterDue(s) && !BUSY && !ROSTER_P) ROSTER_P = Promise.resolve().then(() => buildRoster(s)).catch(e => { if (!(e && e.code === 'cancelled')) s.rosterFail = s.turn; }).finally(() => { ROSTER_P = null; if (rosterDue(s)) s.rosterFail = s.turn; try { store.save(s); } catch (_) {} if (TAB === 'people') render(); });
   const R = s.roster, head = `<div class="h" style="margin-top:6px"><span class="seal">朝</span>天下名录<span class="note">${R ? R.y + '年' : '这一年'}全国在任、在世的要紧人物</span></div>`;
   if (!R || R.y !== s.clock.y) return head + `<div class="muted">${ROSTER_P ? '正在查这一年全国的宗室王公、中枢大臣、各地大员、将帅、世家……' : '正在查这一年全国的宗室王公、中枢大臣、各地大员、将帅、世家……'}</div>`;
-  return head + `<div class="roster">${R.groups.map((g, i) => `<details class="oadd"${i < 2 ? ' open' : ''}><summary><b>${esc(g.name)}</b> <span class="muted">${g.people.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>职位</th><th></th></tr>${g.people.map(x => `<tr><td><b>${esc(x.name)}</b>${x.note ? `<div class="muted" style="font-size:11px">${esc(x.note)}</div>` : ''}</td><td>${esc(x.post)}${x.since ? `<span class="muted">（${esc(x.since)}年起）</span>` : ''}</td><td><button class="link" data-write="${esc('设法求见' + x.name + '，')}">求见</button></td></tr>`).join('')}</table></div></details>`).join('')}</div>`;
+  return head + `<div class="roster">${R.groups.map((g, i) => `<details class="oadd"${i < 2 ? ' open' : ''}><summary><b>${esc(realmShort(g.name, R.y))}</b> <span class="muted">${g.people.length}人</span></summary><div class="tblwrap"><table class="tbl"><tr><th>名字</th><th>职位</th><th></th></tr>${g.people.map(x => `<tr><td><b>${esc(x.name)}</b>${x.note ? `<div class="muted" style="font-size:11px">${esc(x.note)}</div>` : ''}</td><td>${esc((() => { try { const root = n => String(n || '').replace(/[（(].*$/, ''); const me = root(x.name); for (const q of [g.name, root(g.name)]) { const v = q && regRuler(s, { name: q }); if (v && root(v) === me) { const mm = /（([^（）]*)）\s*$/.exec(v); if (mm) return mm[1]; } } } catch (_) {} return x.post; })())}${x.since ? `<span class="muted">（${esc(x.since)}年起）</span>` : ''}</td><td><button class="link" data-write="${esc('设法求见' + x.name + '，')}">求见</button></td></tr>`).join('')}</table></div></details>`).join('')}</div>`;
 }
 /* ========== 全国官员名册：天下名录和人事树并成一份，分中枢、各省、军镇；可搜、可筛；空缺、本事、派系都在上面 ========== */
 let ROSTER_Q = '', ROSTER_G = '';
@@ -7957,7 +7997,8 @@ const REALM_RULER_TXT = `后梁|907.25|912.5|朱温（梁帝）
 赵（王镕）|907|921.1|王镕（成德军节度使、赵王）
 赵（王镕）|921.1|922|张文礼（成德军留后）
 北平王（王处直）|907|922|王处直（义武军节度使、北平王）
-燕|907|914|刘守光（燕王、燕帝）
+燕|907|911|刘守光（燕王）
+燕|911|914|刘守光（燕帝）
 朔方军（韩逊）|907|929.6|韩逊（朔方节度使）
 朔方军|929.6|933|韩洙（朔方节度使）
 朔方军|933|934|韩澄（朔方节度使）
@@ -7965,6 +8006,16 @@ const REALM_RULER_TXT = `后梁|907.25|912.5|朱温（梁帝）
 静海军（交州）|917|930.8|曲承美（静海军节度使）
 静海军（交州）|931|937.3|杨廷艺（静海军节度使）
 静海军（交州）|937.3|939|矫公羡（静海军节度使）
+吴朝（交州）|939|944|吴权（交州节度使）
+吴朝（交州）|944|945|杨三哥（摄政）
+吴朝（交州）|945|965|吴昌文（交州节度使）
+吴朝（交州）|965|968|吴昌炽（吴使君，十二使君并立）
+大瞿越|968|979|丁部领（大瞿越帝）
+大瞿越|979|980|丁璇（大瞿越帝）
+大瞿越|980|1005|黎桓（大瞿越帝）
+大瞿越|1005|1009|黎龙钺（大瞿越帝）
+大瞿越|1009|1028|李公蕴（大瞿越帝）
+大瞿越|1028|1054|李佛玛（大瞿越帝）
 秦|-221|-210.6|嬴政（始皇帝）
 秦|-210.6|-207.8|胡亥（二世皇帝）
 秦|-207.8|-206|子婴（秦王）
@@ -8071,6 +8122,7 @@ const REALM_RULER_TXT = `后梁|907.25|912.5|朱温（梁帝）
 后梁（西梁）|585|587.8|萧琮（梁帝，附于隋）
 隋|581.1|604.6|杨坚（隋帝）
 隋|604.6|618.2|杨广（隋帝）
+隋|618.2|619.4|杨侗（隋帝，洛阳）
 唐|617.9|618.4|李渊（唐王）
 唐|618.4|626.6|李渊（唐帝）
 唐|626.6|649.4|李世民（唐帝）
@@ -8148,8 +8200,8 @@ const REALM_RULER_TXT = `后梁|907.25|912.5|朱温（梁帝）
 宋|1022.1|1063.2|赵祯（宋帝）
 宋|1063.2|1067|赵曙（宋帝）
 宋|1067|1085.2|赵顼（宋帝）
-宋|1085.2|1100|赵煦（宋帝）
-宋|1100|1125.9|赵佶（宋帝）
+宋|1085.2|1101|赵煦（宋帝）
+宋|1101|1125.9|赵佶（宋帝）
 宋|1125.9|1127.3|赵桓（宋帝）
 南宋|1127.4|1162.5|赵构（宋帝）
 南宋|1162.5|1189.1|赵昚（宋帝）
@@ -8232,9 +8284,9 @@ const REALM_RULER_TXT = `后梁|907.25|912.5|朱温（梁帝）
 契丹|916|926.6|耶律阿保机（天皇帝）
 契丹|926.6|947|耶律德光（契丹皇帝）
 辽|947|947.3|耶律德光（辽帝）
-辽|947.3|951.75|耶律阮
-辽|951.75|969.2|耶律璟
-辽|969.2|982.75|耶律贤
+辽|947.3|951.75|耶律阮（辽帝）
+辽|951.75|969.2|耶律璟（辽帝）
+辽|969.2|982.75|耶律贤（辽帝）
 后晋|936.85|942.5|石敬瑭（晋帝）
 后晋|942.5|947.05|石重贵（晋帝）
 后汉|947.1|948.1|刘知远（汉帝）
@@ -8257,10 +8309,39 @@ const REALM_RULER_TXT = `后梁|907.25|912.5|朱温（梁帝）
 定难军（党项拓跋氏）|933.2|935.2|李彝超（定难军节度使）
 定难军（党项拓跋氏）|935.2|968|李彝殷（定难军节度使）`;
 let REALM_RULER = null;
-function realmRuler(name, yv) { if (!REALM_RULER) REALM_RULER = REALM_RULER_TXT.split('\n').map(l => { const [n, a, b, t] = l.split('|'); return { n, a: +a, b: +b, t }; }); const r = REALM_RULER.find(x => x.n === name && x.a <= yv && yv < x.b); return r ? r.t : ''; }
+function realmRuler(name, yv) {
+  if (!REALM_RULER) REALM_RULER = REALM_RULER_TXT.split('\n').map(l => { const [n, a, b, t] = l.split('|'); return { n, a: +a, b: +b, t }; });
+  const root = n => String(n || '').replace(/[（(].*$/, '').trim();
+  const A = new Set([name, root(name)]);
+  try { for (const [k, v] of Object.entries(POL_ALIAS)) { if (k === name || k === root(name) || arr(v).includes(name) || arr(v).includes(root(name))) { A.add(k); arr(v).forEach(x => A.add(x)); } } } catch (_) {}
+  if (root(name) === '契丹') { A.add('辽'); A.add('契丹（辽）'); }
+  if (root(name) === '辽') A.add('契丹（辽）');
+  if (root(name) === '代/北魏') { A.add('代'); A.add('北魏'); }
+  if (root(name) === '后金/清') { A.add('后金'); A.add('清'); }
+  const hit = x => x.a <= yv && yv < x.b;
+  const r = REALM_RULER.find(x => A.has(x.n) && hit(x)) || REALM_RULER.find(x => A.has(root(x.n)) && hit(x));
+  return r ? r.t : '';
+}
 /** 史料包里记的多是死后的庙号谥号（汉献帝、唐德宗、凉武昭王）：图上写当年的称号（汉帝、唐帝、凉王）；记的是官职、名号（冀州牧、鲜卑大人、珲台吉）的照写 */
-function inYearTitle(realm, t) {
-  const T = String(t || '').replace(/[（(].*$/, '').trim(), short = String(realm || '').replace(/[（(].*$/, '').replace(/^蜀汉$/, '汉').replace(/^(前|后|南|北|西|东)(?=.)/, '');
+/** 国名的当年叫法：一个名字里跨了两个朝代的（代/北魏、后金/清、契丹（辽）），照年份取当年那个 */
+function realmShort(name, y) {
+  const r = String(name || '').replace(/[（(].*$/, '').trim();
+  if (r === '代/北魏') return y != null && y < 386 ? '代' : '北魏';
+  if (r === '后金/清') return y != null && y < 1636 ? '后金' : '清';
+  if (/^契丹/.test(r)) return y != null && y >= 947 ? '辽' : '契丹';
+  if (/^孙吴/.test(r)) return '吴';
+  if (r === '曹魏') return '魏';
+  if (r === '刘宋') return '宋';
+  if (r === '汉赵') return y != null && y < 319 ? '汉' : '赵';
+  if (r === '成汉') return y != null && y < 338 ? '成' : '汉';
+  if (r === '胡夏') return '夏';
+  if (r === '北元') return '元';
+  return r;
+}
+function inYearTitle(realm, t, y) {
+  let T = String(t || '').replace(/[（(].*$/, '').trim();
+  const rs = realmShort(realm, y), short = rs.replace(/^蜀汉$/, '汉').replace(/^(前|后|南|北|西|东)(?=.)/, '');
+  if (T && rs && T.startsWith(rs) && T.length > rs.length) T = T.slice(rs.length).trim();
   if (!T || /牧|将军|大人|师君|丞相|太守|刺史|使|公$|侯$|单于|可汗|赞普|台吉|汗$|大王$|天王/.test(T)) return T;
   const king = /^(朝鲜|高丽|新罗|百济|高句丽|安南|大越|琉球)/.test(short);
   if (/帝$|宗$|祖$|^后主|^末主/.test(T)) return short + (king ? '王' : '帝');
@@ -8278,11 +8359,12 @@ function regRuler(s, r) {
   if (!m.length) { const c = L.filter(x => polNames(x.polity).some(p => k.some(q => (p.endsWith(q) || q.endsWith(p)) && Math.min(p.length, q.length) >= 1))); if (c.length === 1) m = c; }
   if (m.length !== 1) return '';
   const nm = String(m[0].name).replace(/（([^（）]+)）$/, '，又名$1');   // 名字里本来带括号的（朱友贞（朱瑱））不再套两层
-  return m[0].title && m[0].title !== m[0].name ? `${nm}（${inYearTitle(r.name, m[0].title)}）` : nm;
+  const iy = m[0].title ? inYearTitle(r.name, m[0].title, s.clock.y + ((num(s.clock.m) || 1) - 1) / 12) : '';
+  return iy && iy !== nm && !(iy.length <= 2 && String(nm).endsWith(iy)) ? `${nm}（${iy}）` : nm;
 }
 function regimeBlock(s) {
   const A = s.admin, BR = realmsAt(s.clock.y, s.clock.m), R = BR ? { y: s.clock.y, split: true, list: BR.list } : s.regimes; if (!R || Math.abs(R.y - s.clock.y) > (R.split ? 1 : 15)) return '';   // 分立年代的政权照内置史料（和地图一致）
-  const L = [`【${R.y}年天下的政权与政区（开局联网查定；写到外地、外国的人和事，归属、地名照这里）】` + R.list.map(r => { const k = regRuler(s, r); return `${r.name}${k ? '（' + k + '在位）' : ''}${r.capital ? '都' + r.capital : ''}${r.basis === '推算' ? '（推算）' : ''}`; }).join('；')];
+  const L = [`【${R.y}年天下的政权与政区（开局联网查定；写到外地、外国的人和事，归属、地名照这里）】` + R.list.map(r => { const k = regRuler(s, r); return `${realmShort(r.name, R.y)}${k ? '（' + k + '在位）' : ''}${r.capital ? '都' + r.capital : ''}${r.basis === '推算' ? '（推算）' : ''}`; }).join('；')];
   const mine = A && provOfPlace(s, geoCenter(s));
   if (mine) { const u = A.units.filter(x => x.lv === 2 && x.p === mine); L.push(`本地所属一级政区：${mine}，下辖${u.map(x => x.n).join('、')}`); }
   if (s.roster && s.roster.y === s.clock.y) L.push('这一年朝中、各地要人（写到他们时名字、官职照这里）：' + cut(s.roster.groups.map(g => g.name + '：' + g.people.map(x => x.name + '（' + x.post + '）').join('、')).join('；'), 900));
@@ -8380,12 +8462,32 @@ const GEO_LATE = /^(平阳府|南阳府|滕州|庆远府|兖州府)$/;
 const GEO_GONE = /^(鸿州|仙州|临淄州|鼎州|永安州|鲁州|钳州|会州|雍州|岐州|稷州|栾州|武安州|舞州|鹤州|沅州|化州|当州|悉州|柘州|静州|恭州|真州|云州|齐州|黎州|南安州)$/;   // 云州、齐州、黎州：地名库这期间那条在别处，是错的；照下面补
 const GEO_KEEP = /^(岚州|银州)$/;
 // 地名库里唐后期五代缺的州（名字、治所经纬、起止年）
-const GEO_ADD = [['赵州', 114.77, 37.75, 758, 1911], ['云州', 113.3, 40.09, 758, 959], ['齐州', 117.0, 36.65, 758, 1115], ['黎州', 102.62, 29.5, 758, 1911], ['夔州', 109.47, 31.04, 758, 1911], ['虔州', 114.93, 25.85, 758, 1153], ['镇州', 114.5636, 38.1401, 926, 946], ['交州', 105.85, 21.034, 679, 959], ['瓜州', 96.2375, 40.2406, 776, 1035], ['宥州', 108.35, 37.85, 758, 959], ['应州', 113.19, 39.55, 758, 959], ['妫州', 115.52, 40.40, 758, 959], ['儒州', 115.97, 40.45, 758, 959], ['寰州', 112.85, 39.45, 758, 959], ['蓟州', 117.40, 40.04, 758, 959], ['新州', 115.20, 40.38, 758, 959]];
-const GEO_REN = [['黔州督护府', '黔州', 758, 1911], ['灵州都督府', '灵州', 758, 1911], ['豫州', '蔡州', 762, 1911], ['武州', '阶州', 892, 1911, 104.93, 33.39], ['汴州', '开封府', 907, 1911], ['梁州', '兴元府', 784, 1911], ['南州', '漳州', 686, 1911, 117.65, 24.51], ['归顺州', '顺州', 907, 1911, 116.64, 40.13], ['升州', '金陵府', 920, 937], ['昇州', '金陵府', 920, 937], ['扬州', '江都府', 909, 937], ['魏州', '兴唐府', 923, 936], ['魏州', '广晋府', 936, 947], ['魏州', '大名府', 948, 1911], ['镇州', '真定府', 923, 947], ['镇州', '真定府', 951, 1911]];
+const GEO_ADD_EARLY = [['带方郡', 125.70, 38.50, 204, 582], ['昌黎郡', 120.45, 41.57, 200, 582]];
+// 先秦至汉初的诸国都邑：地名库这层只有中原郡县，夜郎、滇、闽越、东瓯这些没有治所点，图上一直是空的
+const GEO_ADD_ANCIENT = [['夜郎', 106.70, 26.60, -300, -27], ['滇', 102.70, 24.90, -280, -109], ['闽越', 119.30, 26.08, -200, -110], ['东瓯', 120.65, 28.02, -191, -138], ['邛都', 102.30, 27.90, -200, -111], ['王险', 125.75, 39.02, -194, -108]];
+// 隋初还留着西梁这个藩国（江陵），地名库里只有「后梁藩国」一条国级记录，583 年以后不收国，单补一个州
+const GEO_ADD_MID = [['江陵', 112.1908, 30.3504, 583, 587]];
+// 金初的会宁府、东京辽阳府：地名库在这一段只有路名（上京路 1138 起），1115—1137 的金本土没有治所点
+const GEO_ADD_JIN = [['会宁府', 126.97, 45.55, 1115, 1137], ['辽阳府', 123.17, 41.27, 1115, 1131]];
+// 元末明初、后金这三个都城：地名库相应年份只有卫、州（沈阳中卫、辽阳州），1368 年以后图上只收府，单补
+const GEO_ADD_LATE = [['和林', 102.84, 47.10, 1368, 1402], ['赫图阿拉', 124.9, 41.9, 1616, 1620], ['辽阳', 123.17, 41.27, 1621, 1624], ['盛京', 123.43, 41.8, 1625, 1663]];
+const GEO_ADD = [['赵州', 114.77, 37.75, 758, 1911], ['云州', 113.3, 40.09, 758, 959], ['齐州', 117.0, 36.65, 758, 1115], ['黎州', 102.62, 29.5, 758, 1911], ['夔州', 109.47, 31.04, 758, 1911], ['虔州', 114.93, 25.85, 758, 1153], ['镇州', 114.5636, 38.1401, 926, 946], ['灵州', 106.2898, 38.0212, 975, 1911], ['交州', 105.85, 21.034, 679, 1053], ['爱州', 105.81, 19.85, 758, 1053], ['峰州', 105.26, 21.42, 758, 1053], ['汤州', 106.17, 20.43, 758, 1053], ['演州', 105.57, 19.00, 758, 1053], ['安武州', 105.91, 18.31, 758, 1053], ['武峨州', 106.02, 21.82, 758, 1053], ['瓜州', 96.2375, 40.2406, 776, 1035], ['宥州', 108.35, 37.85, 758, 959], ['应州', 113.19, 39.55, 758, 959], ['妫州', 115.52, 40.40, 758, 959], ['儒州', 115.97, 40.45, 758, 959], ['寰州', 112.85, 39.45, 758, 959], ['蓟州', 117.40, 40.04, 758, 959], ['新州', 115.20, 40.38, 758, 959]];
+const GEO_REN = [['黔州督护府', '黔州', 758, 1911], ['灵州都督府', '灵州', 758, 1911], ['豫州', '蔡州', 762, 1911], ['武州', '阶州', 892, 1911, 104.93, 33.39], ['汴州', '开封府', 907, 1911], ['梁州', '兴元府', 784, 1911], ['南州', '漳州', 686, 1911, 117.65, 24.51], ['归顺州', '顺州', 907, 1911, 116.64, 40.13], ['乌噜木齐', '迪化州', 1773, 1911, 87.6041, 43.7907], ['升州', '金陵府', 920, 937], ['昇州', '金陵府', 920, 937], ['扬州', '江都府', 909, 937], ['魏州', '兴唐府', 923, 936], ['魏州', '广晋府', 936, 947], ['魏州', '大名府', 948, 1911], ['镇州', '真定府', 923, 947], ['镇州', '真定府', 951, 1911]];
 function geoYear(y) {
   if (GEO_Y[y]) return GEO_Y[y];
   const P = /^(州|府|都护府|军|监)$/, A = geoData(), dated = y < 960 && y >= 600;
   let G = A.filter(u => u.from <= y && u.to >= y && u.lat && u.lon && !(dated && P.test(u.type) && u.from === 0));
+  if (y > 0 && y < 583) {   /* 汉代郡志很多条止于公元 0 年（地名库断点）：1—582 年照这些郡续上，东北的辽东/玄菟/乐浪就在里头 */
+    const PT = /^(郡|国)$/;   /* 这一段的政区类型是郡/国，不是州/府（P 是州一级的） */
+    const seenH = new Set(G.filter(u => PT.test(u.type)).map(u => u.name));
+    for (const u of A) if (/郡$/.test(u.name) && PT.test(u.type) && u.to === 0 && u.from <= 0 && !seenH.has(u.name) && !GEO_GONE.test(u.name)) {
+      if (G.some(v => PT.test(v.type) && Math.hypot(v.lon - u.lon, v.lat - u.lat) < 0.15)) continue;   /* 只让同级的郡/国占位；州一级的平州不算（320 年平州与辽东郡同城） */
+      G.push({ ...u, from: 1, to: 582, b: '续汉' }); seenH.add(u.name);
+    }
+    for (const a of GEO_ADD_EARLY) if (a[3] <= y && y <= a[4] && !G.some(u => u.name === a[0] && Math.hypot(u.lon - a[1], u.lat - a[2]) < 0.3)) G.push({ id: 'ea' + a[0], name: a[0], type: '郡', parent: '', from: a[3], to: a[4], lon: a[1], lat: a[2], b: '补' });
+  }
+  if (y < 0) { for (const a of GEO_ADD_ANCIENT) if (a[3] <= y && y <= a[4] && !G.some(u => u.name === a[0] && Math.hypot(u.lon - a[1], u.lat - a[2]) < 0.3)) G.push({ id: 'aa' + a[0], name: a[0], type: '国', parent: '', from: a[3], to: a[4], lon: a[1], lat: a[2], b: '补' }); }
+  if (y >= 583 && y <= 587) { for (const a of GEO_ADD_MID) if (a[3] <= y && y <= a[4] && !G.some(u => u.name === a[0] && Math.hypot(u.lon - a[1], u.lat - a[2]) < 0.3)) G.push({ id: 'am' + a[0], name: a[0], type: '州', parent: '', from: a[3], to: a[4], lon: a[1], lat: a[2], b: '补' }); }
   if (y >= 758 && y < 960) {
     // 唐的州在地名库里常常断在开元、天宝年间（718、731、741……），乾元复州后没续上：同名的取 618 年以后最晚的一条续到这一年，
     // 这一年本有记载的、离同一处不到十几里的（改了名的府，如升州成了金陵府）不重复
@@ -8398,11 +8500,14 @@ function geoYear(y) {
     G = G.filter(u => !(P.test(u.type) && (GEO_LATE.test(u.name) || GEO_GONE.test(u.name) || /都护府$|郡$/.test(u.name))));
     for (const a of GEO_ADD) if (a[3] <= y && y <= a[4] && !G.some(u => u.name === a[0] && Math.hypot(u.lon - a[1], u.lat - a[2]) < 0.3)) G.push({ id: 'ga' + a[0], name: a[0], type: '州', parent: '', from: a[3], to: a[4], lon: a[1], lat: a[2], b: '补' });
   }
+  if (y >= 960 && y <= 1053) { const an = [['交州', 105.85, 21.034], ['爱州', 105.81, 19.85], ['峰州', 105.26, 21.42], ['汤州', 106.17, 20.43], ['演州', 105.57, 19.00], ['安武州', 105.91, 18.31], ['武峨州', 106.02, 21.82]]; for (const a of an) if (!G.some(u => u.name === a[0] && Math.hypot(u.lon - a[1], u.lat - a[2]) < 0.3)) G.push({ id: 'an' + a[0], name: a[0], type: '州', parent: '', from: 960, to: 1053, lon: a[1], lat: a[2], b: '补' }); }
+  if (y >= 960) { for (const a of GEO_ADD_JIN.concat(GEO_ADD_LATE)) if (a[3] <= y && y <= a[4] && !G.some(u => u.name === a[0] && Math.hypot(u.lon - a[1], u.lat - a[2]) < 0.3)) G.push({ id: 'gj' + a[0], name: a[0], type: '府', parent: '', from: a[3], to: a[4], lon: a[1], lat: a[2], b: '补' }); }
+  if (y >= 975 && !G.some(u => u.name === '灵州' && Math.hypot(u.lon - 106.2898, u.lat - 38.0212) < 0.3)) G.push({ id: 'an灵州', name: '灵州', type: '州', parent: '', from: 975, to: 1911, lon: 106.2898, lat: 38.0212, b: '补' });
   // 2026-11-05 玩家：「地图错误太多了……标识不对」；查实：地名库里有把前后几个同名同地的建置揉成一条的（凤翔府记成前687—1911、乾州579—1267），
   // 开皇二十年的图上冒出唐乾宁才置的乾州、至德以后才有的凤翔府，同一处还有雍州、京兆州两条：后世才有的府州名照史书的起年挡掉（GEO_FROM）；同一处几条并存的，取记了所属政权、起止最窄的那条
   { const late = u => (GEO_FROM[u.name] != null && y < GEO_FROM[u.name]) || (/总管府?$/.test(u.name) && !/军民|路/.test(u.name) && (y < 581 || y > 624));   // 州总管府只在隋到唐武德七年（624 改都督府），五代图上不许冒出「延州总管」
     G = G.filter(u => !late(u));
-    const keep = [], drop = new Set(); for (const u of G.filter(u => P.test(u.type)).sort((a, b) => (a.parent ? 0 : 1) - (b.parent ? 0 : 1) || (a.to - a.from) - (b.to - b.from))) { if (keep.some(k => Math.hypot(k.lon - u.lon, k.lat - u.lat) < 0.12)) { drop.add(u); continue; } keep.push(u); }
+    const T = PREF_T(y), keep = [], drop = new Set(); for (const u of G.filter(u => P.test(u.type)).sort((a, b) => (a.parent ? 0 : 1) - (b.parent ? 0 : 1) || (T.test(b.type) ? 1 : 0) - (T.test(a.type) ? 1 : 0) || (a.to - a.from) - (b.to - b.from))) { if (keep.some(k => Math.hypot(k.lon - u.lon, k.lat - u.lat) < 0.12)) { drop.add(u); continue; } keep.push(u); }
     G = G.filter(u => !drop.has(u)); }
   const ren = GEO_REN.filter(r => r[2] <= y && y <= r[3]);
   if (ren.length) { const names = new Set(G.map(u => u.name)); G = G.map(u => { const r = ren.find(x => x[0] === u.name && (x[4] == null || Math.hypot(x[4] - u.lon, x[5] - u.lat) < 0.5)); /* 同名的两处只改对的那处（陇右的武州改阶州，幽蓟的武州不改） */ return r && !G.some(v => v.name === r[1] && Math.hypot(v.lon - u.lon, v.lat - u.lat) < 0.6) && P.test(u.type) ? { ...u, name: r[1], type: r[1].slice(-1) === '府' ? '府' : '州', old: u.name } : u; });
@@ -8411,7 +8516,7 @@ function geoYear(y) {
   return (GEO_Y[y] = G);
 }
 // 唐天宝元年至乾元元年（742–758）、隋大业（607–617）州改郡，其余年份是州；地名库里州、郡两套名字年份有重叠，只取当年通行的那套
-const PREF_T = y => y >= 1368 ? /^(府|直隶州|直隶厅|军民府)$/ : y >= 1271 ? /^(路|府|直隶州)$/ : y >= 960 ? /^(州|府|军|监)$/ : (y >= 742 && y <= 758) || (y >= 607 && y <= 617) ? /^(郡|府|都护府)$/ : y >= 583 ? /^(州|府|都护府)$/ : /^(郡|国)$/;
+const PREF_T = y => y >= 1368 ? /^(府|直隶州|直隶厅|军民府)$/ : y >= 1271 ? /^(路|府|直隶州)$/ : y >= 960 ? /^(州|府|军|监)$/ : (y >= 742 && y <= 758) || (y >= 607 && y <= 617) ? /^(郡|府|都护府)$/ : (y >= 618 && y <= 620) ? /^(郡|州|府|都护府)$/ : y >= 583 ? /^(州|府|都护府)$/ : /^(郡|国)$/;   /* 618—620 隋末唐初，地名库里郡名还没改完（豫章郡、林士弘的洪州），两套都收 */
 const PROV_BAD = /^(唐|宋|元|明|清|秦|隋|晋|东汉|西汉|后汉|北周|南京)$|[州府郡]$|使|节度|防御|团练|守捉|观察/;
 const provName = t => { const x = String(t || '').replace(/[（(].*$/, '').replace(/(等处)?(承宣布政使司|布政使司|行中书省|中书省|行省|布政司|省|路|道)$/, '').replace(/中书$/, ''); return x.length >= 2 && !PROV_BAD.test(x) ? x : ''; };
 /** 这张图上画哪些地方：有核定的政区就用它（坐标取 CHGIS），没有就退回 CHGIS 当年的州府（标「未经核对」） */
@@ -8600,6 +8705,15 @@ function eraLayer(s) {
     for (const c of C) { const f = polyAt(P, c.lon, c.lat), u = f && ofPoly.get(f); if (u) { c.p = u.n; c.pp = u.p; } } }
   // 治所：府州治所点上（或最近）的那个县就是附郭县
   for (const u of L2) { if (u.noSeat) continue; let b = null, bd = 0.08; for (const c of C) { if (c.p !== u.n) continue; const d = Math.hypot(c.lon - u.lon, c.lat - u.lat); if (d < bd) { bd = d; b = c; } } u.seatC = b ? b.n : ''; }
+  // 同一治所两条不同名的（谭图 1820 层把乌鲁木齐府级和迪化直隶州画在同一点）：留当年地名库通行的那个，别在图上叠两个名字
+  { const GN = new Set(geoYear(y).map(g => g.name)), keep = [];
+    for (const u of L2) {
+      const i = keep.findIndex(v => v.n !== u.n && Math.hypot((v.lon - u.lon) * Math.cos(u.lat * Math.PI / 180), v.lat - u.lat) < 0.03);
+      if (i < 0) { keep.push(u); continue; }
+      const pr = n => n === '乌噜木齐' ? 0 : 1;   /* 1820 层两条同点：留迪化州，乌鲁木齐是驻防军府，不当地名 */
+      if (pr(u.n) > pr(keep[i].n) || (pr(u.n) === pr(keep[i].n) && GN.has(u.n) && !GN.has(keep[i].n))) keep[i] = u;
+    }
+    L2.length = 0; for (const u of keep) L2.push(u); }
   const meta = A.era(id);
   return (ERA_C[id] = { id, title: meta.title, source: meta.source, C, L2, poly: P || null });
 }
@@ -8686,6 +8800,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 前燕|365|370||112.45,34.62 113.82,34.03 114.35,34.79
 冉魏|350|352|1.2|114.4,36.3
 前秦|351|394||108.94,34.27 107.39,34.52 105.7,34.58 111.52,36.08 110.33,34.84
+前秦|385|394||107.3,35.3 106.85,34.9 106.6,35.5
 前秦|370|383||116.4,39.9 114.97,38.52 114.56,38.14 114.4,36.3 114.49,37.07 115.3,36.34 118.48,36.69 116.28,35.96 112.55,37.87 113.1,36.18 112.45,34.62 113.82,34.03 114.35,34.79 121.1,41.4 120.45,41.57 123.17,41.27 117.02,38.21
 前秦|373|384||104.07,30.66 105.09,31.1 106.55,29.56 107.03,33.07
 前秦|376|383||102.63,37.93 100.45,38.93 98.5,39.74 94.62,40.14 101.78,36.62 103.8,36.06 111.6,40.4 113.3,40.1
@@ -8718,9 +8833,9 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 夏|418|430||108.94,34.27 107.39,34.52
 北燕|407|436|1.8|120.45,41.57 121.1,41.4
 谯蜀|405|413||104.07,30.66 105.09,31.1 106.55,29.56
-宋|420|479|B|118.78,32.05 119.44,32.21 120.62,31.31 120.58,30.0 115.9,28.67 114.31,30.57 112.19,30.35 112.98,28.2 113.26,23.13 112.15,32.03 117.28,31.86 114.97,27.1 111.6,26.2 110.29,25.28 119.3,26.08 120.65,28.02 116.78,32.58 104.07,30.66 105.09,31.1 106.55,29.56 107.03,33.07 119.44,32.39
+宋|420|479.3|B|118.78,32.05 119.44,32.21 120.62,31.31 120.58,30.0 115.9,28.67 114.31,30.57 112.19,30.35 112.98,28.2 113.26,23.13 112.15,32.03 117.28,31.86 114.97,27.1 111.6,26.2 110.29,25.28 119.3,26.08 120.65,28.02 116.78,32.58 104.07,30.66 105.09,31.1 106.55,29.56 107.03,33.07 119.44,32.39
 宋|420|468||117.19,34.27 118.48,36.69 117.0,36.65 116.3,35.4 115.77,33.88
-南齐|479|501|B|118.78,32.05 119.44,32.21 120.62,31.31 120.58,30.0 115.9,28.67 114.31,30.57 112.19,30.35 112.98,28.2 113.26,23.13 112.15,32.03 117.28,31.86 114.97,27.1 111.6,26.2 110.29,25.28 119.3,26.08 120.65,28.02 116.78,32.58 104.07,30.66 105.09,31.1 106.55,29.56 107.03,33.07 119.44,32.39
+南齐|479.3|501|B|118.78,32.05 119.44,32.21 120.62,31.31 120.58,30.0 115.9,28.67 114.31,30.57 112.19,30.35 112.98,28.2 113.26,23.13 112.15,32.03 117.28,31.86 114.97,27.1 111.6,26.2 110.29,25.28 119.3,26.08 120.65,28.02 116.78,32.58 104.07,30.66 105.09,31.1 106.55,29.56 107.03,33.07 119.44,32.39
 梁|502|556|B|118.78,32.05 119.44,32.21 120.62,31.31 120.58,30.0 115.9,28.67 114.31,30.57 112.98,28.2 113.26,23.13 114.97,27.1 111.6,26.2 110.29,25.28 119.3,26.08 120.65,28.02 106.55,29.56
 梁|502|552|B|104.07,30.66 105.09,31.1
 梁|502|548|B|112.15,32.03 117.28,31.86 116.78,32.58 119.44,32.39
@@ -8790,7 +8905,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 魏博镇|763|811|1.2|115.28,36.29 115.98,36.45 114.35,36.1 115.68,37.06 114.07,35.4 115.03,35.77
 魏博镇|822|914|1.2|115.28,36.29 115.98,36.45 114.35,36.1 115.68,37.06 114.07,35.4 115.03,35.77
 成德镇|763|920|1.2|114.5,38.15 115.58,37.55 115.55,38.01 114.77,37.75
-卢龙镇|763|901|1.3|116.4,39.9 115.97,39.48 116.1,38.44 117.15,40.4 117.4,40.05
+卢龙镇|763|894.9|1.3|116.4,39.9 115.97,39.48 116.1,38.44 117.15,40.4 117.4,40.05
 淄青镇|765|819|1.3|118.48,36.7 117.97,36.8 117.0,36.66 116.1,35.9 116.6,35.55 120.75,37.8 119.94,37.18 119.4,36.0
 淮西镇|784|817|1|114.0,33.0 114.07,32.13 115.1,32.1
 卢龙刘仁恭|902|906||116.4,39.9 117.02,38.21 116.09,38.44
@@ -8802,7 +8917,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 晋|916|922||115.3,36.34 114.37,36.36 115.6,37.07 114.49,37.07
 晋|907|922||111.14,37.51 111.69,38.39 113.3,40.09
 赵（王镕）|907|921|1.0|114.56,38.14 114.77,37.75
-北平王（王处直）|907|921|0.9|114.97,38.52 115.49,39.35
+北平王（王处直）|900|922|0.9|114.97,38.52 115.49,39.35
 燕|907|913||116.4,39.9 117.02,38.21 116.09,38.44 115.97,39.49 117.4,40.04
 契丹|907|915||119.2,43.9 121.6,41.1
 岐|907|923||107.39,34.52 106.85,34.89 107.19,35.26 107.37,35.68 108.08,35.04
@@ -8915,7 +9030,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 夏（明玉珍）|1357|1371|1.8|106.55,29.56 104.07,30.66 105.09,31.1 109.47,31.04 106.08,30.8 105.83,32.44
 明|1368|1643|B|101.78,36.62 94.62,40.14 116.4,39.9 114.56,38.14 112.55,37.87 115.3,36.34 114.97,38.52 117.02,38.21 113.1,36.18 111.41,36.06 113.3,40.1 108.94,34.27 107.39,34.52 105.7,34.58 103.8,36.06 102.63,37.93 100.45,38.93 114.35,34.79 112.45,34.62 117.19,34.27 113.82,34.03 118.48,36.69 117.0,36.65 120.17,30.29 118.78,32.05 119.44,32.21 119.95,31.78 118.74,30.95 118.43,29.87 114.31,30.57 115.99,29.72 115.9,28.67 116.35,27.98 114.97,27.1 114.93,25.85 118.32,27.04 120.58,30.0 120.62,31.31 121.54,29.87 121.12,28.84 120.65,28.02 119.65,29.1 119.3,26.08 118.59,24.91 112.19,30.35 112.98,28.2 112.6,26.9 111.61,26.21 111.69,29.03 113.26,23.13 113.6,24.81 116.64,23.67 108.31,22.79 110.29,25.28 110.09,20.9 110.42,19.88 106.55,29.56 104.07,30.66 105.09,31.1 109.47,31.04 119.44,32.39 117.28,31.86 116.78,32.58 120.0,32.5 106.71,26.58 102.71,25.05 100.2,25.6 112.15,32.03 107.03,33.07 123.17,41.27
 北元|1368|1388|1.8|111.6,40.8 102.4,47.2 119.2,43.9
-北元（梁王）|1368|1381|1.8|102.71,25.05 100.2,25.6 103.8,25.5
+云南梁王|1368|1381|1.8|102.71,25.05 100.2,25.6 103.8,25.5
 后金|1616|1635|1.8|123.43,41.8 123.17,41.27 124.4,40.13 124.9,41.9
 清|1636|1643|1.8|123.43,41.8 123.17,41.27 124.4,40.13 124.9,41.9 121.6,41.1 120.45,41.57
 大顺（李自成）|1643|1645|1.8|112.15,32.03 108.94,34.27 112.45,34.62 113.82,34.03 107.39,34.52 105.7,34.58 103.8,36.06 109.47,36.59
@@ -8940,7 +9055,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 南明|1648|1649||113.26,23.13 115.9,28.67 112.6,26.9 111.61,26.21 112.98,28.2
 南明|1659|1661|1.4|100.2,25.6 99.17,25.12
 明郑|1650|1661|0.9|118.1,24.47
-明郑|1661|1683|1.6|120.2,23.0 118.1,24.47
+明郑|1661|1661.9|1.6|120.2,23.0 118.1,24.47
 周（吴三桂）|1674|1681|1.6|102.71,25.05 106.71,26.58 112.98,28.2 111.69,29.03 104.07,30.66 106.55,29.56 100.2,25.6 103.8,25.5 105.09,31.1 112.6,26.9 111.61,26.21
 靖南王耿精忠|1674|1676|1.6|119.3,26.08 118.32,27.04 118.59,24.91 117.65,24.51
 平南王尚之信|1676|1677|1.6|113.26,23.13 113.6,24.81 116.64,23.67
@@ -8987,7 +9102,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 于阗|-100|1006|2|79.9,37.1
 高丽|918|1392|3|126.55,37.97 126.98,37.57 125.75,39.02 128.6,35.87
 朝鲜|1392|1911|3|126.98,37.57 125.75,39.02 128.6,35.87 127.5,40.0
-静海军（交州）|939|967|2.5|105.85,21.03 105.7,20.3
+吴朝（交州）|939|967.9|2.5|105.85,21.03 105.7,20.3
 大瞿越|968|1053|2.5|105.85,21.03 105.7,20.3 106.3,20.4
 大越（安南）|1054|1406|2.5|105.85,21.03 105.7,20.3 106.3,20.4 105.6,18.7
 大越（安南）|1428|1803|2.5|105.85,21.03 105.7,20.3 106.3,20.4 105.6,18.7
@@ -9042,7 +9157,7 @@ const REALM_TXT = `秦|-221|-207|B|108.94,34.27 112.45,34.62 114.35,34.79 114.49
 李傕郭汜|192|195|1.2|108.94,34.27 109.5,34.5
 陶谦|188|194|1.2|117.18,34.26 117.95,34.3 119.4,34.6
 刘繇|194|195|1.2|118.75,32.0 120.6,31.3
-刘焉|188|194|1.5|104.07,30.66 104.4,31.0 106.5,29.6
+刘焉|188|193.9|1.5|104.07,30.66 104.4,31.0 106.5,29.6
 孙策|195|200|1.2|120.6,31.3 120.58,30.0 118.75,32.0
 张绣|196|199|1.0|112.5,33.0
 曹操|192|196|1.2|116.6,35.4 115.5,35.2 114.3,34.8
@@ -9434,7 +9549,31 @@ const REALM_FIX_TXT = `江都府|907|936|吴
 夏州|907|979|定难军
 绥州|907|979|定难军
 银州|907|979|定难军
+辽东郡|189|238|公孙氏（辽东）
+玄菟郡|189|238|公孙氏（辽东）
+乐浪郡|189|238|公孙氏（辽东）
+带方郡|204|238|公孙氏（辽东）
+辽东郡|319|370|前燕
+玄菟郡|319|370|前燕
+昌黎郡|319|370|前燕
+辽西郡|338|370|前燕
 宥州|907|979|定难军
+灵州|975|1002|朔方军
+灵州|1002|1037|定难军（党项拓跋氏）
+交州|939|968|吴朝（交州）
+爱州|939|968|吴朝（交州）
+峰州|939|968|吴朝（交州）
+汤州|939|968|吴朝（交州）
+演州|939|968|吴朝（交州）
+安武州|939|968|吴朝（交州）
+武峨州|939|968|吴朝（交州）
+交州|968|1053|大瞿越
+爱州|968|1053|大瞿越
+峰州|968|1053|大瞿越
+汤州|968|1053|大瞿越
+演州|968|1053|大瞿越
+安武州|968|1053|大瞿越
+武峨州|968|1053|大瞿越
 盐州|907|979|朔方军
 沙州|907|974|归义军
 瓜州|907|974|归义军
@@ -9698,7 +9837,9 @@ const REALM_FIX_TXT = `江都府|907|936|吴
 景州|883|894|唐
 蒲州|883|894|唐
 归顺州|883|894|唐
-滑州|887|906|宣武朱全忠`;
+滑州|887|906|宣武朱全忠
+江陵|581|587|后梁（西梁）
+夜郎|-300|-27|夜郎`;
 let REALM_FIX = null;
 function realmFixMap() { if (REALM_FIX) return REALM_FIX; REALM_FIX = new Map();
   for (const l of REALM_FIX_TXT.split(String.fromCharCode(10))) { const q = l.split('|'); const [n, a, b, pol] = q; if (!n || !pol) continue; if (!REALM_FIX.has(n)) REALM_FIX.set(n, []); REALM_FIX.get(n).push(q.length >= 6 ? [+a, +b, pol, +q[4], +q[5]] : [+a, +b, pol]); }
@@ -9874,7 +10015,7 @@ function mapUnits0(s) {
   const keep = v => { MU_C.k = mk; MU_C.s = s; MU_C.v = v; return v; };
   // 每个年代底子都是地名库里这一年的全部州府（核定的政区只是添上、改名），不会因为 DeepSeek 报得少就整片空着
   // 同名的州府相隔远的两处都留（开皇九年寿春的寿州和湘西的寿州并存；以前只按名字去重，寿春那个丢了）
-  const gz = () => { const L = []; for (const u of prefs) { if (L.some(x => x.n === u.name && Math.hypot(x.lon - u.lon, x.lat - u.lat) < 0.5)) continue; L.push({ n: u.name, t: u.type, lv: 2, p: '', lon: u.lon, lat: u.lat }); } return L; };
+  const gz = () => { const L = []; for (const u of prefs) { if (L.some(x => (x.n === u.name && Math.hypot(x.lon - u.lon, x.lat - u.lat) < 0.5) || Math.hypot(x.lon - u.lon, x.lat - u.lat) < 0.04)) continue; L.push({ n: u.name, t: u.type, lv: 2, p: '', lon: u.lon, lat: u.lat }); } return L; };
   const fillGap = L2 => { for (const g of gz()) { if (L2.some(u => geoStem(u.n) === geoStem(g.n) && Math.hypot(u.lon - g.lon, u.lat - g.lat) < 0.5) || L2.some(u => Math.hypot(u.lon - g.lon, u.lat - g.lat) < 0.08)) continue; /* 隔江相望的两州（扬州、润州）治所只差十几里，不能当成一处 */ let b = null, bd = 2; for (const u of L2) { const d = Math.hypot(u.lon - g.lon, u.lat - g.lat); if (d < bd) { bd = d; b = u; } } L2.push({ ...g, p: b ? b.p : '', r: b ? b.r : '' }); } return L2; };
   const BR = realmsAt(s.clock.y, s.clock.m);
   // DeepSeek 核定的州府只收地名库里这一年真有、地方也对得上的（2026-11-01 玩家拿开皇九年的图：隋开皇三年已罢郡，图上还有陈的南海郡、义安郡，湖南境内冒出个寿州）
@@ -9937,7 +10078,7 @@ function mapGestures() {
     else mapPanBy(-st.tx / st.r.width * (B.x1 - B.x0), st.ty / st.r.height * (B.y1 - B.y0));
     render(); };
   document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
-  document.addEventListener('wheel', e => { const sv = svOf(e); if (!sv || !MAPC.box || !S) return; e.preventDefault(); MAPG.drag = Date.now(); clearTimeout(MAPG.wt);
+  document.addEventListener('wheel', e => { const sv = svOf(e); if (!sv || !MAPC.box || !S) return; if (!(e.ctrlKey || e.metaKey) && !MAPZ.big) return;   /* 小图里滚轮留给页面滚动 */ e.preventDefault(); MAPG.drag = Date.now(); clearTimeout(MAPG.wt);
     MAPG.wk = (MAPG.wk || 1) * (e.deltaY < 0 ? 1.25 : 0.8); MAPG.wat = mapLL(sv, e.clientX, e.clientY); sv.style.transformOrigin = `${e.clientX - sv.getBoundingClientRect().left}px ${e.clientY - sv.getBoundingClientRect().top}px`; sv.style.transform = `scale(${MAPG.wk})`;
     MAPG.wt = setTimeout(() => { const k = MAPG.wk; MAPG.wk = 1; mapZoomBy(k, MAPG.wat); render(); }, 220); }, { passive: false });
 }
@@ -10213,9 +10354,9 @@ function stratMap(s) {
   const rl = rl0.filter(r => !r || r.lon == null || r.lat == null || (pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) || isHost(r.name) || visNames.has(r.name));
   const rlOut = rl0.length - rl.length;
   const unloc = M.ok && !M.era ? M.A.units.filter(u => u.lv === 2 && !u.lat).map(u => u.n) : [];
-  const ctl = `<div class="mctl"><button class="link" data-mapbig="1" title="铺满整个屏幕看，字更大">${MAPZ.big ? '收回' : '⛶ 大图'}</button><button class="link" data-mapzoom="in" title="放大">＋</button><button class="link" data-mapzoom="out" title="缩小">－</button><button class="link${near && MAPZ.follow !== false ? ' on' : ''}" data-mapview="near" title="回到你在的地方，跟着你走">◎ 跟着我</button><span class="muted">两指或滚轮缩放、拖动看别处；放大了才标各州县的名字</span></div>`;
+  const ctl = `<div class="mctl"><button class="link" data-mapbig="1" title="铺满整个屏幕看，字更大">${MAPZ.big ? '收回' : '⛶ 大图'}</button><button class="link" data-mapzoom="in" title="放大">＋</button><button class="link" data-mapzoom="out" title="缩小">－</button><button class="link${near && MAPZ.follow !== false ? ' on' : ''}" data-mapview="near" title="回到你在的地方，跟着你走">◎ 跟着我</button><span class="muted">拖动看别处；Ctrl/⌘+滚轮缩放（大图里直接滚轮）；放大了才标各州县的名字</span></div>`;
   return `<div class="mapwrap${MAPZ.big ? ' big' : ''}">${svg}${MAPZ.big ? ctl : ''}</div>` + (MAPZ.big ? '' : ctl) + '<!--MAPLEGEND-->' + `<div class="mlayers">${[['terr', '地形'], ['river', '河流'], ['road', '通路'], ['pass', '关隘'], ['adm', '政区'], ['fig', '名臣']].map(([k, n]) => `<label><input type="checkbox" data-maplay="${k}"${(k === 'fig' ? Ly[k] !== false : Ly[k]) ? ' checked' : ''}>${n}</label>`).join('')}</div>`
-    + (rl.length ? `<div class="mlegend">${rl.map(r => `<span><i style="background:${r.col}"></i><b>${esc(r.name)}</b>${regRuler(s, r) ? '·' + esc(regRuler(s, r)) : ''}${r.capital ? '·都' + esc(r.capital) : ''}${r.basis === '推算' ? '<span class="att">推算</span>' : ''}${(pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) ? '（你在此）' : ''}${isHost(r.name) ? '<span class="att">交战</span>' : ''}</span>`).join('')}${rlOut > 0 ? `<span class="muted">图外还有 ${rlOut} 家</span>` : ''}</div>` : '')
+    + (rl.length ? `<div class="mlegend">${rl.map(r => `<span><i style="background:${r.col}"></i><b>${esc(realmShort(r.name, y))}</b>${regRuler(s, r) ? '·' + esc(regRuler(s, r)) : ''}${r.capital ? '·都' + esc(r.capital) : ''}${r.basis === '推算' ? '<span class="att">推算</span>' : ''}${(pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) ? '（你在此）' : ''}${isHost(r.name) ? '<span class="att">交战</span>' : ''}</span>`).join('')}${rlOut > 0 ? `<span class="muted">图外还有 ${rlOut} 家</span>` : ''}</div>` : '')
     + `<div class="mlegend">${owners.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}${PL ? '<span>◉ 府州治所</span><span>▫ 县城</span><span><b>━</b> 省界</span><span>— 府州界</span>' : ''}<span>★ 你在这里</span><span>⚔ 打过仗</span><span style="color:#b8860b">◎ 这一回你攻占</span><span style="color:#c0392b">◎ 这一回失陷</span><span style="color:#d35400">◎ 叛乱中</span><span style="color:#8a8a8a">◌ 无人占领</span><span style="color:#555">✕ 残破被毁</span><span style="color:#7a1f1a">⚑ 流寇（游动，不占州府）</span><span style="color:#5d4e8a">◎ 史事易主（按月）</span><span><b style="color:#5b3a1a">关</b> 关隘</span><span>╌ 平路相通</span><span>┈ 山路难行</span><span class="muted">不通的不画线</span>${PL && zoom ? '<span>┄ 县界</span>' : ''}<span style="color:#8a3b12">━ ━ 驿道</span><span style="color:#2f6fa8">运河</span></div>`
     + `<div class="muted" style="font-size:11px">${!M.era && PL ? `府州界照 CHGIS Version 6 历代府州界（${y}年在的，© Fairbank Center for Chinese Studies and the Institute for Chinese Historical Geography at Fudan University, Dec 2016；从哈佛 Dataverse 官方源下到本机，简化到约一里；这一层隋唐以前只有南方一部分，没有的地方只标治所）${zoom ? '；县界在府界之内按各县治所远近划分（示意）' : ''}；` : !M.era ? (TS_P ? '历代府州界正从哈佛 CHGIS 官方源下载（约 30MB，只下一次），下好前' : TS_ERR ? `历代府州界没下成（${esc(TS_ERR)}），` : '') : ''}${M.era ? `政区：谭其骧《中国历史地图集》${esc(M.era.title)}的省—府—县（治所、县点：${esc(M.era.source)}）；${PL ? `${zoom ? '县界：府界之内按各县治所远近划分（谭图这一层没有县界，示意）；' : ''}府界、省界照 CHGIS Version 6（${M.era.id === 'qing-1911' ? '1911' : '1820'} 年层，© Fairbank Center for Chinese Studies and the Institute for Chinese Historical Geography at Fudan University, Dec 2016），从哈佛 Dataverse 官方源下到本机，简化到约一里` : POLY_P[M.era.id] ? '府界正从哈佛 CHGIS 官方源下载，下好前府州地块按治所远近示意、不是实界' : `府界没下成（${esc(POLY_ERR[M.era.id] || '这个浏览器不支持解压')}），府州地块按治所远近示意、不是实界`}${M.ok ? '；驿道、关隘照联网核定' : ''}` : M.builtin && !M.A.src ? `政区：照内置的历代政权与疆域（各家起止、都城、治下州府）和 CHGIS 历史地名库（${esc(y)}年在的州府；府州地块按治所远近示意，不是实界）` : M.ok ? `政区：${esc(M.A.src)}、照《地理志》核定（${esc(M.A.y)}年；府州地块按治所远近示意，不是实界）${zoom && !cty.length && MAPZ.mode === 'prov' ? '；本省的县正在查' : ''}${unloc.length ? `；${unloc.length}处在地名库里没找到坐标，没画：${esc(unloc.slice(0, 8).join('、'))}${unloc.length > 8 ? '等' : ''}` : ''}` : '政区：正在联网核定（或这回没查成）；先照 CHGIS 地名库画这一年的州府治所，不分省（地名库里的上级政区残缺、串朝代，不拿来用）'}。地形据 AWS 高程、河湖海岸据 Natural Earth（黄河下游、运河按这一年的河道画）；关隘坐标据维基百科；通不通照地形推，具体走法看剧情。</div>`;
 }
@@ -11780,7 +11921,7 @@ function diploHtml(s) {
   const PW = realmPowers(s).filter(p => p.name), can = true, rows = PW.map(P => ({ P, D: dipOf(s, P.name), li: dipGeo(s, P) })).sort((a, b) => (a.li ?? 9e9) - (b.li ?? 9e9));
   const kidOK = arr(s.household).some(m => m && /子|女/.test(m.relation || '') && !/孙/.test(m.relation || '') && !m.dead && (num(m.age) == null || (num(m.age) >= 13 && num(m.age) <= 35)) && !/妻|夫|已嫁|已娶/.test(m.note || ''));   /* 没有能联姻的子女就不摆联姻（按钮普查） */
   const card = ({ P, D, li }) => { const W = warOf(s, P.name);
-    return `<div class="ccard" style="margin:4px 0"><div class="ct">${P.col ? swatch(P.col) : ''}${esc(P.name)} <span class="muted" style="font-size:12px">${esc(P.leader || '')}${P.seat ? ' · 都' + esc(P.seat) : ''}${P.land ? ' · ' + esc(P.land) : ''}${li ? ' · 距你约' + li + '里' : ''}</span></div>
+    return `<div class="ccard" style="margin:4px 0"><div class="ct">${P.col ? swatch(P.col) : ''}${esc(realmShort(P.name, s.clock.y))} <span class="muted" style="font-size:12px">${esc(P.leader || '')}${P.seat ? ' · 都' + esc(P.seat) : ''}${P.land ? ' · ' + esc(P.land) : ''}${li ? ' · 距你约' + li + '里' : ''}</span></div>
       <div class="cr"><span>对你</span><b>${W ? '交战中' : esc(dipWord(D.att))}</b></div>${D.ties.length ? `<div class="cr"><span>关系</span><b>${esc(D.ties.join('、'))}</b></div>` : ''}${P.troops ? `<div class="cr"><span>兵力</span><b>${esc(P.troops)}</b></div>` : ''}
       ${D.gain ? `<div class="muted" style="font-size:12px">纳贡、互市累计进项 ${esc(fmtN(D.gain, (s.money || {}).unit || ''))}</div>` : ''}${D.pend ? `<div class="muted" style="font-size:12px">使者在路上：${esc(D.pend.act)}</div>` : ''}${arr(D.log).length ? `<div class="muted" style="font-size:12px">${esc(D.log[D.log.length - 1].t)}</div>` : ''}
       ${can && !D.pend && !W ? `<div class="opost">${['修好', '结盟', '联姻', '称臣', '互市'].filter(a => (a !== '联姻' || kidOK) && !D.ties.includes(a === '结盟' ? '盟' : a === '称臣' ? '臣属' : a === '联姻' ? '姻' : a)).map(a => `<button class="link" data-dip="${a}" data-dn="${esc(P.name)}" title="${esc(DIP_ACTS[a])}">${a}</button>`).join('')}${D.ties.length ? `<button class="link" data-dip="断交" data-dn="${esc(P.name)}">断交</button>` : ''}</div>` : ''}${can && !D.pend ? (W ? parleyBox(s, 'peace', P.name, PARLEY_PEACE, '遣使议和') : parleyBox(s, 'dip', P.name, PARLEY_DIP.filter(a => (a !== '联姻' || kidOK) && !D.ties.includes(a === '结盟' ? '盟' : a === '称臣' ? '臣属' : a === '联姻' ? '姻' : a)), '遣使去说')) : ''}</div>`; };
@@ -17321,6 +17462,7 @@ function tidyState(s, light) {
   return s;
 }
 let RENDER_ERR = '';
+let COMPOSING = false, RENDER_Q = false;   /* 输入法组字中：先不重画，组完再补 */
 /** 重画出错不许把整局卡死：先把账里的坏条目清掉再画一次；还不行就在页面上明说出了什么错，按钮照样能用 */
 /* 账册搜索（R-266）：输入人名地名，跳到头一个写着它的册子、滚过去、高亮 */
 let FIND_Q = '';
@@ -17342,6 +17484,7 @@ function render() {
   const app = document.querySelector('#app'); if (app && !document.querySelector('#renderErr')) app.insertAdjacentHTML('afterbegin', `<div id="renderErr" class="err" style="margin:8px 0">页面有一块画不出来（${esc(RENDER_ERR.slice(0, 120))}），已记进问题报告；游戏照常能玩，可以接着写下一步，或在「设置」里导出问题报告。</div>`);
 }
 function render0() {
+  if (COMPOSING) { RENDER_Q = true; return ''; }
   if (PERF && BUSY) { const t = Date.now(); if (PHASE !== PERF.cur) { if (PERF.cur) PERF.ph[PERF.cur] = (PERF.ph[PERF.cur] || 0) + (t - PERF.last); PERF.cur = PHASE; PERF.last = t; } }
   /* 不做「内容签名相同就跳过」：月结会改国势、民生、家底这些散在几十处的账，签名漏一处就是页面不刷新（2026-11-11 实测踩过）。
      省重绘靠上面一帧合并 + 后台存档节流，正确性优先（R-189）。 */
@@ -18483,13 +18626,16 @@ document.addEventListener('submit', e => {
 document.addEventListener('change', e => { const t = e.target; if (t && t.matches && t.matches('[data-mapf]') && S) { MAPZ.from = t.value || ''; MAPC.rt = null; render(); } });
 const keepCustom = e => { const el = e.target; if (el && el.closest && el.closest('#fCustom') && el.id) { CUSTOM[el.id] = el.value; lsSet('hrpg:custom', JSON.stringify(CUSTOM)); } };
 document.addEventListener('input', e => { if (e.target && e.target.id === 'qText') QTEXT = e.target.value; });
-document.addEventListener('input', e => { if (e.target && e.target.id === 'rosterQ') { ROSTER_Q = e.target.value; render(); } });
+let ROSTER_T = null;
+document.addEventListener('input', e => { if (e.target && e.target.id === 'rosterQ') { ROSTER_Q = e.target.value; clearTimeout(ROSTER_T); ROSTER_T = setTimeout(() => { if (!COMPOSING) render(); }, 200); } });
 document.addEventListener('change', e => { if (e.target && e.target.id === 'rosterG') { ROSTER_G = e.target.value; render(); } });
 document.addEventListener('change', async e => { const t = e.target; if (!t || t.id !== 'fSaveImport' || !t.files || !t.files[0]) return; const m = () => $('#updMsg');
   try { const o = JSON.parse(await t.files[0].text()); if (!o || !o.protagonist || !o.clock || !o.id) throw new Error('不是这个游戏的存档文件'); const s2 = migrate(o); await store.save(s2); S = s2; VIEW = 'game'; TAB = 'board'; ERRMSG = ''; lsSet('hrpg:last', s2.id); render(); }
   catch (err) { ERRMSG = '导入没成：' + (err.message || err); render(); } finally { t.value = ''; } });
 document.addEventListener('input', keepCustom); document.addEventListener('change', keepCustom);
 document.addEventListener('toggle', e => { if (e.target && e.target.id === 'dCustom') CUSTOM_OPEN = e.target.open; }, true);
+document.addEventListener('compositionstart', e => { const id = e.target && e.target.id; if (id === 'said' || id === 'rosterQ' || id === 'sideFind') COMPOSING = true; }, true);
+document.addEventListener('compositionend', e => { const id = e.target && e.target.id; if (id === 'said' || id === 'rosterQ' || id === 'sideFind') { COMPOSING = false; if (RENDER_Q) { RENDER_Q = false; setTimeout(() => { try { render(); } catch (_) { /* 下回再画 */ } }, 0); } } }, true);
 document.addEventListener('keydown', e => {
   // 回车就发（R-260：玩家本能按回车发不出去）；Shift+回车换行；输入法选字时的回车不算
   if (e.target.id === 'said' && e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); const bs = $('#bSend'); if (bs && !bs.disabled) bs.click(); }
@@ -18538,7 +18684,7 @@ document.addEventListener('click', async e => {
       else if (g.dataset.mapview === 'near') { const h = hereXY(S); if (h) { MAPZ.mode = 'near'; MAPZ.c = { lon: +h.lon, lat: +h.lat }; MAPZ.sel = ''; MAPZ.nearName = geoCenter(S); MAPZ.follow = true; } }
       else if (g.dataset.mapprov) { MAPZ.mode = 'prov'; MAPZ.prov = g.dataset.mapprov; MAPZ.sel = ''; }
       else if (g.dataset.mapnear) { if (g.dataset.tab) { TAB = 'map'; MAPZ.inited = true; } const M = mapUnits(S), n = g.dataset.mapnear, u = M.L2.concat(M.C, Object.values((M.A && M.A.counties) || {}).flat()).find(x => x.n === n && x.lat) || (() => { const x = geoData().find(x => x.name === n && x.lat); return x ? { lon: x.lon, lat: x.lat } : null; })(); if (u) { MAPZ.mode = 'near'; MAPZ.prov = ''; MAPZ.sel = n; MAPZ.nearName = n; MAPZ.c = { lon: u.lon, lat: u.lat }; MAPZ.follow = false; MAPZ.span = Math.min(num(MAPZ.span) || 1.2, 1.2); } }
-      else if (g.dataset.mapu) { MAPZ.sel = MAPZ.sel === g.dataset.mapu ? '' : g.dataset.mapu; MAPZ.pt = null; if (MAPZ.sel) setTimeout(() => { const mi = $('#mapInfo'); if (mi && mi.scrollIntoView) mi.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 60); }   // 点了哪一处，详情紧跟图下、滚进眼里（R-260）
+      else if (g.dataset.mapu && !(MAPG.drag && Date.now() - MAPG.drag < 400)) { MAPZ.sel = MAPZ.sel === g.dataset.mapu ? '' : g.dataset.mapu; MAPZ.pt = null; if (MAPZ.sel) setTimeout(() => { const mi = $('#mapInfo'), sd = document.querySelector('.side'); if (!mi || !sd) return; const a = mi.getBoundingClientRect(), b = sd.getBoundingClientRect(); if (a.top < b.top + 40 || a.bottom > b.bottom - 20) sd.scrollTo({ top: sd.scrollTop + (a.top - b.top) - 40, behavior: 'smooth' }); }, 60); }   // 点了哪一处，详情紧跟图下、滚进眼里（R-260）
       else if (g.dataset.mapgoto) { const keep = MAPZ.from; MAPZ.from = ''; MAPC.rt = null; const R = selRoute(S), pid = ($('[data-mappace]') || {}).value || 'normal', o = R && R.ok ? arr(R.opts).find(x => x.id === pid && x.allowed) || arr(R.opts).find(x => x.allowed) : null; MAPZ.from = keep; MAPC.rt = null;
         const line = `动身去${MAPZ.sel}${R && R.ok ? `（约${R.li}里${R.via.length ? '，取道' + R.via.join('、') : ''}${o ? '，' + o.name + '约' + o.days + '日' : ''}）` : ''}。`; const box = $('#said'); if (box) { box.value = (box.value ? box.value.replace(/\s*$/, '') + '\n' : '') + line; try { lsSet('hrpg:draft', box.value); } catch (_) {} } ORGMSG = '已写进下一步：' + line; }
       else if (g.dataset.mapgo) { const f = ($('[data-mapf]') || {}).value || (arr(S.forces).find(x => myForce(S, x)) || {}).name; MAPZ.from = f || ''; MAPC.rt = null; const R = selRoute(S), pid = ($('[data-mappace]') || {}).value || 'normal', o = R && R.ok ? arr(R.opts).find(x => x.id === pid && x.allowed) || arr(R.opts).find(x => x.allowed) : null;

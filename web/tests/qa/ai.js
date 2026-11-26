@@ -113,6 +113,7 @@ function minStory930(p) {
   return `长兴元年六月，福州。闽江口的海风穿过王宫的廊庑，案上摊着五州的丁口与粮饷。\n${t}${court}${dip}${army}\n北边的吴越、西边的吴与南汉，都有人在边境上探头。你把要办的事一件件吩咐下去，宫中安静下来。`;
 }
 function answer930(p, last) {
+  if (/一局极其讲究史实的中国历史模拟游戏要开局/.test(p)) return JSON.stringify({ y: 930, m: 6, d: 1, yearLabel: '长兴元年', polity: '闽', place: '福州', placeShort: '福州', name: '王延钧', real: true, gender: '男', age: 40, role: '闽王', sentencePlace: '', sentenceRole: '闽王', native: '光州固始', whereBasis: '《新五代史·闽世家》：王延钧，王审知次子，天成元年嗣位', traces: ['《新五代史·闽世家》：王延钧，王审知次子也。'], inferred: [], adjust: [], people: ['王继鹏', '陈金凤', '王延羲'], queries: [] });
   if (p.includes('【开局】') && /账房兼史官|账房（短记账单）/.test(p)) return minOpening930();
   if (p.includes('【开局】')) return minStory930(p);
   if (/账房兼史官|账房（短记账单）/.test(p)) return minLedger930(p);
