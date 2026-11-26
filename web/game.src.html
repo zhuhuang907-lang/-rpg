@@ -2993,14 +2993,14 @@ function identityOf(s) {
   // 政治权力：最高统治 > 一方之主（独立、半独立） > 受命做官 > 只管自家势力 > 无
   const fanzhenEra = y != null && y >= 756 && y <= 979;
   let power = 'none', why = '';
-  const sov = (s && s.idm === 'emperor') || (ID_SOV.test(role) && !ID_SOV_NOT.test(role.replace(/太子监国/, ''))) || (ID_SOV_TEMPLE.test(role.trim()) && !ID_SOV_NOT.test(role) && !/禅宗|正宗|祖宗|宗室|宗族|宗亲/.test(role)) || /皇帝|天子|即皇帝位|登基/.test(office0);
+  const sov = (s && s.idm === 'emperor' && !/妃|嫔|皇后|太后|宫女|宫人|太监|宦官|内侍|侍卫|乳母|奶娘|皇子|公主|驸马|伴读|师傅|使者/.test(role)) ||   /* 开局模型判的「一国之君」照认，可身份句写明是妃嫔、皇子、近侍的不认（R-281） */ (ID_SOV.test(role) && !ID_SOV_NOT.test(role.replace(/太子监国/, ''))) || (ID_SOV_TEMPLE.test(role.trim()) && !ID_SOV_NOT.test(role) && !/禅宗|正宗|祖宗|宗室|宗族|宗亲/.test(role)) || /皇帝|天子|即皇帝位|登基/.test(office0);
   let rebel = ID_REBEL.test(role) ? (/小兵|兵卒|喽啰|部众|营中|营里|手下|跟着|士卒|新兵/.test(role) ? 'member' : /降了|投了|降将|归降/.test(role) ? 'defector' : /王|大将军|元帅|首领|头领|渠帅|魁|统帅|闯将|帅$/.test(role) ? 'leader' : 'member') : '';
   if (rebel === 'member' && /流寇|流贼|流匪/.test(role) && !/小兵|喽啰|部众|手下|营中|营里/.test(role)) rebel = 'leader';   // 流寇头目：游动作战，不占州府（2026-11-22 项目主人）
   if (sov) { power = 'sovereign'; why = s.idm === 'emperor' ? '身份是君主' : '身份写明临朝'; }
   else if (rebel === 'leader') { power = 'independent'; why = '起事的首领'; }
   else if (s && s.idm === 'warlord' && (T.length || ID_INDEP.test(roleOwn) || (fanzhenEra && ID_FANZHEN.test(roleOwn + officeHeld)) || !officeHeld && !milOff && !civil)) { power = 'independent'; why = T.length ? `据有地盘 ${T.length} 处` : '自领一方、不受朝廷节制'; }
   else if (ID_INDEP.test(roleOwn)) { power = 'independent'; why = '身份写明自立一方'; }
-  else if ((() => { const pl = String((s && s.place && s.place.polity) || '').replace(/[（(].*$/, ''); return pl.length >= 1 && pl.length <= 3 && new RegExp('^(大)?' + pl + '(国)?(王|主|公' + (y != null && y < -221 ? '|侯|伯' : '') + ')(?![府妃子孙女爷])').test(String(roleOwn || '').trim()); })()) {   /* 春秋战国「晋侯」「郑伯」是一国之君（R-279） */ power = 'independent'; why = '一国之主（' + s.place.polity + '）'; }   // 闽王、吴越王、楚王这类本国的王（2026-11-05：闽王被当成了带兵的将领）
+  else if ((() => { const pl = String((s && s.place && s.place.polity) || '').replace(/[（(].*$/, ''); return pl.length >= 1 && pl.length <= 3 && new RegExp('^(大)?' + pl + '(国)?(王|主|公' + (y != null && y < -221 ? '|侯|伯' : '') + ')(?![府妃子孙女爷的之])').test(String(roleOwn || '').trim()); })()) {   /* 春秋战国「晋侯」「郑伯」是一国之君（R-279） */ power = 'independent'; why = '一国之主（' + s.place.polity + '）'; }   // 闽王、吴越王、楚王这类本国的王（2026-11-05：闽王被当成了带兵的将领）
   else if (fanzhenEra && ID_FANZHEN.test(roleOwn + officeHeld)) { power = 'independent'; why = '唐中叶到五代的藩镇，自专一方'; }
   else if (s && s.idm === 'noble' && /封国|封地|食邑|领地|采邑|就国/.test(role) && (T.length || (y != null && y < -127))) { power = 'independent'; why = '有封国实土'; }
   else if (officeHeld || civil || milOff) { power = 'appointed'; why = '受朝廷任命：' + (offTxt || ''); }
