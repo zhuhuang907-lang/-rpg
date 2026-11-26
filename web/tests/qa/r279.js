@@ -60,6 +60,8 @@ const path = require('path');
     // 十二、公家的钱不进私账：解府地丁、平粜粜价、劝捐买补都是公家的；（官库钱，非私财）不算私
     for (const w of ['解府地丁银（现银尽解） 府批限三日尽解', '平粜粜谷收钱解库 收钱四百四十两解库（官库钱，非私财）', '劝捐银动支买补仓谷 二十三家共三百二十两', '摊解协济台湾兵饷银 按亩摊捐，解赴藩库']) if (!(PUB_MONEY.test(w) && !PRIV_MONEY.test(w))) bad.push('公家的钱还当私账：' + w);
     for (const w of ['自掏腰包垫解', '养廉银', '端阳节礼 送知府']) if (PUB_MONEY.test(w) && !PRIV_MONEY.test(w)) bad.push('自己的钱被当成公家的：' + w);
+    // 十三、宋代统兵的使职（宣抚使、招讨使、制置使、都统制）算统兵的
+    for (const role of ['湖北京西宣抚使', '江淮招讨使', '沿江制置使', '鄂州御前诸军都统制']) { const T = newSave({ name: '岳飞', gender: '男', age: 38, role, gregorianYear: 1140, month: 6, day: 1, place: '鄂州', polity: '南宋' }); const d = identityOf(T); if (d.command === 'none') bad.push(role + '算成了不管兵的'); }
     return bad;
   });
   const bad = out.concat(errs);
