@@ -34,6 +34,10 @@ const path = require('path');
       const T = newSave({ name: '岳飞', gender: '男', age: 38, role: '湖北京西宣抚使', gregorianYear: 1140, month: 6, day: 1, place: '荆湖北路鄂州江夏县', polity: '南宋' }); T.chat = [{ role: 'gm', text: '开场' }]; T.turn = 9;
       try { applyReply(T, { reply: '探马报说背嵬军已抵郾城。', mode: 'play', moveTo: '郾城' }, '问张宪那边战况如何。'); } catch (e) { bad.push('记账出错：' + e.message); }
       if (/郾城/.test(T.place.full || '')) bad.push('玩家没说要走，账房搬了家也认了'); }
+    // 六、玩家选了「这一年」：正文只写到半个月后的日子，钟也不只走半个月
+    { const T = newSave({ name: '赵祯', gender: '男', age: 34, role: '皇帝', gregorianYear: 1043, month: 4, day: 18, place: '东京开封府', polity: '宋' }); T.chat = [{ role: 'gm', text: '开场' }]; T.turn = 15; const y0 = T.clock.y * 12 + T.clock.m;
+      try { applyReply(T, { reply: '四月廿二，你在垂拱殿听政。五月初一，晏殊入见：「官家，西夏使臣又到了。」这一年里，朝中议论不断。', mode: 'play', span: 'year', elapsedDays: 13 }, '这一年照常理政。'); } catch (e) { bad.push('记账出错：' + e.message); }
+      const mv = T.clock.y * 12 + T.clock.m - y0; if (mv < 8) bad.push('选了这一年，钟只走了' + mv + '个月：' + timeText(T.clock)); }
     return bad;
   });
   const bad = out.concat(errs);
