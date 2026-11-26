@@ -1769,7 +1769,7 @@ function ledgerLiteInput(s, said, story, hidden, span, ruling) {
 /* ========== 存档（claude.ai 账号 + 本浏览器各存一份，读取取新的） ========== */
 let SAMPLE = null, DB = null, UID = null, READY = false;
 /* 在哪儿跑：claude.ai 里（用浏览者自己的 Claude）/ 桌面版游戏里（用玩家自己的 DeepSeek Key，存档在本机） */
-const BUILD = '20261126202422';
+const BUILD = '20261126202622';
 /** 版本号：三个版本（桌面、网页、claude.ai）从同一份源文件生成，显示同一串；改了哪一套就把那一套的号加一 */
 const VERSIONS = { game: '0.8.0', military: 'V6', identity: 'V5', context: 'V2', review: 'V2', organization: 'V1', officials: 'V8', world: 'V8', save: '兼容（旧档读得进）' };
 const versionLine = () => `Game ${VERSIONS.game} · 身份 ${VERSIONS.identity} · 材料 ${VERSIONS.context} · 审稿 ${VERSIONS.review} · 自家势力 ${VERSIONS.organization} · 世界 ${VERSIONS.world} · 军政 ${VERSIONS.military} · 存档 ${VERSIONS.save}`;
@@ -4767,8 +4767,7 @@ function armyMonthly(s, months) {
       if (need > 0 && E && E.rice) { const P = milPurse(s), cost = Math.round(need * E.rice * 100) / 100; if (P && P.have() >= cost) { P.take(cost); need = 0; } }
       if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); out.push(`${f.name}军中断粮`); } }
     if (f && !arr(f.units).length) { if (!f.party && myForce(s, f) && N0(f.troops) > 0 && depotsOf(s).length) { const m = Math.min(months, 24); let need = Math.round(N0(f.troops) * 0.6 * m); const g = N0(f.grain) || 0, t0 = Math.min(g, need); f.grain = g - t0; need -= t0;   /* 没编成营的兵马也要吃粮：一人一月约六斗（R-155） */
-        need = homeGranary(s, f, need);
-        if (need > 0) { const r = supDraw(s, f, need); need -= r.got; if (r.raid) out.push(r.raid); if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); out.push(`${f.name}${r.sp && r.sp.cut ? '粮道被' + (r.sp.foe || '敌军') + '截断，' : r.sp && r.sp.none ? '哪个仓都运不到，' : ''}军中断粮`); } } }
+        if (need > 0) { const r = supDraw(s, f, need); need -= r.got; if (r.raid) out.push(r.raid); need = homeGranary(s, f, need); if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); out.push(`${f.name}${r.sp && r.sp.cut ? '粮道被' + (r.sp.foe || '敌军') + '截断，' : r.sp && r.sp.none ? '哪个仓都运不到，' : ''}军中断粮`); } } }
       moraleWatch(f, Math.min(months, 24)); continue; }
     if (!f) continue;
     const st = forceStats(s, f), m = Math.min(months, 24);
@@ -4786,8 +4785,7 @@ function armyMonthly(s, months) {
     if (st.grain) {
       let need = st.grain * m, g = N0(f.grain);
       if (g != null) { const take = Math.min(g, need); f.grain = Math.round(g - take); need -= take; }
-      need = homeGranary(s, f, need);   // 长考卷（R-279）：一国之主驻在本国境内的兵（「各路」「各州府」认不出在哪个仓边上）原来照仓运粮、运不到就断粮，厢军三十万一年半掉到十四万——就地从太仓拨
-      if (need > 0 && myForce(s, f) && depotsOf(s).length) { const r = supDraw(s, f, need); need -= r.got; if (r.raid) out.push(r.raid); if (need > 0 && r.sp && (r.sp.cut || r.sp.none)) out.push(`${f.name}${r.sp.cut ? '粮道被' + (r.sp.foe || '敌军') + '截断' : '哪个仓都运不到'}，军中断粮`); }   /* 粮从仓里沿路运，路远耗得多，粮道断了运不到（R-155） */
+      if (need > 0 && myForce(s, f) && depotsOf(s).length) { const r = supDraw(s, f, need); need -= r.got; need = homeGranary(s, f, need); if (r.raid) out.push(r.raid); if (need > 0 && r.sp && (r.sp.cut || r.sp.none)) out.push(`${f.name}${r.sp.cut ? '粮道被' + (r.sp.foe || '敌军') + '截断' : '哪个仓都运不到'}，军中断粮`); }   /* 粮从仓里沿路运，路远耗得多，粮道断了运不到（R-155） */
       else if (need > 0 && s.realm && N0(s.realm.granary) != null) { const take = Math.min(N0(s.realm.granary), need); s.realm.granary = N0(s.realm.granary) - take; need -= take; if (s.gov && s.gov.stats['太仓粮'] != null) s.gov.stats['太仓粮'] = s.realm.granary; }
       if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); f.orgNow = Math.max(0, (num(f.orgNow) ?? 70) - 10 * m); out.push(`${f.name}缺粮`); }
     }
