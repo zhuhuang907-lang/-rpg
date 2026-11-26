@@ -1,4 +1,4 @@
-set -u; HERE=$(cd "$(dirname "$0")/.." && pwd); ROOT=$(cd "$HERE/../../.." && pwd); export OUT=${EXAM_DIR:-/tmp/rpg-exam}/out DS_PORT=4721 GAME_PORT=8721 DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-proxy-injected}
+set -u; HERE=$(cd "$(dirname "$0")/.." && pwd); ROOT=$(cd "$HERE/../../.." && pwd); export OUT=${EXAM_DIR:-/tmp/rpg-exam}/out DS_PORT=${DS_PORT:-4721} GAME_PORT=${GAME_PORT:-8721} DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-proxy-injected}
 mkdir -p $OUT; WORK=${EXAM_DIR:-/tmp/rpg-exam}/work; rm -rf $WORK; mkdir -p $WORK/rk
 tar --exclude=./data --exclude=./node_modules -C $ROOT/rpg-kernel -cf - . | tar -C $WORK/rk -xf -; mkdir -p $WORK/rk/data
 printf '{"selected":"deepseek","configs":{"deepseek":{"apiKey":"sk-via-local-proxy","model":"deepseek-v4-pro","baseUrl":"http://127.0.0.1:%s"}}}' $DS_PORT > $WORK/rk/data/adapter-config.json

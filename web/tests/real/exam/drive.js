@@ -6,7 +6,7 @@ const idle = async (ms = 1800000) => { try { await p.waitForFunction(() => !BUSY
 const view = () => p.evaluate(() => { if (!S) return { err: typeof ERRMSG !== 'undefined' ? ERRMSG : 'noS' }; const d = identityOf(S), g = S.chat[S.chat.length - 1] || {};
   return { turn: S.turn, when: timeText(S.clock), place: S.place.full, role: S.protagonist.role, name: S.protagonist.name, identity: { tags: d.tags, power: d.power, admin: d.admin, command: d.command, ruler: d.ruler, troops: d.military.troops, orgs: d.orgs }, tabs: tabsFor(S).map(t => t[0]), cash: (S.money || {}).cash,
     forces: arr(S.forces).map(f => [f.name, f.leader, f.troops, f.at]), business: arr(S.business).map(x => [x.name, x.capital, x.revenue, x.cost]), territory: S.territory, career: S.career,
-    acts: arr(S.acts).slice(-5).map(a => [a.type, a.what, a.state]), receipt: (document.querySelector('.receipt') || {}).innerText || '', text: String(g.text || '').slice(0, 5000) }; }).then(v => Object.assign(v, { errs: errs.slice(-5) }));
+    acts: arr(S.acts).slice(-5).map(a => [a.type, a.what, a.state]), receipt: (() => { const c = arr(S.chat).slice().reverse().find(x => x.role === 'gm'); return c && c.extra ? arr(c.extra.acts).filter(x => x && !/^办成$/.test(x.state || '')).map(x => `${x.state} ${x.what}${x.why ? '——' + x.why : ''}`).join('\n') : ''; })(), text: String(g.text || '').slice(0, 5000) }; }).then(v => Object.assign(v, { errs: errs.slice(-5) }));
 http.createServer(async (req, res) => {
   let b = ''; req.on('data', c => b += c); await new Promise(r => req.on('end', r));
   try {
@@ -24,4 +24,4 @@ http.createServer(async (req, res) => {
     else out = await view();
     res.end(JSON.stringify(out, null, 1));
   } catch (e) { res.end(JSON.stringify({ error: e.message })); }
-}).listen(8798, '127.0.0.1', () => console.log('drive on 8798'));
+}).listen(+(process.env.DRIVE_PORT || 8798), '127.0.0.1', () => console.log('drive on ' + (process.env.DRIVE_PORT || 8798)));

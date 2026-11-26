@@ -11,12 +11,12 @@ const path = require('path');
     // 价目常识关
     { const E = { unit: '文', rice: 600, wage: 900, landPrice: 5, cloth: 900, yield: 30, rentRate: 1.5, interest: 0.3, juan: 50, basis: '推' };
       econSane(E);
-      if (E.wage !== 120) bad.push('一天工钱比一石米还贵没收回：' + E.wage);
+      if (!(E.wage > 0 && E.wage <= 120)) bad.push('一天工钱比一石米还贵没收回：' + E.wage);   // 像月钱的先折日钱（R-279），折了还出界才封顶
       if (E.landPrice !== 300) bad.push('一亩田才五文没收回：' + E.landPrice);
       if (E.yield !== 5 || E.rentRate !== 0.7 || E.interest !== 0.1) bad.push('亩产、租率、月息出界没收回：' + JSON.stringify(E));
       if (E.juan !== 6000) bad.push('捐出身比几石米还便宜没收回：' + E.juan);
       if (!/照米价对过常识/.test(E.basis)) bad.push('收回的没记进依据');
-      const E2 = { unit: '文', rice: 600, wage: 900, fromPreset: ['wage'] }; econSane(E2); if (E2.wage !== 900) bad.push('史料载值也被改了'); }
+      const E2 = { unit: '文', rice: 600, landPrice: 5, fromPreset: ['landPrice'] }; econSane(E2); if (E2.landPrice !== 5) bad.push('史料载值也被改了'); }   // 工钱的载值另有月钱折日钱（R-279，见 r279.js）
     // 剧情调度：议程一掷
     { const s = newSave({ name: '周文', gender: '男', age: 35, role: '吴县知县', gregorianYear: 1600, month: 6, day: 5, place: '苏州府吴县', polity: '明' });
       s.people = {}; for (let i = 0; i < 6; i++) s.people['钱允' + '甲乙丙丁戊己'[i]] = { role: '乡绅', plan: '想把县里的漕折包下来', seen: 1 };
