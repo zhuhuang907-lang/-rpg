@@ -74,6 +74,11 @@ const path = require('path');
       T.forces = [{ name: '晋国上军', leader: '赵衰', troops: 5000 }, { name: '上军', leader: '狐毛', troops: 5000 }, { name: '禁军在京主力', troops: 200000 }, { name: '禁军主力（在京）', troops: 400000 }, { name: '下军', troops: 5000 }, { name: '中军', troops: 5000 }, { name: '秦军', foe: true, troops: 3000 }, { name: '秦军', foe: true, troops: 1000 }];
       const d = forcesDedupe(T), n = T.forces.map(f => f.name);
       if (n.join() !== '晋国上军,禁军在京主力,下军,中军,秦军,秦军') bad.push('同一支兵记两回没并、或并错了：' + n.join() + ' / ' + d.join()); }
+    // 十七、一国之主驻在本国「各路」的兵：粮从太仓拨，不当运不到断粮
+    { S = newSave({ name: '赵祯', gender: '男', age: 34, role: '皇帝', gregorianYear: 1043, month: 5, day: 1, place: '开封', polity: '宋' });
+      S.realm = { treasury: 1e7, granary: 1e7, revenue: 6e7, outlay: 0 }; S.gov = { scope: 'realm', stats: { 国库: 1e7, 太仓粮: 1e7 }, keys: [] };
+      S.depots = [{ name: '东京仓', at: '开封', grain: 1000 }]; S.forces = [{ name: '厢军', leader: '赵祯', owner: '宋', troops: 100000, at: '各路', status: '驻守', morale: 60 }];
+      const o = armyMonthly(S, 1); if (o.some(x => /断粮|缺粮/.test(x)) || !(S.realm.granary < 1e7)) bad.push('本国各路的兵没从太仓拨粮：' + o.join(' / ')); }
     return bad;
   });
   const bad = out.concat(errs);

@@ -3633,6 +3633,10 @@ function forcePower(s, f, attacking) {
   return Math.max(0.3, Math.min(2.2, (base / 55) * (0.55 + 0.45 * org / 0.7) * (0.7 + 0.3 * tr / 0.6) * (0.8 + 0.2 * mo / 0.6)));
 }
 /** 按月：军饷军粮扣下来（先扣各军自带的粮，再动太仓；饷从国库或现钱出），欠饷欠粮的士气组织往下掉；整训的训练往上涨；没打仗的组织度回来 */
+/** 长考卷（R-279）：一国之主驻在本国境内的兵（「各路」「各州府」这类认不出在哪个仓边上的也算）原来照仓运粮、运不到就断粮，厢军三十万一年半掉到十四万——先就地从太仓拨，返回还差多少 */
+function homeGranary(s, f, need) { if (!(need > 0) || !isRuler(s) || !s.realm || !(N0(s.realm.granary) > 0) || /行军|交战|围城|出征/.test(f.status || '')) return need;
+  let home = false; try { const xy = placeXY(s, String(f.at || '').replace(/[（(].*$/, ''), s.clock.y); if (!xy || xy.lat == null) home = true; else { const sl = supplyLine(s, f); home = sl.k >= 1 && !sl.li; } } catch (_) { home = false; }
+  if (!home) return need; const take = Math.min(N0(s.realm.granary), need); s.realm.granary = N0(s.realm.granary) - take; if (s.gov && s.gov.stats && s.gov.stats['太仓粮'] != null) s.gov.stats['太仓粮'] = s.realm.granary; return need - take; }
 function armyMonthly(s, months) {
   if (!months) return [];
   const out = [], u = (s.money || {}).unit || '', ymNow = Math.floor(ymOf(s.clock));
@@ -3658,6 +3662,7 @@ function armyMonthly(s, months) {
       if (need > 0 && E && E.rice) { const P = milPurse(s), cost = Math.round(need * E.rice * 100) / 100; if (P && P.have() >= cost) { P.take(cost); need = 0; } }
       if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); out.push(`${f.name}军中断粮`); } }
     if (f && !arr(f.units).length) { if (!f.party && myForce(s, f) && N0(f.troops) > 0 && depotsOf(s).length) { const m = Math.min(months, 24); let need = Math.round(N0(f.troops) * 0.6 * m); const g = N0(f.grain) || 0, t0 = Math.min(g, need); f.grain = g - t0; need -= t0;   /* 没编成营的兵马也要吃粮：一人一月约六斗（R-155） */
+        need = homeGranary(s, f, need);
         if (need > 0) { const r = supDraw(s, f, need); need -= r.got; if (r.raid) out.push(r.raid); if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); out.push(`${f.name}${r.sp && r.sp.cut ? '粮道被' + (r.sp.foe || '敌军') + '截断，' : r.sp && r.sp.none ? '哪个仓都运不到，' : ''}军中断粮`); } } }
       moraleWatch(f, Math.min(months, 24)); continue; }
     if (!f) continue;
@@ -3676,6 +3681,7 @@ function armyMonthly(s, months) {
     if (st.grain) {
       let need = st.grain * m, g = N0(f.grain);
       if (g != null) { const take = Math.min(g, need); f.grain = Math.round(g - take); need -= take; }
+      need = homeGranary(s, f, need);   // 长考卷（R-279）：一国之主驻在本国境内的兵（「各路」「各州府」认不出在哪个仓边上）原来照仓运粮、运不到就断粮，厢军三十万一年半掉到十四万——就地从太仓拨
       if (need > 0 && myForce(s, f) && depotsOf(s).length) { const r = supDraw(s, f, need); need -= r.got; if (r.raid) out.push(r.raid); if (need > 0 && r.sp && (r.sp.cut || r.sp.none)) out.push(`${f.name}${r.sp.cut ? '粮道被' + (r.sp.foe || '敌军') + '截断' : '哪个仓都运不到'}，军中断粮`); }   /* 粮从仓里沿路运，路远耗得多，粮道断了运不到（R-155） */
       else if (need > 0 && s.realm && N0(s.realm.granary) != null) { const take = Math.min(N0(s.realm.granary), need); s.realm.granary = N0(s.realm.granary) - take; need -= take; if (s.gov && s.gov.stats['太仓粮'] != null) s.gov.stats['太仓粮'] = s.realm.granary; }
       if (need > 0) { f.morale = Math.max(0, (num(f.morale) ?? 60) - 12 * m); f.orgNow = Math.max(0, (num(f.orgNow) ?? 70) - 10 * m); out.push(`${f.name}缺粮`); }
