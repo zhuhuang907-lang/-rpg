@@ -11,7 +11,7 @@ const path = require('path');
     const bad = [];
     // 一、写戏开头照抄的时刻标记删掉，正文里的日子不动
     const cases = [['（四月十八酉时起，写到七月十八未时）  程婉贞见你', '程婉贞见你'], ['六月三十日午时 保儿那张纸', '保儿那张纸'], ['七月初五）  七月初六辰时，你', '七月初六辰时，你'], ['（第3回合，写到四月）\n正文', '正文'],
-      ['七月初五午时，周金宝把', '七月初五午时，周金宝把'], ['嘉靖四十年春，丝价', '嘉靖四十年春，丝价'], ['「要现银。」你说。', '「要现银。」你说。']];
+      ['七月初五午时，周金宝把', '七月初五午时，周金宝把'], ['嘉靖四十年春，丝价', '嘉靖四十年春，丝价'], ['「要现银。」你说。', '「要现银。」你说。'], ['（乾隆五十二年二月十六酉时） 你把惊堂木搁下', '你把惊堂木搁下'], ['五月十五午时）  你叫门吏起来', '你叫门吏起来'], ['（这一回没写完）你', '（这一回没写完）你']];
     for (const [a, w] of cases) { const g = stripEcho(a); if (g !== w) bad.push('开头标记没删对：' + JSON.stringify(a) + ' → ' + JSON.stringify(g)); }
     // 二、底账的工钱是月钱：折成日钱；本来就是日钱的不动
     { const E = { unit: '两', rice: 2.882, wage: 2.62, fromPreset: ['rice', 'wage'] }; econSane(E); if (!(E.wage > 0.05 && E.wage < 0.12)) bad.push('一个月的工钱没折成一天的：' + E.wage); if (!/像是一个月的/.test(E.basis || '')) bad.push('折工钱没记进依据'); }
@@ -57,6 +57,9 @@ const path = require('path');
         for (let i = 1; i <= 12; i++) { const c = CAL.monthAt({ y: 1043, m: 5, leap: false }, i); S.clock = { ...S.clock, y: c.y, m: c.m }; armyMonthly(S, 1); } return S.forces[0]; };
       const a = run(false); if (N0(a.owed) > 0) bad.push('岁入没算出来，原有禁军还按月欠饷：' + a.owed);
       const b2 = run(true); if (!(N0(b2.owed) > 0) || N0(b2.owed) > 100000 * 2 * 12) bad.push('国库是负数时欠饷越滚越大：' + b2.owed); }
+    // 十二、公家的钱不进私账：解府地丁、平粜粜价、劝捐买补都是公家的；（官库钱，非私财）不算私
+    for (const w of ['解府地丁银（现银尽解） 府批限三日尽解', '平粜粜谷收钱解库 收钱四百四十两解库（官库钱，非私财）', '劝捐银动支买补仓谷 二十三家共三百二十两', '摊解协济台湾兵饷银 按亩摊捐，解赴藩库']) if (!(PUB_MONEY.test(w) && !PRIV_MONEY.test(w))) bad.push('公家的钱还当私账：' + w);
+    for (const w of ['自掏腰包垫解', '养廉银', '端阳节礼 送知府']) if (PUB_MONEY.test(w) && !PRIV_MONEY.test(w)) bad.push('自己的钱被当成公家的：' + w);
     return bad;
   });
   const bad = out.concat(errs);
