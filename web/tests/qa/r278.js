@@ -24,6 +24,11 @@ const path = require('path');
       if (n < 2) bad.push('有盘算的人四十个月里只动了 ' + n + ' 回（走过一回就不再动了）');
       if (!/议程到了/.test(hit)) bad.push('有盘算的人四十回里一回也没主动走一步');
       const again = plotDir(s); if (again && /议程到了/.test(again)) bad.push('同一个月同一件事又发了一遍'); }
+    // 秦汉、明前期、清后期补了内置君主年号表（原来整段空着，年号都报不出来）
+    for (const [y, pl, pol, want] of [[100, '洛阳', '东汉', '永元十二年'], [-100, '长安', '西汉', '天汉元年'], [1450, '北京', '明', '景泰元年'], [1405, '南京', '明', '永乐三年'], [1850, '北京', '清', '道光三十年'], [1900, '北京', '清', '光绪二十六年']]) {
+      const k = newSave({ name: '某', gender: '男', age: 30, role: '士人', gregorianYear: y, month: 6, day: 1, place: pl, polity: pol }); const e = eraLabel(k, y); if (e !== want) bad.push(y + ' 年年号不是' + want + '：' + e); }
+    // 一个字的国名几朝通用：465 年报刘宋不报「宋」
+    { const k = newSave({ name: '某', gender: '男', age: 30, role: '士人', gregorianYear: 465, month: 6, day: 1, place: '建康', polity: '刘宋' }); if (!rulersAt(465, k, 6).some(r => r.polity === '刘宋')) bad.push('465 年刘宋报成了别的国名'); }
     const s = newSave({ name: '李嗣源', gender: '男', age: 60, role: '后唐皇帝', real: true, gregorianYear: 930, month: 6, day: 1, place: '洛阳', polity: '后唐' }); s.idm = 'emperor'; s.chat = [{ role: 'gm', text: '开场。' }]; s.turn = 3;
     S = s; VIEW = 'game'; SIDE_FOLD = false; TAB = 'board'; render0();
     return bad;

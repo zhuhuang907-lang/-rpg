@@ -6096,7 +6096,7 @@ function rulersAt(y, s, m) {
     // （新君当年就改了元才换；逾年改元的，这一年仍用旧年号）
     if (r.to === y && all.some(r2 => { if (r2 === r || r2.from !== y || !(r2.polity === r.polity || r2.polity.slice(-1) === r.polity.slice(-1))) return false; const f = arr(r2.reigns).slice().sort((a, b) => a[1] - b[1])[0]; return f && f[1] <= y && mm >= startMonth(s, r2, f[1] === y ? f : null); })) continue;
     const rg = rg0.filter(x => x[1] < y || (x[1] === y && mm >= (x[2] || (r.from === y && x === rg0[0] ? startMonth(s, r, x) : 1)))).pop();
-    out.push({ polity: r.polity, name: r.name, title: r.title || '', era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
+    out.push({ fromList: !!r.fromList, polity: r.polity, name: r.name, title: r.title || '', era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
   }
   /* 同一人、同一个国名的两种写法（荆南／荆南（南平））只留一条（2026-11-26：天下名录里高从诲出现两次） */
   const aliasKey = n => {
@@ -6104,20 +6104,21 @@ function rulersAt(y, s, m) {
     try { for (const [k, v] of Object.entries(POL_ALIAS)) if (r === k || arr(v).includes(r)) return k; } catch (_) {}
     return '·' + String(n);
   };
+  const AMBIG = /^(宋|汉|魏|齐|梁|陈|周|唐|晋|燕|秦|赵|吴|蜀|楚|夏|代|凉|闽|殷|越|郑|成)$/, pk = r => (r.fromList ? 1000 : 0) + (AMBIG.test(String(r.polity)) ? 100 : 0) + String(r.polity).length;   // 内置史料包的写法优先于政权总表   // 一个字的国名几朝通用（宋＝刘宋还是赵宋）：有带姓的写法就留带姓的（R-278 审查：465 年刘宋报成「宋」）
   const byA = new Map();
   for (const r of out) { const k = aliasKey(r.polity); if (!byA.has(k)) byA.set(k, []); byA.get(k).push(r); }
   const keep = [];
   for (const L of byA.values()) {
     if (L.length === 1) { keep.push(L[0]); continue; }
     const rm = (() => { try { return realmRuler(L[0].polity, y + (mm - 1) / 12) || ''; } catch (_) { return ''; } })(), rmn = rm.replace(/[（(].*$/, '').trim();
-    const hit = rmn && L.find(r => { const a = rootPol(r.name); return a === rmn || rmn.includes(a) || a.includes(rmn); });
-    if (hit) { keep.push(hit); continue; }
+    const hit = rmn && L.filter(r => { const a = rootPol(r.name); return a === rmn || rmn.includes(a) || a.includes(rmn); }).sort((a, b) => pk(a) - pk(b))[0];
+    if (hit) { if (!hit.era) { const old = L.find(r => r !== hit && r.era); if (old) Object.assign(hit, { era: old.era, n: old.n }); } keep.push(hit); continue; }   // 新君逾年改元：这一年照用先君的年号（R-278 审查：1850 年报不出道光三十年）
     const eraOf = r => { const rg = arr(r.reigns).filter(x => x[1] <= y).sort((a, b) => b[1] - a[1])[0]; return rg ? rg[1] : -1; };
-    L.sort((a, b) => eraOf(b) - eraOf(a) || String(a.polity).length - String(b.polity).length || (b.from || 0) - (a.from || 0));
+    L.sort((a, b) => eraOf(b) - eraOf(a) || pk(a) - pk(b) || (b.from || 0) - (a.from || 0));
     keep.push(L[0]);
   }
   const bestN = new Map();
-  for (const r of keep) { const k = rootPol(r.name) + '|' + rootPol(r.polity); const o = bestN.get(k); if (!o || String(r.polity).length < String(o.polity).length) bestN.set(k, r); }
+  for (const r of keep) { const k = rootPol(r.name) + '|' + rootPol(r.polity); const o = bestN.get(k); if (!o || pk(r) < pk(o)) bestN.set(k, r); }
   return [...bestN.values()];
 }
 /** 跨了年、AI 没给新年号：把年号后的年数往后推（「至正九年」过一年 →「至正十年」）；推不了就不留旧的 */
