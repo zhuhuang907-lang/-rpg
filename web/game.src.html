@@ -17145,7 +17145,10 @@ function dedupSent(t) { const x = String(t == null ? '' : t), seen = new Set(); 
   return (out + x.slice(last)).replace(/[ \t　]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(); }
 /** R-280 真玩：写戏在正文末尾自己加了一段「【戏外】这里得停一下……请玩家定夺」——戏里的正文不留戏外的话（整段是戏外答话的不动） */
 const stripOOC = t => String(t == null ? '' : t).replace(/^([\s\S]*?\S)\s*[（(]?【戏外】[\s\S]*$/, '$1');
-function stripLookNotes(t) { return dedupSent(stripEcho(stripOOC(t))).replace(/[ \t]*【(查账|缺数先查账|你要查的账)[^】\n]{0,200}】[ \t]*/g, '').replace(/\n{3,}/g, '\n\n').trim(); }
+/** R-281：写完以后的收尾合成一道——戏外话、开头照抄的时刻、整句重复、删句留下的标点残渣（空引号、「，。」），一次理完；只删整句整段，不改字 */
+const tidyText = t => String(t == null ? '' : t).replace(/「\s*」/g, '').replace(/([，、；])\s*([。！？])/g, '$2').replace(/([。！？])\s*[，、；]+(?=\S)/g, '$1').replace(/。{2,}/g, '。').replace(/[ \t　]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+const cleanStory = t => tidyText(dedupSent(stripEcho(stripOOC(t))));
+function stripLookNotes(t) { return cleanStory(t).replace(/[ \t]*【(查账|缺数先查账|你要查的账)[^】\n]{0,200}】[ \t]*/g, '').replace(/\n{3,}/g, '\n\n').trim(); }
 function scrubText(s, t) { t = String(t == null ? '' : t); const nf = nameFixes(s, t).sort((a, b) => b.wrong.length - a.wrong.length); for (const x of nf) t = t.split(x.wrong).join(x.right); return t; }
 function scrubObj(s, o) { try { const raw = JSON.stringify(o), t = scrubText(s, raw); return t === raw ? o : JSON.parse(t); } catch (_) { return o; } }
 /** 真人名单：史料里的、档案里认定的真人、查到的本地真人、名册里史料或推断出的官员 */
@@ -18027,7 +18030,7 @@ function applyReply(s, d, said) {
     { const R = arr(s.research).filter(x => x.turn === s.turn - 1); extra.searched = R.length; }   // 这一回联网查到几条：每回合都查，界面上看得见
   }
   if (String(said || '').trim()) s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'me', text: String(said).trim(), turn: s.turn });
-  s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'gm', kind: play ? 'play' : 'talk', text: (play ? t0 => dedupSent(stripEcho(stripOOC(t0))) : String)(String(d.reply || d.scene || '').trim()).trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null, cur: play ? curStatus(s, d) : null,
+  s.chat.push({ id: (s.seq = (s.seq || 0) + 1), role: 'gm', kind: play ? 'play' : 'talk', text: (play ? cleanStory : String)(String(d.reply || d.scene || '').trim()).trim(), turn: s.turn, when: play ? timeText(s.clock) : '', extra: play ? extra : null, cur: play ? curStatus(s, d) : null,
     hints: arr(d.hints).map(h => one(h, 50)).concat(s.hookNow && play ? s.hookNow.choices : []).filter(Boolean).slice(0, 6) });
   if (s.hookNow && play) { const h = arr(s.hooks).find(x => x.id === s.hookNow.id); if (h) { h.used = true; h.turn = s.turn; } s.lastHook = s.turn; const g = s.chat[s.chat.length - 1]; g.extra = Object.assign(g.extra || {}, { hook: { kind: s.hookNow.kind, title: s.hookNow.title, why: s.hookNow.why, basis: s.hookNow.basis } }); }
   s.hookNow = null;

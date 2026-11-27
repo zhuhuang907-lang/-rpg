@@ -24,6 +24,10 @@ const path = require('path');
       if (T.money.cash !== 10) bad.push('程序先扣了的，记账又扣一遍：' + T.money.cash);
       const U = newSave({ name: '沈怀远', gender: '男', age: 20, role: '富商之子', gregorianYear: 1126, month: 1, day: 15, place: '东京开封府', polity: '宋' }); U.money = { cash: 150000, unit: '文' }; U.turn = 3;
       textSpend(U, '拿出五十贯给庄上买粮。'); if (U.money.cash !== 100000) bad.push('贯折文没扣对：' + U.money.cash); }
+    // 四、收尾一道：戏外话、开头时刻、整句重复、删句残渣一次理完；正常的标点不动
+    { const T = '（建炎三年正月初二酉时，封丘县衙正堂）赵不群把茶碗搁下，。他道：「你来了。」，你点了头。「」\n\n「陈大官，我托齐门一个熟人问过了，周市那边姓沈的倒有几个。」\n\n「陈大官，我托齐门一个熟人问过了，周市那边姓沈的倒有几个。」\n\n【戏外】这里得停一下。';
+      const g = cleanStory(T); if (/戏外|建炎三年正月初二|，。|「」/.test(g) || g.split('托齐门').length !== 2) bad.push('收尾没理干净：' + JSON.stringify(g));
+      const N = '他说：「好，就这么办。」你点了头，转身出门。他应了声「是」，退了出去。'; if (cleanStory(N) !== N) bad.push('正常的句子被收尾改了：' + cleanStory(N)); }
     return bad;
   });
   const bad = out.concat(errs);
