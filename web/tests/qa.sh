@@ -146,6 +146,7 @@ start ai.js && {
   run "长考卷：开头照抄的时刻删掉、底账月工钱折日钱、一家吃穿合常理、开局月不扣、不编债主、小债不卖身、中间各月年号、明代米价（R-279）" 120 env PLAY="$ROOT/web/play.html" node r279.js
   run "靖康富商子弟真玩：家当照贯写的折成文、宋末底账米价合常理（R-280）" 120 env PLAY="$ROOT/web/play.html" node r280.js
   run "流畅与框架：身份照开局判定兜底、底账极端价、先定数后写、收尾一道、读时预查（R-281）" 120 env PLAY="$ROOT/web/play.html" node r281.js
+  run "舆图国名只写一遍、互相让位，楚与荆南拆开，分立年代不写上一代道名；皇帝国土一色、明朝兵马照卫所制（R-282）" 180 env PLAY="$ROOT/web/play.html" node r282.js
   run "开局物价照底账：纺织月收入不丢、别区的价不当本地载值、底账另折本位不把 AI 给的再除一千（R-256 补、R-273）" 120 env PLAY="$ROOT/web/play.html" node r256.js
   run "临阵出的主意算进仗里、据城守门不再回回大败、正文胜负跟程序对不上打回重写（R-257）" 120 env PLAY="$ROOT/web/play.html" node r257.js
   run "看到的就是做好的：真人照史死、别名认真人、志向固定、军务页兵种内置（R-258）" 120 env PLAY="$ROOT/web/play.html" node r258.js
