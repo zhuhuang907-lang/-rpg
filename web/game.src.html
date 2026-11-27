@@ -6558,6 +6558,8 @@ function isWorldQ(s, q) {
   for (const h of (s ? HALL(s) : [])) for (const f of arr(h.figures)) if (f.name && f.name.length >= 2 && q.includes(f.name)) return false;   // 带着人名的，算人物
   return true;
 }
+/** R-281 读的时候先查：上一两回刚查过（同一年）的不再查，后台先查好的这一回直接用 */
+const freshSkip = (s, qs) => arr(qs).filter(q => !arr(s && s.research).some(o => o && o.q === q && o.y === (s.clock || {}).y && (o.turn || 0) >= (s.turn || 0) - 1));
 function lookupQueries(s, said, extra) {
   const q = [], add = x => { x = String(x || '').trim(); if (x && x.length >= 2 && !q.includes(x)) q.push(x); };
   for (const x of arr(extra)) add(x);
@@ -19010,6 +19012,7 @@ function runBg(fn) {
 function bgJobs(s0, d, g) {
   return [
     { id: 'fam', msg: '照史料查家谱、身边的人', due: () => familyDue(s0), run: () => familyFix(s0), ex: true },
+    { id: 'prelook', msg: '先查下一回可能用到的史料', due: () => canSearch() && DSM() && (s0.prelookTurn || -1) < (s0.turn || 0) && (s0.turn || 0) >= 1, run: async () => { s0.prelookTurn = s0.turn || 0; const q = freshSkip(s0, lookupQueries(s0, '')).slice(0, 6); if (q.length) await within(doLookups(s0, q), 25000).catch(() => null); } },   // R-281：玩家读正文的时候把这一场的人、地方先查了，下一回不再等
     { id: 'pol', msg: '看颁行的国策会怎样落下去', due: () => arr(s0.polQueue).length, run: async () => { while (arr(s0.polQueue).length) { const id = s0.polQueue[0], q = arr(s0.polBook).find(x => x.id === id); if (q) { const P = await planAnalyze(s0, `推行国策「${q.name}」：${q.desc}${q.effect ? '（预计：' + q.effect + '）' : ''}`); if (P && P.feasible != null) { const x = planAdopt(s0, { ...P, can: '能做主', name: q.name }); if (x) x.pol = q.id; } } s0.polQueue = s0.polQueue.slice(1); } } },
     { id: 'press', msg: '推这个月落到你头上的史事、别人的动静、家里的事', due: () => (pressDue(s0) || homeDue(s0)), run: () => Promise.all([pressDue(s0) ? buildPress(s0).catch(e => { s0.prFail = s0.turn; }) : null, homeDue(s0) ? buildHome(s0).catch(e => { s0.hmFail = s0.turn; }) : null]), needs: ['fam'] },
     { id: 'agenda', msg: '理一理这个月手头的事', due: () => agendaDue(s0), run: () => buildAgenda(s0).catch(e => { s0.agFail = s0.turn; throw e; }), needs: ['press'] },
@@ -19141,7 +19144,7 @@ async function send(said, span, note, resume) {
       const wantPlan = needRuling(said) && (SETTINGS.ruling !== false || canSearch());
       PHASE = canSearch() ? 'search' : 'ruling'; render();
       const [lk, rl] = await Promise.all([
-        canSearch() ? within(doLookups(S, lookupQueries(S, said)), LIGHT ? 8000 : 20000) : Promise.resolve(null),   // R-281 流畅：等不到的查证在后头接着查，结果下一回就用上
+        canSearch() ? within(doLookups(S, freshSkip(S, lookupQueries(S, said))), LIGHT ? 8000 : 20000) : Promise.resolve(null),   // R-281 流畅：等不到的查证在后头接着查，结果下一回就用上
         wantPlan ? (promoDue(S, said) && CAREER_RE.test(String(said || '')) ? within(ensurePromo(S), 40000).catch(e => { if (e && e.code === 'cancelled') throw e; S.promoFail = S.turn; return null; }) : Promise.resolve(null)).then(() => within(getRuling(S, said), 150000)) : Promise.resolve(null),
         // 大事深挖、本地官员名册：和别的一起做，但只等这么久；没做完的在后头接着做，名册下一回就有
         within(ensureEventDetail(S).catch(e => { if (e && e.code === 'cancelled') throw e; return null; }), LIGHT ? 3000 : 10000),

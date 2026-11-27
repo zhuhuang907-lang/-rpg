@@ -28,6 +28,11 @@ const path = require('path');
     { const T = '（建炎三年正月初二酉时，封丘县衙正堂）赵不群把茶碗搁下，。他道：「你来了。」，你点了头。「」\n\n「陈大官，我托齐门一个熟人问过了，周市那边姓沈的倒有几个。」\n\n「陈大官，我托齐门一个熟人问过了，周市那边姓沈的倒有几个。」\n\n【戏外】这里得停一下。';
       const g = cleanStory(T); if (/戏外|建炎三年正月初二|，。|「」/.test(g) || g.split('托齐门').length !== 2) bad.push('收尾没理干净：' + JSON.stringify(g));
       const N = '他说：「好，就这么办。」你点了头，转身出门。他应了声「是」，退了出去。'; if (cleanStory(N) !== N) bad.push('正常的句子被收尾改了：' + cleanStory(N)); }
+    // 五、读的时候先查：上一两回同一年查过的不再查；隔了几回、换了年份的照查；后台有这一项
+    { const T = newSave({ name: '沈怀远', gender: '男', age: 21, role: '乡兵头目', gregorianYear: 1127, month: 5, day: 17, place: '东京开封府', polity: '宋' }); T.turn = 10;
+      T.research = [{ q: '宗泽 建炎元年', turn: 10, y: 1127, text: '……' }, { q: '杜充 建炎元年', turn: 5, y: 1127, text: '……' }, { q: '王渊 建炎元年', turn: 10, y: 1126, text: '……' }];
+      const f = freshSkip(T, ['宗泽 建炎元年', '杜充 建炎元年', '王渊 建炎元年', '新的一条']); if (f.join() !== '杜充 建炎元年,王渊 建炎元年,新的一条') bad.push('刚查过的没跳过、或跳多了：' + f.join());
+      if (!bgJobs(T, {}, {}).some(j => j.id === 'prelook')) bad.push('后台没有「先查下一回」这一项'); }
     return bad;
   });
   const bad = out.concat(errs);
