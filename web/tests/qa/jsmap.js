@@ -28,7 +28,7 @@ const path = require('path');
     if (!R || !R.of(119.3, 26.1) || R.of(119.3, 26.1).name !== '甲国') bad.push('装上江山时序后福州没照它认：' + JSON.stringify(R && R.of(119.3, 26.1)));
     if (!R.of(113.6, 34.8)) bad.push('它没画到的汴州没照内置史料补上');
     if (!R.js || R.js.id !== 's_t1') bad.push('没标用的是哪一幅快照');
-    const cols = new Set(R.list.map(x => x.col)); if (cols.size !== R.list.length) bad.push('并立各家有重色');
+    const LL = R.list.filter(x => !(x.parent && x.kind !== '附')), cols = new Set(LL.map(x => x.col)); if (cols.size !== LL.length) bad.push('并立各家有重色');
     // 玩家的影响：没打过仗照史书；亲手丢了福州，那一处改成对手的
     S = newSave({ name: '王审知', gender: '男', age: 59, role: '闽王', gregorianYear: 921, month: 6, day: 1, place: '福州', polity: '甲国' }); S.idm = 'warlord'; MAPC.k = '';
     const M1 = mapUnits(S), fz = M1.L2.find(u => /福州/.test(u.n)); const before = fz ? M1.reg(fz) : null;

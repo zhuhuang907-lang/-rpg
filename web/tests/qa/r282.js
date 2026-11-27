@@ -50,6 +50,14 @@ const path = require('path');
     if (!realmGap(S)) bad.push('旧存档明朝皇帝只有几支兵，不重立国势');
     S.realm.milSys = 3; if (realmGap(S) && arr(S.forces).some(f => myForce(S, f))) bad.push('照兵制立过一次了还反复重立');
     if (!/卫所/.test(String(buildRealm).match(/empArmy\(y\)\.sys/) ? EA.sys : '')) bad.push('立国势的要求里没带本朝兵制');
+    // 联网政区的归属最后一道（2026-11-27 明嘉靖截图）：土司随本朝一色；谭图里有的州不归没设省的邻国
+    { const L = [{ name: '明' }, { name: '大越（安南）' }, { name: '土司诸部（湖广西南）', parent: '明', kind: '附' }, { name: '广西', parent: '明', kind: '布政司' }, { name: '湖广', parent: '明', kind: '布政司' }];
+      const M = admFix({ A: { regimes: L }, reg: u => L.find(x => x.name === u.r) || null });
+      const g = u => (M.reg(u) || {}).name;
+      if (g({ n: '辰州府', r: '土司诸部（湖广西南）', p: '湖广' }) !== '明') bad.push('辰州府划进土司诸部、另一色');
+      if (g({ n: '播州宣慰司', r: '土司诸部（湖广西南）' }) !== '明') bad.push('土司没随本朝一色');
+      if (g({ n: '龙州', r: '大越（安南）', p: '', poly: { p: '' } }) !== '明') bad.push('明广西龙州划给了大越');
+      if (g({ n: '升龙', r: '大越（安南）' }) !== '大越（安南）') bad.push('大越本土（没谭图界址）也被改归明'); }
     return bad;
   }, process.env.DBG || '');
   for (const x of out) errs.push(x);

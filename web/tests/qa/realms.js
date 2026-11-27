@@ -21,7 +21,8 @@ const path = require('path');
     };
     for (const [y, W] of Object.entries(want)) { const R = realmsAt(+y, 6); if (!R) { bad.push(y + '年没认出是分立年代'); continue; }
       for (const [k, n] of Object.entries(W)) { const v = R.of(C[k][0], C[k][1]); if (!v || v.name !== n) bad.push(`${y}年${k}应归${n}，图上归${v ? v.name : '没人'}`); }
-      const cols = R.list.map(x => x.col); if (new Set(cols).size !== cols.length) bad.push(y + '年并立的政权有撞色'); }
+      const LL = R.list.filter(x => !(x.parent && x.kind !== '附')), cols = LL.map(x => x.col); if (new Set(cols).size !== cols.length) bad.push(y + '年并立的政权有撞色');   /* 本国里的州路、藩镇随本国一色（R-058），不算撞色 */
+      { const sub = R.list.filter(x => x.parent && x.kind !== '附' && R.list.some(q => q.name === x.parent) && R.list.find(q => q.name === x.parent).col !== x.col); if (sub.length) bad.push(y + '年本国里的州路藩镇另一种颜色：' + sub.map(x => x.name).join('、')); } }
     // 934：长安一带的州府都画出来、都上了色；和吴越、南唐那些不同色
     const mk = (y, extra) => Object.assign(newSave({ name: '冯道', gender: '男', age: 53, role: '后唐宰相', real: true, gregorianYear: y, month: 6, day: 1, place: '洛阳', polity: '后唐' }), extra || {});
     let s = mk(934), M = mapUnits(s);
