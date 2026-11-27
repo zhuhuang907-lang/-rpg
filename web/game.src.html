@@ -4439,7 +4439,7 @@ ${only ? '主角是史书真人，他的家里人只照史料、这里一个都�
   if (d.noKids === true && d.why) s.famOk.kids = true;
   for (const x of arr(d.add).slice(0, 12)) {
     if (!x || !x.relation || (only && !/仆|婢|丫鬟|管家|长随|家丁|奴|嬷嬷|婆子|乳母|小厮|书童|厨|门房|轿夫|账房/.test(x.relation))) continue;
-    let name = one(x.name, 12); if (/某/.test(name) || name.length < 2) { const sur = (name.replace(/某.*$/, '') || p.name || '王').slice(0, 1); name = pickName(s, sur, /女|妻|妾|婢|丫鬟|氏/.test(x.relation) ? GIVEN_F.filter(g => g !== '氏') : /仆|丁|役|夫/.test(x.relation) ? GIVEN_LOW : GIVEN, have); }
+    let name = shiGiven(one(x.name, 16)); if (/某/.test(name) || name.length < 2) { const sur = (name.replace(/某.*$/, '') || p.name || '王').slice(0, 1); name = pickName(s, sur, /女|妻|妾|婢|丫鬟|氏/.test(x.relation) ? GIVEN_F.filter(g => g !== '氏') : /仆|丁|役|夫/.test(x.relation) ? GIVEN_LOW : GIVEN, have); }
     if (!name || have.has(name) || isSelfKin(s, name, x.relation)) continue;
     const g = basisGrade(x.basis);
     s.household = arr(s.household).concat([{ relation: one(x.relation, 6), name, age: null, mother: one(x.mother, 8), note: one(x.note, 30) + (only ? '（虚构）' : g === '推算' ? '（推算）' : ''), basis: one(x.basis, 60), inferred: g === '推算' || !!only, ...(only ? { fic: true } : {}) }]);
@@ -11743,7 +11743,7 @@ function chronDup(s, who, what) { const t = String(what || ''), bg = x => { cons
   return arr(s.chronicle).slice(-40).some(x => x && (x.who || '') === (who || '') && (x.what === t || (() => { const B = bg(String(x.what || '')); if (!A.size || !B.size) return false; let k = 0; for (const z of A) if (B.has(z)) k++; return k / Math.min(A.size, B.size) > 0.7; })())); }
 /** 每次整理存档时把年谱理一遍：去掉内部字样、重复的条目（旧存档也清） */
 function chronTidy(s) { const L = arr(s.chronicle); if (!L.length || s._chronN === L.length) return; const out = [];
-  for (const x of L) { if (!x || !x.what || CHRON_JUNK.test(x.what)) continue; const t = String(x.what), w = x.who || ''; if (out.slice(-40).some(y => (y.who || '') === w && (y.what === t || (y.turn === x.turn && y.what.slice(0, 16) === t.slice(0, 16))))) continue; out.push(x); }
+  for (const x of L) { if (!x || !x.what || CHRON_JUNK.test(x.what)) continue; if (/氏，(闺名|小字)/.test(x.what)) x.what = String(x.what).replace(/([一-鿿]{1,2}氏)，(闺名|小字)([一-鿿]{1,3})/g, '$1（$2$3）'); const t = String(x.what), w = x.who || ''; if (out.slice(-40).some(y => (y.who || '') === w && (y.what === t || (y.turn === x.turn && y.what.slice(0, 16) === t.slice(0, 16))))) continue; out.push(x); }
   s.chronicle = out; s._chronN = out.length; }
 const lifeNote = (s, src, t) => { s.chronicle = arr(s.chronicle).concat([{ turn: s.turn, when: timeText(s.clock), who: s.protagonist.name, what: one(t, 120) }]); actNew(s, { type: '令', what: one(t, 80), who: '自己', src, perm: '自己', ok: '能', state: '办成', log: [{ turn: s.turn, when: timeText(s.clock), state: '办成', why: '照办了' }] }); ORGMSG = t; return t; };
 const cashAdd = (s, v) => { s.money = s.money || { cash: 0, unit: '文' }; s.money.cash = Math.round(((N0(s.money.cash) || 0) + v) * 100) / 100; };
@@ -17621,11 +17621,15 @@ function markFict(s, text) {
 }
 /** 名册里只写「程氏」「王氏」的女眷：起一个合乎身份的名字（姓不变），原来的「某氏」记作称呼；正文里照旧可以称「程氏」 */
 const SHI_RE = /^[一-鿿]{1,2}氏$/;
+/** 「王氏，闺名婉如」「王氏（小字婉如）」→「王氏婉如」；别的名字原样 */
+const shiGiven = n => { n = String(n == null ? '' : n); const m = n.match(/^([一-鿿]{1,2}氏)[，,、\s（(]*(?:闺名|小字|小名|名)([一-鿿]{1,3})[)）]?$/); return m ? m[1] + m[2] : n; };
 function fixShiNames(s) {
   if (!s) return []; s.nameMap = s.nameMap || {}; const out = [];
   const used = new Set(Object.keys(s.people || {}).concat(arr(s.household).map(m => m && m.name), Object.values(s.nameMap)));
   const full = old => { if (s.nameMap[old] && s.nameMap[old][0] !== '#') return s.nameMap[old]; const sur = old.slice(0, -1); const nm = pickName(s, SURNAMES.includes(sur) || sur.length === 2 ? sur : sur, GIVEN_F, used); s.nameMap[old] = nm; return nm; };
   const SHI2 = /^([一-鿿]{1,2})氏([一-鿿]{1,2})$/;
+  /* 靖康局：写戏把「王氏，闺名婉如」整句填进名字栏——收成「王氏婉如」，下面照常起成「王婉如」、别名王氏 */
+  for (const m of arr(s.household)) { const nm0 = shiGiven(m && m.name); if (m && nm0 !== m.name) { const old = m.name; m.name = nm0; for (const k of arr(s.household)) if (k.mother === old) k.mother = nm0; if (s.people && s.people[old]) { s.people[nm0] = Object.assign(s.people[nm0] || {}, s.people[old]); delete s.people[old]; } } }
   for (const m of arr(s.household)) if (m && !m.rec && SHI2.test(String(m.name || '')) && !m.alias) { const [, sur, g] = m.name.match(SHI2), old = m.name, nm = sur + g; if (!used.has(nm)) { m.name = nm; m.alias = sur + '氏'; s.nameMap[old] = nm; if (s.people && s.people[old]) { s.people[nm] = Object.assign(s.people[nm] || {}, s.people[old], { alias: sur + '氏' }); delete s.people[old]; } for (const k of arr(s.household)) if (k.mother === old) k.mother = nm; out.push(old + '→' + nm); } }
   for (const m of arr(s.household)) if (m && !m.rec && SHI_RE.test(String(m.name || '')) && !/族|家|宗/.test(m.relation || '')) { const old = m.name, nm = full(old); m.name = nm; m.alias = old; out.push(old + '→' + nm); for (const k of arr(s.household)) if (k.mother === old) k.mother = nm; if (s.preg && s.preg.who === old) s.preg.who = nm;
     if (s.people && s.people[old]) { s.people[nm] = Object.assign(s.people[nm] || {}, s.people[old], { alias: old }); delete s.people[old]; } }
@@ -17816,18 +17820,25 @@ major 只放改几个字解决不了的大毛病：已故或尚未出生的真�
 }
 
 /** 审校改掉的字，账册里也照改：整句照改，再把改动的核心（去掉两头相同的字）照改——「冯掌柜的二儿子→冯家主人的二儿子」也会把账里别处的「冯掌柜」改掉 */
-function auditSweep(obj, audit) {
+function auditSweep(obj, audit, s0) {
   try {
     let j = JSON.stringify(obj);
+    /* 靖康局：审校把「留守司→副元帅司」（宗泽那时还不是留守），核心「留守→副元帅」照改全账，「吴老栓留守李家庄」成了「吴老栓副元帅李家庄」。
+       核心只换人名（局里有的人、「冯掌柜」这种姓加称呼）；整句也要三个字以上 */
+    const SS = s0 || (typeof S !== 'undefined' ? S : null);
+    const isName = x => !!SS && (!!(SS.people && SS.people[x]) || arr(SS.household).some(m => m && m.name === x) || (SS.protagonist && SS.protagonist.name === x) || (typeof realNameSet === 'function' && (() => { try { return realNameSet(SS).has(x); } catch (_) { return false; } })()));
+    const nameLike = x => isName(x) || (x.length >= 3 && SURNAMES.includes(x[0]) && /(掌柜|东家|员外|老爷|大官人|郎君|娘子|老汉|老丈|婆|嫂|哥|伯|叔)$/.test(x));
     const esc1 = x => JSON.stringify(String(x)).slice(1, -1);
     for (const a of arr(audit)) {
       const w = String(a.wrong || ''), r = String(a.right || '');
-      if (!w || !r || w.length < 2 || /……$/.test(w) || /整段改写/.test(w)) continue;
+      if (!w || !r || w.length < 3 || /……$/.test(w) || /整段改写/.test(w)) continue;
       j = j.split(esc1(w)).join(esc1(r));
       let p = 0; while (p < w.length && p < r.length && w[p] === r[p]) p++;
       let q = 0; while (q < w.length - p && q < r.length - p && w[w.length - 1 - q] === r[r.length - 1 - q]) q++;
       const cw = w.slice(p, w.length - q), cr = r.slice(p, r.length - q);
-      if (cw.length >= 2 && cw.length <= 6 && cr) j = j.split(esc1(cw)).join(esc1(cr));
+      const cw1 = p ? w.slice(p - 1, w.length - q) : '', cr1 = p ? r.slice(p - 1, r.length - q) : '';   // 「冯掌柜→冯东家」：核心带上前头的姓
+      if (cw.length >= 2 && cw.length <= 6 && cr && nameLike(cw)) j = j.split(esc1(cw)).join(esc1(cr));
+      else if (cw1.length >= 3 && cw1.length <= 7 && cr && nameLike(cw1)) j = j.split(esc1(cw1)).join(esc1(cr1));
     }
     return JSON.parse(j);
   } catch (_) { return obj; }
@@ -19562,7 +19573,7 @@ async function send(said, span, note, resume) {
       await bgExWait();   // 后台正在改家谱、家底、国势、天下的，先等它落定（最多十五秒），再记这一回的账
       // 账是照初稿记的：核实时改掉的字，账里也照改（人名、官名、地名不能一处对一处错）
       if (d && arr(st.audit).length) d = auditSweep(d, st.audit);
-      if (arr(st.audit).length) for (const k of ['people', 'canon', 'gmNotes', 'estate', 'chronicle', 'summaries', 'orders', 'deeds', 'goals', 'places']) if (S[k]) S[k] = auditSweep(S[k], st.audit);
+      if (arr(st.audit).length) for (const k of ['people', 'canon', 'gmNotes', 'estate', 'chronicle', 'summaries', 'orders', 'deeds', 'goals', 'places']) if (S[k]) S[k] = /^(chronicle|summaries)$/.test(k) && Array.isArray(S[k]) ? S[k].map(x => x && x.turn === S.turn ? auditSweep(x, st.audit) : x) : auditSweep(S[k], st.audit);   /* 年谱、回目只改这一回的，前几回记下的旧事不回头改 */
       lsSet('hrpg:pending', null);
       let ok = !!d;
       d = d || { elapsedDays: 0 };

@@ -28,6 +28,18 @@ const path = require('path');
     if (w.filter(x => /罢知枢密院/.test(x)).length !== 1) bad.push('同一条记了两遍没去掉');
     if (w.some(x => /查不到|虚构/.test(x))) bad.push('年谱里还有「查不到」「虚构」字样');
     if (!chronDup(S, '王渊', '上言金人在河阳，请备着守江。行在始议守江')) bad.push('几乎一样的话又要记一遍没认出');
+    // 审校改「留守司→副元帅司」：账里别处的「留守」（吴老栓留守李家庄）不能跟着成「副元帅」；前几回的年谱不回头改
+    S.people = S.people || {}; S.people['冯掌柜'] = { role: '米行' };
+    const sw = auditSweep({ a: '吴老栓留守李家庄，领一个青壮守庄门', b: '投留守司', c: '冯掌柜的二儿子来了，冯掌柜不在' }, [{ wrong: '留守司', right: '副元帅司' }, { wrong: '冯掌柜的二儿子', right: '冯东家的二儿子' }], S);
+    if (/副元帅李家庄/.test(sw.a)) bad.push('审校改一处「留守司」，账里「留守李家庄」也成了「副元帅李家庄」');
+    if (sw.b !== '投副元帅司') bad.push('审校改的整句没照改');
+    if (/冯掌柜/.test(sw.c)) bad.push('改了人的称呼，账里别处没跟着改');
+    // 家室：「王氏，闺名婉如」整句填进名字栏
+    S.household = [{ relation: '正室', name: '王氏，闺名婉如', age: 19 }, { relation: '妾', name: '柳氏（小字素娥）', age: 22 }];
+    fixShiNames(S); const hn = S.household.map(m => m.name);
+    if (hn.some(n => /，|（|闺名|小字/.test(n))) bad.push('家室名字栏里还是整句：' + hn.join('、'));
+    S.chronicle = [{ turn: 1, when: '一', who: '沈怀远', what: '家室补记：正室王氏，闺名婉如、妾柳氏，闺名素娥' }]; S._chronN = null; chronTidy(S);
+    if (/氏，闺名/.test(S.chronicle[0].what)) bad.push('旧年谱「王氏，闺名婉如、妾柳氏」没理成括号');
     // 写戏交的人生变化至多三条（照提示词）
     const src = String(document.documentElement.innerHTML); if (!/arr\(d\.lifeEvents\)\.slice\(0, 3\)/.test(src)) bad.push('写戏交的人生变化没限到三条');
     if (/身边人的小变化/.test(src)) bad.push('提示词还让写「身边人的小变化」');
