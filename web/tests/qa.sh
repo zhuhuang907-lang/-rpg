@@ -149,6 +149,7 @@ start ai.js && {
   run "舆图国名只写一遍、互相让位，楚与荆南拆开，分立年代不写上一代道名；皇帝国土一色、明朝兵马照卫所制（R-282）" 180 env PLAY="$ROOT/web/play.html" node r282.js
   run "新舆图（R-283）：真点新图、引擎从本地载、国名州名不重复、点图选中出详情、放大与大图按钮、换回旧图" 300 env PLAY="$ROOT/web/play.html" node r283.js
   run "年谱不瞎写（R-284）：别人的地方不凭空降灾、衙役民壮没有营中之事、合计大军驻守不掷大疫、小事不进年谱、同名异代不认、查不到的殿试不写、去重去内部字样" 200 env PLAY="$ROOT/web/play.html" node r284.js
+  run "剧情受史料表约束（R-286）：写戏带剧情底本、世事库只给它年份和地方的条目、自己另起事又不用底本的打回" 200 env PLAY="$ROOT/web/play.html" node r286.js
   run "开局物价照底账：纺织月收入不丢、别区的价不当本地载值、底账另折本位不把 AI 给的再除一千（R-256 补、R-273）" 120 env PLAY="$ROOT/web/play.html" node r256.js
   run "临阵出的主意算进仗里、据城守门不再回回大败、正文胜负跟程序对不上打回重写（R-257）" 120 env PLAY="$ROOT/web/play.html" node r257.js
   run "看到的就是做好的：真人照史死、别名认真人、志向固定、军务页兵种内置（R-258）" 120 env PLAY="$ROOT/web/play.html" node r258.js

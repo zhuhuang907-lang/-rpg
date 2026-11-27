@@ -1,7 +1,7 @@
 # 把真实农历月表嵌进网页，生成两份同样的页面：
 #   web/index.html                 —— 发布到 claude.ai（用浏览者自己的 Claude）
 #   rpg-kernel/public/index.html   —— 桌面版游戏的主页面（用玩家自己的 DeepSeek Key，存档在本机）
-import json, pathlib, os, sys
+import json, pathlib, os, sys, re
 # 完整测试（qa.sh）跑着的时候不许重新构建：测到一半页面被换掉，结果就作废了（qa.sh 自己开头那次构建在上锁之前）
 try:
     _pid = int(open('/tmp/rpg-qa.lock').read().strip() or 0)
@@ -80,11 +80,92 @@ for f in sorted((here / 'roles').glob('*.json')):
 roles_js = json.dumps(roleslib, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 # 世事库：web/events/*.json（任务十四；这年代这类人可能碰上的事，写戏取材，不拦玩家，R-241 接进游戏）
 evlib = []
+# R-286：世事库的条目没有年份，只发生过一次的真事（海上之盟、柔福帝姬、阿云案）被塞进几十年前后的局里。照年号、史书真人、史书大事推出年份
+_EVT = []
+def _ev_dating():
+    reigns, people, hev = [], {}, []
+    for hf in sorted((here / 'history').glob('*.json')):
+        try: H = json.load(open(hf, encoding='utf8'))
+        except Exception: continue
+        if not isinstance(H, dict): continue
+        for r in H.get('rulers') or []:
+            if not isinstance(r, dict): continue
+            R = [x for x in (r.get('reigns') or []) if isinstance(x, list) and len(x) >= 2 and isinstance(x[1], int)]
+            for i, rr in enumerate(R):
+                nm, y0 = rr[0], rr[1]
+                y1 = R[i + 1][1] if i + 1 < len(R) else (r.get('to') or y0 + 1)
+                reigns.append((str(nm), y0, max(y0, y1)))
+            if r.get('name') and isinstance(r.get('from'), int) and isinstance(r.get('to'), int): people.setdefault(r['name'], (r['from'] - 10, r['to']))
+            if r.get('title') and isinstance(r.get('from'), int) and isinstance(r.get('to'), int): _EVT.append((str(r['title']), str(r.get('polity') or ''), r['from'], r['to']))
+        for e in H.get('events') or []:
+            if isinstance(e, dict) and isinstance(e.get('y'), int) and e.get('text'): hev.append((e['y'], str(e['text']), [str(w) for w in e.get('who') or []]))
+    for ff in sorted((here / 'figures').glob('*.json')):
+        try: F = json.load(open(ff, encoding='utf8'))
+        except Exception: continue
+        if not isinstance(F, dict): continue
+        for p in F.get('people') or []:
+            if not isinstance(p, dict) or not p.get('name'): continue
+            ys = [x.get('from') for x in p.get('posts') or [] if isinstance(x.get('from'), int)] + [x.get('to') for x in p.get('posts') or [] if isinstance(x.get('to'), int)]
+            b, d = p.get('born'), p.get('died')
+            lo = min(ys) if ys else (b + 15 if isinstance(b, int) else None); hi = max(ys) if ys else d
+            if isinstance(d, int): hi = min(hi, d) if isinstance(hi, int) else d
+            if isinstance(lo, int) and isinstance(hi, int) and hi >= lo: people.setdefault(p['name'], (lo, hi))
+    return reigns, people, hev
+_EVR, _EVP, _EVH = _ev_dating()
+_CN = {c: i for i, c in enumerate('〇一二三四五六七八九')}
+def _cnum(t):
+    if t == '元': return 1
+    if t.startswith('十'): return 10 + (_CN.get(t[1:], 0) if t[1:] else 0)
+    if '十' in t: a, b = t.split('十', 1); return _CN.get(a, 0) * 10 + (_CN.get(b, 0) if b else 0)
+    return _CN.get(t, 0)
+def _bigr(t): t = re.sub(r'[\s，,。；、：「」…！？]', '', t); return {t[i:i + 2] for i in range(len(t) - 1)}
+def ev_years(e, rng):
+    lo, hi = (rng or [-9999, 9999])[:2]
+    w = e.get('when') or {}; need = ' '.join(str(x) for x in w.get('need') or []); title = str(e.get('title') or '')
+    txt = title + ' ' + need
+    for nm, y0, y1 in sorted(_EVR, key=lambda r: -len(r[0])):
+        if len(nm) < 2 or not (lo - 5 <= y0 <= hi + 5): continue
+        m = re.search(re.escape(nm) + r'([元一二三四五六七八九十]{1,3})年', txt)
+        if m: y = y0 + _cnum(m.group(1)) - 1; return [y - 1, y + 3]
+        if (nm in need or (title.startswith(nm) and not re.match(re.escape(nm) + r'[观灯节夜佳]', title))) and y1 - y0 <= 12: return [y0, y1 + 2]
+    srcs = str(e.get('src') or '')
+    for nm, y0, y1 in sorted(_EVR, key=lambda r: -len(r[0])):
+        if len(nm) < 2 or not (lo - 5 <= y0 <= hi + 5): continue
+        m = re.search(re.escape(nm) + r'([元一二三四五六七八九十]{1,3})年', srcs)
+        if m: y = y0 + _cnum(m.group(1)) - 1; return [y - 1, y + 3]
+    head = re.split(r'[，,、；]', title)[0]
+    toks = [head] + ([re.sub(r'(之战|之变|之盟|之役|之乱|之祸|之围|之狱|兵变|起事|起兵|大战)$', '', head)] if re.search(r'(之战|之变|之盟|之役|之乱|之祸|之围|之狱|兵变|起事|起兵|大战)$', head) else [])
+    for tk in toks:
+        if len(tk) < 3 and tk == head: continue
+        if len(tk) < 2: continue
+        ys = sorted({y for y, t2, who in _EVH if lo - 5 <= y <= hi + 5 and tk in t2})
+        if ys and ys[-1] - ys[0] <= 30: return [ys[0] - 1, ys[-1] + 4]
+    B = _bigr(title)
+    if len(B) >= 4:
+        best = None
+        for y, t2, who in _EVH:
+            if not (lo - 5 <= y <= hi + 5): continue
+            B2 = _bigr(t2); ov = len(B & B2) / len(B)
+            if ov >= 0.55 and (best is None or ov > best[0]): best = (ov, y)
+        if best: return [best[1] - 1, best[1] + 4]
+    BOOK = [('新五代史', '五代'), ('旧五代史', '五代'), ('旧唐书', '唐'), ('新唐书', '唐'), ('南齐书', '齐'), ('北齐书', '齐'), ('后汉书', '汉'), ('汉书', '汉'), ('宋史', '宋'), ('宋书', '宋'), ('隋书', '隋'), ('晋书', '晋'), ('梁书', '梁'), ('陈书', '陈'), ('周书', '周'), ('魏书', '魏'), ('辽史', '辽'), ('金史', '金'), ('元史', '元'), ('明史', '明'), ('清史稿', '清'), ('三国志', '')]
+    for bk, dy in BOOK:
+        m = re.search(re.escape(bk) + r'[^；;]{0,12}?([\u4e00-\u9fff]{1,2}[帝宗祖王])纪', srcs)
+        if not m: continue
+        tn = m.group(1); C = [(a, b) for t, pol, a, b in _EVT if t.endswith(tn) and (not dy or dy in t or dy in pol) and a <= hi + 2 and b >= lo - 2]
+        if C and max(a for a, b in C) <= min(b for a, b in C) + 1: return [max(min(a for a, b in C), lo), min(max(b for a, b in C) + 2, hi + 2)]
+        break
+    names = [str(n) for n in (e.get('cast') or []) + (w.get('who') or []) if isinstance(n, str) and len(n) >= 2 and n in _EVP]
+    names = [n for n in names if lo - 30 <= _EVP[n][0] <= hi + 5]
+    if names:
+        a = max(_EVP[n][0] for n in names); b = min(_EVP[n][1] for n in names)
+        if a <= b and b - a <= 30: return [a, b + 2]
+    return None
 for f in sorted((here / 'events').glob('*.json')):
     try:
         h = json.load(open(f, encoding='utf8'))
         evlib.append({'id': h.get('period') or f.stem, 'range': h.get('range'), 'events': [{'k': e.get('kind'), 't': e.get('title'), 'who': (e.get('when') or {}).get('who') or [], 'where': (e.get('when') or {}).get('where') or '',
-            'p': [[x.get('name'), x.get('cost')] for x in e.get('paths') or []][:3], 'src': e.get('src')} for e in h.get('events') or [] if e.get('title')]})
+            'p': [[x.get('name'), x.get('cost')] for x in e.get('paths') or []][:3], 'src': e.get('src'), **({'y': e['years']} if isinstance(e.get('years'), list) else ({'y': yy} if (yy := ev_years(e, h.get('range'))) else {}))} for e in h.get('events') or [] if e.get('title')]})
     except Exception as e: print('skip events', f.name, e)
 evlib_js = json.dumps(evlib, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 # 名臣预制包：web/figures/<段>.json（R-244，任务三十六至四十；重要真人带标签、出没地点年表，游戏照年表判断主角够不够得着；officials-*.json 是地方长官表，另读）
