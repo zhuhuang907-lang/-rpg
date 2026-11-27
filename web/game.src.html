@@ -286,6 +286,11 @@ textarea{resize:vertical}
   .reply{background:var(--card,#fffdf8);border-left:3px solid #c9a03a;padding:4px 8px;margin:4px 0}
   .oattr{font-size:11px;color:#777;margin-left:6px}
   .pol{padding:4px 0;border-top:1px dashed var(--line,#ddd);font-size:13px}.pol.done{opacity:.6}.pol.lock{opacity:.75}
+/* 新舆图（R-283） */
+.glslot{width:100%;height:560px;position:relative}.mapwrap.big .glslot{height:calc(100vh - 70px)}#glMap.glmap{position:absolute!important;inset:0}
+.gltag{background:#7a2a2a;color:#fff;border:1px solid #fff;border-radius:3px;padding:2px 6px;font-size:11px;white-space:nowrap;cursor:pointer;box-shadow:0 1px 3px #0005}.gltag.mine{background:#a63a2a}.gltag.sel{outline:2px solid #ffd24a}.gltag i{font-style:normal;opacity:.8;margin-left:4px;font-size:10px}
+.glpin{width:24px;height:24px;border-radius:50%;background:#a63a2a;color:#fff;border:2px solid #fff;display:grid;place-items:center;font-weight:700;font-size:13px;box-shadow:0 1px 4px #0006}
+/*__GLCSS__*/
 </style>
 
 <div class="wrap">
@@ -326,6 +331,7 @@ textarea{resize:vertical}
 <script type="application/json" id="offlib">__OFFLIB__</script>
 <script type="application/json" id="presetlib">__PRESETLIB__</script>
 <script type="application/json" id="placenames">__PLACENAMES__</script>
+<script type="application/json" id="glglyph">__GLGLYPH__</script>
 <script type="application/json" id="tieslib">__TIES__</script>
 <script type="application/json" id="actslib">__ACTS__</script>
 <script type="application/json" id="houses">__HOUSES__</script>
@@ -10706,6 +10712,7 @@ function selRoute(s) {
 /* ---------- 舆图缩放、拖动（两指、滚轮、按钮）：手势进行时只挪动画好的图，放手后照新的范围重画（放大了才排得下各州县的名字） ---------- */
 let MAPG = { p: new Map(), st: null, drag: 0 };
 function mapZoomBy(k, at) {
+  if (GLMAP && glReady() && document.getElementById('glSlot')) { try { GLMAP.easeTo({ zoom: GLMAP.getZoom() + (k > 1 ? 1 : -1), duration: 300 }); } catch (_) { /* 无 */ } return; }
   const B = MAPC.box; if (!B) return; const cur = MAPZ.mode === 'near' && MAPZ.c ? { lon: MAPZ.c.lon, lat: MAPZ.c.lat } : { lon: (B.x0 + B.x1) / 2, lat: (B.y0 + B.y1) / 2 };
   const sp0 = MAPZ.mode === 'near' ? num(MAPZ.span) || 1.2 : (B.x1 - B.x0) / 2, sp = sp0 / k;
   if (sp > 13) { MAPZ.mode = 'world'; MAPZ.prov = ''; MAPZ.follow = false; return; }
@@ -10771,6 +10778,177 @@ function smoothGrid(E, cell) { const adj = new Map(), K = (x, y) => x * 100000 +
   return out.map(L => { const closed = L.length > 3 && L[0] === L[L.length - 1]; let P = L.map(xy); if (P.length > 4) { const h = Math.floor(P.length / 2); P = rdp(P.slice(0, h + 1), cell * 1.1).slice(0, -1).concat(rdp(P.slice(h), cell * 1.1)); }
     for (let it = 0; it < 2 && P.length > 2; it++) { const Q = closed ? [] : [P[0]]; for (let i = 0; i < P.length - 1; i++) { const [x1, y1] = P[i], [x2, y2] = P[i + 1]; Q.push([x1 * .75 + x2 * .25, y1 * .75 + y2 * .25], [x1 * .25 + x2 * .75, y1 * .25 + y2 * .75]); } if (!closed) Q.push(P[P.length - 1]); else Q.push(Q[0]); P = Q; }
     return 'M' + P.map(([x, y]) => x.toFixed(1) + ' ' + y.toFixed(1)).join('L'); }).join(''); }
+/* ========== 新舆图（R-283，2026-11-27 项目主人：「能不能用好点的地图工具啊，你自己接入好吗」）==========
+ *  开源地图引擎 MapLibre GL（BSD-3）：名字由引擎自动避让、挤不下的不画；放大缩小拖动顺滑。
+ *  数据照旧：各国、州府归属与颜色（mapUnits、mapOwners、realmsAt）、谭图界址、河流、关隘、兵马。
+ *  桌面版先用本地打包的一份（vendor/），没有再从 cdnjs 取；电脑没有 WebGL 的退回旧图。
+ *  中文用本机字体画（不下字形）；数字、标点的字形打包在页里（GLGLYPH）。 */
+const GLV = '4.7.1';
+let GLLIB_P = null, GLMAP = null, GLDIV = null, GLKEY = '', GLVIEW = '', GLERR = '', GLMK = [];
+let GLGLYPH = {}; try { GLGLYPH = JSON.parse((document.getElementById('glglyph') || {}).textContent || '{}'); } catch (_) { GLGLYPH = {}; }
+const glHasGL = () => { if (glHasGL.v != null) return glHasGL.v; try { const c = document.createElement('canvas'); glHasGL.v = !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (_) { glHasGL.v = false; } return glHasGL.v; };
+/** 用不用新图：玩家在图上点「新图（试用）」打开；没 WebGL、引擎载不进来的照旧画旧图 */
+const glWant = () => SETTINGS.mapgl === true && typeof document !== 'undefined' && glHasGL();
+const glReady = () => glWant() && typeof window !== 'undefined' && !!window.maplibregl && !GLERR;
+function glLoad() {
+  if (window.maplibregl) return Promise.resolve(true);
+  if (GLLIB_P) return GLLIB_P;
+  const js = src => new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src; sc.async = true; sc.onload = () => window.maplibregl ? ok(true) : no(new Error('没有 maplibregl')); sc.onerror = () => { sc.remove(); no(new Error('载不进：' + src)); }; document.head.appendChild(sc); });
+  const CDN = `https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/${GLV}/maplibre-gl.min.js`;
+  GLLIB_P = js('vendor/maplibre-gl.min.js').catch(() => js(CDN)).then(() => { glProto(); GLERR = ''; try { if (S && TAB === 'map') render(); } catch (_) { /* 不在看图 */ } return true; })
+    .catch(e => { GLERR = '新舆图的引擎没载进来（' + String(e && e.message || e).slice(0, 60) + '），照旧画旧图'; GLLIB_P = null; try { if (S && TAB === 'map') render(); } catch (_) { /* 无 */ } return false; });
+  return GLLIB_P;
+}
+function glProto() {
+  if (glProto.done || !window.maplibregl) return; glProto.done = true;
+  window.maplibregl.addProtocol('rpgglyph', async p => { const r = String(p.url).split('/').pop().replace(/\.pbf$/, ''), b = GLGLYPH[r]; if (!b) return { data: new ArrayBuffer(0) };
+    const s = atob(b), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return { data: u.buffer }; });
+}
+/** 引擎画不了的全角括号、书名号换成半角的 */
+const glT = t => String(t || '').replace(/（/g, '(').replace(/）/g, ')').replace(/[「」『』]/g, '');
+const glCol = c => { c = String(c || ''); if (/^var\(/.test(c)) { try { const v = getComputedStyle(document.documentElement).getPropertyValue(c.slice(4, -1).trim()).trim(); if (v) return v; } catch (_) { /* 取不到照朱色 */ } return '#a63a2a'; } return /^url\(/.test(c) ? '' : c; };
+const GL_PLAIN = '#dcd2ae';
+/** 把这一局这一年的舆图数据算成引擎要的几层（照旧图同样的归属、颜色）；同一年同一归属算过的不再算 */
+function glData(s) {
+  const y = s.clock.y, M = mapUnits(s), own = mapOwners(s), BRm = realmsAt(y, s.clock.m), T = terr(), Ly = MAPZ.lay;
+  const key = [y, s.clock.m, M.ok ? M.A.at : '', M.era ? M.era.id : '', M.poly ? 'P' : '', JSON.stringify([...own.entries()].map(([k, v]) => [k, v.col, v.st])).length, [...own.keys()].join(), Ly.adm, Ly.river, Ly.pass, s.myAdm ? s.myAdm.v : '', JSMAP ? 'J' : ''].join('|');
+  if (glData.k === key && glData.v) return glData.v;
+  const ownOf = u => own.get(geoStem(u.n)) || (u.p && own.get(geoStem(u.p))) || null;
+  const fillOf = u => { const o = ownOf(u), r = M.reg(u); return glCol(o ? o.col : r && r.col ? r.col : GL_PLAIN) || (r && r.col) || GL_PLAIN; };
+  const rootOf = u => { const r = M.reg(u); return r ? (r.parent && r.kind !== '附' ? r.parent : r.name) : ''; };
+  const PL = Ly.adm && M.poly ? M.poly : null, F = [], B = [];
+  const ring = R => R.map(p => [+p[0], +p[1]]);
+  // 一、有谭图界址的府州照界址填
+  const plSet = new Map(); if (PL) for (const u of M.L2) if (u.poly && u.poly.R) { plSet.set(u.poly, u); F.push({ type: 'Feature', properties: { n: u.n, c: fillOf(u), k: 'poly' }, geometry: { type: 'Polygon', coordinates: u.poly.R.map(ring) } }); }
+  // 二、没界址的地方（隋唐以前、边地）：按格子分给最近的治所，格子连成一条条横带；国界从格子边上描
+  const g = 0.2, LO0 = 68, LO1 = 146, LA0 = 10, LA1 = 56, nx = Math.round((LO1 - LO0) / g), ny = Math.round((LA1 - LA0) / g);
+  const BK = new Map(), bk = (a, b) => a * 1000 + b; for (const u of M.L2) { if (!u.lat) continue; const k = bk(Math.floor(u.lon), Math.floor(u.lat)); if (!BK.has(k)) BK.set(k, []); BK.get(k).push(u); }
+  const nearU = (lon, lat, lim) => { let best = null, bd = lim * lim; const ci = Math.floor(lon), cj = Math.floor(lat), R = Math.ceil(lim); for (let a = ci - R; a <= ci + R; a++) for (let b = cj - R; b <= cj + R; b++) for (const u of BK.get(bk(a, b)) || []) { const d = ((u.lon - lon) * Math.cos(lat * Math.PI / 180)) ** 2 + (u.lat - lat) ** 2; if (d < bd) { bd = d; best = u; } } return best; };
+  const C = new Array(nx * ny).fill(null), KEY = new Array(nx * ny).fill('');
+  for (let j = 0; j < ny; j++) { const lat = LA1 - (j + 0.5) * g; for (let i = 0; i < nx; i++) { const lon = LO0 + (i + 0.5) * g, e = elevAt(lon, lat); if (e != null && e < 0) continue;
+    let u = null; if (PL) { const f = polyAt(PL, lon, lat); if (f && plSet.has(f)) { u = plSet.get(f); KEY[j * nx + i] = rootOf(u) || '?'; continue; } }
+    u = nearU(lon, lat, 1.9); const rr = BRm ? BRm.of(lon, lat) : null;
+    if (u && (!rr || !M.reg(u) || rr.name === M.reg(u).name || Math.hypot(u.lon - lon, u.lat - lat) < 0.8)) { C[j * nx + i] = fillOf(u); KEY[j * nx + i] = rootOf(u) || '?'; }
+    else if (rr) { C[j * nx + i] = glCol(rr.col) || '#d9cfb4'; KEY[j * nx + i] = rr.parent && rr.kind !== '附' ? rr.parent : rr.name; }
+    else if (e != null) { C[j * nx + i] = '#d9cfb4'; KEY[j * nx + i] = '?'; } } }
+  for (let j = 0; j < ny; j++) { let i = 0; while (i < nx) { const c = C[j * nx + i]; if (!c) { i++; continue; } let k = i + 1; while (k < nx && C[j * nx + k] === c) k++;
+    const x0 = LO0 + i * g, x1 = LO0 + k * g, y1 = LA1 - j * g, y0 = y1 - g; F.push({ type: 'Feature', properties: { c, k: 'grid' }, geometry: { type: 'Polygon', coordinates: [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]] } }); i = k; } }
+  // 国界：相邻两格归属不同的边，连成线再磨圆
+  { const E = []; for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const a = KEY[j * nx + i]; if (!a) continue;
+      if (i + 1 < nx && KEY[j * nx + i + 1] && KEY[j * nx + i + 1] !== a) E.push([i + 1, j, i + 1, j + 1]);
+      if (j + 1 < ny && KEY[(j + 1) * nx + i] && KEY[(j + 1) * nx + i] !== a) E.push([i, j + 1, i + 1, j + 1]); }
+    for (const L of smoothGridP(E, 1)) B.push({ type: 'Feature', properties: { k: 'realm' }, geometry: { type: 'LineString', coordinates: L.map(([x, yy]) => [LO0 + x * g, LA1 - yy * g]) } }); }
+  if (PL) for (const f of PL.prov) if (f.R && (f.R || []).reduce((a, R) => a + R.length, 0) > 8) for (const R of f.R) B.push({ type: 'Feature', properties: { k: 'prov' }, geometry: { type: 'LineString', coordinates: ring(R) } });
+  // 名字：国名（照治所多少定字号）、省名、府州名、县名、城点
+  const L = [], P = [];
+  const grp = new Map(); for (const u of M.L2) { if (!u.lat) continue; const r = M.reg(u); if (!r) continue; const n = r.parent && r.kind !== '附' ? r.parent : r.name; const q = grp.get(n) || grp.set(n, { x: 0, y: 0, n: 0, col: (BRm && (BRm.list.find(x => x.name === n) || {}).col) || r.col }).get(n); q.x += u.lon; q.y += u.lat; q.n++; }
+  for (const [n, q] of grp) if (q.n >= 2) L.push({ type: 'Feature', properties: { t: glT(n.length > 6 ? n.replace(/[（(][^）)]*[）)]$/, '') : n), k: 'realm', sz: Math.min(26, 13 + q.n / 4), pr: -q.n, c: glCol(q.col) || '#333' }, geometry: { type: 'Point', coordinates: [q.x / q.n, q.y / q.n] } });
+  if (BRm) for (const r of BRm.list) if (!grp.has(r.name) && r.lon != null && !(r.parent && r.kind !== '附')) L.push({ type: 'Feature', properties: { t: glT(r.name.length > 6 ? r.name.replace(/[（(][^）)]*[）)]$/, '') : r.name), k: 'realm', sz: 13, pr: 0, c: glCol(r.col) || '#333' }, geometry: { type: 'Point', coordinates: [+r.lon, +r.lat] } });
+  { const pg = new Map(); for (const u of M.L2) { const n = M.prov(u); if (!n || !u.lat) continue; const q = pg.get(n) || pg.set(n, { x: 0, y: 0, n: 0, R: new Set() }).get(n); q.x += u.lon; q.y += u.lat; q.n++; q.R.add(rootOf(u)); }
+    const split = M.ok && M.A.split; for (const [n, q] of pg) { if (q.n < 2) continue; if (split && (q.R.size > 1 || (/道$/.test(n) && y >= 907 && y < 980))) continue; L.push({ type: 'Feature', properties: { t: glT(n.replace(/(承宣布政使司|布政使司)$/, '')), k: 'prov', sz: 13, pr: -q.n }, geometry: { type: 'Point', coordinates: [q.x / q.n, q.y / q.n] } }); } }
+  const here = hereXY(s), mp = here ? provOfPlace(s, geoCenter(s)) : '';
+  const seenN = new Map();   /* 同名的两个治所（史料里一州两处记载）只标一处，名字不写两遍 */
+  for (const u of M.L2) { if (!u.lat || u.noSeat) continue; { const q = seenN.get(u.n); if (q && Math.hypot(q.lon - u.lon, q.lat - u.lat) < 2.5) continue; seenN.set(u.n, u); } const o = ownOf(u), st = (o && o.st) || '', mine = here && Math.hypot(u.lon - here.lon, u.lat - here.lat) < 0.05;
+    P.push({ type: 'Feature', properties: { n: u.n, t: glT(u.n), lv: 2, st, pr: mine ? -1000 : (u.p === mp ? -10 : 0) - (/京|都/.test(u.t || '') ? 50 : 0), c: o ? glCol(o.col) : '#1f1f1f' }, geometry: { type: 'Point', coordinates: [u.lon, u.lat] } }); }
+  for (const u of arr(M.C)) if (u.lat) P.push({ type: 'Feature', properties: { n: u.n, t: glT(u.n), lv: 3, st: '', pr: 100, c: '#333' }, geometry: { type: 'Point', coordinates: [u.lon, u.lat] } });
+  // 河流、海岸、湖泊、运河（黄河下游照年代）
+  const W = [], LK = [];
+  if (Ly.river) { for (const r of arr(T.rivers)) if (!r.from || y >= r.from) W.push({ type: 'Feature', properties: { n: r.n, r: r.r || 9, w: r.n === '黄河' || r.n === '长江' ? 1.8 : r.r <= 4 ? 1.2 : 0.8 }, geometry: { type: 'LineString', coordinates: r.p.map(p => [+p[0], +p[1]]) } });
+    for (const o of arr(T.old)) if (y >= o.from && y <= o.to) W.push({ type: 'Feature', properties: { n: o.n, r: 1, w: 1.8 }, geometry: { type: 'LineString', coordinates: o.p.map(p => [+p[0], +p[1]]) } });
+    for (const o of arr(T.canal)) if (y >= o.from && y <= o.to) W.push({ type: 'Feature', properties: { n: o.n, r: 3, w: 1.3, canal: 1 }, geometry: { type: 'LineString', coordinates: o.p.map(p => [+p[0], +p[1]]) } }); }
+  for (const l of arr(T.lakes)) if ((!l.from || y >= l.from) && l.p && l.p.length > 2) LK.push({ type: 'Feature', properties: { n: l.n }, geometry: { type: 'Polygon', coordinates: [l.p.map(p => [+p[0], +p[1]]).concat([[+l.p[0][0], +l.p[0][1]]])] } });
+  const CO = (y >= 1644 && coast1820().length ? coast1820() : arr(T.coast)).map(c => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c.map(p => [+p[0], +p[1]]) } }));
+  const PS = Ly.pass ? passesIn(s, y).filter(p => p.lat != null).map(p => ({ type: 'Feature', properties: { n: p.n, t: glT(p.n), why: p.why || '', big: /山海|居庸|潼|剑门|嘉峪|雁门|函谷|武关|大散|玉门/.test(p.n) ? 1 : 0 }, geometry: { type: 'Point', coordinates: [+p.lon, +p.lat] } })) : [];
+  const fc = a => ({ type: 'FeatureCollection', features: a });
+  glData.k = key; glData.v = { fill: fc(F), border: fc(B), lbl: fc(L), city: fc(P), water: fc(W), lake: fc(LK), coast: fc(CO), pass: fc(PS) };
+  return glData.v;
+}
+/** 格子边连成线、磨圆（和旧图同法），返回点列（格子坐标） */
+function smoothGridP(E, cell) { const adj = new Map(), K = (x, y) => x * 100000 + y, add = (a, b) => { if (!adj.has(a)) adj.set(a, []); adj.get(a).push(b); };
+  for (const [a, b, c, d] of E) { const p = K(a, b), q = K(c, d); add(p, q); add(q, p); }
+  const used = new Set(), ek = (p, q) => p < q ? p + ':' + q : q + ':' + p, xy = k => [Math.floor(k / 100000) * cell, (k % 100000) * cell], out = [];
+  const walk = st => { for (const nx0 of adj.get(st)) { if (used.has(ek(st, nx0))) continue; const Lq = [st]; let a = st, b = nx0; while (b != null && !used.has(ek(a, b))) { used.add(ek(a, b)); Lq.push(b); const N = adj.get(b); a = b; b = N.length === 2 ? N.find(n => !used.has(ek(a, n))) : null; } out.push(Lq); } };
+  for (const [k, N] of adj) if (N.length !== 2) walk(k);
+  for (const k of adj.keys()) walk(k);
+  return out.map(Lq => { const closed = Lq.length > 3 && Lq[0] === Lq[Lq.length - 1]; let P = Lq.map(xy);
+    for (let it = 0; it < 2 && P.length > 2; it++) { const Q = closed ? [] : [P[0]]; for (let i = 0; i < P.length - 1; i++) { const [x1, y1] = P[i], [x2, y2] = P[i + 1]; Q.push([x1 * .75 + x2 * .25, y1 * .75 + y2 * .25], [x1 * .25 + x2 * .75, y1 * .25 + y2 * .75]); } if (!closed) Q.push(P[P.length - 1]); else Q.push(Q[0]); P = Q; }
+    return P; }); }
+function glStyle() {
+  const F = '"Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei","PingFang SC","WenQuanYi Zen Hei",sans-serif';
+  const src = n => ({ type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  return { version: 8, glyphs: 'rpgglyph://{fontstack}/{range}', sources: { fill: src(), border: src(), lbl: src(), city: src(), water: src(), lake: src(), coast: src(), pass: src(), sel: src() }, layers: [
+    { id: 'sea', type: 'background', paint: { 'background-color': '#c4dae8' } },
+    { id: 'fill', type: 'fill', source: 'fill', paint: { 'fill-color': ['get', 'c'], 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 7, 0.42], 'fill-antialias': false } },
+    { id: 'polyline', type: 'line', source: 'fill', filter: ['==', ['get', 'k'], 'poly'], minzoom: 5, paint: { 'line-color': '#6b5842', 'line-opacity': 0.45, 'line-width': 0.7 } },
+    { id: 'lake', type: 'fill', source: 'lake', paint: { 'fill-color': '#8fb9da', 'fill-outline-color': '#6f9cc0' } },
+    { id: 'coast', type: 'line', source: 'coast', paint: { 'line-color': '#5f7f99', 'line-width': 0.8 } },
+    { id: 'water', type: 'line', source: 'water', filter: ['any', ['<=', ['get', 'r'], 4], ['>=', ['zoom'], 5]], layout: { 'line-join': 'round' }, paint: { 'line-color': '#4a86c5', 'line-width': ['get', 'w'], 'line-dasharray': [1, 0] } },
+    { id: 'prov', type: 'line', source: 'border', filter: ['==', ['get', 'k'], 'prov'], paint: { 'line-color': '#6b5842', 'line-opacity': 0.55, 'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 7, 1.4] } },
+    { id: 'realm', type: 'line', source: 'border', filter: ['==', ['get', 'k'], 'realm'], layout: { 'line-join': 'round' }, paint: { 'line-color': '#7a1f1f', 'line-opacity': 0.9, 'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1.6, 7, 3] } },
+    { id: 'sel', type: 'line', source: 'sel', paint: { 'line-color': '#b3261e', 'line-width': 2.6 } },
+    { id: 'citydot', type: 'circle', source: 'city', filter: ['any', ['==', ['get', 'lv'], 2], ['>=', ['zoom'], 7]], paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 2, 8, 4.5], 'circle-color': '#fff', 'circle-stroke-color': ['get', 'c'], 'circle-stroke-width': 1.2 } },
+    { id: 'passdot', type: 'circle', source: 'pass', minzoom: 4, paint: { 'circle-radius': 7, 'circle-color': '#5b3a1a', 'circle-stroke-color': '#fff', 'circle-stroke-width': 0.8 } },
+    { id: 'passtxt', type: 'symbol', source: 'pass', minzoom: 4, layout: { 'text-field': '关', 'text-size': 10, 'text-font': ['x'], 'text-allow-overlap': true }, paint: { 'text-color': '#fff' } },
+    { id: 'passlbl', type: 'symbol', source: 'pass', filter: ['any', ['==', ['get', 'big'], 1], ['>=', ['zoom'], 6.5]], layout: { 'text-field': ['get', 't'], 'text-size': 11, 'text-font': ['x'], 'text-offset': [0, 1.3], 'text-anchor': 'top' }, paint: { 'text-color': '#5b3a1a', 'text-halo-color': '#fff', 'text-halo-width': 1.6 } },
+    { id: 'citylbl', type: 'symbol', source: 'city', filter: ['any', ['all', ['==', ['get', 'lv'], 2], ['>=', ['zoom'], 4.6]], ['>=', ['zoom'], 7.5]], layout: { 'text-field': ['get', 't'], 'text-size': ['interpolate', ['linear'], ['zoom'], 4.5, 11, 8, 15], 'text-font': ['x'], 'text-variable-anchor': ['left', 'right', 'top', 'bottom'], 'text-radial-offset': 0.6, 'symbol-sort-key': ['get', 'pr'] }, paint: { 'text-color': '#1f1f1f', 'text-halo-color': '#fff', 'text-halo-width': 1.8 } },
+    { id: 'provlbl', type: 'symbol', source: 'lbl', filter: ['==', ['get', 'k'], 'prov'], minzoom: 4.2, maxzoom: 7, layout: { 'text-field': ['get', 't'], 'text-size': 14, 'text-font': ['x'], 'text-letter-spacing': 0.2, 'symbol-sort-key': ['get', 'pr'] }, paint: { 'text-color': '#2f2216', 'text-opacity': 0.85, 'text-halo-color': '#fff', 'text-halo-width': 2.4 } },
+    { id: 'realmlbl', type: 'symbol', source: 'lbl', filter: ['==', ['get', 'k'], 'realm'], maxzoom: 6.5, layout: { 'text-field': ['get', 't'], 'text-size': ['get', 'sz'], 'text-font': ['x'], 'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'], 'symbol-sort-key': ['get', 'pr'], 'text-padding': 4 }, paint: { 'text-color': ['get', 'c'], 'text-halo-color': '#fff', 'text-halo-width': 2.6 } }
+  ] };
+}
+/** 每次画完界面：把常驻的地图挂回图位上；数据变了才换数据，看的范围只在玩家点「天下、本省、本地、放大缩小」时才动 */
+function glMount() {
+  const slot = document.getElementById('glSlot'); if (!slot || !S) return;
+  if (!window.maplibregl) { glLoad(); return; }
+  glProto();
+  if (!GLDIV) { GLDIV = document.createElement('div'); GLDIV.className = 'glmap'; GLDIV.id = 'glMap'; }
+  if (GLDIV.parentNode !== slot) slot.appendChild(GLDIV);
+  if (!GLMAP) { try {
+      GLMAP = new window.maplibregl.Map({ container: GLDIV, style: glStyle(), center: [110, 33], zoom: 3.3, minZoom: 2.5, maxZoom: 10, attributionControl: false, localIdeographFontFamily: '"Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei","PingFang SC","WenQuanYi Zen Hei",sans-serif', dragRotate: false, pitchWithRotate: false, preserveDrawingBuffer: !!navigator.webdriver });
+      GLMAP.touchZoomRotate.disableRotation();
+      GLMAP.on('error', e => { const m = String(e && e.error && e.error.message || ''); if (/WebGL|context|glyphs|style/i.test(m) && !GLMAP.isStyleLoaded()) { GLERR = '这台电脑画不了新舆图（' + m.slice(0, 40) + '），照旧画旧图'; render(); } });
+      GLMAP.on('click', glClick);
+      GLMAP.on('moveend', glMarkers);
+      GLMAP.on('load', () => { GLKEY = ''; glMount(); });
+    } catch (e) { GLERR = '新舆图开不起来（' + String(e && e.message || e).slice(0, 60) + '），照旧画旧图'; GLMAP = null; render(); return; } }
+  else { try { GLMAP.resize(); } catch (_) { /* 无 */ } }
+  if (!GLMAP.isStyleLoaded()) return;
+  const D = glData(S);
+  if (GLKEY !== glData.k) { GLKEY = glData.k; for (const k of ['fill', 'border', 'lbl', 'city', 'water', 'lake', 'coast', 'pass']) GLMAP.getSource(k).setData(D[k]); }
+  // 选中的州府描红
+  { const M = mapUnits(S), u = MAPZ.sel ? M.L2.find(x => x.n === MAPZ.sel) : null; GLMAP.getSource('sel').setData({ type: 'FeatureCollection', features: u && u.poly && u.poly.R ? [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: u.poly.R.map(R => R.map(p => [+p[0], +p[1]])) } }] : [] }); }
+  // 看的范围：天下、本省、本地
+  const vk = [MAPZ.mode, MAPZ.prov, MAPZ.c ? MAPZ.c.lon + ',' + MAPZ.c.lat : '', MAPZ.span, MAPZ.big ? 1 : 0].join('|');
+  if (vk !== GLVIEW) { const first = !GLVIEW; GLVIEW = vk; try { const M = mapUnits(S);
+      if (MAPZ.mode === 'near' && MAPZ.c) { const sp = Math.max(0.35, Math.min(14, num(MAPZ.span) || 1.2)); GLMAP.fitBounds([[MAPZ.c.lon - sp, MAPZ.c.lat - sp * 0.8], [MAPZ.c.lon + sp, MAPZ.c.lat + sp * 0.8]], { duration: first ? 0 : 600 }); }
+      else if (MAPZ.mode === 'prov' && MAPZ.prov) { const U = M.L2.filter(u => M.prov(u) === MAPZ.prov && u.lat); if (U.length) GLMAP.fitBounds([[Math.min(...U.map(u => u.lon)) - 0.4, Math.min(...U.map(u => u.lat)) - 0.4], [Math.max(...U.map(u => u.lon)) + 0.4, Math.max(...U.map(u => u.lat)) + 0.4]], { duration: first ? 0 : 600 }); }
+      else { const U = M.L2.filter(u => u.lat && u.lon > 73 && u.lat > 17); if (U.length) GLMAP.fitBounds([[Math.min(...U.map(u => u.lon)) - 1, Math.min(...U.map(u => u.lat)) - 1], [Math.max(...U.map(u => u.lon)) + 1, Math.max(...U.map(u => u.lat)) + 1]], { duration: first ? 0 : 600 }); }
+    } catch (_) { /* 范围算不出照旧 */ } }
+  glMarkers();
+}
+/** 你在哪、兵牌：浮在图上的牌子；挤在一起的，兵多的留着、别的收进去（牌上写「另有几支」） */
+function glMarkers() {
+  if (!GLMAP || !S || !window.maplibregl) return;
+  for (const m of GLMK) m.remove(); GLMK = [];
+  const s = S, y = s.clock.y, here = hereXY(s), add = (el, lon, lat, anchor) => { const m = new window.maplibregl.Marker({ element: el, anchor: anchor || 'bottom' }).setLngLat([lon, lat]).addTo(GLMAP); GLMK.push(m); return m; };
+  if (here && here.lat != null) { const el = document.createElement('div'); el.className = 'glpin'; el.textContent = String(s.protagonist.name || '你').slice(0, 1); el.title = '你在这里：' + (s.place.full || ''); add(el, +here.lon, +here.lat); }
+  const FS = arr(s.forces).map(f => ({ f, u: f.at ? placeXY(s, f.at, y) : null })).filter(x => x.u && x.u.lat != null).sort((a, b) => (myForce(s, b.f) - myForce(s, a.f)) || ((N0(b.f.troops) || 0) - (N0(a.f.troops) || 0)));
+  const boxes = [], hid = new Map();
+  for (const x of FS) { const p = GLMAP.project([+x.u.lon, +x.u.lat]), w = Math.max(70, String(x.f.name).length * 12 + 50), b = [p.x - w / 2, p.y - 34, p.x + w / 2, p.y];
+    const hit = boxes.find(o => !(b[2] < o.b[0] || b[0] > o.b[2] || b[3] < o.b[1] || b[1] > o.b[3])); if (hit) { hid.set(hit.x, (hid.get(hit.x) || 0) + 1); continue; } boxes.push({ b, x }); }
+  for (const { x } of boxes) { const f = x.f, mine = myForce(s, f), men = N0(f.troops) || 0, el = document.createElement('div'), more = hid.get(x) || 0;
+    el.className = 'gltag' + (mine ? ' mine' : '') + (MAPZ.from === f.name ? ' sel' : ''); el.dataset.mapforce = f.name;
+    el.title = `${f.name}：${f.leader || ''}统，${mine ? fmtN(men) + '人' : troopEst(s, f, men).txt}，${f.status || ''}`;
+    el.innerHTML = `<b>${esc(f.name)}</b> <span>${esc(mine ? (men >= 10000 ? (men / 10000).toFixed(1) + '万' : fmtN(men)) : troopEst(s, f, men).short)}</span>${more ? `<i>另有${more}支</i>` : ''}`;
+    add(el, +x.u.lon, +x.u.lat); }
+}
+/** 点图：点在哪个府州（有界址照界址，没有取最近的治所）就选中它，详情照旧在图下 */
+function glClick(e) {
+  if (!S) return; const lon = e.lngLat.lng, lat = e.lngLat.lat;
+  const ps = GLMAP.queryRenderedFeatures(e.point, { layers: ['passdot'] }); if (ps.length) { MAPZ.sel = ''; MAPZ.pt = { lon, lat }; render(); return; }
+  try { const M = mapUnits(S), PL0 = M.poly, inP = PL0 ? M.L2.find(u => u.poly && polyAt(PL0, lon, lat) === u.poly) : null; let best = inP, bd = 0.9 * Math.pow(2, 5 - GLMAP.getZoom()); if (!best) for (const u of M.L2.concat(arr(M.C))) { if (!u.lat) continue; const d = Math.hypot(u.lon - lon, u.lat - lat); if (d < bd) { bd = d; best = u; } }
+    MAPZ.pt = best ? null : { lon, lat }; MAPZ.sel = best ? (MAPZ.sel === best.n ? '' : best.n) : ''; } catch (_) { MAPZ.pt = { lon, lat }; MAPZ.sel = ''; }
+  render(); if (MAPZ.sel) setTimeout(() => { try { scrollMapPanel(); } catch (_) { /* 无 */ } }, 60);
+}
 function stratMap(s) {
   try { jsmapLoad(); } catch (_) { /* 下不成照内置史料画 */ }
   if (!geoData().length) return '<div class="muted">地名库没载进来，画不了舆图。</div>';
@@ -11030,8 +11208,10 @@ function stratMap(s) {
   const rl = rl0.filter(r => !r || r.lon == null || r.lat == null || (pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) || isHost(r.name) || visNames.has(r.name));
   const rlOut = rl0.length - rl.length;
   const unloc = M.ok && !M.era ? M.A.units.filter(u => u.lv === 2 && !u.lat).map(u => u.n) : [];
-  const ctl = `<div class="mctl"><button class="link" data-mapbig="1" title="铺满整个屏幕看，字更大">${MAPZ.big ? '收回' : '⛶ 大图'}</button><button class="link" data-mapzoom="in" title="放大">＋</button><button class="link" data-mapzoom="out" title="缩小">－</button><button class="link${near && MAPZ.follow !== false ? ' on' : ''}" data-mapview="near" title="回到你在的地方，跟着你走">◎ 跟着我</button><span class="muted">拖动看别处；Ctrl/⌘+滚轮缩放（大图里直接滚轮）；放大了才标各州县的名字</span></div>`;
-  return `<div class="mapwrap${MAPZ.big ? ' big' : ''}">${svg}${MAPZ.big ? ctl : ''}</div>` + (MAPZ.big ? '' : ctl) + '<!--MAPLEGEND-->' + `<div class="mlayers">${[['terr', '地形'], ['river', '河流'], ['road', '通路'], ['pass', '关隘'], ['adm', '政区'], ['fig', '名臣']].map(([k, n]) => `<label><input type="checkbox" data-maplay="${k}"${(k === 'fig' ? Ly[k] !== false : Ly[k]) ? ' checked' : ''}>${n}</label>`).join('')}</div>`
+  const ctl = `<div class="mctl">${glHasGL() ? `<button class="link" data-mapgl="1" title="新舆图：名字自动避让、放大缩小拖动顺滑（试用）">${SETTINGS.mapgl ? '换回旧图' : '新图（试用）'}</button>` : ''}<button class="link" data-mapbig="1" title="铺满整个屏幕看，字更大">${MAPZ.big ? '收回' : '⛶ 大图'}</button><button class="link" data-mapzoom="in" title="放大">＋</button><button class="link" data-mapzoom="out" title="缩小">－</button><button class="link${near && MAPZ.follow !== false ? ' on' : ''}" data-mapview="near" title="回到你在的地方，跟着你走">◎ 跟着我</button><span class="muted">拖动看别处；Ctrl/⌘+滚轮缩放（大图里直接滚轮）；放大了才标各州县的名字</span></div>`;
+  if (glWant()) glLoad();
+  const GLON = glReady();
+  return `${GLERR && glWant() ? `<div class="muted" style="font-size:12px">${esc(GLERR)}</div>` : ''}<div class="mapwrap${MAPZ.big ? ' big' : ''}${GLON ? ' gl' : ''}">${GLON ? '<div id="glSlot" class="glslot"></div>' : svg}${MAPZ.big ? ctl : ''}</div>` + (MAPZ.big ? '' : ctl) + '<!--MAPLEGEND-->' + `<div class="mlayers">${[['terr', '地形'], ['river', '河流'], ['road', '通路'], ['pass', '关隘'], ['adm', '政区'], ['fig', '名臣']].map(([k, n]) => `<label><input type="checkbox" data-maplay="${k}"${(k === 'fig' ? Ly[k] !== false : Ly[k]) ? ' checked' : ''}>${n}</label>`).join('')}</div>`
     + (rl.length ? `<div class="mlegend">${rl.map(r => { const sw = r.vassal ? `background:repeating-linear-gradient(45deg,${r.col},${r.col} 3px,#fff 3px,#fff 6px)` : `background:${r.col}`; const tg = r.vassal ? '<span class="att">附</span>' : ''; const nm = r.parent ? realmShort(r.parent, y) + '·' + realmShort(r.name, y) : realmShort(r.name, y); return `<span title="${esc(r.parent ? '属' + r.parent : '')}"><i style="${sw}"></i><b>${esc(nm)}</b>${tg}${regRuler(s, r) ? '·' + esc(regRuler(s, r)) : ''}${r.capital ? '·都' + esc(r.capital) : ''}${r.basis === '推算' ? '<span class="att">推算</span>' : ''}${(pol0(s) && (pol0(s).includes(r.name) || r.name.includes(pol0(s)))) ? '（你在此）' : ''}${isHost(r.name) ? '<span class="att">交战</span>' : ''}</span>`; }).join('')}${rlOut > 0 ? `<span class="muted">图外还有 ${rlOut} 家</span>` : ''}</div>` : '')
     + `<div class="mlegend">${owners.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}${PL ? '<span>◉ 府州治所</span><span>▫ 县城</span><span><b>━</b> 省界</span><span>— 府州界</span>' : ''}<span>★ 你在这里</span><span>⚔ 打过仗</span><span style="color:#b8860b">◎ 这一回你攻占</span><span style="color:#c0392b">◎ 这一回失陷</span><span style="color:#d35400">◎ 叛乱中</span><span style="color:#8a8a8a">◌ 无人占领</span><span style="color:#555">✕ 残破被毁</span><span style="color:#7a1f1a">⚑ 流寇（游动，不占州府）</span><span style="color:#5d4e8a">◎ 史事易主（按月）</span><span><b style="color:#5b3a1a">关</b> 关隘</span><span>╌ 平路相通</span><span>┈ 山路难行</span><span class="muted">不通的不画线</span>${PL && zoom ? '<span>┄ 县界</span>' : ''}<span style="color:#8a3b12">━ ━ 驿道</span><span style="color:#2f6fa8">运河</span><span><i style="display:inline-block;width:9px;height:9px;background:repeating-linear-gradient(45deg,#2f6db5,#2f6db5 2px,#fff 2px,#fff 4px)"></i> 斜纹＝附庸（同宗主色）</span><span>同色深浅＝藩镇</span></div>`
     + `<div class="muted" style="font-size:11px">${!M.era && PL ? `府州界照 CHGIS Version 6 历代府州界（${y}年在的，© Fairbank Center for Chinese Studies and the Institute for Chinese Historical Geography at Fudan University, Dec 2016；从哈佛 Dataverse 官方源下到本机，简化到约一里；这一层隋唐以前只有南方一部分，没有的地方只标治所）${zoom ? '；县界在府界之内按各县治所远近划分（示意）' : ''}；` : !M.era ? (TS_P ? '历代府州界正从哈佛 CHGIS 官方源下载（约 30MB，只下一次），下好前' : TS_ERR ? `历代府州界没下成（${esc(TS_ERR)}），` : '') : ''}${M.era ? `政区：谭其骧《中国历史地图集》${esc(M.era.title)}的省—府—县（治所、县点：${esc(M.era.source)}）；${PL ? `${zoom ? '县界：府界之内按各县治所远近划分（谭图这一层没有县界，示意）；' : ''}府界、省界照 CHGIS Version 6（${M.era.id === 'qing-1911' ? '1911' : '1820'} 年层，© Fairbank Center for Chinese Studies and the Institute for Chinese Historical Geography at Fudan University, Dec 2016），从哈佛 Dataverse 官方源下到本机，简化到约一里` : POLY_P[M.era.id] ? '府界正从哈佛 CHGIS 官方源下载，下好前府州地块按治所远近示意、不是实界' : `府界没下成（${esc(POLY_ERR[M.era.id] || '这个浏览器不支持解压')}），府州地块按治所远近示意、不是实界`}${M.ok ? '；驿道、关隘照联网核定' : ''}` : M.builtin && !M.A.src ? `政区：照内置的历代政权与疆域（各家起止、都城、治下州府）和 CHGIS 历史地名库（${esc(y)}年在的州府；府州地块按治所远近示意，不是实界）` : M.ok ? `政区：${esc(M.A.src)}、照《地理志》核定（${esc(M.A.y)}年；府州地块按治所远近示意，不是实界）${zoom && !cty.length && MAPZ.mode === 'prov' ? '；本省的县正在查' : ''}${unloc.length ? `；${unloc.length}处在地名库里没找到坐标，没画：${esc(unloc.slice(0, 8).join('、'))}${unloc.length > 8 ? '等' : ''}` : ''}` : '政区：正在联网核定（或这回没查成）；先照 CHGIS 地名库画这一年的州府治所，不分省（地名库里的上级政区残缺、串朝代，不拿来用）'}。地形据 AWS 高程、河湖海岸据 Natural Earth（黄河下游、运河按这一年的河道画）；关隘坐标据维基百科；通不通照地形推，具体走法看剧情。</div>`;
@@ -18290,6 +18470,7 @@ function render0() {
   const sv = { view: VIEW, tab: typeof TAB !== 'undefined' ? TAB : '', y: window.scrollY, side: (document.querySelector('.side') || {}).scrollTop || 0, pane: (document.querySelector('.side .pane') || {}).scrollTop || 0 };
   const r = renderNow();
   try { paintFaces(); } catch (_) { /* 画像画不出来不影响玩 */ }
+  try { glMount(); } catch (e) { GLERR = '新舆图出错（' + String(e && e.message || e).slice(0, 60) + '），照旧画旧图'; }
   if (VIEW === 'game' && document.getElementById('saves2')) fillSaves('#saves2');
   if (sv.view === VIEW) {
     if (Math.abs(window.scrollY - sv.y) > 2) window.scrollTo(0, sv.y);
@@ -19466,9 +19647,10 @@ document.addEventListener('click', async e => {
   { const fm = e.target.closest && e.target.closest('[data-mapfig]'); if (fm && S && !(MAPG.drag && Date.now() - MAPG.drag < 400)) { const nm = fm.dataset.mapfig, M = mapUnits(S), p0 = placeXY(S, nm, S.clock.y); let best = null, bd = 9;
       if (p0 && p0.lat != null) for (const u of M.L2.concat(M.C)) { const d = Math.hypot(u.lon - p0.lon, u.lat - p0.lat); if (d < bd) { bd = d; best = u; } } MAPZ.sel = best ? best.n : nm; MAPZ.pt = null; render(); return; } }
   { const fg = e.target.closest && e.target.closest('[data-mapforce]'); if (fg && S && !(MAPG.drag && Date.now() - MAPG.drag < 400)) { const f = arr(S.forces).find(x => x.name === fg.dataset.mapforce); if (f) { if (MAPZ.from === f.name) MAPZ.from = ''; else { MAPZ.from = f.name; MAPZ.sel = MAPZ.sel && MAPZ.sel !== f.at ? MAPZ.sel : ''; } MAPC.rt = null; MAPZ.pt = null; } render(); return; } }
-  { const g = e.target.closest && e.target.closest('[data-mapu],[data-mapprov],#bMapWorld,[data-mapgo],[data-mapnear],[data-maplay],[data-mapview],[data-mapgoto],[data-mapzoom],[data-mapbig]');
+  { const g = e.target.closest && e.target.closest('[data-mapu],[data-mapprov],#bMapWorld,[data-mapgo],[data-mapnear],[data-maplay],[data-mapview],[data-mapgoto],[data-mapzoom],[data-mapbig],[data-mapgl]');
     if (g && S) {
       if (g.dataset.mapbig) { MAPZ.big = !MAPZ.big; render(); return; }
+      if (g.dataset.mapgl) { SETTINGS.mapgl = !SETTINGS.mapgl; lsSet('hrpg:settings', JSON.stringify(SETTINGS)); GLERR = ''; GLVIEW = ''; if (SETTINGS.mapgl) glLoad(); render(); return; }
       if (g.dataset.maplay) { MAPZ.lay[g.dataset.maplay] = g.checked; render(); return; }
       if (g.dataset.mapzoom) { mapZoomBy(g.dataset.mapzoom === 'in' ? 2 : 0.5); render(); return; }
       if (g.id === 'bMapWorld') { MAPZ.mode = 'world'; MAPZ.prov = ''; MAPZ.sel = ''; }

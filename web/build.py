@@ -165,7 +165,13 @@ except Exception: old = {}
 build = old.get('build') if old.get('hash') == digest else datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')
 gver = (re.search(r"const VERSIONS = \{ game: '([^']+)'", (here / 'game.src.html').read_text(encoding='utf8')) or [None, ''])[1]   # 三个版本显示同一个版本号
 vfile.write_text(json.dumps({'build': build, 'hash': digest, 'api': api, 'game': gver}), encoding='utf8', newline='\n')
-body = (here / 'game.src.html').read_text(encoding='utf8').replace('__BUILD__', build).replace('__CAL__', compact).replace('__HIST__', hist_js).replace('__TENURE__', tenure_js).replace('__COURT__', court_js).replace('__ERAVOCAB__', eravocab_js).replace('__ROLESLIB__', roles_js).replace('__POLLIST__', pollist_js).replace('__ACTS__', acts_js).replace('__HOUSES__', houses_js).replace('__EVLIB__', evlib_js).replace('__FIGLIB__', figlib_js).replace('__OFFLIB__', offlib_js).replace('__PRESETLIB__', presetlib_js).replace('__PLACENAMES__', placenames_js).replace('__TIES__', ties_js).replace('__VOCAB__', vocab.replace('</', '<\\/')).replace('__INSTLIB__', inst_js).replace('__ARCS__', arcs_js).replace('__GEO__', geo_js).replace('__TERRAIN__', terr_js).replace('__ATLAS_CORE__', atlas_core).replace('__ATLAS_E1820__', atlas_e1820).replace('__ATLAS_E1911__', atlas_e1911).replace('__ATLAS_COAST__', atlas_coast).replace('__ATLAS_JS__', atlas_js).replace('/*__FACE__*/', face_js)
+
+# 新舆图（R-283）：MapLibre 的样式表内嵌（claude.ai 版只许内嵌样式），数字标点字形内嵌；引擎本体桌面版拷一份到 public/vendor，网页版从 cdnjs 取
+import base64, shutil
+_vd = here / 'vendor'
+glcss = (_vd / 'maplibre-gl.min.css').read_text(encoding='utf8').replace('</', '<\\/') if (_vd / 'maplibre-gl.min.css').exists() else ''
+glglyph = json.dumps({f.stem: base64.b64encode(f.read_bytes()).decode() for f in sorted((_vd / 'glyphs').glob('*.pbf'))}) if (_vd / 'glyphs').exists() else '{}'
+body = (here / 'game.src.html').read_text(encoding='utf8').replace('__BUILD__', build).replace('__CAL__', compact).replace('__HIST__', hist_js).replace('__TENURE__', tenure_js).replace('__COURT__', court_js).replace('__ERAVOCAB__', eravocab_js).replace('__ROLESLIB__', roles_js).replace('__POLLIST__', pollist_js).replace('__ACTS__', acts_js).replace('__HOUSES__', houses_js).replace('__EVLIB__', evlib_js).replace('__FIGLIB__', figlib_js).replace('__OFFLIB__', offlib_js).replace('__PRESETLIB__', presetlib_js).replace('__PLACENAMES__', placenames_js).replace('__TIES__', ties_js).replace('__VOCAB__', vocab.replace('</', '<\\/')).replace('__INSTLIB__', inst_js).replace('__ARCS__', arcs_js).replace('__GEO__', geo_js).replace('__TERRAIN__', terr_js).replace('__ATLAS_CORE__', atlas_core).replace('__ATLAS_E1820__', atlas_e1820).replace('__ATLAS_E1911__', atlas_e1911).replace('__ATLAS_COAST__', atlas_coast).replace('__ATLAS_JS__', atlas_js).replace('/*__FACE__*/', face_js).replace('/*__GLCSS__*/', glcss).replace('__GLGLYPH__', glglyph)
 (here / 'index.html').write_text(body, encoding='utf8', newline='\n')
 # 桌面版由本机服务直接发出，需要自己的文档外壳
 page = ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="renderer" content="webkit"><meta name="force-rendering" content="webkit">'
@@ -185,3 +191,9 @@ for _m in _re.finditer(r'<script(\s[^>]*)?>([\s\S]*?)</script>', body):   # 每�
     pathlib.Path(_tmp).unlink(missing_ok=True)
     if _r.returncode != 0:
         print('页面脚本有语法错误：\n' + (_r.stderr or '')[:800]); sys.exit(1)
+# 新舆图引擎拷进桌面版（public/vendor），玩家电脑不联网也能用
+_pv = here.parent / 'rpg-kernel/public/vendor'
+if _vd.exists():
+    _pv.mkdir(parents=True, exist_ok=True)
+    for _f in ('maplibre-gl.min.js', 'LICENSE-maplibre.txt'):
+        if (_vd / _f).exists(): shutil.copyfile(_vd / _f, _pv / _f)
