@@ -5749,8 +5749,12 @@ function eventsNow(s, n = 2) {
   if (!tags.length) { const r = String((s.protagonist || {}).role || '') + String((s.career || {}).office || '');   // 身份标签认不出的（「牙兵」）照身份字面认
     for (const [tg, re] of [['兵', /兵|军|卒|校|将|都头/], ['官', /御史|县令|刺史|太守|丞|尉|郎|尚书|侍郎|学士|参军|判官|推官|司马|长史/], ['商', /商|贾|贩/], ['士', /士子|书生|儒|生员|举子/], ['匠', /匠/], ['僧', /僧|道士|尼|女冠/], ['医', /医/], ['乐', /伶|乐|妓/]]) if (re.test(r)) tags = tags.concat(tg); }
   const want = new Set(tags.flatMap(t => EV_WHO[t] || [])); if (!want.size) ['农', '民户', '农夫'].forEach(x => want.add(x));
+  /* R-286：各年代世事库「谁会碰上」的写法不一（宋代写宋军、将帅、天子、宰执、市民、举子），照身份类别认，不只认几个字 */
+  const WHO_RE = { 官: /官|县令|知州|知县|州县|官府|朝臣|宰|执政|台谏|提刑|巡检|吏|御史|守令/, 兵: /兵|军|将|校|卒|巡检|戍/, 商: /商|贾|贩|行旅|牙人|榷场|店|市民|船户|行老/, 士: /士|读书|举子|考官|太学|生员|儒/, 农: /农|民户|乡民|佃|边民|流民|族众|城中民|乡豪|部落民/,
+    贵: /天子|君主|太后|宫人|宦|中官|中使|后妃|皇子|公主|外戚|宗室|朝臣|宰/, 匠: /匠|工/, 僧: /僧|道士|僧道|尼|巫|寺/, 医: /医|病家/, 乐: /乐|伶|艺人/, 匪: /盗|贼|亡命|囚/ };
+  const whoRe = tags.map(t => WHO_RE[t]).filter(Boolean), whoOk = w => want.has(w) || whoRe.some(r => r.test(w)) || (!whoRe.length && WHO_RE.农.test(w));
   const pl = placeAliased(s), now = y;
-  const L = B.flatMap(R => arr(R.events)).filter(e => arr(e.who).some(w => want.has(w)) && evFits(e, now, pl)); if (!L.length) return [];
+  const L = B.flatMap(R => arr(R.events)).filter(e => arr(e.who).some(whoOk) && evFits(e, now, pl)); if (!L.length) return [];
   const k = ((s.turn || 0) * 7) % L.length; return [...new Set(Array.from({ length: Math.min(n, L.length) }, (_, i) => L[(k + i * 13) % L.length]))];
 }
 /* R-286：世事库的条目只在它的年份里用（只发生过一次的真事：海上之盟、柔福帝姬、阿云案，不再塞进几十年前后的局）；
@@ -5998,7 +6002,7 @@ function basisSheet(s) {
   return items;
 }
 function basisBlock(s) {
-  const L = basisSheet(s); if (!L.length) return '';
+  const L = basisSheet(s); if (!L.length) return s && s.clock ? '【剧情底本】这一年代后台史料表还没备齐：玩家这一步之外另起的事，只写史书上此时此地真有的事（写得出年月、地方、真人的），或主角先前作为的后果；拿不准的就不另起事，写透玩家这一步的经过和后果。' : '';
   return `【剧情底本（程序照后台史料表挑的，这一回只许从这里取材）】
 玩家这一步是正戏，照他说的写结果。玩家这一步之外另起的事，比如有人上门、传来消息、身边人起了心思、出了什么变故，只许从下面几条里取，写成此时此地看得见的具体样子：哪个人、什么话、什么东西、多少钱。不许另编来由不明的事、新冲突、新人物、新灾祸。几条都和这一步不相干，就不另起事，写透玩家这一步的经过和后果。
 ${L.map(x => `${x.tag}、【${x.kind}】${x.text}——${x.use}`).join('\n')}
@@ -6006,7 +6010,7 @@ ${L.map(x => `${x.tag}、【${x.kind}】${x.text}——${x.use}`).join('\n')}
 }
 const BASIS_NEW = /忽然|突然|这时|正说着|话音未落|门外|有人来报|急报|来报|报信|传来|消息|来了个|找上门|上门/;
 /** 正文自己另起了事，却一条底本也没用上：打回 */
-function basisFaults(s, said, text, hidden) {
+function basisFaults(s, said, text, hidden) {   // hidden：【幕后】连同【本回事实】
   const L = arr(s && s.basisNow && s.basisNow.turn === s.turn ? s.basisNow.items : []), t = String(text || ''); if (!L.length || t.length < 300) return [];
   const cite = (/据[:：]\s*([^\n]{1,20})/.exec(String(hidden || '')) || [])[1] || '';
   const hit = L.filter(x => cite.includes(x.tag) || arr(x.keys).filter(k => t.includes(k) && !String(said || '').includes(k)).length >= 1);
@@ -17155,7 +17159,7 @@ function acctRules(s) {
 人：出场或有变化的人的全名｜好感变了多少（正负整数，没变写零）｜为什么——一人一行
 ${ids.length ? `单：行动单的 id（${ids.join('、')}）｜办成、部分办成、受阻、驳回、拖着、搁下 之一｜一句缘由——这一回新开的每一张都要写` : ''}
 要：这一回的事实摘要，一百字内
-下：主角此刻能做的下一步，一行一条，写三条`;
+下：主角此刻能做的下一步，一行一条，写三条${(s.basisNow && s.basisNow.turn === s.turn && arr(s.basisNow.items).length) ? '\n据：这一回用了【剧情底本】哪几条（甲、乙……），一条没用写「无」' : ''}`;
 }
 function parseAcct(s, acct) {
   const L = String(acct || '').split('\n').map(x => x.trim()).filter(Boolean), get = k => L.filter(x => x.startsWith(k + '：') || x.startsWith(k + ':')).map(x => x.slice(k.length + 1).trim());
@@ -19597,7 +19601,7 @@ async function send(said, span, note, resume) {
       preFaults = st.talk ? [] : draftFaults(S, said, st.text, span);
       if (!st.talk) preFaults = preFaults.concat(storyRpgCheck(S, said, st.text, LIGHT));
       if (!st.talk) preFaults = preFaults.concat(vocabFaults(S, st.text));
-      if (!st.talk) preFaults = preFaults.concat(basisFaults(S, said, st.text, st.hidden));   // R-286：自己另起了事、底本一条没用上
+      if (!st.talk) preFaults = preFaults.concat(basisFaults(S, said, st.text, String(st.hidden || "") + "\n" + String(st.acct || "")));   // R-286：自己另起了事、底本一条没用上
       if (!st.talk) preFaults = preFaults.concat(factFaults(S, said, st.text, ruling));   // 没凭据的得官、在世真人的死讯：打回（任务十六）   // 这一年代还没有的说法：打回照当时的说法改（任务十七）   // 写成史论/课件的打回：RPG 要戏、要对话、要停在拿主意处
       if (!st.talk && ruling && ruling.battleResult && !/伤|死|阵亡|折了/.test(st.text)) preFaults.push(`这一仗写成了只有胜负：照【这一仗的结果】写出伤亡（我方约 ${ruling.battleResult.deadUs}、敌方约 ${ruling.battleResult.deadThem}）、士气、粮草和战后的事`);
       { const bR = ruling && ruling.battleResult; if (!st.talk && bR) { const f = battleTextClash(bR, st.text); if (f) preFaults.push(f); } }   // R-257：程序算的是大败、丢了西门，正文写成守住了、只死十几个
@@ -19695,7 +19699,7 @@ async function send(said, span, note, resume) {
       }
       catch (e) { if (e && e.code === 'cancelled') throw e; S = snap; applyReply(S, { elapsedDays: 0, reply: deslop(fx.text), mode: 'play' }, said); ok = false; }
       PENDING_SAID = '';
-      try { basisLog(S, st && st.hidden); } catch (_) { /* 无 */ }
+      try { basisLog(S, st && (String(st.hidden || "") + "\n" + String(st.acct || ""))); } catch (_) { /* 无 */ }
       if (S.mainNow) { S.mainLog = arr(S.mainLog).concat([{ key: S.mainNow.key, turn: S.turn }]).slice(-30); S.mainNow = null; }
       const g = S.chat[S.chat.length - 1];
       if (FIXACK) { g.extra = Object.assign(g.extra || {}, { fixack: FIXACK }); FIXACK = ''; }
