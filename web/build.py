@@ -119,6 +119,11 @@ def _cnum(t):
     if '十' in t: a, b = t.split('十', 1); return _CN.get(a, 0) * 10 + (_CN.get(b, 0) if b else 0)
     return _CN.get(t, 0)
 def _bigr(t): t = re.sub(r'[\s，,。；、：「」…！？]', '', t); return {t[i:i + 2] for i in range(len(t) - 1)}
+_EVDY = [(r'宋史|长编|宋会要|梦华录|梦粱录|武林旧事|都城纪胜|宋刑统|清明集|夷坚志|系年要录|三朝北盟|东轩笔录|涑水|归田录|梦溪|鹤林|齐东|容斋|老学庵|宋大诏令|文献通考|挥麈|岳珂|鄂国金佗', '宋'), (r'辽史|契丹国志', '辽'), (r'金史|大金国志|归潜志|中州集', '金'), (r'元史|元典章|通制条格|南村辍耕|马可', '元'), (r'西夏|宋史·夏国', '夏')]
+def ev_dy(e):
+    src = str(e.get('src') or ''); hit = sorted({dy for rx, dy in _EVDY if re.search(rx, src)})
+    if '夏' in hit and '宋' in hit and re.search(r'夏国', src): hit = [x for x in hit if x != '宋'] or hit
+    return hit
 def ev_years(e, rng):
     lo, hi = (rng or [-9999, 9999])[:2]
     w = e.get('when') or {}; need = ' '.join(str(x) for x in w.get('need') or []); title = str(e.get('title') or '')
@@ -165,7 +170,7 @@ for f in sorted((here / 'events').glob('*.json')):
     try:
         h = json.load(open(f, encoding='utf8'))
         evlib.append({'id': h.get('period') or f.stem, 'range': h.get('range'), 'events': [{'k': e.get('kind'), 't': e.get('title'), 'who': (e.get('when') or {}).get('who') or [], 'where': (e.get('when') or {}).get('where') or '',
-            'p': [[x.get('name'), x.get('cost')] for x in e.get('paths') or []][:3], 'src': e.get('src'), **({'y': e['years']} if isinstance(e.get('years'), list) else ({'y': yy} if (yy := ev_years(e, h.get('range'))) else {}))} for e in h.get('events') or [] if e.get('title')]})
+            'p': [[x.get('name'), x.get('cost')] for x in e.get('paths') or []][:3], 'src': e.get('src'), **({'dy': dd} if (dd := ev_dy(e)) and (h.get('range') or [0, 0])[1] >= 916 and (h.get('range') or [0, 0])[0] <= 1368 else {}), **({'y': e['years']} if isinstance(e.get('years'), list) else ({'y': yy} if (yy := ev_years(e, h.get('range'))) else {}))} for e in h.get('events') or [] if e.get('title')]})
     except Exception as e: print('skip events', f.name, e)
 evlib_js = json.dumps(evlib, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 # 名臣预制包：web/figures/<段>.json（R-244，任务三十六至四十；重要真人带标签、出没地点年表，游戏照年表判断主角够不够得着；officials-*.json 是地方长官表，另读）

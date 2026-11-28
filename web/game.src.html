@@ -5754,7 +5754,7 @@ function eventsNow(s, n = 2) {
     贵: /天子|君主|太后|宫人|宦|中官|中使|后妃|皇子|公主|外戚|宗室|朝臣|宰/, 匠: /匠|工/, 僧: /僧|道士|僧道|尼|巫|寺/, 医: /医|病家/, 乐: /乐|伶|艺人/, 匪: /盗|贼|亡命|囚/ };
   const whoRe = tags.map(t => WHO_RE[t]).filter(Boolean), whoOk = w => want.has(w) || whoRe.some(r => r.test(w)) || (!whoRe.length && WHO_RE.农.test(w));
   const pl = placeAliased(s), now = y;
-  const L = B.flatMap(R => arr(R.events)).filter(e => arr(e.who).some(whoOk) && evFits(e, now, pl)); if (!L.length) return [];
+  const L = B.flatMap(R => arr(R.events)).filter(e => arr(e.who).some(whoOk) && evFits(e, now, pl, (s.place || {}).polity)); if (!L.length) return [];
   const k = ((s.turn || 0) * 7) % L.length; return [...new Set(Array.from({ length: Math.min(n, L.length) }, (_, i) => L[(k + i * 13) % L.length]))];
 }
 /* R-286：世事库的条目只在它的年份里用（只发生过一次的真事：海上之盟、柔福帝姬、阿云案，不再塞进几十年前后的局）；
@@ -5763,7 +5763,10 @@ const EV_ONCE = /案起|之案|之战|之盟|之变|之役|之乱|之祸|之围|
 const EV_ANY = /^(|乡里|乡野|乡村|村|都下|都邑|都城|京师|京城|京邑|州县|州郡|郡县|县|县廷|县城|县衙|州|州城|州镇|诸州|天下|天下州县|各地|宫中|宫省|宫禁|宫廷|宫宴|朝|朝堂|朝廷|台省|家中|家宅|家|市井|市|市肆|集市|瓦舍|寺院|大寺|寺|道观|边郡|边镇|边地|边塞|行营|营中|营垒|军中|阵前|战场|方镇|藩镇|关津|道路|驿道|驿|作坊|宴席|贡院|学舍|书院|太学|山林|山中|江湖|河上|渡口|码头|港口|海上|田间|牢狱|狱中|衙门|官府|驿站|酒肆|茶肆|旅店|客舍)$/;
 const PLACE_ALIAS = [['京师', '北京', '顺天', '京畿', '燕京', '大都', '幽州', '蓟'], ['开封', '汴京', '汴梁', '东京', '大梁', '汴州'], ['长安', '京兆', '西京', '雍州'], ['洛阳', '河南府', '东都', '洛州'], ['南京', '应天', '金陵', '建康', '江宁', '建业', '秣陵'], ['杭州', '临安', '钱塘', '行在']];
 function placeAliased(s) { let pl = String((s.place || {}).full || '') + ' ' + arr(s.gazetteer && s.gazetteer.counties).join(' '); for (const g of PLACE_ALIAS) if (g.some(n => pl.includes(n))) pl += ' ' + g.join(' '); return pl; }
-function evFits(e, y, pl) {
+const polDy = p => { p = String(p || ''); return /西夏|^夏$|夏国/.test(p) ? '夏' : /辽|契丹/.test(p) ? '辽' : /金/.test(p) && !/金陵/.test(p) ? '金' : /元|蒙古/.test(p) ? '元' : /宋/.test(p) ? '宋' : ''; };
+function evFits(e, y, pl, pol) {
+  if (Array.isArray(e.dy) && e.dy.length && pol) { const d = polDy(pol); if (d && !e.dy.includes(d)) return false; }   // 宋朝的制度不给辽、金、元的人（年代体检：辽上京部民挑到「务限之法」）
+  if (polAbsent(String(e.t || '') + ' ' + String(e.where || ''), y)) return false;
   if (Array.isArray(e.y)) { if (y < e.y[0] || y > e.y[1]) return false; }
   else if (EV_ONCE.test(String(e.t || ''))) return false;
   const w = String(e.where || '').trim();
@@ -5986,6 +5989,19 @@ function waysBlock(s) {
  *  玩家这一步之外另起的事只许从这几条里取，写在【幕后】「据：甲、丙」；一条都没用上、却自己另起了事的，打回重写（和别的毛病并成一次） ========== */
 const BASIS_TAG = ['甲', '乙', '丙', '丁', '戊'];
 function basisKeys(...xs) { const out = new Set(); for (const x of xs.flat()) { const t = String(x || '').replace(/[（(][^）)]*[）)]/g, ''); for (const w of t.split(/[，,、；;：:。\s「」“”·—]+/)) if (w.length >= 2 && w.length <= 6 && !/^(之|的|而|与|及|以|于|为|此|其|诸|各|众|人|事|时)/.test(w)) out.add(w); } return [...out]; }
+/** 文中提到的国此年还没有、或早亡了（「契丹部众内附于金」放在 1050 年） */
+let POL_SPAN = null;
+function polSpans() { if (POL_SPAN) return POL_SPAN; const M = {};
+  const add = (n, a, b) => { n = String(n || '').replace(/（.*$/, '').replace(/^.*（|）$/g, ''); if (!n || a == null || b == null) return; const o = M[n] || (M[n] = { name: n, from: a, to: b }); o.from = Math.min(o.from, a); o.to = Math.max(o.to, b); };
+  for (const h of HIST) for (const r of arr(h.rulers)) add(r.polity, r.from, r.to);
+  for (const P of POLLIST) { add(P.name, P.from, P.to); for (const a of arr(P.alias)) add(a, P.from, P.to); }
+  delete M['宋']; delete M['汉']; delete M['魏']; delete M['吴']; delete M['周']; delete M['齐']; delete M['梁']; delete M['陈']; delete M['晋']; delete M['秦']; delete M['楚']; delete M['燕']; delete M['赵']; delete M['蜀']; delete M['唐'];   // 同名的朝代太多，单字不认
+  return (POL_SPAN = Object.values(M)); }
+function polAbsent(t, y) { t = String(t || '');
+  for (const P of polSpans()) { const n = P.name; if (!n || (y >= P.from - 3 && y <= P.to + 3)) continue;
+    const e = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), re = n.length === 1 ? new RegExp('(于|为|附|降|投|入|归|与|事|奉)' + e + '(?![银钱帛器])|' + e + '(人|军|兵|国|朝|主|使)') : new RegExp(e);
+    if (re.test(t)) return true; }
+  return false; }
 function basisSheet(s) {
   if (!s || !s.clock) return [];
   if (s.basisNow && s.basisNow.turn === s.turn && s.basisNow.ym === Math.floor(ymOf(s.clock))) return s.basisNow.items;
@@ -5996,7 +6012,7 @@ function basisSheet(s) {
   try { const mb = s.mainNow; if (mb && mb.text) L.push({ k: 'hist:' + mb.key, kind: '史事', text: cut(mb.text, 90), use: String(mb.phase || '').split('：')[0] || '照日子写', keys: basisKeys(arr(mb.e && mb.e.who), mb.e && mb.e.where, mb.text).slice(0, 12) }); } catch (_) { /* 无 */ }
   try { for (const e of eventsNow(s, 4).filter(e => !stale('ev:' + e.t)).slice(0, 2)) L.push({ k: 'ev:' + e.t, kind: '世事', text: `${e.t}${e.where ? '（' + e.where + '）' : ''}；几条路：${arr(e.p).map(([a, b]) => a + (b ? '（代价：' + b + '）' : '')).join('；')}`, use: '这类事此时常有：落到主角身边某个具体的人身上', keys: basisKeys(e.t) }); } catch (_) { /* 无 */ }
   try { const w = waysNow(s)[0]; if (w) { const H = arr(w.happens), k0 = (s.turn || 0) % Math.max(1, H.length);
-    const h = [0, 1, 2, 3].map(i => H[(k0 + i) % H.length]).find(x => x && !stale('way:' + x)); if (h) L.push({ k: 'way:' + h, kind: '世情', text: `${w.name}常有的事：${h}`, use: '照这种活法此时常出的事写，落到具体的人', keys: basisKeys(h) }); } } catch (_) { /* 无 */ }
+    const h = [0, 1, 2, 3, 4, 5].map(i => H[(k0 + i) % H.length]).find(x => x && !stale('way:' + x) && !/所灭|亡国|国亡|国破|灭亡/.test(x) && !polAbsent(x, s.clock.y));   /* 「契丹为金所灭」这种改朝换代的不当平常事给（年代体检：辽 1050 年） */ if (h) L.push({ k: 'way:' + h, kind: '世情', text: `${w.name}常有的事：${h}`, use: '照这种活法此时常出的事写，落到具体的人', keys: basisKeys(h) }); } } catch (_) { /* 无 */ }
   const items = L.slice(0, 5).map((x, i) => ({ ...x, tag: BASIS_TAG[i] }));
   s.basisNow = { turn: s.turn, ym: Math.floor(ymOf(s.clock)), items };
   return items;
@@ -6258,7 +6274,7 @@ function rulersAt(y, s, m) {
     // （新君当年就改了元才换；逾年改元的，这一年仍用旧年号）
     if (r.to === y && all.some(r2 => { if (r2 === r || r2.from !== y || !(r2.polity === r.polity || r2.polity.slice(-1) === r.polity.slice(-1))) return false; const f = arr(r2.reigns).slice().sort((a, b) => a[1] - b[1])[0]; return f && f[1] <= y && mm >= startMonth(s, r2, f[1] === y ? f : null); })) continue;
     const rg = rg0.filter(x => x[1] < y || (x[1] === y && mm >= (x[2] || (r.from === y && x === rg0[0] ? startMonth(s, r, x) : 1)))).pop();
-    out.push({ fromList: !!r.fromList, polity: r.polity, name: r.name, title: r.title || '', era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
+    out.push({ fromList: !!r.fromList, polity: r.polity, name: r.name, title: r.title || '', one: r.yearOne != null ? r.yearOne : r.from, era: rg ? String(rg[0]).replace(/[（(][^）)]*[）)]/g, '').replace(/元年$/, '') : '', n: rg ? y - rg[1] + 1 : null });
   }
   /* 同一人、同一个国名的两种写法（荆南／荆南（南平））只留一条（2026-11-26：天下名录里高从诲出现两次） */
   const aliasKey = n => {
@@ -6324,7 +6340,10 @@ function eraLabel(s, y) {
   if (!rs.length && pol) rs = all.filter(r => pol.includes(r.polity) || r.polity.includes(pol)).sort((a, b) => (a.polity.startsWith(pol) ? 1 : 0) - (b.polity.startsWith(pol) ? 1 : 0));
   // 自己不立年号的（楚、吴越、荆南、归义军……奉中原正朔）：用中原这一年的年号；同年几家都有，用新立的那一家（947 年后汉天福十二年，不是已亡的后晋开运）（R-254）
   if (!rs.length && pol && rulersAt(y, s).some(r => !r.era && (r.polity === pol || pol.includes(r.polity) || r.polity.includes(pol)))) { const C = ['后梁', '后唐', '后晋', '后汉', '后周']; rs = all.filter(r => C.includes(r.polity)).sort((a, b) => C.indexOf(a.polity) - C.indexOf(b.polity)); }
-  if (!rs.length) return '';
+  if (!rs.length) {   /* 年号以前（先秦、秦、汉初）：照「某公某年」「秦始皇某年」纪年（年代体检：秦那局纪年一栏是空的） */
+    if (y > -140) return '';
+    const R0 = rulersAt(y, s).filter(r => !r.era && r.title && r.one != null && (pol ? (r.polity === pol || pol.includes(r.polity) || String(r.polity).includes(pol)) : true));
+    const r0 = R0[R0.length - 1], n = r0 ? y - r0.one + 1 : 0; return r0 && n >= 1 && n <= 80 ? r0.title + NUMZH(n) + '年' : ''; }
   const r = rs[rs.length - 1];
   // 天宝三载起到至德二载，唐朝改「年」为「载」
   return r.era + NUMZH(r.n) + ((r.era === '天宝' && r.n >= 3) || r.era === '至德' ? '载' : '年');

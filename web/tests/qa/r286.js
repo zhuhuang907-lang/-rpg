@@ -44,6 +44,15 @@ const path = require('path');
     // 后台史料没备齐的年代：底本也要说清楚只写史书真事
     const E = JSON.parse(JSON.stringify(S)); E.clock.y = 3000; E.basisNow = null; E.mainNow = null;
     if (!/还没备齐/.test(basisBlock(E))) bad.push('没史料的年代底本是空的，模型照样随手编');
+    // 年代体检查出的：先秦、秦纪年空着；辽、金的人挑到宋朝的制度；文中提到当年还没有的国（「内附于金」放在 1050 年）；苏州织户认不出活法；南宋、金、元主线空档
+    S = newSave({ name: '张三', gender: '男', age: 30, role: '咸阳县吏', gregorianYear: -215, month: 3, day: 15, place: '咸阳', polity: '秦' }); if (eraLabel(S, -215) !== '秦始皇三十二年') bad.push('秦 前215 年纪年：' + eraLabel(S, -215));
+    S = newSave({ name: '张三', gender: '男', age: 30, role: '晋国大夫', gregorianYear: -632, month: 3, day: 15, place: '绛', polity: '晋' }); if (eraLabel(S, -632) !== '晋文公五年') bad.push('前632 年晋国纪年：' + eraLabel(S, -632));
+    S = newSave({ name: '张三', gender: '男', age: 30, role: '上京契丹部民', gregorianYear: 1050, month: 3, day: 15, place: '上京', polity: '辽' });
+    T = seen(S, 60); if (T.some(t => /务限|三舍|瑞麦|会子|太学/.test(t))) bad.push('辽上京部民挑到宋朝制度：' + T.filter(t => /务限|三舍|瑞麦|会子|太学/.test(t)).join('、'));
+    if (!polAbsent('契丹部众内附于金', 1050) || polAbsent('契丹部众内附于金', 1120) || polAbsent('赏赐金帛', 1050)) bad.push('认不准文中提到的国此年有没有');
+    S = newSave({ name: '张三', gender: '男', age: 30, role: '苏州织户', gregorianYear: 1600, month: 3, day: 15, place: '苏州府吴县', polity: '明' }); if (!waysNow(S).some(w => /织/.test(w.name))) bad.push('苏州织户认不出活法');
+    for (const [y, pol, pl] of [[1150, '南宋', '临安'], [1180, '金', '中都'], [1220, '南宋', '临安'], [1245, '南宋', '重庆'], [1265, '南宋', '临安'], [1300, '元', '杭州'], [285, '西晋', '洛阳'], [1192, '南宋', '临安']]) {
+      S = newSave({ name: '张三', gender: '男', age: 30, role: '商人', gregorianYear: y, month: 6, day: 15, place: pl, polity: pol }); if (!arcsNow(S).length) bad.push(y + ' 年' + pol + '没有大势主线'); }
     return bad;
   });
   await b.close();
