@@ -40,12 +40,12 @@ const { chromium } = require('playwright');
   if (h.n !== 1 || h.cash !== 2) bad('招揽门客不对：' + JSON.stringify(h));
   const qr = await p.evaluate(() => { const r0 = S.renown; const out = applyQuests(S, { questResults: [{ title: '追讨盐栈欠银', result: '办成' }] }); const pay = companionMonthly(S, 1); return { out, d: S.renown - r0, st: S.quests.find(q => q.title === '追讨盐栈欠银').state }; });
   if (qr.st !== '办成' || !(qr.d > 0)) bad('差事办成没结掉、没加声望：' + JSON.stringify(qr));
-  await p.click('[data-tab="skill"]'); await p.waitForTimeout(300);
+  await p.click('.tabs [data-tab="people"]'); await p.waitForTimeout(200); await p.click('.subtabs [data-tab="skill"]'); await p.waitForTimeout(300);   /* 本事并进人物页（R-287） */
   const txt = await p.evaluate(() => document.body.innerText);
   for (const w of ['属性', '本事', '经商', '名声', '品行', '三代行盐'])   /* 2026-11-01 起本事页不写数，「声望 N」改写「名声」品第（CLAUDE.md 人物「人的本事不用数目量」） */ if (!txt.includes(w)) bad('本事页上没有：' + w);
   // 身边人的各项：DeepSeek 照史料评定，人物页显眼地摆出来（数、依据、总评），没评过的可以点按钮请它评
   await p.evaluate(() => { S.people['程立德'] = { role: '账房', seen: S.turn }; TAB = 'people'; SIDE_FOLD = false; render(); });
-  const jb = await p.$('[data-judge="程立德"]'); if (!jb) bad('人物页没有「请 DeepSeek 评定各项」'); else { await jb.click(); await p.waitForFunction(() => S.people['程立德'].stats, null, { timeout: 60000 }).catch(() => bad('点了评定没评出来')); }
+  if (await p.$('[data-judge]')) bad('人物页还摆着「请 DeepSeek 评定各项」按钮（R-287 玩家定：后台自己评）'); await p.evaluate(async () => { await judgeDue(S); render(); }); await p.waitForFunction(() => S.people['程立德'].stats, null, { timeout: 60000 }).catch(() => bad('后台评定没评出来'));
   const pj = await p.evaluate(() => { render(); const c = [...document.querySelectorAll('.pc')].find(x => x.innerText.includes('程立德')); return { st: S.people['程立德'].stats, chips: c ? c.querySelectorAll('.stc').length : 0, txt: c ? c.innerText : '', blk: peopleStatBlock(S, '去找程立德') }; });
   if (!pj.st || pj.chips < 3 || !/总评/.test(pj.txt) || !/程立德：武艺/.test(pj.blk)) bad('人物各项没显出来、没进材料：' + JSON.stringify(pj).slice(0, 300));
   console.log('SB', JSON.stringify({ k, g, t1: t1.msg, sold, h, qr }));

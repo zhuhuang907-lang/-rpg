@@ -62,6 +62,16 @@ const path = require('path');
   if (!lg) bad.push('名臣表里查不到李纲'); else { if (/扬州/.test(lg[0])) bad.push('靖康元年二月的李纲写成了「' + lg[0] + '」'); if (!/扬州/.test(lg[1])) bad.push('靖康元年十一月的李纲没写知扬州：' + lg[1]); }
   const fz = await p.evaluate(() => { S.household = [{ relation: '正室', name: '王婉如', age: 19 }, { relation: '丫鬟', name: '春莺', age: 17 }]; S.people = {}; TAB = 'people'; render(); return [...document.querySelectorAll('aside.side .pc')].filter(x => /王婉如|春莺/.test(x.innerText)).map(x => x.innerText.replace(/\s+/g, ' ')); });
   if (fz.some(t => /找他/.test(t))) bad.push('正室、丫鬟的按钮写「找他」：' + fz.join(' | '));
+  // 八、玩家定的删并：人物页没有「核查是否真人」「评定各项」按钮（后台自己做）；页签并成十个上下：本事在人物里、见闻史线年谱档案馆在史册里、指南在设置里，小页签真点能切
+  const tb = await p.evaluate(() => { TAB = 'board'; render(); return tabsFor(S).map(x => x[0]); });
+  for (const k of ['skill', 'news', 'world', 'arc', 'guide']) if (tb.includes(k)) bad.push('页签没并：还有 ' + k);
+  if (!tb.includes('chron')) bad.push('没有「史册」页签');
+  await p.click('.tabs [data-tab="chron"]'); await p.waitForTimeout(150);
+  for (const [k, w] of [['world', '史线'], ['news', '见闻'], ['arc', '档案馆'], ['chron', '年谱']]) { const b0 = await p.$(`.subtabs [data-tab="${k}"]`); if (!b0) { bad.push('史册里没有小页签「' + w + '」'); continue; } await b0.click(); await p.waitForTimeout(150); if ((await p.evaluate(() => TAB)) !== k) bad.push('点了小页签「' + w + '」没切过去'); }
+  await p.click('.tabs [data-tab="people"]'); await p.waitForTimeout(150); { const b1 = await p.$('.subtabs [data-tab="skill"]'); if (!b1) bad.push('人物页里没有「本事」小页签'); else { await b1.click(); await p.waitForTimeout(150); if ((await p.evaluate(() => TAB)) !== 'skill') bad.push('点「本事」没切过去'); } }
+  await p.click('[data-tab="set"]'); await p.waitForTimeout(150); if (!(await p.$('.subtabs [data-tab="guide"]'))) bad.push('设置里没有「指南」小页签');
+  const pc = await p.evaluate(() => { S.people['高俅'] = { role: '殿前都指挥使', favor: 5, seen: 1, where: '东京' }; S.turn = 6; TAB = 'people'; render(); return { b: !!document.querySelector('[data-pchk],[data-judge]'), todo: pchkTodo(S) }; });
+  if (pc.b) bad.push('人物页还有「核查是否真人」或「评定各项」按钮');
   console.log('ERRS', JSON.stringify(bad.concat(errs)));
   await b.close(); if (bad.length || errs.length) process.exit(1);
 })();

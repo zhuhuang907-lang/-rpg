@@ -33,7 +33,10 @@ const { chromium } = require('playwright');
   const d2 = await p.evaluate(() => S ? { name: S.protagonist.name, real: S.protagonist.real } : { err: ERRMSG }); if (d2.real !== true) bad('没选虚构却开出了虚构主角：' + JSON.stringify(d2));
   // 五、人物页「核查是否真人」
   await p.evaluate(() => { S.people['高恒'] = { role: '两淮盐政', favor: 0, seen: S.turn }; S.people['钱无有'] = { role: '盐商', favor: 0, seen: S.turn }; delete (S.dossiers || {})['高恒']; TAB = 'people'; SIDE_FOLD = false; ORGMSG = ''; render(); });
-  for (const n of ['高恒', '钱无有']) { const bt = await p.$(`[data-pchk="${n}"]`); if (!bt) { bad('人物页没有核查按钮：' + n); continue; } await p.click(`[data-pchk="${n}"]`); /* 按选择器点：后台活重画页面时，先拿到的按钮会失效 */ await p.waitForFunction(n => /已核/.test([...document.querySelectorAll('.pc')].find(x => x.innerText.includes(n))?.innerText || ''), n, { timeout: 60000 }).catch(() => bad('核查没出结果：' + n)); }
+  // R-287（玩家定）：不再摆「核查是否真人」按钮，后台自己挑出场的、没核过的人查；这里照后台的路子查两个人，结果照样标在人物页
+  if (await p.$('[data-pchk]')) bad('人物页还摆着「核查是否真人」按钮');
+  { const todo = await p.evaluate(() => { const k = JSON.parse(JSON.stringify(S.people)); S.people['范仲淹'] = { role: '参知政事', real: true, seen: S.turn }; const t = pchkTodo(S); S.people = k; return t; }); if (!todo.includes('范仲淹')) bad('后台核查没把标为真人、还没核过的人列进去：' + todo.join('、')); }
+  for (const n of ['高恒', '钱无有']) { await p.evaluate(async n => { await personCheckApply(S, n); render(); }, n).catch(e => bad('核查出错：' + n + ' ' + e.message)); await p.waitForFunction(n => /已核/.test([...document.querySelectorAll('.pc')].find(x => x.innerText.includes(n))?.innerText || ''), n, { timeout: 60000 }).catch(() => bad('核查没出结果：' + n)); }
   const e = await p.evaluate(() => ({ g: chkOf(S, '高恒'), q: chkOf(S, '钱无有'), fq: fictionSet(S).has('钱无有'), fg: fictionSet(S).has('高恒'), msg: ORGMSG }));
   if (!e.g || !e.g.real || e.fg) bad('高恒应是真人：' + JSON.stringify(e).slice(0, 300));
   if (!e.q || e.q.real || !e.fq) bad('钱无有应查无此人、标虚拟：' + JSON.stringify(e).slice(0, 300));
@@ -43,9 +46,9 @@ const { chromium } = require('playwright');
   // 虚构人物不和史书真人重名：内置史料里的（王安石）、博查查得到的（江春，标了虚构的；人物只问博查，不问维基）都换名；没核过的同名不改（2026-11-05，见 samename.js），处处一并改；程序起名也不撞真人
   await p.evaluate(async () => { await api('/api/quick-key', { bochaKey: 'bk-good1234' }); await refreshKey(); SEARCH_OFF = ''; SEARCH_DOWN = 0; });
   // 平常回合检索份额用完（R-239）也照样核真假人：重名查检索另有份额，虚构的江春照样查出、换名，不空跑占着后台（R-253）
-  { const z = await p.evaluate(async () => { const keep = JSON.parse(JSON.stringify(S)); ECON_Q = { turn: S.turn || 0, bg: 9, ds: 99 }; S.people['江春'] = { role: '盐商', seen: S.turn, fic: true }; delete (S.clashOK || {})['江春']; delete DSQ_CACHE['江春']; const out = await fictionClash(S); const left = !!S.people['江春']; S = keep; return { out, left }; });
+  { const z = await p.evaluate(async () => { const keep = JSON.parse(JSON.stringify(S)); ECON_Q = { turn: S.turn || 0, bg: 9, ds: 99 }; S.people['江春'] = { role: '盐商', seen: S.turn, fic: true }; delete (S.dossiers || {})['江春']; for (const k of Object.keys(S.personChk || {})) if (k.split('|')[0] === '江春') delete S.personChk[k];   /* 前面拿真人江春开过局、后台核查记了真人；这里考的是戏里虚构的同名人，先清掉 */ delete (S.clashOK || {})['江春']; delete DSQ_CACHE['江春']; const out = await fictionClash(S); const left = !!S.people['江春']; S = keep; return { out, left }; });
     if (z.left) bad('检索份额用完时虚构人物和真人重名没查、没改：' + JSON.stringify(z)); }
-  const cl = await p.evaluate(async () => { ECON_Q = { turn: -1, bg: 0, ds: 0 }; S.protagonist.real = false; S.household.push({ relation: '书童', name: '王安石' }); S.people['江春'] = { role: '盐商', seen: S.turn, fic: true }; S.household.push({ relation: '管家', name: '汪福' }); const out = await fictionClash(S);
+  const cl = await p.evaluate(async () => { ECON_Q = { turn: -1, bg: 0, ds: 0 }; S.protagonist.real = false; S.household.push({ relation: '书童', name: '王安石' }); S.people['江春'] = { role: '盐商', seen: S.turn, fic: true }; delete (S.dossiers || {})['江春']; for (const k of Object.keys(S.personChk || {})) if (k.split('|')[0] === '江春') delete S.personChk[k];   /* 前面拿真人江春开过局、后台核查记了真人；这里考的是戏里虚构的同名人，先清掉 */ S.household.push({ relation: '管家', name: '汪福' }); const out = await fictionClash(S);
     const R = realAll(S), picks = []; for (let i = 0; i < 30; i++) picks.push(pickName(S, '王', GIVEN, new Set())); TAB = 'people'; render();
     return { out, left: ['王安石', '江春'].filter(n => S.people[n] || S.household.some(m => m.name === n)), ren: S.renamed, bad: picks.filter(n => R.has(n)), txt: document.body.innerText.includes('已换名'), keep: !!S.household.find(m => m.name === '汪福') }; });
   if (cl.left.length || cl.out.length < 2 || cl.bad.length || !cl.txt || !cl.keep) bad('虚构人物和真人重名没改：' + JSON.stringify(cl));

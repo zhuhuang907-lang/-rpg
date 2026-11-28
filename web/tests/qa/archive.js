@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
   const srv = await p.evaluate(async id => (await api('/api/arc-get', { id })).recs.filter(r => r.kind === 'turn').length, id);
   if (srv < 3) bad('档案没存进游戏文件夹：只有 ' + srv + ' 回');
   await p.reload(); await p.waitForTimeout(1500);
-  await p.click('[data-tab="arc"]').catch(() => bad('没有档案馆这一页')); await p.waitForTimeout(1500);
+  await p.click('.tabs [data-tab="chron"]').catch(() => bad('没有史册这一页')); await p.waitForTimeout(300); await p.click('[data-tab="arc"]').catch(() => bad('史册里没有档案馆')); await p.waitForTimeout(1500);
   const n = await p.evaluate(() => ARC.count(S));
   if (n < 3) bad('刷新后档案馆只有 ' + n + ' 回（应有 ' + turn + ' 回左右）');
   const full = await p.evaluate(() => ARC.all().filter(r => r.kind === 'turn').every(r => r.text && r.text.length > 50));
@@ -38,7 +38,7 @@ const { chromium } = require('playwright');
     if (chs < 1) bad(k + ' 没写出章节：' + await p.evaluate(() => ERRMSG));
     try { const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 15000 }), p.locator(`[data-bookdl="${k}"]`).first().click()]); const fs = require('fs'); const t = fs.readFileSync(await dl.path(), 'utf8'); if (t.length < 200 || !/汪景和/.test(t)) bad(k + ' 下载的书是空的'); } catch (e) { bad(k + ' 没下载：' + e.message.slice(0, 80)); }
   }
-  await p.reload(); await p.waitForTimeout(1500); await p.click('[data-tab="arc"]').catch(() => {}); await p.waitForTimeout(1500);
+  await p.reload(); await p.waitForTimeout(1500); await p.click('.tabs [data-tab="chron"]').catch(() => {}); await p.waitForTimeout(300); await p.click('[data-tab="arc"]').catch(() => {}); await p.waitForTimeout(1500);
   if ((await p.evaluate(() => bookChs(S, 'hist').length)) < 1) bad('刷新后写好的史书没了');
   const leak = (await p.evaluate(() => document.body.innerText)).match(/undefined|NaN|\[object Object\]/g); if (leak) bad('档案馆页有怪字：' + [...new Set(leak)].join(','));
   // 游戏里直接删这一局：顶上「删除这一局」→ 确认 → 回首页，它的档案馆一起删掉

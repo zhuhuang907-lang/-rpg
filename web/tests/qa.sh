@@ -151,6 +151,7 @@ start ai.js && {
   run "年谱不瞎写（R-284）：别人的地方不凭空降灾、衙役民壮没有营中之事、合计大军驻守不掷大疫、小事不进年谱、同名异代不认、查不到的殿试不写、去重去内部字样" 200 env PLAY="$ROOT/web/play.html" node r284.js
   run "剧情受史料表约束（R-286）：写戏带剧情底本、世事库只给它年份和地方的条目、自己另起事又不用底本的打回" 200 env PLAY="$ROOT/web/play.html" node r286.js
   run "操作板块要真（R-287）：点了出结果卡、此月之事有代价成算并结算进年谱和正文、皇帝不挑别人处境的事、请客请家里人、乡勇不能劫掠传檄、米麦价核正、家室表不铺由头" 200 env PLAY="$ROOT/web/play.html" node r287.js
+  run "剧情跟时代主线（R-288）：史书记忆剔将来、死人、戏里的人；写戏材料排此刻的时局；节令世事只在当月；删开头半截时刻；照抄前文、两种写法、替主角拿主意打回" 200 env PLAY="$ROOT/web/play.html" node r288.js
   run "开局物价照底账：纺织月收入不丢、别区的价不当本地载值、底账另折本位不把 AI 给的再除一千（R-256 补、R-273）" 120 env PLAY="$ROOT/web/play.html" node r256.js
   run "临阵出的主意算进仗里、据城守门不再回回大败、正文胜负跟程序对不上打回重写（R-257）" 120 env PLAY="$ROOT/web/play.html" node r257.js
   run "看到的就是做好的：真人照史死、别名认真人、志向固定、军务页兵种内置（R-258）" 120 env PLAY="$ROOT/web/play.html" node r258.js
