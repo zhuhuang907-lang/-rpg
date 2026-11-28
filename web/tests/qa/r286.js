@@ -39,7 +39,7 @@ const path = require('path');
     S = newSave({ name: '岳飞', gender: '男', age: 37, role: '荆湖北路京西南路宣抚使', gregorianYear: 1140, month: 3, day: 2, place: '鄂州', polity: '南宋', real: true }); S.turn = 3; S.mainNow = mainlineBeat(S);
     const B = basisSheet(S);
     if (!B.some(x => x.kind === '大势主线' && /绍兴/.test(x.text))) bad.push('岳飞 1140 年三月没有绍兴初年的大势主线：' + B.map(x => x.kind).join('、'));
-    if (!B.some(x => x.kind === '世事')) bad.push('武将挑不出一条世事（世事库「宋军」「将帅」认不出）');
+    if (!B.some(x => x.kind === '世事' || x.kind === '世情')) bad.push('武将挑不出一条世事或世情');
     if (!/\n据：/.test(acctRules(S))) bad.push('交账格式里没有「据」一行');
     // 后台史料没备齐的年代：底本也要说清楚只写史书真事
     const E = JSON.parse(JSON.stringify(S)); E.clock.y = 3000; E.basisNow = null; E.mainNow = null;
